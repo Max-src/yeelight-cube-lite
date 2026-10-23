@@ -9,7 +9,11 @@ import {
 } from "./draw_card_tools.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
-import { sharedEditorStyles, YeelightEditorMixin } from "./editor_ui_utils.js";
+import {
+  renderSettingsBox,
+  sharedEditorStyles,
+  YeelightEditorMixin,
+} from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import { renderSwatchSettings } from "./swatch-settings-ui.js";
@@ -26,12 +30,14 @@ import {
   builtinArtKey,
   loadBuiltinPixelArts,
   shownBuiltinPixelArts,
+  PIXEL_ART_DEFAULT_ORIENTATIONS,
 } from "./pixel-art-utils.js";
 import { VISIBILITY_KEYS, withAllItems, withVisibleItems } from "./visible-items.js";
 
 class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   // The official pixel arts this card shows (the shared item list: order,
-  // names, hidden ones); the horizontal ones by default.
+  // names, hidden ones); all of them by default, the gallery's orientation
+  // filter showing the horizontal or vertical ones.
   _officialPixelArtSettings() {
     if (!this._builtinPixelArts) {
       if (this._hass && !this._builtinPixelArtsLoading)
@@ -47,17 +53,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     const arts = this._builtinPixelArts;
     if (!arts.length) return "";
     const byKey = new Map(arts.map((art) => [builtinArtKey(art), art]));
-    return html`${createToggleRow(
-        "Include vertical official pixel arts",
-        "pixel_art_show_vertical",
-        this._config.pixel_art_show_vertical === true,
-        (e) => this._onSwitchChange(e, "pixel_art_show_vertical"),
-      )}
-      <div class="hint">
-        Drawn for a lamp stood on its end: on a lamp lying flat they show
-        sideways. (A list below, once edited, decides instead.)
-      </div>
-      ${this._galleryItemsSettings({
+    return html`${this._galleryItemsSettings({
       noun: "official pixel art",
       title: "Official pixel arts",
       items: shownBuiltinPixelArts(arts, this._config).map(builtinArtKey),
@@ -76,6 +72,37 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
       onReset: () => withAllItems(this._config, VISIBILITY_KEYS.pixelArts),
       resetLabel: "Show the default ones",
     })}`;
+  }
+
+  // The gallery's orientation filter: the orientation it opens on (or the
+  // lamp's) and its toggle beside the search field.
+  _orientationSettings() {
+    return renderSettingsBox(
+      "Orientation",
+      html`<div class="form-row">
+          <label>Show</label>
+          ${createButtonGroup(
+            PIXEL_ART_DEFAULT_ORIENTATIONS,
+            this._config.pixel_art_orientation || "all",
+            (event) =>
+              this._setOption(
+                "pixel_art_orientation",
+                event.currentTarget.dataset.value,
+              ),
+          )}
+        </div>
+        ${createToggleRow(
+          "Orientation filter",
+          "pixel_art_orientation_filter",
+          this._config.pixel_art_orientation_filter !== false,
+          (e) => this._onSwitchChange(e, "pixel_art_orientation_filter"),
+        )}
+        <div class="hint">
+          Vertical pixel arts are drawn for a lamp standing on its end. The
+          filter (All, Horizontal, Vertical) beside the search field changes
+          what shows; this browser remembers its choice.
+        </div>`,
+    );
   }
 
   static get properties() {
@@ -489,6 +516,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                 renderAppearance: () => this._renderAppearance("art"),
               },
             )}
+            ${this._orientationSettings()}
             ${this._arrangeSettings("pixel_arts")}
             ${this._officialPixelArtSettings()}
             <!-- The groups (All, My drawings, each official collection):

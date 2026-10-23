@@ -3,6 +3,8 @@
 // official app's pixel arts. (A single reorder move: singleMove in
 // user-collections.js.)
 import { VISIBILITY_KEYS, visibleItems } from "./visible-items.js";
+import { flipIndexVertical } from "./matrix-view.js";
+import { hexToRgbOrBlack } from "./draw_utils.js";
 
 // The official app's pixel arts (yeelight_cube/builtin_pixel_arts: name,
 // collection, orientation, pixels), read-only: fetched once per connection
@@ -32,16 +34,38 @@ export function loadBuiltinPixelArts(hass) {
 export const builtinArtKey = (art) => `builtin:${art.name}`;
 
 /** The official pixel arts a card shows, in order: its editor's list, else
- * the horizontal ones, and the vertical ones too with
- * `pixel_art_show_vertical` (they are drawn for a lamp stood on its end, and
- * show sideways on a lamp lying flat). */
+ * all of them (the gallery's orientation filter then picks the horizontal or
+ * vertical ones, pixelArtOrientationFilter). */
 export function shownBuiltinPixelArts(arts, config) {
   if (Array.isArray(config?.[VISIBILITY_KEYS.pixelArts.visible]))
     return visibleItems(arts, builtinArtKey, config, VISIBILITY_KEYS.pixelArts);
-  return config?.pixel_art_show_vertical === true
-    ? arts
-    : arts.filter((art) => art.orientation === "horizontal");
+  return arts;
 }
+
+// The pixel-art gallery's orientation filter (the shared gallery's `filter`,
+// collection-gallery.js): what its toggle offers, and the card's default
+// (pixel_art_orientation), "lamp" following the lamp's orientation.
+export const PIXEL_ART_ORIENTATIONS = [
+  { value: "all", label: "All", icon: "mdi:image-multiple-outline", title: "All pixel arts" },
+  { value: "horizontal", label: "Horizontal", icon: "mdi:crop-landscape", title: "Pixel arts for a lamp lying flat" },
+  { value: "vertical", label: "Vertical", icon: "mdi:crop-portrait", title: "Pixel arts for a lamp standing on its end" },
+];
+export const PIXEL_ART_DEFAULT_ORIENTATIONS = [
+  ...PIXEL_ART_ORIENTATIONS,
+  { value: "lamp", label: "Follow the lamp", icon: "mdi:phone-rotate-portrait", title: "Vertical while the lamp stands on its end, else horizontal" },
+];
+
+/** The orientation a card's gallery opens on (its pixel_art_orientation,
+ * "lamp" resolved with the lamp's device orientation). */
+export function defaultPixelArtOrientation(config, lampVertical) {
+  const value = config?.pixel_art_orientation;
+  if (value === "lamp") return lampVertical ? "vertical" : "horizontal";
+  return PIXEL_ART_ORIENTATIONS.some((choice) => choice.value === value) ? value : "all";
+}
+
+/** Whether a gallery item shows under an orientation filter value. */
+export const matchesPixelArtOrientation = (item, value) =>
+  value === "all" || (value === "vertical") === !!item?.vertical;
 
 // The sections of a pixel-art gallery: the user's own, then each official
 // collection (in the backend's order), with their icons.
@@ -108,9 +132,18 @@ export function expandPixelArt(art) {
  * lamp's bottom row (0-19 is the bottom), the matrix previews and the
  * drawing grid from the top. The one conversion of every pixel-art view.
  */
-export function pixelArtDisplayIndex(position) {
-  const row = Math.floor(position / 20);
-  return (4 - row) * 20 + (position % 20);
+export const pixelArtDisplayIndex = flipIndexVertical;
+
+/**
+ * The drawing grid (100 hex colors, top row first) as pixel-art pixels: one
+ * { position, color } per pixel, positions in lamp order (the inverse of
+ * pixelArtDisplayIndex). What the Draw card saves and sends.
+ */
+export function drawingPixels(matrix) {
+  return matrix.map((hex, index) => ({
+    position: pixelArtDisplayIndex(index),
+    color: hexToRgbOrBlack(hex),
+  }));
 }
 
 /**

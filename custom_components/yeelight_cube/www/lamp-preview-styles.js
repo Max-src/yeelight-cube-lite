@@ -9,9 +9,6 @@ import { tabBarStyles } from "./tab-bar.js";
 import { carouselStyles } from "./carousel-utils.js";
 import { sectionLayoutStyles } from "./section-layouts.js";
 
-const totalRows = 5;
-const totalCols = 20;
-
 export const LAMP_PREVIEW_CSS = `
       /* Inject centralized button styles */
       ${exportImportButtonStyles}
@@ -28,25 +25,10 @@ export const LAMP_PREVIEW_CSS = `
         overflow-clip-margin: 16px;
         min-height: 0;
       }
+      /* Its frame (size, gap, padding, corners) is inline: matrix-frame.js,
+         as every preview's (lamp-preview-matrix.js _matrixGeometry). */
       .lamp-preview-css {
-        width: 100%;
-        aspect-ratio: ${totalCols} / ${totalRows};
-        border-radius: 12px;
         display: grid;
-        box-sizing: border-box;
-        padding: 8px;
-      }
-      .lamp-preview-css.align-center {
-        margin-left: auto;
-        margin-right: auto;
-      }
-      .lamp-preview-css.align-left {
-        margin-left: 0;
-        margin-right: auto;
-      }
-      .lamp-preview-css.align-right {
-        margin-left: auto;
-        margin-right: 0;
       }
       .lamp-dot {
         width: 100%;

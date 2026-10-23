@@ -757,6 +757,18 @@ save_pixel_art:
       required: false
       selector:
         text:
+    orientation:
+      description: >-
+        What the drawing is made for: a lamp lying flat (horizontal, the
+        default) or standing on its end (vertical). The cards show vertical
+        pixel arts standing up.
+      example: "vertical"
+      required: false
+      selector:
+        select:
+          options:
+            - "horizontal"
+            - "vertical"
 
 apply_pixel_art:
   name: Apply Pixel Art
@@ -899,7 +911,7 @@ update_pixel_arts:
   description: Append or replace the pixel art collection. Default is non-destructive (appends to existing).
   fields:
     pixel_arts:
-      description: Array of pixel art objects with name and pixels (entries with position and color, as accepted by save_pixel_art)
+      description: Array of pixel art objects with name, pixels (entries with position and color, as accepted by save_pixel_art) and optional orientation ("horizontal" or "vertical")
       example: '[{"name": "Art1", "pixels": [{"position": 0, "color": [255, 0, 0]}, {"position": [1, 2], "color": [0, 255, 0]}]}]'
       required: true
       selector:

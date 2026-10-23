@@ -392,6 +392,7 @@ Save a drawing to the pixel art collection.
 | :-- | :-- | :-- |
 | `name` | No | Name for the saved pixel art; defaults to `Pixel Art N` |
 | `pixels` | Yes | Array of `{ position, color }` entries (single or grouped positions); black pixels are dropped |
+| `orientation` | No | `horizontal` (default) or `vertical`: a drawing made for a lamp standing on its end. The cards show vertical pixel arts standing up |
 
 > [!TIP]
 > The response from `get_pixel_art` (with `group_by_color: true`) uses the same format, so you can paste it directly into `save_pixel_art` without editing.
@@ -542,7 +543,7 @@ Append arts to, or fully replace, the saved pixel art collection. Used by the Dr
 
 | Field | Required | Default | Description |
 | :-- | :-- | :-- | :-- |
-| `pixel_arts` | Yes | - | Array of `{ name, pixels }` objects |
+| `pixel_arts` | Yes | - | Array of `{ name, pixels, orientation }` objects (`orientation` optional, as in `save_pixel_art`) |
 | `replace` | No | `false` | `true` = full replacement; `false` = append |
 
 > [!WARNING]

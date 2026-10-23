@@ -14,7 +14,7 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_arts
 from .const import DOMAIN
 from .name_utils import normalize_display_name
-from .pixel_art_storage import expand_pixels, group_pixels
+from .pixel_art_storage import PIXEL_ART_HORIZONTAL, expand_pixels, stored_pixel_art
 from .light import _entity_id_or_list
 from .errors import invalid
 from .storage import async_collection_changed, collection
@@ -23,6 +23,7 @@ from .light_services_common import (
     NAME_SCHEMA,
     PIXEL_LIST_SCHEMA,
     PIXEL_ART_LIST_SCHEMA,
+    PIXEL_ART_ORIENTATION_SCHEMA,
     _check_collection_size,
     _resolve_entities,
     _locate_item,
@@ -51,12 +52,13 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             )
         offset = 0 if replace else existing_count
         valid_pixel_arts = [
-            {
-                "name": normalize_display_name(
+            stored_pixel_art(
+                normalize_display_name(
                     art.get("name") or "", f"Pixel Art {offset + index + 1}"
                 ),
-                "pixels": group_pixels(art["pixels"]),
-            }
+                art["pixels"],
+                art.get("orientation"),
+            )
             for index, art in enumerate(pixel_arts)
         ]
 
@@ -113,22 +115,19 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
 
     # --- Pixel Art Service Handlers ---
     async def handle_save_pixel_art(service_call):
-        name = service_call.data.get("name")
-        pixels = service_call.data.get("pixels")
-        
-        # Expand multi-position entries and strip black pixels before storing
-        pixels = group_pixels(pixels)
-        
         pixel_arts = collection(hass, "pixel_arts")
         _check_collection_size(len(pixel_arts), 1, MAX_PIXEL_ARTS, "pixel_art")
-        if not name:
-            name = f"Pixel Art {len(pixel_arts) + 1}"
-        name = normalize_display_name(name, f"Pixel Art {len(pixel_arts) + 1}")
-        
-        pixel_arts.append({"name": name, "pixels": pixels})
+        default_name = f"Pixel Art {len(pixel_arts) + 1}"
+        # Grouped by color, black pixels left out (stored_pixel_art).
+        art = stored_pixel_art(
+            normalize_display_name(service_call.data.get("name") or default_name, default_name),
+            service_call.data.get("pixels"),
+            service_call.data.get("orientation"),
+        )
+        pixel_arts.append(art)
         await async_collection_changed(hass, "pixel_arts")
-        
-        _LOGGER.debug("[PIXELART-SAVE] Saved '%s' with %s pixels, new count: %s", name, len(pixels), len(pixel_arts))
+
+        _LOGGER.debug("[PIXELART-SAVE] Saved '%s' with %s colors, new count: %s", art["name"], len(art["pixels"]), len(pixel_arts))
 
     async def handle_remove_pixel_art(service_call):
         idx = service_call.data.get("idx")
@@ -226,15 +225,18 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         idx = service_call.data.get("idx")
         group_by_color = service_call.data.get("group_by_color", False)
         art = _locate_item(collection(hass, "pixel_arts"), idx, None, "pixel_art")
-        if group_by_color:
-            # Internal storage is already in grouped {color, positions} format
-            return {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])}
-        # Expand to flat [{position, color}] sorted by position
-        flat_pixels = sorted(
-            expand_pixels(art.get("pixels", [])),
-            key=lambda px: px["position"],
+        # Internal storage is already in grouped {color, positions} format;
+        # else flat [{position, color}] sorted by position.
+        pixels = (
+            art.get("pixels", [])
+            if group_by_color
+            else sorted(expand_pixels(art.get("pixels", [])), key=lambda px: px["position"])
         )
-        return {"name": art.get("name", "Unnamed"), "pixels": flat_pixels}
+        return {
+            "name": art.get("name", "Unnamed"),
+            "orientation": art.get("orientation", PIXEL_ART_HORIZONTAL),
+            "pixels": pixels,
+        }
 
     hass.services.async_register(
     DOMAIN,
@@ -254,6 +256,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         schema=vol.Schema({
             vol.Required("pixels"): PIXEL_LIST_SCHEMA,
             vol.Optional("name"): NAME_SCHEMA,
+            vol.Optional("orientation"): PIXEL_ART_ORIENTATION_SCHEMA,
         }, extra=vol.ALLOW_EXTRA)
     )
 

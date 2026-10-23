@@ -6,13 +6,29 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Matter link (optional):** a lamp also added to Home Assistant's Matter
+  integration is linked automatically (by its IP address, then its MAC
+  address), whichever was set up first. The lamp's buttons (the playlist
+  effects, the microphone music modes and their long press), its power and
+  brightness, and the effects and direction picked in the Yeelight app now
+  show in Home Assistant (the clock and native-effect previews turned as the
+  lamp turns them with its direction), and a
+  Repairs message reports LAN Control turned off. Read-only, through Home
+  Assistant's own Matter connection; lamps without Matter work as before.
+  Once Home Assistant's Matter server knows Yeelight's Matter features
+  (proposed: matter-js/matterjs-server#1199), **Device Orientation** also sets
+  the lamp's own direction, so its clock and native effects are turned for the
+  mount; until then this stays off (the light's `matter` attribute says why).
 - An administrators' diagnostics action, **DEBUG: Use TCP** (`force_tcp`),
   sends a lamp's commands over its TCP fallback for some minutes, to test it.
 - **Official pixel arts in the Draw card**: the 68 drawings of the Yeelight
   app show in the Draw card, in groups **All · My drawings · Nature ·
   Geometry** with the same layouts as the color sections (tabs by default;
-  dropdown, carousel, categories…). The horizontal ones show by default, the
-  vertical ones with a toggle. Picking one loads it into the drawing like
+  dropdown, carousel, categories…). An **orientation filter** beside the
+  search field (All · Horizontal · Vertical, the same in every group,
+  remembered in the browser) shows them by orientation; the editor picks
+  what shows first, or follows the lamp's orientation (cards set up before
+  keep the horizontal ones first). Picking one loads it into the drawing like
   your own. They are read-only: each card's editor chooses which ones show,
   their order and their names (**Official pixel arts**), and saving one makes
   your own editable copy.
@@ -36,6 +52,41 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   connection (UDP or TCP, failures, the last errors), its settings and current
   state. Its IP address, identifier, Yeelight app name and displayed text are
   redacted.
+- **Vertical previews**: while the lamp stands on one end (Device
+  Orientation Down / Up), the Native Effects and Clock cards' previews and
+  galleries stand up too, like the Lamp Preview card. **Vertical pixel arts**
+  (the official ones drawn for a standing lamp, and your own) show standing
+  up in the Draw card's gallery and Arrange list, whatever the lamp's
+  orientation, as in the Yeelight app. Every layout gives them their own
+  shape: in List, Grid, Mosaic and Original a vertical tile takes half a
+  landscape tile's place, beside one, and tiles of different heights stack
+  without gaps (packed tiles, `<yc-tile-grid>`); the Carousel's and Album's
+  cards fit them, and the Wheel shows them tall.
+- The Draw card's **Rotate** tool shows the drawing area landscape or
+  vertical; a vertical pixel art opens vertical, and a drawing is saved with
+  its orientation (`save_pixel_art` and `update_pixel_arts` take an optional
+  `orientation`, `get_pixel_art` returns it). Image upload fills the area as
+  shown, and can be undone.
+- The shared gallery takes an optional **item filter** shown beside its
+  search field (any card can declare one; the Draw card's orientation
+  filter is the first).
+- A **Mosaic** layout in every gallery (Draw, Palettes, Gradient, Clock,
+  Native Effects): every tile at its preview's own size, as many per row as
+  fit, centred and packed in your order. Highlight and items per page as in
+  List and Grid.
+- The Matrix Preview cameras draw the lamp like the Preview card: a black
+  frame with rounded corners and a soft shadow on a transparent background,
+  at 3x the resolution (1227 x 372 px), the round camera's dots
+  anti-aliased: sharp at any dashboard size, the card's own background
+  around it whatever its `fit_mode`. The README's new **Matrix Preview
+  Cameras** section shows every Picture Entity card setting (natural size,
+  fixed height, `fit_mode` contain / cover / fill) for a lamp lying flat and
+  standing up, with generated screenshots.
+  They render on demand, when an image is requested, from the lamp's latest
+  frame: a camera nobody watches costs nothing (scrolling text no longer
+  renders both cameras five times a second).
+- A **Camera Follows Orientation** switch (per lamp, off by default) draws
+  the Matrix Preview cameras vertical while the lamp stands on one end.
 
 ### Changed
 - **Faster switch from the clock or an effect to a drawing or text** (about
@@ -90,6 +141,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   so does any change the lamp refuses (a live update left the clock dark).
 
 ### Fixed
+- The Lamp Preview card lost its frame (padding and rounded corners) while
+  the lamp stood on its end. Every matrix preview (galleries, Lamp Preview,
+  drawing grid, gradient angle preview, Clock previews and preset editor)
+  now draws its frame through one shared helper, the same in both
+  orientations; the gradient angle's text preview also shows a Left / Up
+  mounted lamp the right way up.
+- With the lamp mounted **Left** or **Up**, the Lamp Preview card showed
+  drawings, text and the clock upside down, and every preview showed native
+  effects turned the wrong way; all previews and the cameras now show what
+  you see on the lamp, through one shared rule.
 - The **Pixel Art** select stayed on the previous pixel art after a drawing
   was sent from the Draw card or `apply_custom_pixels` (and `save_state` /
   `restore_state` kept that wrong name); it now shows the pixel art picked in

@@ -192,6 +192,13 @@ class ConnectionMixin:
                     return True
                 _DEVICE_LOCK_HOLDERS[self._ip] = op_name
                 self._hardware_operation_phase = op_name
+                # What the lamp reports over Matter until shortly after may
+                # be this command's echo (light_matter._effect_echo; a light
+                # without the Matter mixin keeps only the time).
+                self._lamp_command_at = time.monotonic()
+                note_command = getattr(self, "_note_lamp_command", None)
+                if note_command is not None:
+                    note_command()
                 lock_wait_ms = (time.time() - lock_wait_start) * 1000
                 if lock_wait_ms > 5:
                     # Waiting for the lamp to finish its previous operation is
@@ -238,6 +245,7 @@ class ConnectionMixin:
                     return False
                 finally:
                     _DEVICE_LOCK_HOLDERS.pop(self._ip, None)
+                    self._lamp_command_at = time.monotonic()
             # Success
             _LOGGER.debug("[OP #%s] [%s] [OK] %s complete", op_id, self._ip, op_name)
             # Only reset display retry state on display op success

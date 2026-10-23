@@ -19,7 +19,12 @@ import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
-import { matrixPreviewStyles, renderMatrixPreview } from "./gallery-display-utils.js";
+import {
+  matrixPreviewCells,
+  matrixPreviewStyles,
+  renderMatrixPreview,
+} from "./gallery-display-utils.js";
+import { isVerticalMount } from "./matrix-view.js";
 import {
   favouriteId,
   nextRotationMode,
@@ -133,7 +138,7 @@ class YeelightModeControls extends LitElement {
         key: node.dataset.preview,
         colorMode: node.dataset.colorMode || undefined,
         color: node.dataset.color ? JSON.parse(node.dataset.color) : undefined,
-        cells: [...node.querySelectorAll(".gallery-matrix-preview > div")],
+        cells: matrixPreviewCells(node.querySelector(".gallery-matrix-preview")),
       }),
     );
   }
@@ -245,6 +250,10 @@ class YeelightModeControls extends LitElement {
           ignoreBlackPixels:
             background !== "black" &&
             config.effect_ignore_black_pixels === true,
+          // Standing up while the lamp does, like the frames (matrix-view.js).
+          vertical: isVerticalMount(
+            this.model.pendingOrientation || this.model.adapter.orientation?.(),
+          ),
         }),
       )}
     </div>`;

@@ -6,6 +6,8 @@
 import { notifyUnreported } from "./notify-utils.js";
 import { createEmptyMatrix } from "./draw_utils.js";
 import { expandPixelArt, pixelArtDisplayIndex } from "./pixel-art-utils.js";
+import { rgbToHex } from "./color-utils.js";
+import { isVerticalArt } from "./matrix-view.js";
 import { MATRIX_SIZE } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
@@ -134,30 +136,16 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
 
       // Stored rows count from the lamp's bottom row, the drawing's from
       // the top: the same placement as every preview (pixelArtDisplayIndex).
-      for (const px of expandPixelArt(pixelArt)) {
-        const position = px.position;
-        const color = px.color;
-
+      for (const { position, color } of expandPixelArt(pixelArt)) {
         if (
+          Number.isInteger(position) &&
           position >= 0 &&
           position < MATRIX_SIZE &&
           Array.isArray(color) &&
           color.length >= 3
         ) {
-          // Convert RGB array to hex (same as image upload)
-          const r = color[0];
-          const g = color[1];
-          const b = color[2];
-          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b)
-            .toString(16)
-            .slice(1)}`;
-
-          const matrixPosition = pixelArtDisplayIndex(position);
-
-          if (matrixPosition >= 0 && matrixPosition < MATRIX_SIZE) {
-            this.matrix[matrixPosition] = hex;
-            placed++;
-          }
+          this.matrix[pixelArtDisplayIndex(position)] = rgbToHex(color);
+          placed++;
         }
       }
       if (!placed) {
@@ -172,7 +160,8 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       }
 
       StorageUtils.saveMatrix(this.matrix);
-      this.requestUpdate();
+      // Shown as it is drawn: standing up for a vertical pixel art.
+      this._setDrawingVertical(isVerticalArt(pixelArt));
       return true;
     } catch (err) {
       return fail(

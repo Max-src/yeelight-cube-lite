@@ -63,7 +63,7 @@ class ReportProblemTests(unittest.TestCase):
     def test_only_changes_reach_the_registry(self):
         # First check (nothing known): every issue is set or cleared.
         reported = self.report(None, self.light, set(), None)
-        self.assertEqual(2, self.registry.async_delete_issue.call_count)
+        self.assertEqual(3, self.registry.async_delete_issue.call_count)
         self.registry.async_delete_issue.reset_mock()
         # Unchanged: nothing sent.
         reported = self.report(None, self.light, set(), reported)
@@ -83,7 +83,11 @@ class ReportProblemTests(unittest.TestCase):
     def test_a_deleted_lamp_s_issues_go_with_it(self):
         self.clear(None, "e1")
         self.assertEqual(
-            {("yeelight_cube", "lamp_unreachable_e1"), ("yeelight_cube", "udp_blocked_e1")},
+            {
+                ("yeelight_cube", "lamp_unreachable_e1"),
+                ("yeelight_cube", "udp_blocked_e1"),
+                ("yeelight_cube", "lan_control_off_e1"),
+            },
             {call.args[1:] for call in self.registry.async_delete_issue.call_args_list},
         )
         init = (ROOT / "__init__.py").read_text(encoding="utf-8")
@@ -121,11 +125,12 @@ class ReportProblemTests(unittest.TestCase):
         self.assertIn("self._async_publish_transport()", check)
 
     def test_a_lamp_s_background_work_stops_with_it(self):
-        # The camera's refreshes and the adjustments' redraws are the light's
-        # tracked tasks (cancelled when it is removed), not loose tasks.
+        # The adjustments' redraws are the light's tracked tasks (cancelled
+        # when it is removed), not loose tasks; the cameras start none (they
+        # render within an image request, test_matrix_view).
         camera = (ROOT / "camera.py").read_text(encoding="utf-8")
         number = (ROOT / "number.py").read_text(encoding="utf-8")
-        self.assertIn("self._light_entity._create_tracked_task(", camera)
+        self.assertNotIn("_create_tracked_task(", camera)
         self.assertIn("light._create_tracked_task(", number)
         self.assertNotIn("async_create_task", camera + number)
 

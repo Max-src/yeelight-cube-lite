@@ -203,6 +203,7 @@ test("inline preset saves only request a name and do not generate a preview", ()
     "flipMatrixVertical",
     "renderClockFrame",
     "SAVE_TRIGGERS",
+    "matrixTemplate",
     `return function() {${method[1]}}`,
   )(
     html,
@@ -217,6 +218,7 @@ test("inline preset saves only request a name and do not generate a preview", ()
       style: { label: "Save clock style" },
       color_mode: { label: "Save color mode" },
     },
+    () => "",
   );
   for (const kind of ["style", "color_mode"]) {
     manager.kind = kind;

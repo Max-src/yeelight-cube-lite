@@ -2,7 +2,7 @@
 // rows, grid, cards) and the per-color controls. Mixed into
 // YeelightCubeColorListEditorCard.
 import { html, nothing } from "./lib/lit-all.js";
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+import { rgbToCss } from "./color-utils.js";
 
 export const ColorListLayoutsMixin = (Base) => class extends Base {
   _renderItems(textColors, options) {

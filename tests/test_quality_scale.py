@@ -102,7 +102,7 @@ class QualityScaleTests(unittest.TestCase):
             edit("light_services_native.py", 'raise invalid("rotation_too_few")', 'raise invalid("no_such_message")')
             edit("button.py", 'self._attr_translation_key = "force_refresh"',
                  'self._attr_translation_key = "force_refresh"\n        self._attr_icon = "mdi:refresh"')
-            edit("issues.py", 'ISSUES = ("lamp_unreachable", "udp_blocked")', 'ISSUES = ("lamp_unreachable", "udp_gone")')
+            edit("issues.py", 'ISSUES = ("lamp_unreachable", "udp_blocked", "lan_control_off")', 'ISSUES = ("lamp_unreachable", "udp_gone", "lan_control_off")')
             edit("config_flow.py", "elif not await _lamp_answers(ip_address):\n                errors[\"base\"] = \"cannot_connect\"\n            else:\n                # A manually",
                  "elif False:\n                pass\n            else:\n                # A manually")
             joined = "\n".join(QS["verify"](rules, copy))

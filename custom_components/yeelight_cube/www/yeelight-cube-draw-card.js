@@ -1,7 +1,4 @@
-import {
-  resolvePreviewAppearance,
-  previewLength,
-} from "./preview-appearance.js";
+import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { LitElement, html } from "./lib/lit-all.js";
 
 import { parseConfig } from "./draw_card_state.js";
@@ -26,12 +23,16 @@ import {
 } from "./draw_card_events.js";
 import { normalizeHex, extractDiversePaletteWithWeights } from "./draw_utils.js";
 import { isDarkTheme, rgbToHex } from "./color-utils.js";
+import { OFF_COLOR } from "./draw_card_const.js";
+import { matrixFrame } from "./matrix-frame.js";
 import {
-  GRID_COLS,
-  GRID_ROWS,
-  MATRIX_SIZE,
-  OFF_COLOR,
-} from "./draw_card_const.js";
+  artOrientation,
+  deviceOrientation,
+  fromDisplayOrder,
+  isVerticalArt,
+  isVerticalMount,
+  matrixView,
+} from "./matrix-view.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
 import { notifyUnreported } from "./notify-utils.js";
@@ -44,8 +45,12 @@ import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
 import { PixelArtActionsMixin } from "./draw-card-pixel-art-actions.js";
 import {
   MY_DRAWINGS,
+  PIXEL_ART_ORIENTATIONS,
   builtinArtKey,
+  defaultPixelArtOrientation,
+  drawingPixels,
   loadBuiltinPixelArts,
+  matchesPixelArtOrientation,
   pixelArtColorData,
   pixelArtSections,
   shownBuiltinPixelArts,
@@ -109,6 +114,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       show_lamp_colors: true,
       show_image_palette: true,
       show_gallery: true,
+      pixel_art_orientation: "all",
       show_pixelart_export_button: true,
       show_pixelart_import_button: true,
       palette_card_mode: "tabs",
@@ -148,6 +154,9 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   constructor() {
     super();
     this.matrix = StorageUtils.loadMatrix();
+    // The drawing area's view, chosen with Rotate or by loading a pixel art
+    // (null: follows the lamp's orientation, _drawingVertical).
+    this._drawVertical = StorageUtils.loadDrawingView();
     this._matrixHistory = [];
     this._renderScheduled = false;
 
@@ -262,7 +271,67 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       previewOnly({ config: cfg, _hass: hass }),
       cfg.show_lamp_palette !== false ? lamp?.text_colors : undefined,
       cfg.show_lamp_colors !== false ? lamp?.matrix_colors : undefined,
+      // The drawing area (until one is chosen) and the gallery's default
+      // orientation ("lamp") follow the lamp's orientation.
+      lamp?.device_orientation,
     ];
+  }
+
+  /** The orientation the pixel-art gallery shows: the one picked in its
+   * filter (kept in this browser), else the card's default. */
+  _pixelArtOrientation() {
+    if (this._pickedArtOrientation) return this._pickedArtOrientation;
+    const lamp = this._hass?.states?.[this._primaryEntity(this._hass)];
+    return defaultPixelArtOrientation(
+      this.config,
+      isVerticalMount(deviceOrientation(lamp?.attributes)),
+    );
+  }
+
+  _pickPixelArtOrientation(value) {
+    this._pickedArtOrientation = value;
+    StorageUtils.saveArtOrientation(value, this.config?.pixel_art_orientation);
+    this.requestUpdate();
+  }
+
+  /** The gallery's orientation filter (collection-gallery.js `filter`): the
+   * same object while nothing changes, so a stroke never re-renders the
+   * galleries. */
+  _pixelArtFilter() {
+    const value = this._pixelArtOrientation();
+    const hidden = this.config?.pixel_art_orientation_filter === false;
+    const cached = this._pixelArtFilterCache;
+    if (cached?.value !== value || cached?.hidden !== hidden)
+      this._pixelArtFilterCache = {
+        label: "Pixel art orientation",
+        value,
+        hidden,
+        choices: PIXEL_ART_ORIENTATIONS,
+        match: matchesPixelArtOrientation,
+        onChange: (choice) => this._pickPixelArtOrientation(choice),
+      };
+    return this._pixelArtFilterCache;
+  }
+
+  /** Whether the drawing area is vertical: as chosen (Rotate, a loaded
+   * pixel art), else as the lamp stands (Down / Up orientation). */
+  _drawingVertical() {
+    if (this._drawVertical != null) return this._drawVertical;
+    const lamp = this._hass?.states?.[this._primaryEntity(this._hass)];
+    return isVerticalMount(deviceOrientation(lamp?.attributes));
+  }
+
+  /** The drawing area's geometry (matrix-view.js): its columns and rows and
+   * the pixel each cell shows. */
+  _drawingView() {
+    return matrixView(this._drawingVertical());
+  }
+
+  /** Show the drawing landscape or vertical (remembered in this browser). */
+  _setDrawingVertical(vertical) {
+    this._drawVertical = !!vertical;
+    StorageUtils.saveDrawingView(this._drawVertical);
+    this.requestUpdate();
   }
 
   get hass() {
@@ -306,6 +375,10 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this._commands?.reset();
     // Create a mutable copy of the config to allow adding new properties
     this.config = { ...config };
+    // The orientation picked in the gallery's filter under this default.
+    this._pickedArtOrientation = StorageUtils.loadArtOrientation(
+      this.config.pixel_art_orientation,
+    );
 
     // Auto-resolve the sensors when not configured explicitly.
     this._autoResolveSensor("pixelart_sensor", "pixel_arts", this._hass);
@@ -427,6 +500,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       .config=${cfg}
       .items=${items}
       .active=${this._activePixelArtKey()}
+      .filter=${this._pixelArtFilter()}
       searchLabel="Search pixel arts"
       emptyLabel="No pixel art saved yet."
       .navigateSelects=${false}
@@ -463,7 +537,15 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
         const colorData = pixelArtColorData(art);
         const picture = colorData.map((color) => rgbToHex(color)).join(",");
         if (!this._artByPicture.has(picture)) this._artByPicture.set(picture, key);
-        return { dataMode: key, name, title: name, colorData, ...extra };
+        return {
+          dataMode: key,
+          name,
+          title: name,
+          colorData,
+          // Drawn for a lamp standing on its end: shown so (the app's way).
+          vertical: isVerticalArt(art),
+          ...extra,
+        };
       };
       this._galleryItemsCache = [
         ...arts.map((art, idx) =>
@@ -486,32 +568,29 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     return this._artByPicture?.get(picture) ?? null;
   }
 
-  _renderMatrixSection(
-    cfg,
-    pixelGap,
-    matrixBg,
-    matrixShadowStyle,
-    matrixWidth,
-    matrixPixelStyle,
-  ) {
+  _renderMatrixSection(cfg, pixelGap, matrixBg, matrixWidth, matrixPixelStyle) {
     const pixelBoxShadow =
       cfg.pixel_spacing_mode === "subtle" || cfg.pixel_spacing_mode === "normal";
+    // The area's view (landscape or vertical) in every preview's frame
+    // (matrix-frame.js): a vertical one keeps the landscape pixel size.
+    const view = this._drawingView();
+    const frame = matrixFrame({
+      width: matrixWidth,
+      vertical: view.vertical,
+      gap: pixelGap,
+      padding: 8,
+      radius: 6,
+      background: matrixBg,
+      shadow: cfg.matrix_box_shadow !== false,
+    });
+    const length = frame.length;
 
     return html`
-      <div
-        style="container-type:inline-size;width:${matrixWidth};max-width:100%;margin:0 auto;"
-      >
+      <div style="${frame.wrapperStyle}margin:0 auto;">
         <div
           class="matrix"
-          style="display:grid;grid-template-columns:repeat(${GRID_COLS},1fr);gap:${previewLength(
-            pixelGap,
-          )};background:${matrixBg};padding:${previewLength(
-            8,
-          )};border-radius:${previewLength(
-            6,
-          )};box-shadow:${cfg.matrix_box_shadow !== false
-            ? `0 ${previewLength(2)} ${previewLength(8)} #0008`
-            : "none"};width:100%;margin:0 auto;"
+          data-vertical=${view.vertical ? "true" : "false"}
+          style="${frame.gridStyle}margin:0 auto;"
           @mousedown=${(e) => startDraw(this, e)}
           @mouseup=${(e) => endDraw(this, e)}
           @mouseleave=${() => onMatrixMouseLeave(this)}
@@ -521,11 +600,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
           @touchcancel=${(e) => endDraw(this, e)}
           @touchmove=${(e) => drawMove(this, e)}
         >
-          ${this.matrix.map((color, idx) => {
+          ${view.source.map((idx) => {
+            const color = this.matrix[idx];
             let previewStyle = "";
             const shadowParts = [];
-            if (pixelBoxShadow)
-              shadowParts.push(`0 0 ${previewLength(2)} #0008`);
+            if (pixelBoxShadow) shadowParts.push(`0 0 ${length(2)} #0008`);
             if (this.areaFillMode && this.previewFillArea.has(idx)) {
               shadowParts.push(`0 0 0 3px ${this.selectedColor}`);
               previewStyle += ` border: 2px solid ${this.selectedColor};`;
@@ -602,22 +681,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     // resolvePreviewAppearance: pixel_spacing, matrix_size words).
     const pixelGap = cfg.pixel_spacing_mode === "normal" ? 3 : 0;
     const matrixBg = cfg.matrix_bg || "black";
-    const matrixBoxShadow = cfg.matrix_box_shadow !== false;
-    const matrixShadowStyle = matrixBoxShadow
-      ? "box-shadow: 0 2px 8px #0008;"
-      : "";
     const matrixWidth = `${cfg.matrix_size ?? 100}%`;
-    const showColorPicker = cfg.show_color_picker !== false;
     const showRecentColors = cfg.show_recent_colors !== false;
     const showLampPalette = cfg.show_lamp_palette !== false;
     const showLampColors = cfg.show_lamp_colors !== false;
     const showImagePalette = cfg.show_image_palette !== false;
-    const showEraserTool = cfg.show_eraser_tool !== false;
-    const showFillTool = cfg.show_fill_tool !== false;
-    const showSend = cfg.show_send_button !== false;
-    const showClear = cfg.show_clear_button !== false;
-    const showSave = cfg.show_save_button !== false;
-    const showUpload = cfg.show_upload_image_button !== false;
     const showPixelArtGallery = cfg.show_gallery !== false;
     const matrixPixelStyle = cfg.matrix_pixel_style || "square";
     const paintShape = cfg.tool_buttons_shape || "rounded";
@@ -655,7 +723,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
                 cfg,
                 pixelGap,
                 matrixBg,
-                matrixShadowStyle,
                 matrixWidth,
                 matrixPixelStyle,
               )
@@ -827,28 +894,10 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   async _savePixelArt() {
     if (!this.hass) return;
-    // Convert matrix to array of { position, color } with correct row order
-    const pixels = [];
-    for (let row = 0; row < GRID_ROWS; row++) {
-      for (let col = 0; col < GRID_COLS; col++) {
-        const srcIdx = row * GRID_COLS + col;
-        const destIdx = (GRID_ROWS - 1 - row) * GRID_COLS + col; // flip vertically
-        const c = this.matrix[srcIdx];
-        let rgb = [0, 0, 0];
-        if (c) {
-          const hex = c.replace(/^#/, "");
-          rgb = [
-            parseInt(hex.substring(0, 2), 16),
-            parseInt(hex.substring(2, 4), 16),
-            parseInt(hex.substring(4, 6), 16),
-          ];
-        }
-        pixels.push({ position: destIdx, color: rgb });
-      }
-    }
-    // Save as pixel art
+    // Saved with the area's view: a vertical drawing is shown standing up.
     await this.callGlobalService("save_pixel_art", {
-      pixels,
+      pixels: drawingPixels(this.matrix),
+      orientation: artOrientation(this._drawingVertical()),
     });
     // Update pixel art sensor entity
     await this._refreshEntity(this.config?.pixelart_sensor);
@@ -870,24 +919,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
    */
   async _sendToLamp({ latestOnly = false, name } = {}) {
     if (!this.hass) return;
-    const pixels = [];
-    for (let row = 0; row < GRID_ROWS; row++) {
-      for (let col = 0; col < GRID_COLS; col++) {
-        const idx = row * GRID_COLS + col;
-        const lampIdx = (GRID_ROWS - 1 - row) * GRID_COLS + col;
-        const colorHex = this.matrix[idx];
-        let rgb = [0, 0, 0];
-        if (colorHex) {
-          const hex = colorHex.replace(/^#/, "");
-          rgb = [
-            parseInt(hex.substring(0, 2), 16),
-            parseInt(hex.substring(2, 4), 16),
-            parseInt(hex.substring(4, 6), 16),
-          ];
-        }
-        pixels.push({ position: lampIdx, color: rgb });
-      }
-    }
+    const pixels = drawingPixels(this.matrix);
     const sent = await this.callServiceOnTargetEntities(
       "apply_custom_pixels",
       name ? { pixels, name } : { pixels },
@@ -907,25 +939,20 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     reader.onload = (event) => {
       const img = new window.Image();
       img.onload = () => {
-        // Draw image to canvas
+        // The image scaled to the drawing area as it is shown (landscape or
+        // vertical), then read back into the drawing's order.
+        const { cols, rows, vertical } = this._drawingView();
         const canvas = document.createElement("canvas");
-        canvas.width = 20;
-        canvas.height = GRID_ROWS;
+        canvas.width = cols;
+        canvas.height = rows;
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, GRID_COLS, GRID_ROWS);
-        const imgData = ctx.getImageData(0, 0, GRID_COLS, GRID_ROWS).data;
-        // Fill matrix with image pixels (current colors will be derived automatically)
-        const matrix = [];
-        for (let i = 0; i < MATRIX_SIZE; i++) {
-          const r = imgData[i * 4];
-          const g = imgData[i * 4 + 1];
-          const b = imgData[i * 4 + 2];
-          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b)
-            .toString(16)
-            .slice(1)}`;
-          matrix.push(hex);
-        }
-        this.matrix = matrix;
+        ctx.drawImage(img, 0, 0, cols, rows);
+        const imgData = ctx.getImageData(0, 0, cols, rows).data;
+        const cells = Array.from({ length: cols * rows }, (_, i) =>
+          rgbToHex([imgData[i * 4], imgData[i * 4 + 1], imgData[i * 4 + 2]]),
+        );
+        this._pushMatrixHistory();
+        this.matrix = fromDisplayOrder(cells, vertical);
         StorageUtils.saveMatrix(this.matrix);
         this.requestUpdate();
       };

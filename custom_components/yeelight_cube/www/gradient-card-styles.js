@@ -316,13 +316,6 @@ export const GRADIENT_CARD_CSS = `
           max-width: 100%;
         }
 
-        .matrix-preview-grid {
-          display: grid;
-          width: 100%;
-          margin: 0 auto;
-          box-sizing: border-box;
-        }
-
         .wheel-selector {
           cursor: pointer;
           filter: drop-shadow(1px 1px 3px rgba(0,0,0,0.3));

@@ -29,7 +29,6 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
-    DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     ALL_NATIVE_EFFECTS,
     NATIVE_CLOCK_EFFECT_ID,
@@ -54,11 +53,12 @@ from .pixel_art_storage import expand_pixels
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin, hardware_brightness_for
 from .issues import lamp_problems, report_problems
-from .light_native import NativeModesMixin
+from .light_native import NativeModesMixin, mount_effect_direction
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
+from .light_matter import MatterMixin
 from .light_brightness import BrightnessMixin
 from .light_display import ACTIVATION_TIMING, DisplayMixin
 
@@ -181,6 +181,7 @@ class YeelightCubeLight(
     ConnectionMixin,
     StateRestoreMixin,
     RotationMixin,
+    MatterMixin,
     LightEntity,
     RestoreEntity,
 ):
@@ -199,6 +200,7 @@ class YeelightCubeLight(
         "favourites",
         "rotation_intervals",
         "effect_rotation",
+        "matter",
         "button_effects",
         "last_hardware_brightness",
         "calib_gamma_r", "calib_gamma_g", "calib_gamma_b",
@@ -295,6 +297,7 @@ class YeelightCubeLight(
         self._init_scroll_state()
         self._init_connection_state()
         self._init_rotation_state()
+        self._init_matter_state()
         self._init_brightness_state()
         self._init_color_state()
         self._init_saved_state()
@@ -498,12 +501,9 @@ class YeelightCubeLight(
                 self._energy_sensor.power_changed(power)
 
     def _notify_camera_preview(self) -> None:
-        """Schedule every camera entity to re-render its preview.
-
-        Each camera renders in the background (PNG encoding runs in an
-        executor) and only then bumps its access token and writes its state,
-        so the frontend never fetches a stale frame for the new token.
-        """
+        """Tell every camera entity the lamp shows a new frame: it drops its
+        image and bumps its access token, and renders the new one only when a
+        viewer fetches it (camera.py async_refresh_preview)."""
         for cam in self._camera_entities:
             try:
                 cam.async_refresh_preview()
@@ -596,7 +596,10 @@ class YeelightCubeLight(
         mechanisms that actually work and apply immediately for the current mode:
           - matrix / text / pixel art: normal vs flipped (180 deg) pixel flip
           - native effects: the effect's own `direction` field (if supported)
-          - clock: no reorientation available (left as-is)
+          - clock and native effects, over Matter: the lamp's own direction
+            setting, which its firmware applies when they start
+            (light_matter._sync_lamp_rotation); without Matter the clock
+            stays as it is
         The 90 deg visual rotation for up/down is handled by the preview card.
         """
         if orientation not in DEVICE_ORIENTATIONS:
@@ -605,6 +608,12 @@ class YeelightCubeLight(
         self._device_orientation = orientation
         # Drive the matrix/text/pixel flip (normal vs 180 deg).
         self._orientation = DEVICE_ORIENTATION_TO_FLIP[orientation]
+        # Over Matter, the lamp's own direction setting turns its firmware's
+        # content (clock, native effects) for the mount; it applies when that
+        # content starts again (light_matter._sync_lamp_rotation).
+        lamp_direction_set = await self._sync_lamp_rotation(orientation)
+        if lamp_direction_set:
+            self._cube_matrix.forget_running_effect()
 
         # Whether we need to re-render/re-send to the lamp for this mode.
         reapply = True
@@ -614,17 +623,17 @@ class YeelightCubeLight(
         if self._mode == MODE_NATIVE_EFFECT:
             spec = ALL_NATIVE_EFFECTS.get(self._native_effect, {})
             directions = spec.get("directions")
-            desired = DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
+            desired = mount_effect_direction(orientation, self.lamp_turns_content)
             if directions and desired in directions:
                 self._native_effect_direction = desired
                 if self._native_effect_direction_select_entity:
                     self._native_effect_direction_select_entity.async_update_from_light()
         elif self._mode == MODE_CLOCK:
-            # The firmware clock has NO orientation control, and re-activating it
-            # here disrupts the running clock (it briefly drops / reverts). Since
-            # we can't reorient it anyway, just update state so the preview
-            # rotates and leave the live clock untouched.
-            reapply = False
+            # Re-activating the clock briefly drops it: only when the lamp's
+            # own direction was just set over Matter (it turns the clock when
+            # the clock starts). Otherwise the clock stays as it is and the
+            # preview turns, as the lamp shows it.
+            reapply = lamp_direction_set
 
         self._notify_camera_preview()
         if reapply:
@@ -792,6 +801,9 @@ class YeelightCubeLight(
             "font": self._font,
             "orientation": self._orientation,
             "device_orientation": self._device_orientation,
+            # The lamp's Matter node and what it reports (light_matter.py);
+            # None without one.
+            "matter": self._matter_summary(),
             "rgb_color": self._rgb_color,
             "full_panel": self._full_panel,
             # Color effects (used by lamp preview card)
@@ -942,6 +954,9 @@ class YeelightCubeLight(
         # this restore ran; without this its control shows the default — the
         # cause of the Experimental Features switch reverting to off.
         self._refresh_linked_entities()
+        # The lamp's Matter node, when it has one (light_matter.py): after the
+        # restore, so the lamp's reports apply to the restored state.
+        self._start_matter_link()
         
         _LOGGER.debug("[INIT] After state restoration - custom_text: '%s', mode: '%s', is_on: %s", self._custom_text, self._mode, self._is_on)
         _LOGGER.debug("[INIT] Calling initial async_apply_display_mode to display HELLO...")
@@ -1344,9 +1359,11 @@ class YeelightCubeLight(
         """Show or clear the lamp's Repairs (issues.py), and publish a
         connection that changed with time (_async_publish_transport)."""
         self._async_publish_transport()
+        self._refresh_matter_link()
         problems = lamp_problems(
             self._cube_matrix.connection_state(), self.available,
             time.monotonic() - self._added_at,
+            lan_control_off=self.matter_lan_control_off,
         )
         self._reported_problems = report_problems(
             self.hass, self, problems, self._reported_problems

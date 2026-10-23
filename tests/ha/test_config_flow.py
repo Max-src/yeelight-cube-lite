@@ -5,7 +5,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.yeelight_cube.const import CONF_DEVICE_ID, CONF_IP, DOMAIN
+from custom_components.yeelight_cube.const import CONF_DEVICE_ID, CONF_IP, CONF_MATTER_MAC, DOMAIN
 
 DISCOVERY = config_entries.SOURCE_DISCOVERY
 
@@ -136,6 +136,50 @@ def zeroconf(name, properties):
         ip_addresses=[__import__("ipaddress").ip_address("192.168.4.60")],
         hostname="lamp.local.", name=name, port=54321, properties=properties, type="_miio._udp.local.",
     )
+
+
+# ── A lamp found in Home Assistant's Matter integration ──────────────────────
+
+MATTER = config_entries.SOURCE_INTEGRATION_DISCOVERY
+MATTER_LAMP = {CONF_IP: "192.168.4.139", CONF_MATTER_MAC: "cc:ba:97:44:38:98"}
+
+
+async def test_a_lamp_found_in_matter_is_added_once_it_answers_over_lan(hass, lamp_answers):
+    result = await start(hass, MATTER, dict(MATTER_LAMP))
+    assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "matter_confirm")
+    assert result["description_placeholders"] == {"host": "192.168.4.139"}
+    flow = hass.config_entries.flow.async_get(result["flow_id"])
+    assert flow["context"]["title_placeholders"]["name"] == "CubeLite (192.168.4.139)"
+    # LAN Control off in the Yeelight app: the form says so and stays.
+    lamp_answers.side_effect = OSError("refused")
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert (result["type"], result["errors"]) == (FlowResultType.FORM, {"base": "lan_control_needed"})
+    lamp_answers.side_effect = None
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Yeelight Cube (192.168.4.139)"
+    assert result["data"] == MATTER_LAMP
+    assert result["result"].unique_id == "192.168.4.139"
+
+
+async def test_a_lamp_found_in_matter_without_a_mac(hass, lamp_answers):
+    result = await start(hass, MATTER, {CONF_IP: "192.168.4.139"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["data"] == {CONF_IP: "192.168.4.139"}
+
+
+async def test_a_lamp_found_in_matter_that_is_already_set_up(hass, lamp_answers):
+    # By its unique id, its address, or its remembered MAC.
+    for data in (
+        {"unique_id": "192.168.4.139", "data": {CONF_IP: "192.168.4.10"}},
+        {"unique_id": "1234ab", "data": {CONF_IP: "192.168.4.139"}},
+        {"unique_id": "5678cd", "data": {CONF_IP: "192.168.4.20", CONF_MATTER_MAC: "cc:ba:97:44:38:98"}},
+    ):
+        known = entry(hass, **data)
+        result = await start(hass, MATTER, dict(MATTER_LAMP))
+        assert (result["type"], result["reason"]) == (FlowResultType.ABORT, "already_configured")
+        await hass.config_entries.async_remove(known.entry_id)
+    lamp_answers.assert_not_awaited()
 
 
 async def test_zeroconf_offers_a_cube_and_ignores_other_lamps(hass):

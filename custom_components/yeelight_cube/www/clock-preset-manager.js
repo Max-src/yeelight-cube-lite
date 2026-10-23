@@ -10,6 +10,8 @@ import {
 } from "./clock-preset-utils.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import { defineOnce } from "./card-registration.js";
+import { matrixPreviewStyles } from "./gallery-display-utils.js";
+import { matrixTemplate } from "./gallery-layouts.js";
 
 // Trigger buttons for each save destination (shown under Custom on the card).
 const SAVE_TRIGGERS = {
@@ -210,22 +212,12 @@ class ClockPresetManager extends LitElement {
       background: transparent;
       cursor: pointer;
     }
+    /* The color's preview: every preview's matrix (matrixTemplate). */
     .preview {
-      display: grid;
-      grid-template-columns: repeat(20, 1fr);
-      aspect-ratio: 4;
-      background: #000;
-      padding: 6px;
-      gap: 2px;
       width: 100%;
       max-width: 240px;
-      box-sizing: border-box;
     }
-    .pixel {
-      aspect-ratio: 1;
-      min-width: 0;
-      border-radius: 1px;
-    }
+    ${unsafeCSS(matrixPreviewStyles)}
     .error {
       color: var(--error-color, #b00020);
       font-size: 13px;
@@ -437,13 +429,12 @@ class ClockPresetManager extends LitElement {
                       ? "Effect color preview"
                       : "Clock color preview"}
                   >
-                    ${frame.map(
-                      (pixel) =>
-                        html`<span
-                          class="pixel"
-                          style="background:rgb(${pixel.join(",")})"
-                        ></span>`,
-                    )}
+                    ${matrixTemplate(frame, {
+                      forceAspectRatio: true,
+                      pixelGap: 2,
+                      padding: 6,
+                      radius: 0,
+                    })}
                   </div> `
               : ""}
             ${this._actionRow(html`

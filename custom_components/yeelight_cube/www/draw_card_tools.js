@@ -133,6 +133,8 @@ export class ToolManager {
         return this.card.areaFillMode;
       case "fillAll":
         return this.card.fillAllMode;
+      case "rotate":
+        return this.card._drawingVertical(); // shown on while vertical
       default:
         return false;
     }
@@ -148,6 +150,8 @@ export class ToolManager {
   handleToolClick(tool) {
     if (tool === "undo") {
       this.card._undoMatrix();
+    } else if (tool === "rotate") {
+      this.card._setDrawingVertical(!this.card._drawingVertical());
     } else if (tool === "colorPicker") {
       // colorPicker is handled by the input element directly, not as a mode
       return;

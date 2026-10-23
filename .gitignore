@@ -64,3 +64,18 @@ test-results/
 
 # Release asset built by scripts/release-zip.py (attached by the release workflow)
 /yeelight_cube.zip
+
+# Local development Matter server (the "Yeelight Matter Server (dev)" add-on,
+# ../yeelight-matter-clusters): never committed or shipped. The integration
+# works without these files (matter_commands.py skips that server);
+# deploy_to_homeassistant.ps1 copies them to your Home Assistant.
+custom_components/yeelight_cube/matter_dev_server.py
+tests/test_matter_dev_server.py
+docs/MATTER_DEV_SERVER.md
+# Guided live Matter test against your own Home Assistant and lamps, and
+# its captured results
+tools/matter-live-test.mjs
+tools/matter-live-test-results.json
+
+# Claude Code agents' temporary working copies
+.claude/worktrees/

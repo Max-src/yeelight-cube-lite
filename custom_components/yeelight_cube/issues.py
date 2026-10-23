@@ -16,15 +16,20 @@ UNREACHABLE_AFTER = 30 * 60
 # blocks it (a failure is only retried after cube_matrix.UDP_RETRY_AFTER).
 UDP_BLOCKED_AFTER = 15 * 60
 # The issues, by translation key (strings.json "issues").
-ISSUES = ("lamp_unreachable", "udp_blocked")
+ISSUES = ("lamp_unreachable", "udp_blocked", "lan_control_off")
 
 
-def lamp_problems(state: dict, available: bool, since_added: float) -> set[str]:
+def lamp_problems(
+    state: dict, available: bool, since_added: float, lan_control_off: bool = False
+) -> set[str]:
     """The issues a lamp has, from its connection state
     (cube_matrix.connection_state) and availability. ``since_added``: how
     long its light has been running (s), for a lamp that has not answered a
-    command since."""
+    command since. ``lan_control_off``: the lamp reports LAN Control off over
+    Matter (light_matter.py), which only the Yeelight app can turn back on."""
     problems = set()
+    if lan_control_off:
+        problems.add("lan_control_off")
     since_success = state.get("since_success")
     if not available and (since_added if since_success is None else since_success) >= UNREACHABLE_AFTER:
         problems.add("lamp_unreachable")

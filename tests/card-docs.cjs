@@ -144,6 +144,18 @@ async function waitForIcons(page, file) {
   }
 }
 
+// A camera scenario's picture card signs its image URL and loads it (real
+// network, but the card's steps run on timers): advance the page's paused
+// clock in small steps, in real time, until the image is drawn.
+async function waitForCamera(page, file) {
+  const deadline = Date.now() + 15000;
+  while (!(await page.evaluate(() => window.cardDocs.cameraReady()))) {
+    assert.ok(Date.now() < deadline, `Camera image did not load: ${file}`);
+    await page.clock.runFor(50);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 async function main() {
   assert.ok(
     process.env.DOCS_HA_STORAGE_STATE || process.env.DOCS_HA_ONBOARD === "1",
@@ -177,6 +189,24 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
     "Unable to load production font maps with Python",
   );
   const fonts = JSON.parse(fontResult.stdout);
+  // The Matrix Preview camera images (the integration's camera code,
+  // card-docs-camera.py): served for the synthetic cameras' requests.
+  const cameraResult = spawnSync(
+    process.env.PYTHON || (process.platform === "win32" ? "python" : "python3"),
+    [path.join(__dirname, "card-docs-camera.py")],
+    { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+  );
+  assert.equal(
+    cameraResult.status,
+    0,
+    `Unable to render the camera images with Python: ${cameraResult.stderr}`,
+  );
+  const cameraImages = Object.fromEntries(
+    Object.entries(JSON.parse(cameraResult.stdout)).map(([entity, png]) => [
+      entity,
+      Buffer.from(png, "base64"),
+    ]),
+  );
   await fs.mkdir(output, { recursive: true });
   const verified = new Map();
   // Captures that never matched: written to DIAGNOSTICS for the CI artifact.
@@ -253,6 +283,14 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
                   : undefined,
               });
             });
+            await context.route("**/api/camera_proxy/**", (route) => {
+              const entity = decodeURIComponent(
+                new URL(route.request().url()).pathname,
+              ).replace(/^\/api\/camera_proxy\//, "");
+              return cameraImages[entity]
+                ? route.fulfill({ body: cameraImages[entity], contentType: "image/png" })
+                : route.abort();
+            });
             const page = await context.newPage();
             await page.goto(`${origin}/lovelace/0`);
             await page.waitForFunction(
@@ -293,6 +331,7 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
               { kind, scenario, options },
             );
             await page.clock.runFor(1200);
+            await waitForCamera(page, file);
             await page.evaluate(() => window.cardDocs.settle());
             await waitForIcons(page, file);
             const selector = await page.evaluate(

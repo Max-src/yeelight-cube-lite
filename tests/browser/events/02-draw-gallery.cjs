@@ -36,7 +36,7 @@ module.exports = async (t) => {
     return {
       items: items.length,
       grid: !!card.shadowRoot.querySelector(
-        'yc-collection-gallery .gc-preview-shell[data-columns="2"]',
+        'yc-collection-gallery .gc-preview-shell[data-layout="preview-grid"]',
       ),
       // Heart's pixel 3 is on the lamp's bottom row: shown on the
       // preview's last row (cell 83), as in the drawing.

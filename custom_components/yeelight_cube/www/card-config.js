@@ -136,6 +136,12 @@ export const OPTION_MIGRATIONS = Object.freeze({
   // mode, page size (12), preview size (100%), card roundness (kept: the
   // Draw palette cards use it too), border (auto) and no search box.
   draw: (config) => ({
+    // The former "Include vertical official pixel arts" switch (retired):
+    // the gallery's default orientation, horizontal without it.
+    ...(config.pixel_art_orientation === undefined && {
+      pixel_art_orientation:
+        config.pixel_art_show_vertical === true ? "all" : "horizontal",
+    }),
     // The former floating colors mode showed side by side.
     ...(config.palette_card_mode === "floating" && { palette_card_mode: "side" }),
     ...(config.style_selector_style === undefined && {
@@ -388,6 +394,8 @@ function gradientPreviewSize(value) {
 export const RETIRED_OPTIONS = Object.freeze({
   // Written by older Draw stubs/editors; nothing ever read it.
   draw: [
+    // Became pixel_art_orientation (OPTION_MIGRATIONS).
+    "pixel_art_show_vertical",
     "pixel_art_delete_button_style",
     "pixel_art_gallery_mode",
     "pixel_art_items_per_page",

@@ -23,6 +23,12 @@ captures it, so `npm run docs:check` (and `npm run check`) lists it as
 "pending capture" instead of failing. A scenario already in the README whose
 image is missing still fails.
 
+The `camera` entry documents the Matrix Preview cameras: Home Assistant's own
+Picture Entity card, with each scenario's settings (`fit_mode`,
+`aspect_ratio`, width), shows a synthetic camera whose image is rendered by
+the integration's camera code (`tests/card-docs-camera.py`, served for
+`/api/camera_proxy/` by the runner).
+
 The other cards' historical images and Preview's extra layout examples are
 still manual. To migrate another card, register its scenarios, load its actual
 module and supply representative synthetic state in

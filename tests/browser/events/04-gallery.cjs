@@ -328,6 +328,30 @@ module.exports = async (t) => {
   );
   await checkInert("clock presets");
 
+  // --- Mosaic in a card whose previews animate (Clock): every tile painted
+  await page.evaluate(() =>
+    mount("yeelight-cube-clock-card", {
+      entity: "light.a",
+      show_gallery: true,
+      style_selector_style: "preview-mosaic",
+    }),
+  );
+  await page.waitForTimeout(400);
+  const mosaicTiles = await page.evaluate(() => {
+    const tiles = [...card.shadowRoot.querySelectorAll(".gallery-display-mosaic > .gallery-item")];
+    if (!tiles.length) return { count: 0, painted: 0 };
+    return {
+      count: tiles.length,
+      painted: tiles.filter((tile) =>
+        [...tile.querySelectorAll(".gallery-matrix-preview > div")].some(
+          (cell) => !["", "rgb(0, 0, 0)", "#000", "transparent"].includes(cell.style.background),
+        ),
+      ).length,
+    };
+  });
+  assert.ok(mosaicTiles.count > 0, "clock mosaic: tiles");
+  assert.ok(mosaicTiles.painted > 0, "clock mosaic: tiles painted by the clock loop");
+
   // --- The shared gallery's album (Clock; Native uses the same element) ----
   await page.evaluate(() =>
     mount("yeelight-cube-clock-card", {

@@ -3,7 +3,7 @@ import logging
 import voluptuous as vol # type: ignore
 from homeassistant import config_entries # type: ignore
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo # type: ignore
-from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID, LAN_PORT, PROBE_TIMEOUT
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID, CONF_MATTER_MAC, LAN_PORT, PROBE_TIMEOUT
 from .cube_matrix import check_tcp
 from .discovery import is_cube_device, parse_service_name, normalize_device_id
 
@@ -42,6 +42,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     _discovered_ip: str = ""
     _discovered_name: str = ""
     _discovered_device_id: str = ""
+    _discovered_mac: str | None = None
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
@@ -166,6 +167,38 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "name": device_name or model or "Yeelight Cube Lite",
             "device_id": device_id,
         })
+
+    async def async_step_integration_discovery(self, discovery_info):
+        """A Cube Lite in Home Assistant's Matter integration that no entry
+        has (matter_discovery.py): its IP address and MAC."""
+        ip = discovery_info[CONF_IP]
+        mac = discovery_info.get(CONF_MATTER_MAC)
+        await self.async_set_unique_id(ip)
+        self._abort_if_unique_id_configured()
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_IP) == ip or (mac and entry.data.get(CONF_MATTER_MAC) == mac):
+                return self.async_abort(reason="already_configured")
+        self._discovered_ip = ip
+        self._discovered_mac = mac
+        self.context["title_placeholders"] = {"name": f"CubeLite ({ip})", "host": ip}
+        return await self.async_step_matter_confirm()
+
+    async def async_step_matter_confirm(self, user_input=None):
+        """Add a lamp found in Matter once it answers over LAN (LAN Control on
+        in the Yeelight app)."""
+        errors = {}
+        if user_input is not None:
+            if await _lamp_answers(self._discovered_ip):
+                data = {CONF_IP: self._discovered_ip}
+                if self._discovered_mac:
+                    data[CONF_MATTER_MAC] = self._discovered_mac
+                return self.async_create_entry(title=f"Yeelight Cube ({self._discovered_ip})", data=data)
+            errors["base"] = "lan_control_needed"
+        return self.async_show_form(
+            step_id="matter_confirm",
+            errors=errors,
+            description_placeholders={"host": self._discovered_ip},
+        )
 
     async def async_step_discovery_confirm(self, user_input=None):
         """Handle the discovery confirmation step."""

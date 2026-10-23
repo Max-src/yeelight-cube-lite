@@ -353,5 +353,78 @@
             "pixelart": "Pixel Art Section",
             "importExport": "Import/Export Actions"
         }
+    },
+    "camera": {
+        "title": "Matrix Preview cameras",
+        "variations": {
+            "landscape-natural": {
+                "title": "Lying flat: natural size (rows: auto)",
+                "config": {
+                    "entity": "camera.documentation_round_landscape"
+                }
+            },
+            "landscape-contain": {
+                "title": "Lying flat: fixed height, fit_mode: contain",
+                "config": {
+                    "entity": "camera.documentation_round_landscape",
+                    "aspect_ratio": "2:1",
+                    "fit_mode": "contain"
+                }
+            },
+            "vertical-contain": {
+                "title": "Standing up: fixed height, fit_mode: contain",
+                "config": {
+                    "entity": "camera.documentation_round_vertical",
+                    "aspect_ratio": "2:1",
+                    "fit_mode": "contain"
+                }
+            },
+            "vertical-narrow": {
+                "title": "Standing up: natural size in a narrow card (columns: 3)",
+                "width": 120,
+                "config": {
+                    "entity": "camera.documentation_round_vertical"
+                }
+            },
+            "landscape-cover": {
+                "title": "Lying flat: fit_mode: cover (crops the sides)",
+                "config": {
+                    "entity": "camera.documentation_round_landscape",
+                    "aspect_ratio": "2:1",
+                    "fit_mode": "cover"
+                }
+            },
+            "vertical-cover": {
+                "title": "Standing up: fit_mode: cover (crops to the middle)",
+                "config": {
+                    "entity": "camera.documentation_round_vertical",
+                    "aspect_ratio": "2:1",
+                    "fit_mode": "cover"
+                }
+            },
+            "landscape-fill": {
+                "title": "Lying flat: fit_mode: fill (stretches)",
+                "config": {
+                    "entity": "camera.documentation_round_landscape",
+                    "aspect_ratio": "2:1",
+                    "fit_mode": "fill"
+                }
+            },
+            "vertical-fill": {
+                "title": "Standing up: fit_mode: fill (stretches)",
+                "config": {
+                    "entity": "camera.documentation_round_vertical",
+                    "aspect_ratio": "2:1",
+                    "fit_mode": "fill"
+                }
+            },
+            "square": {
+                "title": "The Square camera (square pixels)",
+                "config": {
+                    "entity": "camera.documentation_square_landscape"
+                }
+            }
+        },
+        "editors": {}
     }
 }

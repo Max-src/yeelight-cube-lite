@@ -134,7 +134,7 @@ class YcWheel extends LitElement {
   render() {
     const geometry = this.geometry;
     if (!geometry) return nothing;
-    const offset = geometry.baseOffset + this.center * geometry.step;
+    const offset = geometry.offsetFor(this.center);
     // In "sides", the left arrow goes up the list and the right one down.
     const navs = geometry.navPosition === "sides" ? ["up", "down"] : ["down", "up"];
     const nav = (className, direction, title, symbol) => html`<button

@@ -14,6 +14,7 @@ from homeassistant.exceptions import Unauthorized, UnknownUser  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .command_errors import note_command_result
+from .pixel_art_storage import PIXEL_ART_ORIENTATIONS
 from .errors import invalid
 from .cube_matrix import is_connection_error
 from .name_utils import normalize_display_name
@@ -81,10 +82,12 @@ FAVOURITE_SCHEMA = vol.Schema(
 FAVOURITE_LIST_SCHEMA = vol.All(
     [FAVOURITE_SCHEMA], vol.Length(max=MAX_FAVOURITES)
 )
+PIXEL_ART_ORIENTATION_SCHEMA = vol.In(PIXEL_ART_ORIENTATIONS)
 PIXEL_ART_SCHEMA = vol.Schema(
     {
         vol.Optional("name"): OPTIONAL_NAME_SCHEMA,
         vol.Required("pixels"): PIXEL_LIST_SCHEMA,
+        vol.Optional("orientation"): PIXEL_ART_ORIENTATION_SCHEMA,
     },
     extra=vol.REMOVE_EXTRA,
 )

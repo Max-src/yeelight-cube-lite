@@ -11,6 +11,8 @@ import { normalizeRecentColors } from "./draw_card_state.js";
 
 const STORAGE_KEYS = {
   MATRIX: "yeelight_cube_matrix",
+  MATRIX_VIEW: "yeelight_cube_matrix_view",
+  ART_ORIENTATION: "yeelight_cube_pixel_art_orientation",
   RECENT_COLORS: "yeelight_cube_recent_colors",
   IMAGE_PALETTE: "yeelight_cube_image_palette",
   TOOL_VISIBILITY: LS_TOOL_VISIBILITY,
@@ -100,6 +102,32 @@ export const StorageUtils = {
 
   flushMatrix() {
     return flushMatrix();
+  },
+
+  // The drawing area's view: true vertical, false landscape, null never
+  // chosen (it then follows the lamp's orientation).
+  loadDrawingView() {
+    return StorageManager.load(STORAGE_KEYS.MATRIX_VIEW, null, (data) =>
+      typeof data === "boolean",
+    );
+  },
+
+  saveDrawingView(vertical) {
+    return StorageManager.save(STORAGE_KEYS.MATRIX_VIEW, !!vertical);
+  },
+
+  // The orientation picked in the pixel-art gallery's filter, kept while the
+  // card's default (pixel_art_orientation) is the one it was picked under:
+  // a new default in the editor shows at once. null: none picked.
+  loadArtOrientation(byDefault) {
+    const saved = StorageManager.load(STORAGE_KEYS.ART_ORIENTATION, null, (data) =>
+      typeof data?.value === "string",
+    );
+    return saved && saved.byDefault === byDefault ? saved.value : null;
+  },
+
+  saveArtOrientation(value, byDefault) {
+    return StorageManager.save(STORAGE_KEYS.ART_ORIENTATION, { value, byDefault });
   },
 
   // Recent colors storage (array of hex strings)

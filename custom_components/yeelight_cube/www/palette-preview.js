@@ -7,7 +7,7 @@
  * the gallery's Size in every layout. Cards showing these previews define
  * yc-swatches and include palettePreviewStyles.
  */
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+import { rgbToCss } from "./color-utils.js";
 import { toHex } from "./swatch-utils.js";
 
 /** The palette's colors blended left to right, as a CSS background. */

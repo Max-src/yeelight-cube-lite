@@ -5,7 +5,7 @@
 // card in gradient-preview-store.js) or their chip swatches. Mixed into
 // YeelightCubeGradientCard.
 import { gradientPreviewStore } from "./gradient-preview-store.js";
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+import { rgbToCss } from "./color-utils.js";
 import { PREVIEW_SELECTOR_STYLES } from "./selector-shared-styles.js";
 import { html } from "./lib/lit-all.js";
 import "./collection-gallery.js";
@@ -247,7 +247,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
     };
 
     // RGB arrays are converted with the hardened shared rgbToCss
-    // (./yeelight-cube-dotmatrix.js), which clamps every channel.
+    // (color-utils.js), which clamps every channel.
 
     // Create deterministic "random" based on colors array to avoid constant changes
     const colorHash = colors.map((c) => c.join(",")).join("|");

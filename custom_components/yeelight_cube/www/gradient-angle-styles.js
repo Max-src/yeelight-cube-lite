@@ -4,8 +4,8 @@
 // (config, colors, size) and the control's shared helpers (_perimeterPoint,
 // value templates, snap ticks).
 import { html, unsafeHTML, nothing, svg, unsafeSVG } from "./lib/lit-all.js";
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
-import { previewLength } from "./preview-appearance.js";
+import { rgbToCss } from "./color-utils.js";
+import { matrixTemplate } from "./gallery-layouts.js";
 import {
   resolveCapsuleTheme,
   resolveCapsuleThickness,
@@ -174,62 +174,27 @@ export const AngleStylesMixin = (Base) => class extends Base {
   _angleMatrix(visualAngle, isHeaderMode) {
     const mpColors = this._getCurrentTextColors();
     const baseMpSz = this._getRotarySize();
-    const mpRows = 5;
-    const mpCols = 20;
-
-    // Read matrix rotary config (independent from gallery settings)
-    const mpBgColor = this.config.matrix_rotary_bg_color || "black";
-    const mpPixelStyle = this.config.matrix_rotary_pixel_style || "square";
-    // The resolved appearance (preview-appearance.js; older settings
-    // included).
-    const mpSpacingMode = this.config.matrix_rotary_spacing_mode;
-    const mpPixelGap = mpSpacingMode === "normal" ? 3 : 0;
-    const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
-    const mpMatrixBoxShadow = this.config.matrix_rotary_box_shadow === true;
-    const mpPixelBoxShadow =
-      mpSpacingMode === "subtle" || mpSpacingMode === "normal";
-    const mpBorderRadius =
-      mpPixelStyle === "circle"
-        ? "50%"
-        : mpPixelStyle === "rounded"
-          ? "20%"
-          : "0";
-    const mpPixelShadowStyle = mpPixelBoxShadow
-      ? `box-shadow: 0 0 ${previewLength(2)} #0008;`
-      : "";
-    const mpMatrixShadowStyle = mpMatrixBoxShadow
-      ? `box-shadow: 0 ${previewLength(2)} ${previewLength(8)} rgba(0,0,0,0.5);`
-      : "";
-
-    // Text preview mode: use cached preview data from the backend
-    // The backend already returns correct data (all LEDs lit when panel mode is on)
-    // (except while dragging: the angle's gradient follows the pointer;
-    // and until that data arrives).
-    let mpPixelDivs =
-      this.config.matrix_rotary_text_preview === true && !this._gate.held("angle-drag")
-        ? this._renderMatrixTextPreviewPixels(
-            mpRows,
-            mpCols,
-            mpIgnoreBlack,
-            mpBorderRadius,
-            mpPixelShadowStyle,
-          )
-        : null;
-    if (!mpPixelDivs) {
-      // Pure angle gradient computation
-      mpPixelDivs = this._angleGradientPixelColors(
-        mpColors,
-        visualAngle,
-        mpRows,
-        mpCols,
-      ).map(
-        ([r, g, b]) => {
-          const isBlack = r <= 5 && g <= 5 && b <= 5;
-          const shouldIgnore = mpIgnoreBlack && isBlack;
-          return html`<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : rgbToCss([r, g, b])};border-radius:${mpBorderRadius};aspect-ratio:1;${mpPixelShadowStyle}"></div>`;
-        },
-      );
-    }
+    // The text the lamp shows (option), else the gradient at the angle
+    // (always while the angle is dragged): 100 colors, top row first.
+    const colors =
+      (this.config.matrix_rotary_text_preview === true &&
+        !this._gate.held("angle-drag") &&
+        this._matrixTextPreviewColors()) ||
+      this._angleGradientPixelColors(mpColors, visualAngle, 5, 20);
+    // Its own appearance (matrix_rotary_*: the resolved appearance,
+    // preview-appearance.js), drawn as every preview (gallery-layouts.js
+    // matrixTemplate, matrix-frame.js).
+    const spacing = this.config.matrix_rotary_spacing_mode;
+    const preview = matrixTemplate(colors, {
+      forceAspectRatio: true,
+      bgColor: this.config.matrix_rotary_bg_color || "black",
+      pixelStyle: this.config.matrix_rotary_pixel_style || "square",
+      pixelGap: spacing === "normal" ? 3 : 0,
+      radius: 6,
+      pixelBoxShadow: spacing === "subtle" || spacing === "normal",
+      matrixBoxShadow: this.config.matrix_rotary_box_shadow === true,
+      ignoreBlackPixels: this.config.matrix_rotary_ignore_black === true,
+    });
 
     // Calculate header mode dimensions to match rectangle sizing
     const mpHeaderWidth = isHeaderMode
@@ -238,16 +203,7 @@ export const AngleStylesMixin = (Base) => class extends Base {
 
     return html`
       <div class="matrix-preview-container" id="angle-preview">
-        <div class="matrix-preview-frame" style="width:${isHeaderMode ? `${mpHeaderWidth}px` : `${baseMpSz}%`};">
-        <div class="matrix-preview-grid" style="
-          grid-template-columns:repeat(${mpCols}, 1fr);
-          gap:${previewLength(mpPixelGap)};
-          background:${mpBgColor};
-          padding:${previewLength(mpPixelGap * 2)};
-          border-radius:${previewLength(6)};
-          ${mpMatrixShadowStyle}
-        ">${mpPixelDivs}</div>
-        </div>
+        <div class="matrix-preview-frame" style="width:${isHeaderMode ? `${mpHeaderWidth}px` : `${baseMpSz}%`};">${preview}</div>
         ${this._htmlAngleValueTemplate("matrix-angle-value", visualAngle)}
       </div>
     `;

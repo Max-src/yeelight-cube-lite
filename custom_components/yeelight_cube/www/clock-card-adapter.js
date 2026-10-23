@@ -14,7 +14,8 @@ import {
   sharedRotationInterval,
   saveSharedRotationInterval,
 } from "./shared-lamp-settings.js";
-import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
+import { renderClockFrame } from "./clock-preview-utils.js";
+import { firmwareLampFrame, viewerFrame } from "./matrix-view.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
 import { itemLabel, sortGalleryItems } from "./card-config.js";
 
@@ -142,8 +143,9 @@ export function createClockCardAdapter(card) {
         colorMode != null
           ? card._previewAttrsFor(style, colorMode, color)
           : card._previewAttrs(style);
-      return flipMatrixVertical(
-        renderClockFrame(attrs, fontMap, metrics, phase),
+      return viewerFrame(
+        firmwareLampFrame(renderClockFrame(attrs, fontMap, metrics, phase), card._attrs()),
+        card._previewOrientation(),
       );
     },
   };

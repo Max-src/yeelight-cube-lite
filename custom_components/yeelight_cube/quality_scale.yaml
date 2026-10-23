@@ -132,7 +132,10 @@ rules:
   diagnostics: done
   discovery:
     status: done
-    comment: Zeroconf (manifest.json) and Yeelight's own discovery (discovery.py).
+    comment: >-
+      Zeroconf (manifest.json) and Yeelight's own discovery (discovery.py); a
+      Cube Lite only in Home Assistant's Matter integration is offered too
+      (matter_discovery.py, config_flow.async_step_integration_discovery).
   discovery-update-info:
     status: done
     comment: A lamp discovered at a new IP updates its entry (config_flow.async_step_discovery).

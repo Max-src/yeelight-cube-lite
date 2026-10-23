@@ -1,6 +1,7 @@
 import { resolvePreviewAppearance } from "./preview-appearance.js";
 
 import { escapeHtml } from "./html-escape-utils.js";
+import { deviceOrientation } from "./matrix-view.js";
 import "./mode-controls-ui.js";
 import {
   ModeControlsController,
@@ -379,8 +380,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const mode = stateObj.attributes.content_mode;
     const isNativeAnimating = preview && on && mode === "Native Effect";
     const isClockAnimating = preview && on && mode === "Clock";
-    this._lastPreviewOrientation =
-      stateObj.attributes.device_orientation || "right";
+    this._lastPreviewOrientation = deviceOrientation(stateObj.attributes);
     if (preview && !isNativeAnimating && !isClockAnimating)
       this._paintStaticPreview(stateObj);
     this._syncActions();
@@ -405,9 +405,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     if (dots.length === gridColors.length)
       this._paintDots(
         gridColors,
-        this._lastPreviewOrientation ||
-          stateObj.attributes.device_orientation ||
-          "right",
+        this._lastPreviewOrientation || deviceOrientation(stateObj.attributes),
         dots,
       );
   }
@@ -415,20 +413,18 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   // HTML-string rendering of the same preview with its colors inline, for
   // callers that embed a static snapshot (e.g. the appearance regression tests).
   _generateMatrixHtml(gridColors, stateObj) {
-    const { layout, alignClass, outerStyle, gridStyle } =
+    const { layout, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);
-    const pixels = Array.from({ length: layout.rows * layout.cols })
-      .map((_, idx) => {
-        const row = Math.floor(idx / layout.cols);
-        const col = idx % layout.cols;
-        const color = gridColors[layout.indexFn(row, col)] || "#000000";
-        const { isEmpty, displayColor } = this._dotAppearance(color);
+    const pixels = layout
+      .display(gridColors)
+      .map((color) => {
+        const { isEmpty, displayColor } = this._dotAppearance(color || "#000000");
         return `<div class="lamp-dot${
           isEmpty ? " lamp-dot-empty" : ""
         }" style="background: ${escapeHtml(displayColor)};"></div>`;
       })
       .join("");
-    return `<div class="${alignClass}" style="${escapeHtml(outerStyle)}"><div class="lamp-preview-css" style="${escapeHtml(gridStyle)}">${pixels}</div></div>`;
+    return `<div style="${escapeHtml(outerStyle)}"><div class="lamp-preview-css" style="${escapeHtml(gridStyle)}">${pixels}</div></div>`;
   }
 
   // The shared 4-way device orientation control (right / down / left / up):

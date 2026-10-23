@@ -33,7 +33,7 @@ function stopAnimationLoops(root) {
 const COLLECTION_CARDS = ["palette", "draw"];
 // Cards captured as rendered, like the collection cards (no animated
 // previews or lamp sliders to check).
-const STATIC_CARDS = ["lamp-preview", "gradient", "color-list-editor", ...COLLECTION_CARDS];
+const STATIC_CARDS = ["lamp-preview", "gradient", "color-list-editor", "camera", ...COLLECTION_CARDS];
 
 // Synthetic collections for them (sensors the fixture provides).
 const DOC_PALETTES = [
@@ -109,6 +109,7 @@ window.cardDocs = {
       seed = (seed * 16807) % 2147483647;
       return (seed - 1) / 2147483646;
     };
+    if (kind === "camera") return this.renderCamera(options);
     const clock = kind === "clock";
     const card = document.createElement(`yeelight-cube-${kind}-card`);
     const config = {
@@ -296,6 +297,62 @@ window.cardDocs = {
     this.kind = kind;
   },
 
+  // A Matrix Preview camera in Home Assistant's own picture card, configured
+  // as the scenario says (fit_mode, aspect_ratio...). The camera entity is
+  // synthetic; its image is the integration's camera code
+  // (card-docs-camera.py, served by card-docs.cjs for /api/camera_proxy/).
+  async renderCamera(options) {
+    const host = document.querySelector("home-assistant");
+    const helpers = await window.loadCardHelpers();
+    const config = {
+      type: "picture-entity",
+      camera_view: "auto",
+      show_name: false,
+      show_state: false,
+      ...options.config,
+    };
+    const card = helpers.createCardElement(config);
+    card.hass = {
+      ...host.hass,
+      states: {
+        ...host.hass.states,
+        [config.entity]: {
+          entity_id: config.entity,
+          state: "idle",
+          last_changed: "2026-01-15T10:00:00Z",
+          last_updated: "2026-01-15T10:00:00Z",
+          context: { id: "documentation" },
+          attributes: {
+            friendly_name: "Demo lamp Matrix Preview (Round)",
+            access_token: "documentation",
+            entity_picture: `/api/camera_proxy/${config.entity}?token=documentation`,
+            supported_features: 0,
+          },
+        },
+      },
+    };
+    this.container.append(card);
+    await card.updateComplete;
+    this.card = card;
+    this.kind = "camera";
+    this.captureSelector = "#card-docs";
+  },
+
+  // Whether the camera's image is drawn (picture card: hui-image, in shadow
+  // roots). The card signs the image URL over the websocket, then loads it:
+  // card-docs.cjs waits for it in real time (waitForCamera).
+  cameraReady() {
+    if (this.kind !== "camera" || this.options.section) return true;
+    const roots = [this.card.shadowRoot || this.card];
+    for (const root of roots)
+      for (const element of root.querySelectorAll("*")) {
+        if (element.localName === "img" && element.src)
+          return element.complete && element.naturalWidth > 0;
+        if (element.shadowRoot) roots.push(element.shadowRoot);
+      }
+    return false;
+  },
+
   // ha-icon fetches its SVG path asynchronously, after its own update has
   // completed, so updateComplete does not cover it. Report whether every icon
   // in the card (including nested shadow roots) has drawn its path.
@@ -325,6 +382,8 @@ window.cardDocs = {
     const plain = this.options.section || STATIC_CARDS.includes(this.kind);
     if (plain) {
       await card.updateComplete;
+      // A camera's picture card: nothing more to check (cameraReady).
+      if (this.kind === "camera" && !this.options.section) return;
     } else if (card._paintPreview) {
       card._phaseAccum = 1.2;
       card._lastPhaseTs = Date.now();

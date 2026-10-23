@@ -15,12 +15,12 @@ from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers.device_registry import DeviceEntry  # type: ignore
 
-from .const import CONF_DEVICE_ID, CONF_IP, DOMAIN
+from .const import CONF_DEVICE_ID, CONF_IP, CONF_MATTER_MAC, DOMAIN
 from .runtime_data import lamp_of
 
 # Keys whose values identify the lamp or what it displays, in the entry's
 # data and options and the entity's attributes.
-TO_REDACT = {CONF_IP, CONF_DEVICE_ID, "ip_address", "custom_text"}
+TO_REDACT = {CONF_IP, CONF_DEVICE_ID, CONF_MATTER_MAC, "ip_address", "custom_text"}
 # The same in the lamp's capabilities (its own answer): its id and the name
 # set in the Yeelight app.
 CAPABILITIES_TO_REDACT = {"id", "name"}

@@ -19,6 +19,7 @@ import {
   effectSupportsColorMode,
 } from "./native-effect-preview.js";
 import { clockEffectDirection } from "./effect-orientation.js";
+import { flipMatrixVertical } from "./matrix-view.js";
 
 // Firmware color-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
 // Selecting one forces the outer command id so compatible effects re-map their
@@ -58,15 +59,6 @@ export const CLOCK_COLOR_MODES = [
 // ║  this convention mismatch is almost always the cause.                     ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-/**
- * Flip a row-major pixel array vertically (bottom-origin ⇄ top-origin).
- * Use this to convert renderClockFrame()/renderNativeEffect() output (row 0 =
- * physical bottom) into the top-to-bottom order a CSS-grid renderer expects.
- * @param {Array} pixels - flat rows*cols array of [r,g,b] (or any per-cell value)
- * @param {number} cols
- * @param {number} rows
- * @returns {Array} a new array with the row order reversed
- */
 const NO_FONT = Object.freeze({ fontMap: null, metrics: null });
 
 /**
@@ -116,15 +108,8 @@ export function lookupNativeClockFont(states, cache) {
   };
 }
 
-export function flipMatrixVertical(pixels, cols = 20, rows = 5) {
-  const out = new Array(pixels.length);
-  for (let r = 0; r < rows; r++) {
-    const src = (rows - 1 - r) * cols;
-    const dst = r * cols;
-    for (let c = 0; c < cols; c++) out[dst + c] = pixels[src + c];
-  }
-  return out;
-}
+// Bottom-origin <-> top-origin (matrix-view.js, shared by every preview).
+export { flipMatrixVertical };
 
 // Clock styles whose mixer is a native effect: the effect is rendered across
 // the whole panel and masked to the lit glyph pixels (mirrors const.py).

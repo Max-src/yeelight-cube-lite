@@ -19,7 +19,7 @@ from homeassistant.helpers.storage import Store  # type: ignore
 from .const import DOMAIN
 from .errors import failed
 from .name_utils import normalize_display_name
-from .pixel_art_storage import group_pixels, is_grouped
+from .pixel_art_storage import is_grouped, stored_pixel_art
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def migrate_pixel_arts(raw_pixel_arts: list) -> tuple[list, bool]:
             else:
                 # Flat or legacy "positions" form: drop black pixels and
                 # duplicate positions, group the rest by color.
-                art = {"name": safe_name, "pixels": group_pixels(art["pixels"])}
+                art = stored_pixel_art(safe_name, art["pixels"], art.get("orientation"))
                 changed = True
         migrated.append(art)
     return migrated, changed

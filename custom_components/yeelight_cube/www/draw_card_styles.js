@@ -77,14 +77,10 @@ export const drawCardStyles = css`
     align-items: center;
     margin: 0 auto;
   }
+  /* The drawing grid: its frame (columns, gap, padding, corners, size) is
+     inline, every preview's (matrix-frame.js). */
   .matrix {
     display: grid;
-    grid-template-columns: repeat(20, 1fr);
-    grid-template-rows: repeat(5, 1fr);
-    gap: 4px;
-    background: #111;
-    border-radius: 8px;
-    padding: 8px;
     user-select: none;
     touch-action: none;
     width: 100%;

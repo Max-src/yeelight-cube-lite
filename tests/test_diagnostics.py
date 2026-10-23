@@ -37,7 +37,7 @@ def _load_diagnostics() -> dict:
     namespace = {
         "Any": object, "REDACTED": REDACTED, "async_redact_data": async_redact_data,
         "lamp_of": lambda entry: getattr(getattr(entry, "runtime_data", None), "light", None),
-        **{name: CONSTANTS[name] for name in ("CONF_IP", "CONF_DEVICE_ID", "DOMAIN")},
+        **{name: CONSTANTS[name] for name in ("CONF_IP", "CONF_DEVICE_ID", "CONF_MATTER_MAC", "DOMAIN")},
     }
     exec(compile(ast.Module(body=body, type_ignores=[]), "<diagnostics>", "exec",
                  flags=__import__("__future__").annotations.compiler_flag), namespace)

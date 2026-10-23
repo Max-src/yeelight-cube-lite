@@ -26,12 +26,13 @@ NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
 # its own: the activations and the helpers they call. live_effect_changes is a
 # module function; the others are methods (NATIVE_ACTIVATION_METHODS).
 NATIVE_ACTIVATION = frozenset({
+    "mount_effect_direction",
     "_activate_native_effect", "_native_effect_params",
     "_activate_native_clock", "_native_clock_params",
     "_send_native", "_update_running_effect", "_native_renderer_shown",
     "_native_brightness_due", "live_effect_changes",
 })
-NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {"live_effect_changes"}
+NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {"live_effect_changes", "mount_effect_direction"}
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
 # Shared module-level names every loaded helper may reference.
 def import_pure_module(name: str) -> types.ModuleType:
@@ -2479,14 +2480,13 @@ class NativeFeatureTests(unittest.TestCase):
         colors = _function_source(CAMERA_SOURCE, "_get_matrix_colors")
         preview = _function_source(CAMERA_SOURCE, "_get_music_flow_preview")
         animated = _function_source(CAMERA_SOURCE, "_is_native_preview_mode")
-        generated = _function_source(CAMERA_SOURCE, "_uses_generated_preview")
+        view = _function_source(CAMERA_SOURCE, "_view_frame")
         self.assertIn('"_music_flow_enabled"', colors)
         self.assertIn("self._get_music_flow_preview()", colors)
         self.assertIn("render_music_flow_effect(", preview)
-        self.assertIn('("left", "up")', preview)
         self.assertNotIn('"_music_flow_enabled"', animated)
-        # One definition of "the firmware draws the matrix", on the light.
-        self.assertIn('"firmware_draws_matrix"', generated)
+        # Every mode's frame is turned for the mount once, the cards' rule.
+        self.assertIn("viewer_frame(self._get_matrix_colors(), orientation)", view)
 
     def test_matrix_colors_publish_what_the_lamp_shows(self):
         """matrix_colors never republishes a stale plugin frame: black when

@@ -6,7 +6,25 @@ cards work with the flat form ``[{"position": int, "color": [R, G, B]}, ...]``.
 
 Older storage used the flat form, or a grouped form keyed ``"positions"``
 (plural); both are still accepted wherever pixels are read.
+
+A pixel art may carry an ``orientation`` (PIXEL_ART_ORIENTATIONS): vertical
+ones are drawn for a lamp standing on its end (the cards show them so);
+absent means horizontal.
 """
+
+PIXEL_ART_HORIZONTAL = "horizontal"
+PIXEL_ART_VERTICAL = "vertical"
+PIXEL_ART_ORIENTATIONS = (PIXEL_ART_HORIZONTAL, PIXEL_ART_VERTICAL)
+
+
+def stored_pixel_art(name: str, pixels: list, orientation: str | None = None) -> dict:
+    """A pixel art as the collection stores it: its name, its pixels grouped
+    by color (group_pixels) and its orientation (a vertical one only, so
+    every older horizontal art reads the same)."""
+    art = {"name": name, "pixels": group_pixels(pixels)}
+    if orientation and orientation != PIXEL_ART_HORIZONTAL:
+        art["orientation"] = orientation
+    return art
 
 
 def group_pixels(pixels: list) -> list:

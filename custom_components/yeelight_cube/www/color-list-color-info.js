@@ -2,8 +2,7 @@
 // conversion, the color labels (the shared swatches' names) and contrasting
 // text.
 // Mixed into YeelightCubeColorListEditorCard.
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
-import { contrastInk, hexToRgb, rgbToHex } from "./color-utils.js";
+import { contrastInk, hexToRgb, rgbToCss, rgbToHex } from "./color-utils.js";
 import { closestColorName, colorLabel } from "./swatch-utils.js";
 
 export const ColorInfoMixin = (Base) => class extends Base {

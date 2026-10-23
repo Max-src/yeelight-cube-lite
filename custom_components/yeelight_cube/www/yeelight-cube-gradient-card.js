@@ -65,8 +65,9 @@ export const GRADIENT_MODES = [
 // served the exact same purpose, so they are now ONE selector with a single
 // `style_selector_style` config key covering every presentation:
 //   Text styles:    "filled" | "dropdown" | "chips"
-//   Preview styles: "preview-list" | "preview-grid" | "preview-strip" |
-//                   "preview-carousel" | "preview-wheel"
+//   Preview styles: "preview-list" | "preview-grid" | "preview-mosaic" |
+//                   "preview-strip" | "preview-carousel" | "preview-wheel" |
+//                   "preview-album"
 // Preview styles render live mini-matrix previews of every mode (click to
 // apply); text styles are lightweight and skip ALL preview backend calls.
 // Two appearance axes apply across EVERY style (shared design language with

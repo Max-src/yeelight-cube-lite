@@ -820,6 +820,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Unload platforms (removes entities tied to this entry, including sensors
     # if this entry was the one that created them).
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera"])
+
+    # A local development Matter server's connection, shared by the lamps
+    # (matter_commands.py): closed with the last one.
+    if not any(
+        other.entry_id != entry.entry_id
+        for other in hass.config_entries.async_loaded_entries(DOMAIN)
+    ):
+        from .matter_commands import async_close_dev_connections  # noqa: E402
+        await async_close_dev_connections(hass)
     
     # Home Assistant drops entry.runtime_data once the entry is unloaded.
 

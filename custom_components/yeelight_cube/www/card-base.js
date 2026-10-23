@@ -75,7 +75,7 @@ export function valueKey(value) {
  * layout: the list and grid stack the most, the carousel the least.
  */
 export function galleryCardSize(style) {
-  if (style === "preview-list" || style === "preview-grid") return 8;
+  if (["preview-list", "preview-grid", "preview-mosaic"].includes(style)) return 8;
   if (style === "preview-wheel") return 5;
   return 4;
 }

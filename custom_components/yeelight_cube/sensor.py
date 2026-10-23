@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (  # type: ignore
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, UnitOfPower  # type: ignore
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower  # type: ignore
 from homeassistant.core import callback  # type: ignore
 from homeassistant.helpers.event import async_track_time_interval  # type: ignore
 from homeassistant.helpers.entity import Entity # type: ignore
@@ -266,6 +266,41 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
         super().async_entity_id_changed(old_entity_id)
 
 
+class YeelightCubeMatterLinkSensor(CubeDeviceEntity, SensorEntity):
+    """Whether the lamp is linked to Home Assistant's Matter integration
+    (light_matter.py, matter_link.py): not linked, linked (read only), or
+    settings available (a Matter server also delivers Yeelight commands).
+    The link is made on its own, whichever was set up first."""
+
+    _attr_should_poll = False
+    _attr_translation_key = "matter_link"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["not_linked", "linked", "settings_available"]
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, light_entity):
+        self._light_entity = light_entity
+        self._attr_unique_id = f"{light_entity._attr_unique_id}_matter_link"
+
+    @property
+    def native_value(self):
+        return self._light_entity.matter_link_state
+
+    @property
+    def extra_state_attributes(self):
+        return self._light_entity.matter_link_details
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._register_on_light("_matter_link_sensor")
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
+
 class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
     """Estimated energy used by the lamp, in kWh: the Estimated power sensor
     integrated over time (lamp_power.EnergyMeter). Add it to Home Assistant's
@@ -380,6 +415,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             [
                 YeelightCubePowerSensor(light_entity),
                 YeelightCubeEnergySensor(light_entity),
+                YeelightCubeMatterLinkSensor(light_entity),
             ]
         )
     _LOGGER.debug("Created IP address sensor for entry %s", entry.entry_id)

@@ -149,7 +149,9 @@ module.exports = async (t) => {
     const tile = appearancePreview.card.shadowRoot.querySelector(
       "[data-clock-preview]",
     );
-    return tile?._cells?.[0]?.style.borderRadius === "50%";
+    return tile?._cells?.[0]?.isConnected === true &&
+        // The cells' shape is shared CSS (renderMatrixPreview): as rendered.
+        getComputedStyle(appearancePreview.card.shadowRoot.querySelector("[data-clock-preview]")._cells[0]).borderRadius === "50%";
   });
   const renderedShapes = await appearancePage.evaluate(() => {
     const card = appearancePreview.card;
@@ -231,7 +233,9 @@ module.exports = async (t) => {
   await appearancePage.waitForFunction(
     () =>
       appearancePreview.card.shadowRoot.querySelector("[data-clock-preview]")
-        ?._cells?.[0]?.style.borderRadius === "50%",
+        ?._cells?.[0]?.isConnected === true &&
+        // The cells' shape is shared CSS (renderMatrixPreview): as rendered.
+        getComputedStyle(appearancePreview.card.shadowRoot.querySelector("[data-clock-preview]")._cells[0]).borderRadius === "50%",
   );
   const shapeNotice = sharedAppearance.locator(
     '[data-field="pixels"] .appearance-inheritance',
@@ -249,7 +253,9 @@ module.exports = async (t) => {
   await appearancePage.waitForFunction(
     () =>
       appearancePreview.card.shadowRoot.querySelector("[data-clock-preview]")
-        ?._cells?.[0]?.style.borderRadius === "0px",
+        ?._cells?.[0]?.isConnected === true &&
+        // The cells' shape is shared CSS (renderMatrixPreview): as rendered.
+        getComputedStyle(appearancePreview.card.shadowRoot.querySelector("[data-clock-preview]")._cells[0]).borderRadius === "0px",
   );
   assert.deepEqual(
     await appearancePage.evaluate(
@@ -465,7 +471,7 @@ module.exports = async (t) => {
             size,
             width,
             matrices: [
-              measure(tile.firstElementChild, "lamp"),
+              measure(tile.querySelector(".gallery-matrix-preview"), "lamp"),
               measure(
                 card.shadowRoot.querySelector(
                   ".gc-preview-shell .gallery-matrix-preview, .original-gallery .gallery-matrix-preview",
@@ -759,8 +765,8 @@ module.exports = async (t) => {
         }
         const host = document.createElement("appearance-render-fixture");
         // The card's own stylesheet where its markup relies on it (Draw;
-        // Native's matrix: the shared matrixPreviewStyles).
-        host.cardStyles = ["draw", "native"].includes(profile)
+        // Native's and Gradient's matrix: the shared matrixPreviewStyles).
+        host.cardStyles = ["draw", "native", "gradient"].includes(profile)
           ? [card.constructor.styles].flat().map((sheet) => sheet.cssText).join(" ")
           : "";
         host.style.display = "block";
@@ -786,7 +792,6 @@ module.exports = async (t) => {
               card.config,
               appearance.spacing === "normal" ? 3 : 0,
               appearance.background,
-              "",
               "65%",
               appearance.pixels,
             );
@@ -795,7 +800,7 @@ module.exports = async (t) => {
           await host.updateComplete;
           await frame();
           const grid = root.querySelector(
-            ".gallery-matrix-preview, .lamp-preview-css, .matrix-preview-grid, .matrix",
+            ".gallery-matrix-preview, .lamp-preview-css, .matrix",
           );
           const cell = grid?.children[1];
           check(cell, `${profile}: matrix cells`);
@@ -832,6 +837,7 @@ module.exports = async (t) => {
           for (const style of [
             "preview-grid",
             "preview-list",
+            "preview-mosaic",
             "preview-strip",
             "preview-carousel",
             "preview-wheel",

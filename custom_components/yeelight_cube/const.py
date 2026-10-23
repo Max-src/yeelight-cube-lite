@@ -415,6 +415,14 @@ ORIENTATION_FLIPPED = "flipped"
 #   - clock: no reorientation available (firmware-fixed)
 DEVICE_ORIENTATIONS = ("right", "down", "left", "up")
 DEFAULT_DEVICE_ORIENTATION = "right"
+# The lamp stands on one end: previews may show it vertical (matrix_view.py).
+VERTICAL_DEVICE_ORIENTATIONS = ("down", "up")
+# Config entry option: the preview cameras draw a lamp standing on one end
+# vertical (off: always landscape). The "Camera Follows Orientation" switch.
+CONF_CAMERA_FOLLOWS_ORIENTATION = "camera_follows_orientation"
+# Config entry data: the MAC address of the lamp's Matter node, remembered once
+# linked so the link survives an IP change (matter_link.py).
+CONF_MATTER_MAC = "matter_mac"
 # Physical mount -> matrix/text/pixel flip. right/down keep content upright;
 # left/up are 180 deg from them (verified against hardware for custom pixel art).
 DEVICE_ORIENTATION_TO_FLIP = {

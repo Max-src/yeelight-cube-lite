@@ -119,11 +119,21 @@
             },
             "estimated_energy": {
                 "default": "mdi:lightning-bolt-outline"
+            },
+            "matter_link": {
+                "default": "mdi:link-variant",
+                "state": {
+                    "not_linked": "mdi:link-variant-off",
+                    "settings_available": "mdi:link-lock"
+                }
             }
         },
         "switch": {
             "auto_turn_on": {
                 "default": "mdi:lightbulb-auto"
+            },
+            "camera_follows_orientation": {
+                "default": "mdi:phone-rotate-portrait"
             },
             "extended_effects": {
                 "default": "mdi:flask-outline"

@@ -4,7 +4,8 @@
   "after_dependencies": [
     "frontend",
     "http",
-    "lovelace"
+    "lovelace",
+    "matter"
   ],
   "codeowners": [
     "@Max-src"

@@ -8,11 +8,23 @@ import {
 } from "./matrix-animator.js";
 import {
   CLOCK_MIXER_EFFECT_SPEED,
-  flipMatrixVertical,
   renderClockFrame,
 } from "./clock-preview-utils.js";
+import {
+  MATRIX_SIZE,
+  firmwareLampFrame,
+  isVerticalMount,
+  viewerFrame,
+} from "./matrix-view.js";
+import {
+  matrixPixelShadow,
+  matrixPreviewCells,
+  renderMatrixPreview,
+} from "./gallery-display-utils.js";
+
+// The blank frame a current-style preview is built with (then painted).
+const BLANK_FRAME = Array.from({ length: MATRIX_SIZE }, () => [0, 0, 0]);
 import { PreviewVisibility } from "./preview-visibility.js";
-import { previewLength } from "./preview-appearance.js";
 import { clockPresetKey } from "./clock-preset-utils.js";
 
 export const ClockPreviewMixin = (Base) => class extends Base {
@@ -137,53 +149,39 @@ export const ClockPreviewMixin = (Base) => class extends Base {
   // Card-owned tiles (current preview) use the Lamp Preview
   // appearance settings.
   _ensureGrid(el) {
+    // Standing up while the lamp does (the shared renderer's vertical view).
+    const vertical = isVerticalMount(this._previewOrientation());
     const appearanceSignature = JSON.stringify([
       this.config.lamp_pixel_style,
       this.config.lamp_matrix_background,
       this.config.lamp_spacing_mode,
       this.config.lamp_matrix_box_shadow,
       this.config.lamp_ignore_black_pixels,
+      vertical,
     ]);
     if (el._cells && el._appearanceSignature === appearanceSignature)
       return el._cells;
     el._appearanceSignature = appearanceSignature;
-    const cols = 20;
-    const rows = 5;
-    const pixelStyle = this.config.lamp_pixel_style || "rounded";
-    const radius =
-      pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
-    const bg = this._bgCss(this.config.lamp_matrix_background || "black");
     const spacing = this.config.lamp_spacing_mode || "normal";
     const gap = this._spacingGap(spacing);
-    const pad = Math.max(2, gap * 2);
-    // Shadow is state-dependent (ignored-black pixels get none) — stored on the
-    // element so _paintPreview keeps it in sync as pixels turn on/off.
-    el._pixelShadow = this._spacingShadow(spacing)
-      ? `0 0 ${previewLength(2)} #0008`
-      : "";
-    const matrixShadow =
-      this.config.lamp_matrix_box_shadow === true
-        ? `box-shadow:0 ${previewLength(2)} ${previewLength(8)} rgba(0,0,0,0.5);`
-        : "";
-    el._ignoreBlack = this._lampIgnoreBlack();
-    el.style.containerType = "inline-size";
-    el.innerHTML = "";
-    const grid = document.createElement("div");
-    grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},1fr);gap:${previewLength(gap)};background:${bg};padding:${previewLength(pad)};border-radius:${previewLength(4)};width:100%;box-sizing:border-box;${matrixShadow}`;
-    const emptyBg = el._ignoreBlack ? "transparent" : "#000";
-    // Empty cells: no shadow when ignore-black hides them (matches the shared
-    // renderMatrixPreview rule), shadow otherwise (visible black pixel).
-    const emptyShadow = el._ignoreBlack ? "" : el._pixelShadow;
-    const cells = [];
-    for (let i = 0; i < cols * rows; i++) {
-      const d = document.createElement("div");
-      d.style.cssText = `aspect-ratio:1/1;border-radius:${radius};background:${emptyBg};${emptyShadow ? `box-shadow:${emptyShadow};` : ""}`;
-      grid.appendChild(d);
-      cells.push(d);
-    }
-    el.appendChild(grid);
-    el._cells = cells;
-    return cells;
+    const options = {
+      forceAspectRatio: true,
+      vertical,
+      pixelStyle: this.config.lamp_pixel_style || "rounded",
+      bgColor: this._bgCss(this.config.lamp_matrix_background || "black"),
+      pixelGap: gap,
+      padding: Math.max(2, gap * 2),
+      pixelBoxShadow: this._spacingShadow(spacing),
+      matrixBoxShadow: this.config.lamp_matrix_box_shadow === true,
+      ignoreBlackPixels: this._lampIgnoreBlack(),
+    };
+    // The shared preview markup (blank), its cells painted in place by
+    // _paintPreview, which keeps the shadow in sync as pixels turn on/off.
+    el._ignoreBlack = options.ignoreBlackPixels;
+    el._pixelShadow = matrixPixelShadow(options);
+    el.innerHTML = renderMatrixPreview(BLANK_FRAME, options);
+    el._cells = matrixPreviewCells(el.querySelector(".gallery-matrix-preview"));
+    return el._cells;
   }
 
   _paintPreview(el, phase) {
@@ -194,39 +192,31 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       styleName = el.dataset.styleName;
       isCurrent = el.dataset.current === "1";
       cells = this._ensureGrid(el);
-    } else if (el.classList.contains("original-item")) {
-      // Original uses the same gallery_* appearance as Live Preview. The key
-      // is read from the escaped data-mode attribute, never from raw HTML.
-      styleName = el.dataset.mode;
-      cells = el._cells;
-      if (!cells) {
-        const matrix = el.querySelector(".gallery-matrix-preview");
-        if (!matrix || matrix.children.length !== 100) return;
-        cells = Array.from(matrix.children);
-        el._cells = cells;
-        el._ignoreBlack = this._galleryIgnoreBlack();
-        el._pixelShadow = this._spacingShadow(
-          this.config.gallery_spacing_mode || "normal",
-        )
-          ? `0 0 ${previewLength(2)} #0008`
-          : "";
-      }
     } else {
-      // Preview selector item: repaint using the gallery_* appearance.
+      // A gallery item (Original tile or preview layout), repainted with the
+      // gallery_* appearance. Its cells are read again when the gallery
+      // re-rendered it (a new grid, or turned for the lamp's orientation).
       styleName = el.dataset.mode;
-      cells = el._cells;
-      if (!cells) {
-        const matrix = el.querySelector(".gallery-matrix-preview");
-        if (!matrix || matrix.children.length !== 100) return;
-        cells = Array.from(matrix.children);
-        el._cells = cells;
+      // The grid found last time while it is still this tile's (a gallery
+      // re-render may replace it, or turn it for the lamp's orientation).
+      let matrix = el._cellsGrid;
+      if (!matrix?.isConnected || !el.contains(matrix))
+        matrix = el.querySelector(".gallery-matrix-preview");
+      if (!matrix || matrix.children.length !== 100) return;
+      const vertical = matrix.dataset.vertical === "true";
+      if (el._cellsGrid !== matrix || el._cellsVertical !== vertical) {
+        el._cellsGrid = matrix;
+        el._cellsVertical = vertical;
+        el._cells = matrixPreviewCells(matrix);
         el._ignoreBlack = this._galleryIgnoreBlack();
-        el._pixelShadow = this._spacingShadow(
-          this.config.gallery_spacing_mode || "normal",
-        )
-          ? `0 0 ${previewLength(2)} #0008`
-          : "";
+        el._pixelShadow = matrixPixelShadow({
+          vertical,
+          pixelBoxShadow: this._spacingShadow(
+            this.config.gallery_spacing_mode || "normal",
+          ),
+        });
       }
+      cells = el._cells;
     }
     const style =
       this._styleList().find((item) => clockPresetKey(item) === styleName) ||
@@ -243,10 +233,12 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
     const attrs = this._previewAttrs(style);
     const { fontMap, metrics } = this._getNativeClockFont();
-    // renderClockFrame is bottom-origin (row 0 = physical bottom); the CSS grid
-    // fills top→bottom, so flip vertically or the clock renders upside-down.
-    const frame = flipMatrixVertical(
-      renderClockFrame(attrs, fontMap, metrics, phase),
+    // renderClockFrame is bottom-origin (row 0 = physical bottom): shown as
+    // the viewer sees the lamp, top row first (matrix-view.js).
+    const frame = viewerFrame(
+      // As the lamp draws it: its direction setting may turn it (Matter).
+      firmwareLampFrame(renderClockFrame(attrs, fontMap, metrics, phase), this._attrs()),
+      this._previewOrientation(),
     );
     const brightnessScale = isCurrent
       ? this._lampSliders.previewScale(this._attrs())

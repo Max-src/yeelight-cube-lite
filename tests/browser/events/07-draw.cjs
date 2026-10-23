@@ -311,10 +311,175 @@ module.exports = async (t) => {
   assert.deepEqual(
     await drawButtons({ hidden_tools: ["eraser", "undo"], tools_order: ["pencil", "colorPicker"], hidden_actions: ["upload"], actions_order: ["apply", null, "clear"] }),
     {
-      tools: ["pencil", "colorPicker", "eyedropper", "areaFill", "fillAll"],
+      // A tool added since a config was saved shows at the end (Rotate).
+      tools: ["pencil", "colorPicker", "eyedropper", "areaFill", "fillAll", "rotate"],
       actions: ["apply", "spacer", "clear", "save"],
     },
     "draw: hidden_tools / hidden_actions and their order",
+  );
+  // Rotate: the drawing area stands up (5 columns, the matrix turned) and
+  // back; the choice is remembered in this browser.
+  assert.deepEqual(
+    await page.evaluate(async () => {
+      localStorage.setItem("yeelight_cube_matrix_view", "true");
+      await mount("yeelight-cube-draw-card", { entity: "light.a", show_pixelart_gallery: false });
+      const area = () => {
+        const grid = card.shadowRoot.querySelector(".matrix");
+        return [grid.dataset.vertical, getComputedStyle(grid).gridTemplateColumns.split(" ").length];
+      };
+      const before = area();
+      card.shadowRoot.querySelector('.tool-item[data-tool="rotate"] button').click();
+      await card.updateComplete;
+      const after = area();
+      const stored = localStorage.getItem("yeelight_cube_matrix_view");
+      localStorage.removeItem("yeelight_cube_matrix_view");
+      return { before, after, stored };
+    }),
+    { before: ["true", 5], after: ["false", 20], stored: "false" },
+    "draw: Rotate turns the drawing area",
+  );
+  // Vertical pixel arts in every packed layout (tile-grid.js): half a
+  // landscape tile's place, beside one when there is room, tiles never
+  // overlapping; the wheel's and album's vertical items get their own size.
+  const packed = await page.evaluate(async () => {
+    const previous = hass;
+    const art = (name, orientation) => ({
+      name, collection: "Nature", orientation, pixels: [{ position: 0, color: [255, 0, 0] }],
+    });
+    hass = {
+      ...hass,
+      connection: {},
+      callWS: async ({ type }) =>
+        type === "yeelight_cube/builtin_pixel_arts"
+          ? { pixel_arts: [art("Built-in: Vertical 01", "vertical"), art("Built-in: Horizontal 01", "horizontal")] }
+          : {},
+    };
+    const V = "builtin:Built-in: Vertical 01";
+    const H = "builtin:Built-in: Horizontal 01";
+    const show = async (style) => {
+      await mount("yeelight-cube-draw-card", {
+        entity: "light.a", pixelart_sensor: "sensor.pixel", style_selector_style: style,
+        pixel_art_show_vertical: true, show_matrix_section: false,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return card.shadowRoot.querySelector("yc-sections yc-collection-gallery");
+    };
+    const results = {};
+    for (const style of ["preview-list", "preview-grid", "preview-mosaic"]) {
+      const gallery = await show(style);
+      const tiles = [...gallery.querySelectorAll("yc-tile-grid > [data-mode]")];
+      const rect = (mode) => tiles.find((tile) => tile.dataset.mode === mode).getBoundingClientRect();
+      const boxes = tiles.map((tile) => tile.getBoundingClientRect());
+      const overlap = boxes.some((a, i) =>
+        boxes.some((b, j) => i < j && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1),
+      );
+      const preview = (mode) =>
+        tiles.find((tile) => tile.dataset.mode === mode).querySelector(".gallery-matrix-preview").getBoundingClientRect();
+      results[style] = {
+        order: tiles.map((tile) => tile.dataset.mode),
+        overlap,
+        verticalNarrower: rect(V).width < rect(H).width * 0.6,
+        samePixel: Math.abs(preview(V).width / 5 - preview(H).width / 20) < 1,
+      };
+      if (style === "preview-grid") results[style].besideLandscape = Math.abs(rect(V).top - rect(H).top) < 1;
+    }
+    let gallery = await show("preview-wheel");
+    const wheelHeight = (mode) => gallery.querySelector(`.wheel-item[data-mode="${mode}"]`).offsetHeight;
+    // Taller than a landscape item, within 3/4 of the wheel (300px).
+    results.wheel = wheelHeight(V) > wheelHeight(H) && wheelHeight(V) <= 225;
+    gallery = await show("preview-album");
+    const cardWidth = (mode) => gallery.querySelector(`.collection-album-entry[data-mode="${mode}"]`).closest(".collection-album-item").offsetWidth;
+    results.album = cardWidth(V) < cardWidth(H) * 0.7;
+    hass = previous;
+    return results;
+  });
+  const order = ["art:0", "art:1", "builtin:Built-in: Vertical 01", "builtin:Built-in: Horizontal 01"];
+  const tiles = { order, overlap: false, verticalNarrower: true, samePixel: true };
+  assert.deepEqual(
+    packed,
+    {
+      "preview-list": tiles,
+      "preview-grid": { ...tiles, besideLandscape: true },
+      "preview-mosaic": tiles,
+      wheel: true,
+      album: true,
+    },
+    "draw: vertical pixel arts packed beside landscape ones in every layout",
+  );
+  // The orientation filter beside the search field (the shared gallery's
+  // `filter`): one choice for every section, remembered in this browser.
+  const filtered = await page.evaluate(async () => {
+    const previous = hass;
+    const art = (name, orientation) => ({
+      name, collection: "Nature", orientation, pixels: [{ position: 0, color: [255, 0, 0] }],
+    });
+    hass = {
+      ...hass,
+      connection: {},
+      callWS: async ({ type }) =>
+        type === "yeelight_cube/builtin_pixel_arts"
+          ? { pixel_arts: [art("Built-in: Vertical 01", "vertical"), art("Built-in: Horizontal 01", "horizontal")] }
+          : {},
+    };
+    localStorage.removeItem("yeelight_cube_pixel_art_orientation");
+    await mount("yeelight-cube-draw-card", {
+      entity: "light.a", pixelart_sensor: "sensor.pixel", style_selector_style: "preview-grid",
+      pixel_art_orientation: "all", show_search: true, show_matrix_section: false,
+    });
+    const wait = () => new Promise((resolve) => setTimeout(resolve, 200));
+    await wait();
+    const gallery = () => card.shadowRoot.querySelector("yc-sections yc-collection-gallery");
+    const modes = () => [...gallery().querySelectorAll("[data-mode]")].map((node) => node.dataset.mode);
+    const tools = gallery().querySelector(".yc-gallery-tools");
+    const toggle = tools?.querySelector('.shared-button-group[role="radiogroup"]');
+    const result = {
+      beside: !!tools?.querySelector(".yc-gallery-search") && !!toggle,
+      choices: [...(toggle?.querySelectorAll("button[data-value]") || [])].map((b) => b.dataset.value),
+      all: modes(),
+    };
+    toggle.querySelector('[data-value="vertical"]').click();
+    await wait();
+    result.vertical = modes();
+    // Another section shows the same choice.
+    const tabs = [...card.shadowRoot.querySelectorAll('yc-sections [role="tab"]')];
+    tabs[1].click(); // My drawings: only horizontal ones
+    await wait();
+    result.otherSection = {
+      checked: gallery().querySelector('.yc-gallery-tools [aria-checked="true"]')?.dataset.value,
+      empty: gallery().querySelector(".empty")?.textContent.trim(),
+    };
+    result.stored = JSON.parse(localStorage.getItem("yeelight_cube_pixel_art_orientation"));
+    // Remembered by a new card with the same default; not hidden.
+    await mount("yeelight-cube-draw-card", {
+      entity: "light.a", pixelart_sensor: "sensor.pixel", style_selector_style: "preview-grid",
+      pixel_art_orientation: "all", show_matrix_section: false,
+    });
+    await wait();
+    result.remembered = modes();
+    // No toggle when hidden: the default still applies.
+    await mount("yeelight-cube-draw-card", {
+      entity: "light.a", pixelart_sensor: "sensor.pixel", style_selector_style: "preview-grid",
+      pixel_art_orientation: "horizontal", pixel_art_orientation_filter: false, show_matrix_section: false,
+    });
+    await wait();
+    result.hidden = { toggle: !!gallery().querySelector(".yc-gallery-tools .shared-button-group"), modes: modes() };
+    localStorage.removeItem("yeelight_cube_pixel_art_orientation");
+    hass = previous;
+    return result;
+  });
+  assert.deepEqual(
+    filtered,
+    {
+      beside: true,
+      choices: ["all", "horizontal", "vertical"],
+      all: ["art:0", "art:1", "builtin:Built-in: Vertical 01", "builtin:Built-in: Horizontal 01"],
+      vertical: ["builtin:Built-in: Vertical 01"],
+      otherSection: { checked: "vertical", empty: "No matching items." },
+      stored: { value: "vertical", byDefault: "all" },
+      remembered: ["builtin:Built-in: Vertical 01"],
+      hidden: { toggle: false, modes: ["art:0", "art:1", "builtin:Built-in: Horizontal 01"] },
+    },
+    "draw: the orientation filter beside the search",
   );
   // A config from before those options keeps what this browser hid (read
   // once per page: a fresh copy of the module reads it).

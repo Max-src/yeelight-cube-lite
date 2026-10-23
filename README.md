@@ -230,6 +230,74 @@ If the lamp is not discovered automatically (e.g. different subnet or mDNS is bl
 
 </details>
 
+#### Matter (optional)
+
+The integration controls the lamp over your local network (LAN Control) and
+needs nothing else: Matter is an optional extra. Lamps without it work as
+before.
+
+**Linking a lamp.** The Cube Lite is also a Matter device. Add it to Home
+Assistant's own **Matter** integration (Settings > Devices & services > Add
+integration > Matter, then add the device with its Matter pairing code, or
+share it from the Yeelight app). The integration finds it and links it to the
+same lamp by its IP address, then by its MAC address:
+- **Either order works.** It doesn't matter whether Matter or this
+  integration was set up first.
+- **Nothing to set up.** The link is checked every minute, so a lamp added
+  to Matter later is linked within a minute.
+- **No re-pairing on IP changes.** A new IP address is found again by the
+  MAC address.
+- **Where to check it:** the lamp's **Matter link** sensor (Diagnostic)
+  shows whether it's linked.
+
+**A lamp only in Matter.** Suppose a Cube Lite is in Home Assistant's Matter
+integration but not set up here, and at least one other lamp is. It then
+appears under **Settings > Devices & services > Discovered** as *Yeelight
+Cube Lite found via Matter*, with its address filled in:
+- **To add it:** confirm.
+- **If it doesn't answer on your network:** the dialog asks you to turn on
+  **LAN Control** in the Yeelight app, then you can try again.
+- **Your first lamp:** it's found by the usual local network discovery
+  instead.
+
+**What the link adds** (it only reads; nothing is sent over Matter):
+
+- **The lamp's buttons:** an effect from the right button's playlist and the
+  left button's microphone music modes (and its long press) show at once in
+  **Content mode**, **Native effect** and **Music Flow effect**, and stop a
+  running effect rotation.
+- **The Yeelight app:** an effect picked in the app is followed the same way,
+  and a direction set in the app changes **Device Orientation** (its arrows
+  are the app's).
+- **Power and brightness:** the lamp switched off with its button (long
+  press on the right one) or on and dimmed from the app shows so here.
+- **The clock and native effects:** the lamp's direction setting turns what
+  its firmware draws (Left and Up: upside down); the previews and cameras
+  show it as the lamp draws it.
+- **LAN Control turned off** in the app: a Repairs message tells you, since
+  Home Assistant cannot reach the lamp until it is on again.
+
+**Changing the lamp's own settings over Matter.** The lamp can also be
+*controlled* over Matter, for example to turn its clock for the mount when
+you change **Device Orientation**. This needs a Matter server that knows
+Yeelight's Matter features. Home Assistant's Matter server doesn't know them
+yet: support has been proposed to it
+([matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199)).
+- **Until then:** these features stay off, everything else works as
+  described, and nothing breaks.
+- **Once the server supports them:** they turn on by themselves after a
+  Matter Server update. There's nothing to configure.
+
+**Status.** The **Matter link** sensor shows *Linked, settings available*
+when settings can be changed, and its attributes say which server delivers
+them or why none does. The light's `matter` attribute shows the linked node,
+what the lamp reports, and the same status:
+- `"commands"` is the server that delivers them, or `null`;
+- `"commands_unavailable"` says why not.
+
+The diagnostics show the same. Matter's own light entity controls the same
+lamp: you can disable it.
+
 ---
 
 ## Lovelace Cards
@@ -610,7 +678,7 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Browse & apply** | The shared gallery: List, Grid, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; five swatch styles (round, square, gradient bar, gradient background, stripes) and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies. The palette the lamps show is highlighted; your order or A → Z |
+| **Browse & apply** | The shared gallery: List, Grid, Mosaic, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; five swatch styles (round, square, gradient bar, gradient background, stripes) and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies. The palette the lamps show is highlighted; your order or A → Z |
 | **Manage** | Rename (Allow Rename) and delete palettes from the gallery; a delete always asks for confirmation |
 | **Arrange** | Reorder your palettes in the card editor (drag or ▲ ▼); the order is saved for every card, lamp and the Matrix: Palette select |
 | **Import/Export** | Load and save full palette collections |
@@ -658,7 +726,7 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 6 **live preview** styles (List, Grid, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search; the editor's **Modes** list picks, orders and renames them for the card (or show them A → Z) |
+| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 7 **live preview** styles (List, Grid, Mosaic, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search; the editor's **Modes** list picks, orders and renames them for the card (or show them A → Z) |
 | **Shared appearance axes** | **Shape** (Square / Rounded / Round) and **Size** apply consistently to every selector style — same design language as the other cards |
 | **Selection feedback** | The chosen item pulses while the command is in flight and settles once the lamp confirms |
 | **Active mode label** | Optional chip showing the currently active mode by name (handy when titles are hidden) |
@@ -720,9 +788,9 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 | **Multi-entity support** | Control multiple lamps at the same time |
 | **Colors section** | Quick access to recent, palette, current, and drawing colors |
 | **Drawing tools** | Individually toggleable with multiple styles |
-| **Drawing matrix** | Interactive 20×5 matrix |
+| **Drawing matrix** | Interactive 20×5 matrix, landscape or vertical (Rotate tool; a vertical pixel art opens vertical and is saved so) |
 | **Action buttons** | Apply to lamp, upload from image, save, or clear |
-| **Pixel art gallery** | The shared gallery: Grid, List, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search. A pick (a click; carousel and wheel arrows only browse) loads the pixel art into the drawing (and sends it to the lamp with "Apply to lamp automatically"); the pixel art on the canvas is highlighted; your order or A → Z. Rename (Allow Rename) and delete them from the gallery (a delete always asks for confirmation); reorder them in the card editor's Arrange list (saved for every card and the Matrix: Pixel Art select) |
+| **Pixel art gallery** | The shared gallery: Grid, List, Mosaic, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search. A pick (a click; carousel and wheel arrows only browse) loads the pixel art into the drawing (and sends it to the lamp with "Apply to lamp automatically"); vertical pixel arts show standing up; the pixel art on the canvas is highlighted; your order or A → Z. Rename (Allow Rename) and delete them from the gallery (a delete always asks for confirmation); reorder them in the card editor's Arrange list (saved for every card and the Matrix: Pixel Art select) |
 | **Import/Export** | Import and export collections as JSON |
 
 <details>
@@ -751,6 +819,133 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 A **Preview Appearance** section (the shared matrix look, see
 [Shared Preview Appearance](SERVICES.md#shared-preview-appearance)) sits
 between Drawing Tools and Drawing Matrix Section.
+
+</details>
+
+---
+
+<a id="matrix-preview-cameras"></a>
+
+### Matrix Preview Cameras (Picture Entity card)
+
+Each lamp has two camera entities, **Matrix Preview (Round)** and **Matrix
+Preview (Square)**: a picture of what the lamp shows, for a quick preview
+with Home Assistant's own **Picture Entity** card (or a picture-glance card,
+a notification, another app). For an interactive preview with controls and
+the same look as the other cards, use the [Preview Card](#preview-card).
+
+- **What it shows:** what you see on the lamp. A lamp mounted **Left** or
+  **Up** (upside down) is shown the right way up, and the clock, native
+  effects and Music Flow are simulated, as on the cards.
+- **How it looks:** a sharp image (1227 × 372 px, 3× the design size) of the
+  lamp in a black frame with rounded corners and a soft shadow, on a
+  transparent background: the card's own background shows around it.
+- **When it renders:** only when an image is requested, from the lamp's
+  latest frame: a camera nobody is watching costs nothing.
+
+```yaml
+type: picture-entity
+entity: camera.living_room_cube_matrix_preview_round
+camera_view: auto
+show_name: false
+show_state: false
+```
+
+#### A lamp standing on its end
+
+Turn on the lamp's **Camera Follows Orientation** switch (Configuration, off
+by default): while its **Device Orientation** is Down or Up, both cameras
+draw the lamp standing up (372 × 1227 px). Off, they stay landscape.
+
+#### Size and fit
+
+A picture card is as wide as its place in the dashboard, and either follows
+the image's shape or gets a fixed height. With a fixed height, `fit_mode`
+decides how the image fits in:
+
+| Card settings | Lamp lying flat | Lamp standing up |
+| :-- | :-- | :-- |
+| Natural size: `grid_options: rows: auto` (no `aspect_ratio`) | Fits the width ✓ | Very tall in a wide card: give it a narrow one (`columns: 3`) ✓ |
+| Fixed height (`grid_options: rows: 3`, or `aspect_ratio: "2:1"` outside sections) and `fit_mode: contain` | Fits the width, room above and below ✓ | Fits the height, room on the sides ✓ |
+| Fixed height and `fit_mode: cover` | Sides cropped ✗ | Only the middle rows, zoomed ✗ |
+| Fixed height and `fit_mode: fill` | Stretched ✗ | Stretched ✗ |
+
+**For a lamp you turn between orientations**, one card works for both: a
+fixed height with `fit_mode: contain`. Three rows is a good balance (about
+190 px: a full-width flat lamp, a standing one about 190 px tall); more rows
+make the standing lamp larger and leave more room around the flat one.
+
+```yaml
+type: picture-entity
+entity: camera.living_room_cube_matrix_preview_round
+camera_view: auto
+fit_mode: contain
+show_name: false
+show_state: false
+grid_options:
+  columns: 12
+  rows: 3
+```
+
+**For the best size in each orientation**, use two cards that show by the
+lamp's orientation, each at the image's natural size:
+
+```yaml
+# Lying flat (Right / Left): full width
+type: conditional
+conditions:
+  - condition: state
+    entity: select.living_room_cube_device_orientation
+    state_not: [Up, Down]
+card:
+  type: picture-entity
+  entity: camera.living_room_cube_matrix_preview_round
+  camera_view: auto
+  show_name: false
+  show_state: false
+grid_options:
+  columns: 12
+  rows: auto
+---
+# Standing up (Up / Down): a narrow card
+type: conditional
+conditions:
+  - condition: state
+    entity: select.living_room_cube_device_orientation
+    state: [Up, Down]
+card:
+  type: picture-entity
+  entity: camera.living_room_cube_matrix_preview_round
+  camera_view: auto
+  show_name: false
+  show_state: false
+grid_options:
+  columns: 3
+  rows: auto
+```
+
+<details>
+<summary>View the camera's fits</summary>
+
+<!-- card-docs:camera:variations:start -->
+<table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/camera-landscape-natural.png" alt="Matrix Preview cameras - Lying flat: natural size (rows: auto)" width="280"><br>Lying flat: natural size (rows: auto)</td>
+    <td valign="top"><img src="images/Cards/generated/camera-landscape-contain.png" alt="Matrix Preview cameras - Lying flat: fixed height, fit_mode: contain" width="280"><br>Lying flat: fixed height, fit_mode: contain</td>
+    <td valign="top"><img src="images/Cards/generated/camera-vertical-contain.png" alt="Matrix Preview cameras - Standing up: fixed height, fit_mode: contain" width="280"><br>Standing up: fixed height, fit_mode: contain</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/camera-vertical-narrow.png" alt="Matrix Preview cameras - Standing up: natural size in a narrow card (columns: 3)" width="280"><br>Standing up: natural size in a narrow card (columns: 3)</td>
+    <td valign="top"><img src="images/Cards/generated/camera-landscape-cover.png" alt="Matrix Preview cameras - Lying flat: fit_mode: cover (crops the sides)" width="280"><br>Lying flat: fit_mode: cover (crops the sides)</td>
+    <td valign="top"><img src="images/Cards/generated/camera-vertical-cover.png" alt="Matrix Preview cameras - Standing up: fit_mode: cover (crops to the middle)" width="280"><br>Standing up: fit_mode: cover (crops to the middle)</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/camera-landscape-fill.png" alt="Matrix Preview cameras - Lying flat: fit_mode: fill (stretches)" width="280"><br>Lying flat: fit_mode: fill (stretches)</td>
+    <td valign="top"><img src="images/Cards/generated/camera-vertical-fill.png" alt="Matrix Preview cameras - Standing up: fit_mode: fill (stretches)" width="280"><br>Standing up: fit_mode: fill (stretches)</td>
+    <td valign="top"><img src="images/Cards/generated/camera-square.png" alt="Matrix Preview cameras - The Square camera (square pixels)" width="280"><br>The Square camera (square pixels)</td>
+  </tr>
+</table>
+<!-- card-docs:camera:variations:end -->
 
 </details>
 
@@ -801,6 +996,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Animation speed** | Number | Speed for the native clock and for effects that support it (1–255 device units; unavailable when the selected effect has no speed control) |
 | **Music Flow effect** | Select | Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Device Orientation** | Select | Physical mount orientation: Right / Down / Left / Up (applies to all modes) |
+| **Camera Follows Orientation** | Switch | Draw the Matrix Preview cameras vertical while the lamp stands on one end (Down / Up), like the cards. Off by default: always landscape. See [Matrix Preview Cameras](#matrix-preview-cameras) |
 | **Experimental Features** | Switch | Reveal firmware animation modes and clock styles the Yeelight app never exposed. Off by default |
 
 #### Sensors
@@ -813,7 +1009,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Estimated energy** | Sensor | Estimated energy used by the lamp in kWh, for the Energy dashboard. See [Power Supply](#power-supply) |
 
 > [!TIP]
-> Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#preview-card).
+> Use these camera entities with a "Picture Entity" card for quick previews: see [Matrix Preview Cameras](#matrix-preview-cameras) for the card settings that fit a lamp lying flat or standing up. For more responsive previews, use the custom [Preview Card](#preview-card).
 
 #### Configuration
 
@@ -845,6 +1041,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | :-- | :-- | :-- |
 | **Force Refresh** | Button | Re-activate connection for a stuck lamp |
 | **IP Address** | Sensor | Current IP address (updated after rediscovery) |
+| **Matter link** | Sensor | Whether the lamp is linked to Home Assistant's Matter integration: Not linked, Linked (read only), or Linked, settings available. See [Matter (optional)](#matter-optional) |
 
 ### Global Entities
 
@@ -1086,10 +1283,15 @@ imported into, written to, or allowed to overwrite your own drawings.
   to the lamp with *Apply to lamp automatically*); save it to make your own
   editable copy.
 - **On each card**, the editor's **Official pixel arts** settings choose
-  which official drawings show: the horizontal ones by default, the vertical
-  ones too with *Include vertical official pixel arts*, or exactly the ones
+  which official drawings show: all of them by default, or exactly the ones
   listed (with their order and names on that card). Your own drawings are
   still renamed and deleted in the gallery.
+- **Orientation filter**: a toggle beside the search field (All ·
+  Horizontal · Vertical) shows your drawings and the official ones by
+  orientation, the same in every group; the browser remembers the choice.
+  The editor's **Orientation** settings pick what shows first (or *Follow
+  the lamp*: the vertical ones while it stands on its end) and can hide the
+  toggle.
 - **`apply_pixel_art`** shows one by name (e.g. `Built-in: Horizontal 01`).
 
 ### Native Clock

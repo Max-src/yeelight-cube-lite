@@ -109,6 +109,8 @@ test("older option names move to the shared vocabulary", async () => {
     item_radius: 16,
     item_card_border: "auto",
     show_search: false,
+    // Without the former vertical switch: horizontal pixel arts first.
+    pixel_art_orientation: "horizontal",
   });
   // An explicitly set shared name wins over a leftover older one.
   assert.deepEqual(
@@ -136,6 +138,22 @@ test("older option names move to the shared vocabulary", async () => {
     show_search: true,
   };
   assert.equal(normalizeCardOptions(gradient, "gradient"), gradient);
+});
+
+test("the former vertical pixel-art switch becomes the gallery's orientation", async () => {
+  const { normalizeCardOptions } = await import(
+    "../custom_components/yeelight_cube/www/card-config.js"
+  );
+  const orientation = (config) => {
+    const result = normalizeCardOptions(config, "draw");
+    assert.equal("pixel_art_show_vertical" in result, false);
+    return result.pixel_art_orientation;
+  };
+  assert.equal(orientation({ pixel_art_show_vertical: true }), "all");
+  assert.equal(orientation({ pixel_art_show_vertical: false }), "horizontal");
+  assert.equal(orientation({}), "horizontal");
+  // A chosen orientation is kept.
+  assert.equal(orientation({ pixel_art_orientation: "lamp", pixel_art_show_vertical: true }), "lamp");
 });
 
 test("the Draw pixel-art gallery's options join the shared gallery's", async () => {
@@ -177,6 +195,7 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
     gallery_matrix_box_shadow: true,
     item_card_border: "none",
     show_search: false,
+    pixel_art_orientation: "horizontal",
   });
   // The color section (palette cards): the gallery's names, colors_
   // prefixed; a legacy "round" corner keeps each mode's own default.
@@ -205,6 +224,7 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
       colors_button_shape: "round",
       colors_wrap_navigation: true,
       colors_item_radius: 6,
+      pixel_art_orientation: "horizontal",
     },
   );
   assert.equal(
@@ -366,8 +386,8 @@ test("dashboard sizes come from the card base", () => {
   assert.equal(new Small().getCardSize(), 2);
   assert.equal(new Small().getGridOptions().min_columns, 3);
   assert.deepEqual(
-    ["preview-list", "preview-grid", "preview-wheel", "preview-carousel", "filled"].map(galleryCardSize),
-    [8, 8, 5, 4, 4],
+    ["preview-list", "preview-grid", "preview-mosaic", "preview-wheel", "preview-carousel", "filled"].map(galleryCardSize),
+    [8, 8, 8, 5, 4, 4],
   );
 });
 

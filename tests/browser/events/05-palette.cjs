@@ -52,7 +52,7 @@ module.exports = async (t) => {
         meta: [...gallery.querySelectorAll(".gallery-item-metadata")].map(
           (node) => node.textContent.trim(),
         ),
-        grid: !!gallery.querySelector('.gc-preview-shell[data-columns="2"]'),
+        grid: !!gallery.querySelector('.gc-preview-shell[data-layout="preview-grid"]'),
         border: gallery.dataset.itemBorder,
         radius: gallery.style.getPropertyValue("--yc-item-radius"),
         empty:
@@ -64,6 +64,7 @@ module.exports = async (t) => {
   for (const [style, shown] of [
     ["preview-list", 2],
     ["preview-grid", 2],
+    ["preview-mosaic", 2],
     ["preview-strip", 2],
     ["preview-carousel", 1],
     ["preview-wheel", 2],

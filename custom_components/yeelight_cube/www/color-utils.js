@@ -1,5 +1,14 @@
 // Color conversions shared by the cards.
 
+// Coerce each channel to an integer 0-255 so values read from imported files,
+// sensor attributes or config can never break out of a style/HTML attribute.
+const channel = (value) => Math.max(0, Math.min(255, Math.round(Number(value)) || 0));
+
+/** [r, g, b] as a CSS rgb() color, channels clamped. */
+export function rgbToCss(rgb) {
+  return `rgb(${channel(rgb?.[0])},${channel(rgb?.[1])},${channel(rgb?.[2])})`;
+}
+
 /**
  * "#rrggbb" (lowercase) for an [r, g, b] color. Channels are rounded and
  * clamped to 0-255; anything that is not such an array gives `fallback`.

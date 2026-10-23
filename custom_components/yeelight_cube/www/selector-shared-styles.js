@@ -5,8 +5,9 @@
 //
 // The unified selector has two families sharing one config key:
 //   Text styles:    "filled" | "dropdown" | "chips"
-//   Preview styles: "preview-list" | "preview-grid" | "preview-strip" |
-//                   "preview-carousel" | "preview-wheel" | "preview-album"
+//   Preview styles: "preview-list" | "preview-grid" | "preview-mosaic" |
+//                   "preview-strip" | "preview-carousel" | "preview-wheel" |
+//                   "preview-album"
 // plus two appearance axes applied across every style: a shape
 // (square/rounded/round/custom, via data-shape attributes) and a size scale
 // (--gc-sel-scale custom property).  The CSS below styles the text selectors
@@ -19,6 +20,7 @@ export const TEXT_SELECTOR_STYLES = ["filled", "dropdown", "chips"];
 export const PREVIEW_SELECTOR_STYLES = [
   "preview-list",
   "preview-grid",
+  "preview-mosaic",
   "preview-strip",
   "preview-carousel",
   "preview-wheel",
@@ -237,8 +239,4 @@ export const selectorSharedStyles = `
     border-radius: var(--yc-item-radius, 8px) !important;
   }
 
-  /* preview-grid style: fixed 2-column layout over the list renderer */
-  .gc-preview-shell[data-columns="2"] .gallery-display-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-  }
 `;

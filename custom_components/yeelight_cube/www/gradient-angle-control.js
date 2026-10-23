@@ -9,9 +9,14 @@ import {
 import { LitElement, html, nothing, svg } from "./lib/lit-all.js";
 import { defineOnce } from "./card-registration.js";
 import { AngleStylesMixin } from "./gradient-angle-styles.js";
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { updateCapsuleVisuals } from "./capsule-slider-utils.js";
 import { rgbToHex as _sharedRgbToHex } from "./color-utils.js";
+import {
+  MATRIX_SIZE,
+  deviceOrientation,
+  flipMatrixVertical,
+  viewerFrame,
+} from "./matrix-view.js";
 
 // ── Where the pointer is, as an angle ──────────────────────────────────────
 
@@ -692,61 +697,20 @@ export const AngleControlMixin = (Base) => class extends AngleStylesMixin(Base) 
   }
 
   /**
-   * Get the 100-pixel color array for the matrix rotary text preview.
-   * Uses the same data source as the lamp preview card: reads matrix_colors
-   * directly from the HA entity state for instant updates.  Falls back to
-   * the preview_gradient_modes cache only when entity state is unavailable.
+   * The matrix rotary's text preview: its 100 colors as the viewer sees the
+   * lamp, top row first (matrix-view.js), or null without data. The lamp's
+   * own matrix_colors while it shows them (the same source as the Lamp
+   * Preview card: instant updates), turned for its mount; else (off, a
+   * firmware mode, no data yet) the current mode's preview_gradient_modes
+   * preview, upright already.
    */
-  _getMatrixPreviewColors(rows, cols) {
-    // PRIMARY: read matrix_colors from entity state (same as lamp preview card)
+  _matrixTextPreviewColors() {
     const entityId = this._primaryEntity();
     const stateObj = entityId ? this._hass?.states?.[entityId] : null;
     const matrixColors = stateObj?.attributes?.matrix_colors;
-    // While the lamp is off its matrix is black (and it is empty while the
-    // firmware draws it): preview the text from the cache instead.
-    if (
-      stateObj?.state === "on" &&
-      matrixColors &&
-      matrixColors.length >= rows * cols
-    ) {
-      return matrixColors;
-    }
-    // FALLBACK: preview cache (lamp off, firmware-drawn mode, or no data yet)
-    const cache = this._previewCache();
-    const previewData = cache?.data;
-    const currentMode = this._getCurrentMode();
-    return previewData?.previews?.[currentMode] || null;
-  }
-
-  /**
-   * Render pixel divs for the matrix rotary in "text preview" mode, or null
-   * without preview data. Reads matrix_colors directly from entity state
-   * (same approach as the lamp preview card) for instant updates when panel
-   * mode changes.
-   */
-  _renderMatrixTextPreviewPixels(
-    rows,
-    cols,
-    ignoreBlack,
-    borderRadius,
-    pixelShadowStyle = "",
-  ) {
-    const previewColors = this._getMatrixPreviewColors(rows, cols);
-    if (!previewColors || previewColors.length < rows * cols) return null;
-
-    // Flip vertically (same convention as _renderPreviewGrid)
-    const divs = [];
-    for (let row = rows - 1; row >= 0; row--) {
-      for (let col = 0; col < cols; col++) {
-        const color = previewColors[row * cols + col];
-        const [r, g, b] = color;
-        const isBlack = r <= 5 && g <= 5 && b <= 5;
-        const shouldIgnore = ignoreBlack && isBlack;
-        divs.push(
-          html`<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : rgbToCss(color)};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`,
-        );
-      }
-    }
-    return divs;
+    if (stateObj?.state === "on" && matrixColors?.length >= MATRIX_SIZE)
+      return viewerFrame(matrixColors, deviceOrientation(stateObj.attributes));
+    const preview = this._previewCache()?.data?.previews?.[this._getCurrentMode()];
+    return preview?.length >= MATRIX_SIZE ? flipMatrixVertical(preview) : null;
   }
 };

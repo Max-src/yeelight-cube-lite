@@ -19,6 +19,7 @@ import { COLLECTION_ATTRIBUTES, findCollectionSensor } from "./sensor-lookup.js"
 import { CollectionState } from "./collection-state.js";
 import { paletteGradient } from "./palette-preview.js";
 import { pixelArtColorData } from "./pixel-art-utils.js";
+import { isVerticalArt } from "./matrix-view.js";
 import { renderMatrixPreview } from "./gallery-display-utils.js";
 
 export const USER_COLLECTIONS = Object.freeze({
@@ -99,6 +100,9 @@ export function collectionThumbnail(kind, item) {
       pixelGap: 0,
       previewSize: 44,
       proportionalSpacing: false,
+      // As the gallery shows it, in the row's height.
+      vertical: isVerticalArt(item),
+      fitHeight: true,
     },
   )}</span>`;
 }

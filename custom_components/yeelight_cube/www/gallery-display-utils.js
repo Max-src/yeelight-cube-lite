@@ -1,5 +1,6 @@
 import { BLACK_THRESHOLD } from "./matrix-const.js";
-import { previewLength } from "./preview-appearance.js";
+import { fromDisplayOrder, toDisplayOrder } from "./matrix-view.js";
+import { frameLength, matrixFrame } from "./matrix-frame.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
 
 /**
@@ -8,6 +9,13 @@ import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
  * used by the gallery's Lit layouts, gallery-layouts.js), the favourites'
  * keys (favouriteKeys) and the look of the shared gallery's layouts (galleryDisplayStyles).
  */
+
+// A preview's lengths (matrix-frame.js) from its options.
+const lengthFor = (options) =>
+  frameLength({
+    vertical: !!options.vertical,
+    proportional: options.proportionalSpacing !== false,
+  });
 
 /**
  * One matrix cell's color and shadow: black pixels may be left out
@@ -32,62 +40,100 @@ export function matrixCellLook(color, options) {
     css = color || "#000000";
   }
   const ignored = options.ignoreBlackPixels && isBlack;
-  const length = (value) =>
-    options.proportionalSpacing !== false ? previewLength(value) : `${value}px`;
   return {
     background: ignored ? "transparent" : css,
-    shadow: !ignored && options.pixelBoxShadow ? `0 0 ${length(2)} #0008` : "",
+    shadow: ignored ? "" : matrixPixelShadow(options),
+  };
+}
+
+/** A lit pixel's shadow in a preview of `options` ("" without
+ * pixelBoxShadow): for painters that repaint cells in place. */
+export function matrixPixelShadow(options) {
+  return options.pixelBoxShadow ? `0 0 ${lengthFor(options)(2)} #0008` : "";
+}
+
+/**
+ * What a matrix preview shows and how (renderMatrixPreview's markup and the
+ * gallery's matrixTemplate, gallery-layouts.js): its cells in display order
+ * and its inline styles.
+ * @param {Array} colorData - the 100 colors, top row first (5 rows x 20)
+ * @param {Object} options - the look: bgColor, pixelStyle ("square",
+ *   "circle", "rounded"), pixelGap, previewSize (width in px, or 100% with
+ *   forceAspectRatio), padding (default pixelGap x 2), radius (the frame's
+ *   corners, default 4), matrixBoxShadow,
+ *   proportionalSpacing (lengths follow the width); `vertical` shows the frame turned for a lamp standing on its
+ *   end (matrix-view.js) with the landscape pixel size, as tall as the
+ *   landscape preview is wide, or as tall as it is with `fitHeight` (fixed
+ *   height layouts).
+ */
+export function matrixPreviewLayout(colorData, options = {}) {
+  const {
+    bgColor = "#000000",
+    pixelStyle = "square",
+    pixelGap = 1,
+    padding = pixelGap * 2,
+    radius = 4,
+    previewSize = 200,
+    matrixBoxShadow = false,
+    proportionalSpacing = true,
+    vertical = false,
+    fitHeight = false,
+  } = options;
+  // The shared frame (matrix-frame.js): previewSize px wide, or 100% with
+  // forceAspectRatio; the height follows (square cells, aspect-ratio 1/1).
+  const frame = matrixFrame({
+    width: options.forceAspectRatio ? "100%" : previewSize,
+    vertical,
+    fitHeight,
+    gap: pixelGap,
+    padding,
+    radius,
+    background: bgColor,
+    shadow: matrixBoxShadow,
+    proportional: proportionalSpacing,
+  });
+  const cellRadius =
+    pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
+  const centred = frame.view.vertical ? "margin-inline:auto;" : "";
+  return {
+    cells: toDisplayOrder(colorData || [], vertical),
+    cellOptions: options,
+    proportionalSpacing,
+    vertical: frame.view.vertical,
+    wrapperStyle: frame.wrapperStyle + centred,
+    gridStyle:
+      frame.gridStyle +
+      `--yc-px-radius:${cellRadius};${proportionalSpacing ? "" : centred}`,
   };
 }
 
 /**
- * Render a matrix preview (5x20 LED grid)
- * @param {Array} colorData - Flattened array of 100 colors (5 rows x 20 cols)
- * @param {Object} options - Display options
- * @returns {string} HTML string for the matrix
+ * The cells of a matrix preview grid (a .gallery-matrix-preview, or any grid
+ * marked data-vertical when drawn vertical), indexed by the top-first pixel
+ * each shows: painters write a frame into them the same way whatever the
+ * preview's view. [] without a grid.
+ */
+export function matrixPreviewCells(grid) {
+  if (!grid) return [];
+  const cells = [...grid.children];
+  return grid.dataset?.vertical === "true" ? fromDisplayOrder(cells, true) : cells;
+}
+
+/**
+ * Render a matrix preview (5x20 LED grid) as an HTML string
+ * (matrixPreviewLayout: colorData and options).
  */
 export function renderMatrixPreview(colorData, options = {}) {
-  const {
-    rows = 5,
-    cols = 20,
-    bgColor = "#000000",
-    pixelStyle = "square", // "square", "circle", "rounded"
-    pixelGap = 1,
-    previewSize = 200, // Width in pixels
-    ignoreBlackPixels = false,
-    matrixBoxShadow = false,
-    pixelBoxShadow = false,
-    proportionalSpacing = true,
-  } = options;
-
-  const length = (value) =>
-    proportionalSpacing ? previewLength(value) : `${value}px`;
-
-  const matrixShadowStyle = matrixBoxShadow
-    ? `box-shadow: 0 ${length(2)} ${length(8)} rgba(0,0,0,0.5);`
-    : "";
-
-  const borderRadius =
-    pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
-
-  // Width is controlled by previewSize (or 100% in forceAspectRatio mode).
-  // Height is auto-calculated: each pixel is forced square via aspect-ratio 1/1,
-  // so height naturally follows from (width, cols, rows, gap, padding).
-  const sizeStyle = options.forceAspectRatio
-    ? `width: 100%;`
-    : `width: ${previewSize}px;`;
-
-  return `
-    ${proportionalSpacing ? `<div style="container-type:inline-size;max-width:100%;${sizeStyle}">` : ""}
-    <div class="gallery-matrix-preview" style="grid-template-columns:repeat(${cols},1fr);gap:${length(pixelGap)};background:${bgColor};padding:${length(pixelGap * 2)};border-radius:${length(4)};--yc-px-radius:${borderRadius};${proportionalSpacing ? "width:100%;" : sizeStyle}${matrixShadowStyle}">${colorData
-      .map((color) => {
-        const look = matrixCellLook(color, options);
-        return `<div style="background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}"></div>`;
-      })
-      .join("")}
-    </div>
-    ${proportionalSpacing ? "</div>" : ""}
-  `;
+  const layout = matrixPreviewLayout(colorData, options);
+  const grid = `<div class="gallery-matrix-preview"${layout.vertical ? ' data-vertical="true"' : ""} style="${layout.gridStyle}">${layout.cells
+    .map((color) => {
+      const look = matrixCellLook(color, layout.cellOptions);
+      return `<div style="background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}"></div>`;
+    })
+    .join("")}</div>`;
+  return layout.proportionalSpacing
+    ? `<div style="${layout.wrapperStyle}">${grid}</div>`
+    : grid;
 }
 
 /**
@@ -163,6 +209,31 @@ export const galleryDisplayStyles = matrixPreviewStyles + `
   .gallery-item-body {
     display: flex;
     justify-content: center;
+  }
+  /* Packed tiles (<yc-tile-grid>, tile-grid.js: List, Grid, Mosaic,
+     Original): its columns are inline; with packing on, rows of 2px that
+     each tile spans by its height (the column gap included). */
+  yc-tile-grid {
+    display: grid;
+    grid-auto-flow: row dense;
+    align-items: start;
+  }
+  yc-tile-grid[packed] {
+    grid-auto-rows: 2px;
+    row-gap: 0 !important;
+  }
+  .gallery-display-mosaic {
+    justify-content: center;
+  }
+  /* A vertical item's title wraps on two lines at most instead of widening
+     its tile. */
+  .gallery-item.gallery-item-vertical .gallery-item-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.2;
   }
   .gallery-display-grid .gallery-item-metadata {
     text-align: center;
@@ -284,14 +355,10 @@ export const galleryDisplayStyles = matrixPreviewStyles + `
     color: var(--warning-color, #f0a202);
   }
 
-  /* Shared "Original" browser gallery (Native Effects + Clock cards). */
+  /* Shared "Original" browser gallery (Native Effects + Clock cards): packed
+     tiles, columns inline (gallery-layouts.js originalLayout). */
   .original-gallery {
-    display: grid;
     gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
-  }
-  .original-gallery.list {
-    grid-template-columns: 1fr;
   }
   .original-item {
     position: relative;

@@ -17,6 +17,7 @@ module.exports = async (t) => {
     ])
       for (const style of [
         "preview-grid",
+        "preview-mosaic",
         "preview-album",
         "preview-carousel",
         "preview-wheel",

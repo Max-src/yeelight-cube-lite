@@ -50,6 +50,18 @@ MUSIC_FLOW_HARD_TIMEOUT = 12.0
 # from light.py at call time to avoid a circular import at module load.
 
 
+def mount_effect_direction(orientation: str, lamp_turns_content: bool = False) -> str | None:
+    """The native effect direction that flows the same way for the viewer
+    of a lamp mounted this way (DEVICE_ORIENTATION_TO_EFFECT_DIR); the
+    opposite one when the lamp's firmware already turns its effects with its
+    own direction setting (light_matter.lamp_turns_content), or the flow
+    would be turned twice."""
+    direction = DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
+    if direction is not None and lamp_turns_content:
+        return {"Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left"}[direction]
+    return direction
+
+
 def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
     """Build the private-protocol JSON used by device-microphone music flow."""
     payload = {"on": 1 if enabled else 0}
@@ -350,7 +362,9 @@ class NativeModesMixin:
             # reboot/restore) always honors the orientation arrows -- instead of
             # using a stale _native_effect_direction that only got synced when
             # the orientation was changed while already in Native Effect mode.
-            desired = DEVICE_ORIENTATION_TO_EFFECT_DIR.get(self._device_orientation)
+            desired = mount_effect_direction(
+                self._device_orientation, getattr(self, "lamp_turns_content", False)
+            )
             if desired in directions and desired != self._native_effect_direction:
                 self._native_effect_direction = desired
                 if self._native_effect_direction_select_entity:

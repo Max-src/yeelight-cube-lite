@@ -6,9 +6,13 @@
  */
 
 // --- Grid / Matrix ---
-export const GRID_COLS = 20;
-export const GRID_ROWS = 5;
-export const MATRIX_SIZE = GRID_COLS * GRID_ROWS; // 100
+// The drawing is always the landscape 20x5 matrix, top row first; a vertical
+// drawing area only shows it turned (matrix-view.js).
+export {
+  MATRIX_COLS as GRID_COLS,
+  MATRIX_ROWS as GRID_ROWS,
+  MATRIX_SIZE,
+} from "./matrix-view.js";
 export const OFF_COLOR = "#000000";
 
 // Preview constants shared with the other cards live in matrix-const.js;
@@ -29,6 +33,7 @@ export const DEFAULT_TOOL_ORDER = [
   "areaFill",
   "fillAll",
   "undo",
+  "rotate",
 ];
 
 export const DEFAULT_ACTION_ORDER = ["clear", "upload", "save", "apply"];
@@ -84,5 +89,10 @@ export const TOOL_CONFIG = {
     icon: "mdi:undo",
     label: "Undo",
     title: "Undo",
+  },
+  rotate: {
+    icon: "mdi:phone-rotate-portrait",
+    label: "Rotate",
+    title: "Rotate the drawing area: landscape, or vertical for a lamp standing on its end",
   },
 };

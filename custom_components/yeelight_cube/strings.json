@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "Yeelight Cube Lite Setup",
-                "description": "Enter the IP address of your Yeelight Cube Lite device.\nExample: {example_ip}",
+                "description": "Enter the IP address of your Yeelight Cube Lite device.\nExample: {example_ip}\n\nAlso add the lamp to Home Assistant's Matter integration to follow its buttons and the Yeelight app: it is linked on its own, in either order.",
                 "data": {
                     "Light IP Address": "IP Address"
                 }
@@ -18,11 +18,16 @@
             "discovery_confirm": {
                 "title": "Yeelight Cube Lite Discovered",
                 "description": "A Yeelight Cube Lite was found at **{host}** ({name}).\n\nDo you want to set it up?"
+            },
+            "matter_confirm": {
+                "title": "Yeelight Cube Lite found via Matter",
+                "description": "A Yeelight Cube Lite in Home Assistant's Matter integration, at **{host}**, is not set up here yet. Add it to control it over your local network too (pixel art, text, effects).\n\nIts LAN Control must be on: in the Yeelight app, open the lamp's settings and turn on LAN Control."
             }
         },
         "error": {
             "invalid_ip": "Invalid IP address format",
-            "cannot_connect": "No Yeelight Cube Lite answers at this address. Check that the lamp is on, on the same network as Home Assistant, and that LAN Control is on in the Yeelight app."
+            "cannot_connect": "No Yeelight Cube Lite answers at this address. Check that the lamp is on, on the same network as Home Assistant, and that LAN Control is on in the Yeelight app.",
+            "lan_control_needed": "The lamp does not answer on your local network yet. Turn on LAN Control in the Yeelight app (the lamp's settings), then submit again."
         },
         "abort": {
             "already_configured": "This device is already configured",
@@ -132,6 +137,9 @@
             "auto_turn_on": {
                 "name": "Auto Turn On"
             },
+            "camera_follows_orientation": {
+                "name": "Camera Follows Orientation"
+            },
             "extended_effects": {
                 "name": "Experimental Features"
             }
@@ -157,6 +165,25 @@
             },
             "pixel_arts": {
                 "name": "Saved Drawings"
+            },
+            "matter_link": {
+                "name": "Matter link",
+                "state": {
+                    "not_linked": "Not linked",
+                    "linked": "Linked (read only)",
+                    "settings_available": "Linked, settings available"
+                },
+                "state_attributes": {
+                    "node_id": {
+                        "name": "Matter node"
+                    },
+                    "settings_server": {
+                        "name": "Settings server"
+                    },
+                    "settings_unavailable": {
+                        "name": "Why settings are unavailable"
+                    }
+                }
             }
         },
         "button": {
@@ -186,6 +213,10 @@
         "udp_blocked": {
             "title": "{name} uses its slower connection",
             "description": "Home Assistant has not reached {name} ({ip}) over UDP (port 55444) for over 15 minutes, while the lamp answers over TCP (port 55443): something on the network blocks UDP between them (a firewall, a VLAN rule, a container network). Everything still works, with more delay between changes.\n\nAllow UDP port 55444 between Home Assistant and the lamp. This message goes away by itself once UDP works again."
+        },
+        "lan_control_off": {
+            "title": "LAN Control is off on {name}",
+            "description": "{name} ({ip}) reports over Matter that its **LAN Control** is off: Home Assistant cannot control it until it is turned back on. In the Yeelight app, open the lamp's settings and turn **LAN Control** on.\n\nThis message goes away by itself once LAN Control is on again."
         }
     },
     "exceptions": {
@@ -815,6 +846,10 @@
                 "name": {
                     "name": "Name",
                     "description": "Name for the saved pixel art (defaults to \"Pixel Art N\")"
+                },
+                "orientation": {
+                    "name": "Orientation",
+                    "description": "What the drawing is made for: a lamp lying flat (horizontal, the default) or standing on its end (vertical). The cards show vertical pixel arts standing up."
                 }
             }
         },
@@ -910,7 +945,7 @@
             "fields": {
                 "pixel_arts": {
                     "name": "Pixel arts",
-                    "description": "Array of pixel art objects with name and pixels (entries with position and color, as accepted by save_pixel_art)"
+                    "description": "Array of pixel art objects with name, pixels (entries with position and color, as accepted by save_pixel_art) and optional orientation (\"horizontal\" or \"vertical\")"
                 },
                 "replace": {
                     "name": "Replace",

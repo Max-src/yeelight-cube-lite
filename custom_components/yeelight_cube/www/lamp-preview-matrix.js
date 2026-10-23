@@ -2,7 +2,7 @@
 // effect animations, painting the dots and the oriented matrix geometry.
 // Mixed into YeelightCubeLampPreviewCard.
 import { BLACK_THRESHOLD } from "./matrix-const.js";
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+import { rgbToCss } from "./color-utils.js";
 import { createVisibilityTracker, createRafLoop } from "./matrix-animator.js";
 import {
   clockStyleMixer,
@@ -12,8 +12,34 @@ import {
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
-import { previewLength } from "./preview-appearance.js";
+import { matrixFrame } from "./matrix-frame.js";
+import {
+  firmwareLampFrame,
+  deviceOrientation,
+  isVerticalMount,
+  matrixView,
+  toDisplayOrder,
+  viewerFrame,
+} from "./matrix-view.js";
 import { html, repeat } from "./lib/lit-all.js";
+
+// One layout per orientation, made once (painted every animation frame).
+const orientedLayouts = new Map();
+function orientedLayout(orientation) {
+  let layout = orientedLayouts.get(orientation);
+  if (!layout) {
+    const view = matrixView(isVerticalMount(orientation));
+    layout = Object.freeze({
+      cols: view.cols,
+      rows: view.rows,
+      tall: view.vertical,
+      display: (frame) =>
+        toDisplayOrder(viewerFrame(frame, orientation), view.vertical),
+    });
+    orientedLayouts.set(orientation, layout);
+  }
+  return layout;
+}
 
 export const MatrixPreviewMixin = (Base) => class extends Base {
   // Convert a 100-entry matrix_colors array (RGB tuples) to CSS colors using
@@ -138,7 +164,11 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       this._frozenBackgroundPhase ??
       ((now - this._clockAnimStartedAt) / 1000) * rate;
     const { fontMap, metrics } = this._getNativeClockFont();
-    const pix = renderClockFrame(st.attributes, fontMap, metrics, phase);
+    // As the lamp draws it: its direction setting may turn it (Matter).
+    const pix = firmwareLampFrame(
+      renderClockFrame(st.attributes, fontMap, metrics, phase),
+      st.attributes,
+    );
     const grid = this._matrixColorsToGridColors(pix, st);
     this._updateMatrixColors(grid, st);
   }
@@ -195,16 +225,18 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const phase =
       this._nativeFrozenPhase ??
       ((now - this._nativeAnimStartedAt) / 1000) * rate;
-    // Bottom-origin frame (row 0 = physical bottom), like the clock path: hand
-    // it straight to _updateMatrixColors, whose layout indexFn provides the one
-    // display flip. (A prior extra flip here double-flipped native effects, so
-    // they showed upside-down vs the calibration card / lamp.)
-    const raw = renderNativeEffectOriented(
-      effect,
-      phase,
-      dir,
-      st.attributes.native_effect_color || null,
-      st.attributes.native_effect_color_mode || "normal",
+    // Lamp order (row 0 = physical bottom), like every frame painted here:
+    // _paintDots turns it the way the viewer sees it, once. As the lamp
+    // draws it: its direction setting may turn it (Matter).
+    const raw = firmwareLampFrame(
+      renderNativeEffectOriented(
+        effect,
+        phase,
+        dir,
+        st.attributes.native_effect_color || null,
+        st.attributes.native_effect_color_mode || "normal",
+      ),
+      st.attributes,
     );
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
@@ -221,7 +253,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
     // If the device orientation changed, the grid geometry (rows/cols, tall vs
     // wide) changed too — a color-only update can't fix that, so full re-render.
-    const orientation = stateObj?.attributes?.device_orientation || "right";
+    const orientation = deviceOrientation(stateObj?.attributes);
     if (this._lastPreviewOrientation !== orientation) {
       this._lastPreviewOrientation = orientation;
       this._refresh();
@@ -234,15 +266,10 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // Paint the .lamp-dot nodes directly. The dots have no reactive bindings, so
   // Lit never rewrites what the static preview or the animation loops paint.
   _paintDots(gridColors, orientation, dots = this._getLampDots()) {
-    const layout = this._orientedLayout(orientation);
-    const totalCols = layout.cols;
+    const colors = this._orientedLayout(orientation).display(gridColors);
 
     dots.forEach((dot, idx) => {
-      const row = Math.floor(idx / totalCols);
-      const col = idx % totalCols;
-      const colorIndex = layout.indexFn(row, col);
-
-      const color = gridColors[colorIndex] || "#000000";
+      const color = colors[idx] || "#000000";
 
       // Change-only: the raw color fully determines the black/empty/display
       // state, so skip the parse and DOM writes when it hasn't changed.
@@ -292,31 +319,13 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     return { isEmpty, displayColor };
   }
 
-  // Map the physical device orientation to a preview grid geometry + a
-  // function returning the gridColors index for each display cell (r,c).
-  //   right / left : 20x5 landscape (identical preview; left only flips the lamp)
-  //   up / down    : 5x20 tall. Both use the SAME 90deg rotation mapping — the
-  //                  180deg difference between them comes from the lamp content
-  //                  itself (up => _orientation normal, down => flipped). Using
-  //                  different mappings here would cancel that content flip and
-  //                  make up and down look identical.
-  // gridColors is stored bottom-to-top, so the base landscape read is
-  // (rows-1 - r)*20 + c (the historical vertical flip).
+  // The preview's geometry for the lamp's device orientation: landscape, or
+  // vertical when it stands on one end (Down / Up), and `display`, which turns
+  // a lamp-order frame (matrix_colors, the clock and effect frames) the way
+  // the viewer sees it, in the dots' order (matrix-view.js: the rule of every
+  // preview and the cameras).
   _orientedLayout(orientation) {
-    if (orientation === "up" || orientation === "down") {
-      return {
-        cols: 5,
-        rows: 20,
-        tall: true,
-        indexFn: (r, c) => c * 20 + r,
-      };
-    }
-    return {
-      cols: 20,
-      rows: 5,
-      tall: false,
-      indexFn: (r, c) => (4 - r) * 20 + c,
-    };
+    return orientedLayout(orientation);
   }
 
   // Container geometry of the matrix preview (shared by the Lit template and
@@ -328,31 +337,29 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const spacingMode = this.config.matrix_spacing_mode;
     const pixelGap = spacingMode === "normal" ? 4 : 0;
     const pixelStyle = this.config.matrix_pixel_style || "square";
-    const alignClass =
-      this.config.align === "left"
-        ? "align-left"
-        : this.config.align === "right"
-          ? "align-right"
-          : "align-center";
 
-    // Preview geometry follows the physical device orientation.
-    const orientation = stateObj?.attributes?.device_orientation || "right";
-    const layout = this._orientedLayout(orientation);
-    const sizePct = this.config.size_pct || 100;
+    // Preview geometry follows the physical device orientation; the frame
+    // is every preview's (matrix-frame.js), vertical at the same pixel size.
+    const layout = this._orientedLayout(deviceOrientation(stateObj?.attributes));
+    const frame = matrixFrame({
+      width: `${this.config.size_pct || 100}%`,
+      vertical: layout.tall,
+      gap: pixelGap,
+      padding: 8,
+      radius: 12,
+      background: matrixBackground,
+      shadow: matrixBoxShadow,
+    });
+    const margin =
+      this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto";
     return {
       layout,
-      alignClass,
-      outerStyle: `container-type:inline-size;max-width:100%;width:${layout.tall ? `${(85 * sizePct) / 100}px` : `${sizePct}%`};margin-inline:${this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto"};`,
+      outerStyle: `${frame.wrapperStyle}margin-inline:${margin};`,
       gridStyle:
         // Pixel shape and dot shadow, read by .lamp-dot (lamp-preview-styles.js).
         `--lamp-dot-radius:${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};` +
-        `--lamp-dot-shadow:${spacingMode === "subtle" || spacingMode === "normal" ? `0 0 ${previewLength(2)} #0008` : "none"};` +
-        `width:100%;aspect-ratio:auto;padding:${previewLength(8)};border-radius:${previewLength(12)};` +
-        `background: ${matrixBackground}; ` +
-        `gap: ${previewLength(pixelGap)}; ` +
-        `box-shadow: ${matrixBoxShadow ? `0 ${previewLength(2)} ${previewLength(8)} #0008` : "none"}; ` +
-        `grid-template-columns: repeat(${layout.cols}, 1fr); ` +
-        `grid-template-rows: repeat(${layout.rows}, 1fr);`,
+        `--lamp-dot-shadow:${spacingMode === "subtle" || spacingMode === "normal" ? `0 0 ${frame.length(2)} #0008` : "none"};` +
+        `aspect-ratio:auto;${frame.gridStyle}grid-template-rows: repeat(${layout.rows}, 1fr);`,
     };
   }
 
@@ -361,14 +368,14 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // and carry no bindings: _paintDots and the animation loops own their
   // colors.
   _matrixTemplate(stateObj) {
-    const { layout, alignClass, outerStyle, gridStyle } =
+    const { layout, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);
     const generation = this._dotGeneration;
     const indices = Array.from(
       { length: layout.rows * layout.cols },
       (_, index) => index,
     );
-    return html`<div class=${alignClass} style=${outerStyle}>
+    return html`<div style=${outerStyle}>
       <div class="lamp-preview-css" style=${gridStyle}>
         ${repeat(
           indices,

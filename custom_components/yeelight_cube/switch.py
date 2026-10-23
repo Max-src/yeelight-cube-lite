@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import MODE_CLOCK
+from .const import CONF_CAMERA_FOLLOWS_ORIENTATION, MODE_CLOCK
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
 
@@ -32,6 +32,7 @@ async def async_setup_entry(
     # Create the switches
     switches = [
         YeelightCubeAutoTurnOnSwitch(config_entry, light_entity),
+        YeelightCubeCameraOrientationSwitch(config_entry, light_entity),
         YeelightCubeClockShowDateSwitch(config_entry, light_entity),
         YeelightCubeClock12HourSwitch(config_entry, light_entity),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_entity),
@@ -47,22 +48,21 @@ async def async_setup_entry(
     _LOGGER.debug("Added %s switch entities for Yeelight Cube Lite", len(switches))
 
 
-class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):
-    """Whether a command sent while the lamp is off turns it on (stored in
-    the config entry's options; light._should_auto_turn_on reads it)."""
+class _YeelightCubeOptionSwitch(CubeDeviceEntity, SwitchEntity):
+    """A switch stored in the config entry's options (``option_key``, its
+    translation key too; ``default`` until first set)."""
 
     _attr_should_poll = False
+    option_key = ""
+    default = False
 
     def __init__(self, config_entry: ConfigEntry, light_entity):
         """Initialize the switch."""
         self._config_entry = config_entry
-        self._attr_translation_key = "auto_turn_on"
-        self._attr_unique_id = f"{config_entry.entry_id}_auto_turn_on"
-
+        self._attr_translation_key = self.option_key
+        self._attr_unique_id = f"{config_entry.entry_id}_{self.option_key}"
         self._light_entity = light_entity
-
-        # Load saved state or default to True (current behavior)
-        self._attr_is_on = config_entry.options.get("auto_turn_on", True)
+        self._attr_is_on = config_entry.options.get(self.option_key, self.default)
 
     async def async_turn_on(self, **kwargs):
         self._set(True)
@@ -74,10 +74,33 @@ class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):
         self._attr_is_on = enabled
         self.hass.config_entries.async_update_entry(
             self._config_entry,
-            options={**self._config_entry.options, "auto_turn_on": enabled},
+            options={**self._config_entry.options, self.option_key: enabled},
         )
         self.async_write_ha_state()
-        _LOGGER.debug("Auto-turn-on %s", "enabled" if enabled else "disabled")
+        _LOGGER.debug("%s %s", self.option_key, "enabled" if enabled else "disabled")
+        self._changed()
+
+    def _changed(self) -> None:
+        """React to a new value (the option is already stored)."""
+
+
+class YeelightCubeAutoTurnOnSwitch(_YeelightCubeOptionSwitch):
+    """Whether a command sent while the lamp is off turns it on
+    (light._should_auto_turn_on reads it)."""
+
+    option_key = "auto_turn_on"
+    default = True  # the behaviour before the option existed
+
+
+class YeelightCubeCameraOrientationSwitch(_YeelightCubeOptionSwitch):
+    """Whether the preview cameras draw a lamp standing on one end (Down /
+    Up orientation) vertical, like the cards; off: always landscape."""
+
+    option_key = CONF_CAMERA_FOLLOWS_ORIENTATION
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def _changed(self) -> None:
+        self._light_entity._notify_camera_preview()
 
 
 class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):

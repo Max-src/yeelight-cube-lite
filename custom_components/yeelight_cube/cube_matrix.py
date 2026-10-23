@@ -509,6 +509,11 @@ class CubeMatrix:
         an outage forgets it."""
         return self._running_effect
 
+    def forget_running_effect(self) -> None:
+        """The next native effect is set in full, not updated live (the
+        lamp's own direction applies only when an effect starts)."""
+        self._running_effect = None
+
     def note_running_effect(self, params: list) -> None:
         """The lamp took this set_fx_effect (or update_fx_effect to it)."""
         self._running_effect = [dict(p) if isinstance(p, dict) else p for p in params]

@@ -10,7 +10,7 @@ import logging
 import math
 import time as _time
 
-from PIL import Image, ImageDraw  # type: ignore
+from PIL import Image, ImageDraw, ImageFilter  # type: ignore
 
 from homeassistant.components.camera import Camera  # type: ignore
 from homeassistant.config_entries import ConfigEntry  # type: ignore
@@ -19,6 +19,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: i
 from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
+    CONF_CAMERA_FOLLOWS_ORIENTATION,
+    DEFAULT_DEVICE_ORIENTATION,
     FIRMWARE_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -31,6 +33,7 @@ from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
 from .effect_orientation import clock_effect_direction
 from .layout import FONT_MAPS, char_advance
+from .matrix_view import display_cell, is_vertical_mount, view_size, viewer_frame
 from .native_effect_preview import (
     effect_supports_color_override,
     render_music_flow_effect,
@@ -48,44 +51,82 @@ COLS = 20
 ROWS = 5
 
 # ── Image rendering parameters ────────────────────────────────────────
-# Smaller than a full-res render (cheaper PNG encode, fewer bytes) but large
-# enough that the round camera's ellipses still rasterise as clean circles --
-# 10px was too coarse and upscaled into rounded squares.
-PIXEL_SIZE = 16
-PIXEL_GAP = 3
-PADDING = 10
-CELL_SIZE = PIXEL_SIZE + PIXEL_GAP               # 19
-IMG_WIDTH = PADDING * 2 + COLS * CELL_SIZE - PIXEL_GAP   # 397
-IMG_HEIGHT = PADDING * 2 + ROWS * CELL_SIZE - PIXEL_GAP  # 112
+# The lamp drawn like the Lamp Preview card: a black frame with rounded
+# corners and a soft shadow, on a transparent background (a dashboard's
+# picture card shows its own background around it, whatever the fit). The
+# design is a 16 px pixel, 3 px gap, 10 px padding, 14 px corners and a 6 px
+# margin for the shadow, rendered RENDER_SCALE times larger so it stays sharp
+# full width: 1227 x 372 px (372 x 1227 vertical). The frame, its shadow and
+# the round dots' edges are anti-aliased once at import (_VIEWS, _DOT_MASK);
+# a frame copies its view's base and stamps the dots: about 9 ms and 30 KB
+# (round), 4 ms and 6 KB (square), encoded in an executor thread.
+RENDER_SCALE = 3
+PIXEL_SIZE = 16 * RENDER_SCALE
+PIXEL_GAP = 3 * RENDER_SCALE
+PADDING = 10 * RENDER_SCALE
+FRAME_RADIUS = 14 * RENDER_SCALE
+MARGIN = 6 * RENDER_SCALE
+CELL_SIZE = PIXEL_SIZE + PIXEL_GAP
+# Edges are drawn this many times larger, then reduced (anti-aliasing).
+_SUPERSAMPLE = 4
 
-# ── Pre-computed pixel coordinates (row, col) → (x0, y0, x1, y1) ─────
-# Built once at import time so _render_matrix does zero arithmetic.
-_PIXEL_RECTS_NORMAL: list[list[tuple[int, int, int, int]]] = []
-_PIXEL_RECTS_FLIPPED: list[list[tuple[int, int, int, int]]] = []
-for _r in range(ROWS):
-    _row_n: list[tuple[int, int, int, int]] = []
-    _row_f: list[tuple[int, int, int, int]] = []
-    for _c in range(COLS):
-        # Normal orientation: lamp row 0 = physical bottom → image bottom
-        _dr_n = ROWS - 1 - _r
-        _dc_n = _c
-        _x = PADDING + _dc_n * CELL_SIZE
-        _y = PADDING + _dr_n * CELL_SIZE
-        _row_n.append((_x, _y, _x + PIXEL_SIZE, _y + PIXEL_SIZE))
 
-        # Inverse of the device's 180-degree orientation transform. This is
-        # used only to keep previews upright when cached pixels are pre-flipped.
-        _dr_f = _r
-        _dc_f = COLS - 1 - _c
-        _x2 = PADDING + _dc_f * CELL_SIZE
-        _y2 = PADDING + _dr_f * CELL_SIZE
-        _row_f.append((_x2, _y2, _x2 + PIXEL_SIZE, _y2 + PIXEL_SIZE))
-    _PIXEL_RECTS_NORMAL.append(_row_n)
-    _PIXEL_RECTS_FLIPPED.append(_row_f)
+def _smooth_mask(size: tuple[int, int], draw_shape) -> Image.Image:
+    """An anti-aliased coverage mask of `size`: `draw_shape(draw, box)` draws
+    the shape _SUPERSAMPLE times larger, then it is reduced."""
+    big = Image.new("L", (size[0] * _SUPERSAMPLE, size[1] * _SUPERSAMPLE), 0)
+    draw_shape(ImageDraw.Draw(big), (0, 0, big.width - 1, big.height - 1))
+    return big.resize(size, Image.LANCZOS)
 
-# Flatten for linear indexing (index = row * COLS + col)
-_RECTS_NORMAL = [r for row in _PIXEL_RECTS_NORMAL for r in row]
-_RECTS_FLIPPED = [r for row in _PIXEL_RECTS_FLIPPED for r in row]
+
+# A round dot's coverage, pasted with each lit pixel's color.
+_DOT_MASK = _smooth_mask(
+    (PIXEL_SIZE, PIXEL_SIZE), lambda draw, box: draw.ellipse(box, fill=255)
+)
+
+
+def _frame_size(cols: int, rows: int) -> tuple[int, int]:
+    return (
+        PADDING * 2 + cols * CELL_SIZE - PIXEL_GAP,
+        PADDING * 2 + rows * CELL_SIZE - PIXEL_GAP,
+    )
+
+
+def _view_base(vertical: bool) -> Image.Image:
+    """A view's empty image: the rounded black frame and its shadow (2 px
+    down, 8 px blur, half opaque, as the Lamp Preview's) on transparency."""
+    frame = _frame_size(*view_size(vertical))
+    size = (frame[0] + 2 * MARGIN, frame[1] + 2 * MARGIN)
+    radius = FRAME_RADIUS * _SUPERSAMPLE
+    mask = _smooth_mask(
+        frame,
+        lambda draw, box: draw.rounded_rectangle(box, radius=radius, fill=255),
+    )
+    shadow = Image.new("L", size, 0)
+    shadow.paste(mask, (MARGIN, MARGIN + 2 * RENDER_SCALE))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(4 * RENDER_SCALE))
+    base = Image.new("RGBA", size, (0, 0, 0, 0))
+    base.putalpha(shadow.point(lambda value: value // 2))
+    base.paste((0, 0, 0, 255), (MARGIN, MARGIN), mask)
+    return base
+
+
+def _view_rects(vertical: bool) -> list[tuple[int, int, int, int]]:
+    """Each top-first pixel's rectangle in a landscape or vertical image
+    (matrix_view.display_cell), built once at import time so _render_matrix
+    does no arithmetic."""
+    rects = []
+    for index in range(COLS * ROWS):
+        row, col = display_cell(index, vertical)
+        x = MARGIN + PADDING + col * CELL_SIZE
+        y = MARGIN + PADDING + row * CELL_SIZE
+        rects.append((x, y, x + PIXEL_SIZE, y + PIXEL_SIZE))
+    return rects
+
+
+# vertical -> (empty image, rectangles): 1227 x 372 landscape, 372 x 1227
+# vertical.
+_VIEWS = {vertical: (_view_base(vertical), _view_rects(vertical)) for vertical in (False, True)}
 
 
 # ── Perceptual brightness boost (must match JS matrix-const.js) ─────
@@ -141,7 +182,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # MJPEG poll interval for the HA camera proxy -> ~3 fps preview refresh.
         self._attr_frame_interval = 0.3
         self._attr_content_type = "image/png"
+        # The last image rendered (None: render on the next request) and the
+        # frame count it must match (async_refresh_preview).
         self._cached_image: bytes | None = None
+        self._image_generation = 0
         self._native_preview_key: tuple[str, str] | None = None
         self._native_preview_started_at: float | None = None
         # Background animation phase held while the panel is frozen. Cleared on
@@ -153,11 +197,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     # ── Lifecycle ──────────────────────────────────────────────────────
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # The light pushes its frames to its cameras (light._camera_entities,
+        # The light tells its cameras of new frames (light._camera_entities,
         # set up with them) until this one is removed.
         cameras = self._light_entity._camera_entities
         self.async_on_remove(lambda: self in cameras and cameras.remove(self))
-        await self._async_pre_render()
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:
@@ -165,65 +208,67 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # the entity id, so it keeps running as it is.
         super().async_entity_id_changed(old_entity_id)
 
-    # ── Direct push (called by light entity) ───────────────────────────
+    # ── New frame (called by the light entity) ─────────────────────────
     @callback
     def async_refresh_preview(self) -> None:
-        # Render off-loop, then bump the token and write state so the frontend
-        # never fetches a stale frame (render -> token -> state ordering).
-        self._light_entity._create_tracked_task(
-            self._async_refresh_preview(), name=f"yeelight_cube_preview_{self.entity_id}"
-        )
-
-    async def _async_refresh_preview(self) -> None:
-        _t0 = _time.time()
-        await self._async_pre_render()
-        _t1 = _time.time()
+        """The lamp shows something new: drop the image and give the frontend
+        a new token, so a viewer fetches it. Rendered on demand only
+        (async_camera_image): nobody watching costs nothing, and a fetch
+        always draws the lamp's latest frame."""
+        self._cached_image = None
+        self._image_generation += 1
         self.async_update_token()
         self.async_write_ha_state()
-        _LOGGER.debug(
-            "[TIMING] camera %s async_refresh_preview: "
-            "render=%.1fms "
-            "total=%.1fms",
-            self._TRANSLATION_KEY, (_t1 - _t0)*1000, (_time.time() - _t0)*1000
-        )
 
     # ── Image serving ──────────────────────────────────────────────────
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Return the full-size PNG.  Browser handles display scaling."""
-        if self._cached_image is None or self._is_native_preview_mode():
-            await self._async_pre_render()
-        return self._cached_image
+        if self._cached_image is not None and not self._is_native_preview_mode():
+            return self._cached_image
+        return await self._async_render()
 
     def camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         if self._cached_image is None or self._is_native_preview_mode():
-            self._pre_render()
+            self._cached_image = self._render_matrix(*self._view_frame())
         return self._cached_image
 
     # ── Internal helpers ───────────────────────────────────────────────
-    def _pre_render(self) -> None:
-        colors = self._get_matrix_colors()
-        self._cached_image = self._render_matrix(colors)
-
-    async def _async_pre_render(self) -> None:
-        """Compute colors on the loop, encode the PNG in an executor thread."""
-        colors = self._get_matrix_colors()
-        self._cached_image = await self.hass.async_add_executor_job(
-            self._render_matrix, colors
+    async def _async_render(self) -> bytes:
+        """Compute the frame on the loop, encode the PNG in an executor thread,
+        and keep it unless a newer frame arrived meanwhile."""
+        generation = self._image_generation
+        started = _time.monotonic()
+        image = await self.hass.async_add_executor_job(
+            self._render_matrix, *self._view_frame()
         )
+        if generation == self._image_generation:
+            self._cached_image = image
+        _LOGGER.debug(
+            "[TIMING] camera %s render: %.1fms",
+            self._TRANSLATION_KEY, (_time.monotonic() - started) * 1000,
+        )
+        return image
+
+    def _view_frame(self) -> tuple[list[tuple], bool]:
+        """What the image shows: the lamp's frame as the viewer sees it
+        (matrix_view.viewer_frame, the rule of every card preview), and
+        whether it is drawn vertical: the lamp stands on one end and the
+        "Camera follows orientation" option is on."""
+        orientation = getattr(
+            self._light_entity, "_device_orientation", DEFAULT_DEVICE_ORIENTATION
+        )
+        vertical = is_vertical_mount(orientation) and bool(
+            self._config_entry.options.get(CONF_CAMERA_FOLLOWS_ORIENTATION, False)
+        )
+        return viewer_frame(self._get_matrix_colors(), orientation), vertical
 
     def _is_native_preview_mode(self) -> bool:
         """Return whether the preview changes without an HA state update."""
         return getattr(self._light_entity, "_mode", None) in FIRMWARE_MODES
-
-    def _uses_generated_preview(self) -> bool:
-        """Return whether pixels are generated locally instead of cached content:
-        the firmware draws the matrix, so there is no plugin frame to show (the
-        same rule the light's matrix_colors attribute follows)."""
-        return bool(getattr(self._light_entity, "firmware_draws_matrix", False))
 
     def _get_matrix_colors(self) -> list[tuple]:
         """The matrix colors scaled by a perceptual brightness curve, like
@@ -241,9 +286,9 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         if getattr(le, "_music_flow_enabled", False):
             base = self._get_music_flow_preview()
         elif mode == MODE_CLOCK:
-            base = self._get_clock_preview()
+            base = self._firmware_lamp_frame(self._get_clock_preview())
         elif mode == MODE_NATIVE_EFFECT:
-            base = self._get_native_effect_preview()
+            base = self._firmware_lamp_frame(self._get_native_effect_preview())
         else:
             base = getattr(le, "_base_matrix_colors", None)
         if not base or len(base) != 100:
@@ -288,6 +333,14 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             return self._get_native_effect_preview()
         return None
 
+    def _firmware_lamp_frame(self, frame: list) -> list:
+        """Firmware content (clock, native effect; lamp order) as the lamp
+        draws it: its own direction setting (followed over Matter) may turn
+        it a half turn (light_matter.lamp_turns_content)."""
+        if getattr(self._light_entity, "lamp_turns_content", False):
+            return frame[::-1]
+        return frame
+
     def _get_native_effect_preview(self) -> list[tuple[int, int, int]]:
         """Render a local approximation of the active firmware animation."""
         le = self._light_entity
@@ -318,23 +371,15 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             color_mode=getattr(le, "_native_effect_color_mode", "normal"),
             color_override=getattr(le, "_native_effect_color", None),
         )
-        # Bottom-origin frame (row 0 = physical bottom), like _get_clock_preview:
-        # return it as-is and let _render_matrix's _RECTS_NORMAL apply the single
-        # display flip. (A prior extra flip here double-flipped native effects, so
-        # they showed upside-down vs the calibration card / lamp.)
+        # Lamp order (row 0 = physical bottom), like every frame: _view_frame
+        # turns it the way the viewer sees it, once.
         return frame
 
     def _get_music_flow_preview(self) -> list[tuple[int, int, int]]:
         """Render a fixed illustration of the active Music Flow effect."""
-        matrix = render_music_flow_effect(
+        return render_music_flow_effect(
             getattr(self._light_entity, "_music_flow_effect", "Breathing")
         )
-        device_orientation = getattr(
-            self._light_entity, "_device_orientation", "right"
-        )
-        if device_orientation in ("left", "up"):
-            matrix = matrix[::-1]
-        return matrix
 
     def _get_clock_preview(self) -> list[tuple[int, int, int]]:
         """Render the active firmware clock face into a 20x5 matrix."""
@@ -477,13 +522,8 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                         )
             offset += advance
 
-        # Mirror the firmware clock face for left/up mounts.  The hardware
-        # native clock cannot rotate, but the preview should show what a
-        # software-rendered clock would look like in those orientations.
-        device_orientation = getattr(le, "_device_orientation", "right")
-        if device_orientation in ("left", "up"):
-            matrix = matrix[::-1]
-
+        # Lamp order, like every frame: the firmware clock cannot turn, so on
+        # an upside-down mount the viewer sees it upside down (_view_frame).
         return matrix
 
     @staticmethod
@@ -547,21 +587,15 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         )
 
     # Subclass must implement
-    def _draw_pixel(self, draw: ImageDraw.Draw, rect: tuple, fill: tuple) -> None:
+    def _draw_pixel(self, img: Image.Image, draw: ImageDraw.Draw, rect: tuple, fill: tuple) -> None:
         raise NotImplementedError
 
-    def _render_matrix(self, colors: list[tuple]) -> bytes:
-        """Render the 20×5 matrix and return lossless PNG bytes (~1 KB)."""
-        img = Image.new("RGB", (IMG_WIDTH, IMG_HEIGHT), (0, 0, 0))
+    def _render_matrix(self, colors: list[tuple], vertical: bool = False) -> bytes:
+        """Render a top-first frame (_view_frame) landscape or vertical and
+        return lossless PNG bytes (RGBA: transparent around the frame)."""
+        base, rects = _VIEWS[bool(vertical)]
+        img = base.copy()
         draw = ImageDraw.Draw(img)
-
-        flipped = getattr(self._light_entity, "_orientation", None) == "flipped"
-        # Regular-mode pixels have already been transformed before being sent
-        # to the lamp, so apply the inverse transform for an upright preview.
-        # Native Clock/Effect previews now bake device orientation into the
-        # pixel buffer, so the renderer uses normal rects for those modes.
-        undo_device_flip = flipped and not self._uses_generated_preview()
-        rects = _RECTS_FLIPPED if undo_device_flip else _RECTS_NORMAL
 
         for i, rgb in enumerate(colors):
             if isinstance(rgb, (tuple, list)) and len(rgb) >= 3:
@@ -570,13 +604,12 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                     continue
             else:
                 continue
-            self._draw_pixel(draw, rects[i], (r, g, b))
+            self._draw_pixel(img, draw, rects[i], (r, g, b, 255))
 
         buf = io.BytesIO()
-        # compress_level=1: fastest zlib setting; the image is tiny and
-        # few-colored, so the extra bytes are negligible but the encode is
-        # noticeably cheaper per frame.
-        img.save(buf, format="PNG", compress_level=1)
+        # compress_level=6 (zlib's default): about 2 ms more than the fastest
+        # level for half the bytes on the anti-aliased round dots.
+        img.save(buf, format="PNG", compress_level=6)
         return buf.getvalue()
 
 
@@ -587,8 +620,9 @@ class YeelightCubeMatrixCameraSquare(_YeelightCubeMatrixCameraBase):
     _TRANSLATION_KEY = "matrix_preview_square"
     _UID_SUFFIX = "_matrix_preview_square"
 
-    def _draw_pixel(self, draw, rect, fill):
-        draw.rectangle(rect, fill=fill)
+    def _draw_pixel(self, img, draw, rect, fill):
+        # The last row and column inside the pixel (PIL boxes are inclusive).
+        draw.rectangle((rect[0], rect[1], rect[2] - 1, rect[3] - 1), fill=fill)
 
 
 # ── Round-pixel camera ────────────────────────────────────────────────
@@ -598,5 +632,5 @@ class YeelightCubeMatrixCameraRound(_YeelightCubeMatrixCameraBase):
     _TRANSLATION_KEY = "matrix_preview_round"
     _UID_SUFFIX = "_matrix_preview_round"
 
-    def _draw_pixel(self, draw, rect, fill):
-        draw.ellipse(rect, fill=fill)
+    def _draw_pixel(self, img, draw, rect, fill):
+        img.paste(fill, rect[:2], _DOT_MASK)

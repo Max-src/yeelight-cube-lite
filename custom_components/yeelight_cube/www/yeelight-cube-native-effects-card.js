@@ -37,7 +37,11 @@ import {
   nativeEffectAction,
   nativeEffectPreviewConfig,
 } from "./native-effect-card-utils.js";
-import { renderMatrixPreview } from "./gallery-display-utils.js";
+import {
+  matrixPreviewCells,
+  renderMatrixPreview,
+} from "./gallery-display-utils.js";
+import { deviceOrientation, isVerticalMount } from "./matrix-view.js";
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
@@ -472,6 +476,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       return html`<div class="unmodelled">Preview unavailable</div>`;
     const pixels = Array.from({ length: 100 }, () => [0, 0, 0]);
     const appearance = this._matrixAppearance(current);
+    const vertical = this._previewVertical();
     return html`<div
       class="effect-matrix ${current ? "current-matrix" : ""}"
       data-effect=${effect.name}
@@ -481,6 +486,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         renderMatrixPreview(pixels, {
           ...appearance,
           forceAspectRatio: true,
+          vertical,
         }),
       )}
     </div>`;
@@ -857,6 +863,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   // The shared gallery (collection-gallery.js), used exactly like the Clock
   // card's.
   _gallery(effect, all) {
+    const attrs = this._previewAttrs();
+    const vertical = isVerticalMount(attrs.device_orientation);
     return html`<yc-collection-gallery
       .config=${this.config}
       .items=${all.map((item) => ({
@@ -864,7 +872,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         dataMode: item.name,
         title: item.name,
         badge: this._effectBadge(item),
-        colorData: nativeEffectFrame(item, this._attrs(), 0),
+        colorData: nativeEffectFrame(item, attrs, 0),
+        vertical,
         favourite: this._controls.hasFavourite(item.name, this._colorModeKey()),
       }))}
       .active=${this._controls.displayed("key", effect?.name)}
@@ -897,7 +906,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       appearance: node.classList.contains("current-matrix")
         ? this._matrixAppearance(true)
         : this._matrixAppearance(false),
-      cells: [...node.querySelectorAll(".gallery-matrix-preview > div")],
+      cells: matrixPreviewCells(node.querySelector(".gallery-matrix-preview")),
     }));
     // A render can land after the card left the page: never observe then
     // (disconnectedCallback already released the observer).
@@ -920,16 +929,28 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._paint();
   }
 
-  _paint() {
-    const attrs = {
-      ...this._attrs(),
+  // The lamp's attributes the previews follow: the orientation being set
+  // (the lamp's until it confirms) and the speed being dragged.
+  _previewAttrs() {
+    const attrs = this._attrs();
+    return {
+      ...attrs,
       device_orientation:
-        this._controls.pendingOrientation || this._attrs().device_orientation,
+        this._controls.pendingOrientation || deviceOrientation(attrs),
       native_effect_speed:
         this._speedDraft == null
-          ? this._attrs().native_effect_speed
+          ? attrs.native_effect_speed
           : speedPctToRaw(this._speedDraft),
     };
+  }
+
+  // The previews stand up while the lamp does (matrix-view.js).
+  _previewVertical() {
+    return isVerticalMount(this._previewAttrs().device_orientation);
+  }
+
+  _paint() {
+    const attrs = this._previewAttrs();
     const cache = new Map();
     // The same preview brightness as the other cards (LampSliders).
     const brightness =

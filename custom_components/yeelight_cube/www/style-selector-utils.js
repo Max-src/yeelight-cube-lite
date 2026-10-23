@@ -21,7 +21,7 @@ export function selectorItemsPerPage(config) {
 }
 // Items per page of a browser layout (0: the layout does not page).
 export function selectorPageSize(config, style) {
-  return ["original", "preview-list", "preview-grid"].includes(style)
+  return ["original", "preview-list", "preview-grid", "preview-mosaic"].includes(style)
     ? selectorItemsPerPage(config)
     : 0;
 }

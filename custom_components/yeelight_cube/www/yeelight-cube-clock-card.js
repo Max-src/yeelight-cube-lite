@@ -79,8 +79,13 @@ import {
   getClockStyles,
   renderClockFrame,
   lookupNativeClockFont,
-  flipMatrixVertical,
 } from "./clock-preview-utils.js";
+import {
+  firmwareLampFrame,
+  deviceOrientation,
+  isVerticalMount,
+  viewerFrame,
+} from "./matrix-view.js";
 import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
@@ -181,7 +186,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       buttons_content_mode: DEFAULT_BUTTON_CONTENT_MODE,
       // Unified selector (same families as the gradient card):
       //   Text:    filled | dropdown
-      //   Preview: preview-list | preview-grid | preview-carousel | preview-wheel
+      //   Preview: preview-list | preview-grid | preview-mosaic | preview-strip |
+      //            preview-carousel | preview-wheel | preview-album
       //   Original: grid | list badge gallery (shared with the native card)
       style_selector_style: "preview-grid",
       show_gallery: true,
@@ -598,6 +604,13 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       clockPresetLibrary(this._hass),
       this.config,
     );
+  }
+
+  // The orientation the previews follow: the one being set (the lamp's until
+  // it confirms). The firmware clock never turns, so an upside-down or
+  // standing lamp shows it so (matrix-view.js viewerFrame).
+  _previewOrientation() {
+    return this._controls?.pendingOrientation || deviceOrientation(this._attrs());
   }
 
   // Build the attrs object a preview needs, mixing the current format settings
@@ -1116,12 +1129,19 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   _previewItems() {
     const phase = 0;
     const { fontMap, metrics } = this._getNativeClockFont();
+    const orientation = this._previewOrientation();
+    const vertical = isVerticalMount(orientation);
     return this._availableStyles().map((s) => ({
       title: s.name,
       name: s.name,
-      colorData: flipMatrixVertical(
-        renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
+      colorData: viewerFrame(
+        firmwareLampFrame(
+          renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
+          this._attrs(),
+        ),
+        orientation,
       ),
+      vertical,
       dataMode: clockPresetKey(s),
       // Custom styles are the user's own: renamed and deleted in the gallery.
       editable: !!s.presetId,

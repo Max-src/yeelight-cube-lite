@@ -34,6 +34,12 @@ const PREVIEW_STYLE_CHOICES = [
     title: "Fixed two-column grid of live previews",
   },
   {
+    value: "preview-mosaic",
+    label: "Mosaic",
+    title:
+      "Every preview in its own shape (vertical pixel arts stand up), packed row by row in your order",
+  },
+  {
     value: "preview-strip",
     label: "Strip",
     title: "Horizontal scrollable strip of mini previews",
@@ -265,11 +271,12 @@ export function renderStyleSelectorSettings(
                   highlightRow(),
                 )
               : ""}
-            ${style === "preview-list" || style === "preview-grid"
+            ${["preview-list", "preview-grid", "preview-mosaic"].includes(style)
               ? renderSettingsBox(
-                  style === "preview-grid"
-                    ? "Grid Mode Settings"
-                    : "List Mode Settings",
+                  {
+                    "preview-grid": "Grid Mode Settings",
+                    "preview-mosaic": "Mosaic Mode Settings",
+                  }[style] || "List Mode Settings",
                   html`
                     ${highlightRow()}
                     ${createSliderRow(
@@ -296,7 +303,7 @@ export function renderStyleSelectorSettings(
           html`
             <div class="hint">
               Rename or delete your ${manage} from the gallery's cards (list,
-              grid, strip, carousel, album, Original). A delete always asks
+              grid, mosaic, strip, carousel, album, Original). A delete always asks
               for confirmation.
             </div>
             ${createToggleRow(

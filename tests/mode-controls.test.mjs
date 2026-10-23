@@ -243,12 +243,14 @@ test("favourites preview frames render at current time, not phase 0", () => {
     "unsafeHTML",
     "renderMatrixPreview",
     "performance",
+    "isVerticalMount",
     `return function(favourite) {${match[1]}}`,
   )(
     (strings, ...values) => ({ strings, values }),
     (value) => value,
     () => "",
     { now: () => 12345 },
+    () => false,
   );
   const view = {
     model: {

@@ -1,8 +1,6 @@
 // Event handler functions for Yeelight Cube Lite Draw Card
 // Each function should be exported and receive the card instance as first argument if needed
 
-import { GRID_COLS, GRID_ROWS } from "./draw_card_const.js";
-
 export function drawPixel(card, e, idx) {
   e.preventDefault();
   if (card.pencilMode) {
@@ -42,10 +40,12 @@ export function drawMove(card, e) {
   const container = card.shadowRoot.querySelector(".matrix");
   if (!container) return;
   const rect = container.getBoundingClientRect();
-  const x = Math.floor((clientX - rect.left) / (rect.width / GRID_COLS));
-  const y = Math.floor((clientY - rect.top) / (rect.height / GRID_ROWS));
-  if (x >= 0 && x < GRID_COLS && y >= 0 && y < GRID_ROWS) {
-    const idx = y * GRID_COLS + x;
+  // The cell under the pointer in the area's view, and the pixel it shows.
+  const view = card._drawingView();
+  const x = Math.floor((clientX - rect.left) / (rect.width / view.cols));
+  const y = Math.floor((clientY - rect.top) / (rect.height / view.rows));
+  if (x >= 0 && x < view.cols && y >= 0 && y < view.rows) {
+    const idx = view.source[y * view.cols + x];
     if (card.pencilMode) {
       card._setPixel(idx);
     } else if (card.eraserMode) {

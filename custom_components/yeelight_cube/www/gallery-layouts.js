@@ -13,12 +13,12 @@
 //   select(key), navigate(delta), setIndex(index), setPage(value),
 //   itemControls(item) (rename / delete of editable items, or nothing).
 import { html, nothing, unsafeHTML } from "./lib/lit-all.js";
-import { matrixCellLook } from "./gallery-display-utils.js";
-import { previewLength } from "./preview-appearance.js";
+import { matrixCellLook, matrixPreviewLayout } from "./gallery-display-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
 import { renderCarousel } from "./carousel-utils.js";
 import "./wheel-picker.js";
-import "./album-view-coverflow.js";
+import { tileColumns, tileColumnsFixed, tileSpan } from "./tile-grid.js";
+import { albumCardWidth } from "./album-view-coverflow.js";
 import {
   resolveSelectorShape,
   resolveSelectorButtonShape,
@@ -27,38 +27,30 @@ import {
 
 // ── Matrix previews ────────────────────────────────────────────────────────
 
-/** A 5x20 matrix preview (the markup of renderMatrixPreview, as a template). */
+/** A 5x20 matrix preview (the markup of renderMatrixPreview, as a template:
+ * matrixPreviewLayout). */
 export function matrixTemplate(colorData = [], options = {}) {
-  const {
-    cols = 20,
-    bgColor = "#000000",
-    pixelStyle = "square",
-    pixelGap = 1,
-    previewSize = 200,
-    matrixBoxShadow = false,
-    proportionalSpacing = true,
-  } = options;
-  const length = (value) =>
-    proportionalSpacing ? previewLength(value) : `${value}px`;
-  const radius =
-    pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
-  const size = options.forceAspectRatio ? "width: 100%;" : `width: ${previewSize}px;`;
+  const layout = matrixPreviewLayout(colorData, options);
   const grid = html`<div
     class="gallery-matrix-preview"
-    style=${`grid-template-columns:repeat(${cols},1fr);gap:${length(pixelGap)};background:${bgColor};padding:${length(pixelGap * 2)};border-radius:${length(4)};--yc-px-radius:${radius};${proportionalSpacing ? "width:100%;" : size}${matrixBoxShadow ? `box-shadow: 0 ${length(2)} ${length(8)} rgba(0,0,0,0.5);` : ""}`}
-  >${(colorData || []).map((color) => {
-    const look = matrixCellLook(color, options);
+    data-vertical=${layout.vertical ? "true" : nothing}
+    style=${layout.gridStyle}
+  >${layout.cells.map((color) => {
+    const look = matrixCellLook(color, layout.cellOptions);
     return html`<div style=${`background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}`}></div>`;
   })}</div>`;
-  return proportionalSpacing
-    ? html`<div style=${`container-type:inline-size;max-width:100%;${size}`}>${grid}</div>`
+  return layout.proportionalSpacing
+    ? html`<div style=${layout.wrapperStyle}>${grid}</div>`
     : grid;
 }
 
 /** An item's preview: the card's own markup (previewHtml, trusted: the card
- * escapes it) at the preview width, else its live matrix (colorData). */
+ * escapes it) at the preview width, else its live matrix (colorData), drawn
+ * vertical for an item that is (`vertical`: a pixel art drawn for a lamp
+ * standing on its end, a lamp mounted so). */
 export function itemPreviewTemplate(item, options = {}) {
-  if (item?.previewHtml == null) return matrixTemplate(item?.colorData, options);
+  if (item?.previewHtml == null)
+    return matrixTemplate(item?.colorData, { ...options, vertical: !!item?.vertical });
   const width = options.forceAspectRatio ? "100%" : `${options.previewSize ?? 200}px`;
   return html`<div
     class="gallery-item-preview"
@@ -93,7 +85,7 @@ function previewLook(config, style) {
   return {
     previewSize,
     effectiveSize:
-      style === "preview-grid"
+      style === "preview-grid" || style === "preview-mosaic"
         ? Math.round(previewSize * 0.5)
         : style === "preview-strip"
           ? Math.round(previewSize * 0.4)
@@ -102,8 +94,6 @@ function previewLook(config, style) {
     // Titles are white on exactly "#000000" (not "black").
     bgColor: bgName === "black" ? "#000000" : bgName,
     matrix: {
-      rows: 5,
-      cols: 20,
       bgColor: bgName === "black" ? "#000000" : bgName,
       pixelStyle: config.gallery_pixel_style || "square",
       pixelGap: spacing === "normal" ? 3 : 0,
@@ -136,6 +126,8 @@ function chipSwatch(item) {
       pixelGap: 0,
       previewSize: 44,
       proportionalSpacing: false,
+      vertical: !!item.vertical,
+      fitHeight: true,
     })}</span>`;
   return html`<span class="mode-chip-swatch"></span>`;
 }
@@ -229,24 +221,29 @@ export function textLayout(g, style) {
 
 // ── Preview layouts ────────────────────────────────────────────────────────
 
-// A card of the list, grid and strip.
-function previewItem(g, item, look, strip) {
+// A card of the packed layouts (list, grid, mosaic: a tile of
+// <yc-tile-grid>, its columns tileSpan) or of the strip.
+function previewItem(g, item, look, strip = false) {
   const state = itemState(g, item);
   const size = look.effectiveSize;
   const showCards = strip;
   const background = look.bgColor || (showCards ? "var(--card-background-color, #fff)" : "transparent");
+  // A vertical item's tile is as narrow as its picture allows: its title
+  // wraps (two lines at most) rather than widening it.
+  const vertical = item.vertical ? " gallery-item-vertical" : "";
+  const titleWidth = item.vertical ? Math.max(64, Math.round(size / 2)) : size;
   const title =
     look.showTitles && item.title
       ? html`<div
           class="gallery-item-title"
-          style=${`font-size: ${titleFontSize(size)}px; ${strip ? `max-width: ${size}px; ` : ""}${titleColor(look.bgColor)}`}
+          style=${`font-size: ${titleFontSize(size)}px; ${strip ? `max-width: ${titleWidth}px; ` : ""}${titleColor(look.bgColor)}`}
         >${item.title}</div>`
       : nothing;
   const preview = itemPreviewTemplate(item, { ...look.matrix, previewSize: size });
   const controls = g.itemControls(item);
   return strip
     ? html`<div
-        class="gallery-item gallery-compact-item${controls === nothing ? "" : " yc-editable"}${state.pending}"
+        class="gallery-item gallery-compact-item${vertical}${controls === nothing ? "" : " yc-editable"}${state.pending}"
         data-mode=${item.dataMode}
         data-active-mode=${state.active}
         data-favourite=${state.favourite}
@@ -259,7 +256,7 @@ function previewItem(g, item, look, strip) {
         @click=${() => g.select(item.dataMode)}
       >${preview}${title}${controls}</div>`
     : html`<div
-        class="gallery-item gallery-item-plain${controls === nothing ? "" : " yc-editable"}${state.pending}"
+        class="gallery-item gallery-item-plain${vertical}${controls === nothing ? "" : " yc-editable"}${state.pending}"
         data-mode=${item.dataMode}
         data-active-mode=${state.active}
         data-favourite=${state.favourite}
@@ -268,7 +265,7 @@ function previewItem(g, item, look, strip) {
         tabindex="0"
         aria-label=${state.label}
         title=${state.title}
-        style=${`cursor: pointer; background: ${background};`}
+        style=${`cursor: pointer; background: ${background}; ${tileSpan(item)}`}
         @click=${() => g.select(item.dataMode)}
       >${title}
         <div class="gallery-item-body">${preview}</div>
@@ -277,19 +274,27 @@ function previewItem(g, item, look, strip) {
           : nothing}${controls}</div>`;
 }
 
-/** list, grid, strip, carousel (wheel and album: their own templates). */
+// The columns of the packed layouts (tile-grid.js): List stretches tiles at
+// least as wide as a preview, Grid has two per row, Mosaic keeps each tile
+// its preview's size, as many as fit, centred.
+const PACKED_COLUMNS = {
+  "preview-list": (look) => tileColumns(look.effectiveSize + 60),
+  "preview-grid": () => tileColumnsFixed(2),
+  "preview-mosaic": (look) =>
+    tileColumns(look.effectiveSize + 12, { stretch: false }),
+};
+
+/** list, grid, mosaic, strip, carousel (wheel and album: their own
+ * templates). */
 export function previewLayout(g, style) {
   const { config, items } = g;
   const look = previewLook(config, style);
-  const shellAttrs = {
-    shape: resolveSelectorShape(config),
-    columns: style === "preview-grid" ? "2" : nothing,
-  };
+  const shape = resolveSelectorShape(config);
   if (style === "preview-carousel") {
     const index = Math.max(0, Math.min(g.index ?? 0, items.length - 1));
     return html`<div
       class="gc-preview-shell"
-      data-shape=${shellAttrs.shape}
+      data-shape=${shape}
       style="border-radius:8px;"
     >
       ${renderCarousel({
@@ -305,19 +310,20 @@ export function previewLayout(g, style) {
     </div>`;
   }
   const paged = g.pagination.items;
-  const strip = style === "preview-strip";
   return html`<div
     class="gc-preview-shell"
-    data-shape=${shellAttrs.shape}
-    data-columns=${shellAttrs.columns}
+    data-shape=${shape}
+    data-layout=${style}
     style="border-radius: 8px;"
   >
-    ${strip
+    ${style === "preview-strip"
       ? html`<div class="gallery-display-strip">${paged.map((item) => previewItem(g, item, look, true))}</div>`
-      : html`<div
-          class="gallery-display-grid"
-          style=${`grid-template-columns: repeat(auto-fit, minmax(min(${look.effectiveSize + 60}px, 100%), 1fr));`}
-        >${paged.map((item) => previewItem(g, item, look, false))}</div>`}
+      : // Packed tiles (tile-grid.js): a vertical item takes half a
+        // landscape tile's place, beside one, in the items' order.
+        html`<yc-tile-grid
+          class="gallery-display-grid${style === "preview-mosaic" ? " gallery-display-mosaic" : ""}"
+          style=${`grid-template-columns: ${PACKED_COLUMNS[style](look)};`}
+        >${paged.map((item) => previewItem(g, item, look))}</yc-tile-grid>`}
     ${paginationTemplate(g)}
   </div>`;
 }
@@ -326,8 +332,15 @@ export function previewLayout(g, style) {
 function carouselItem(g, item, look) {
   const state = itemState(g, item);
   const controls = g.itemControls(item);
+  // A vertical item's card hugs its picture (at the landscape pixel size)
+  // and title instead of spanning the carousel.
+  const preview = item.vertical
+    ? itemPreviewTemplate(item, { ...look.matrix, previewSize: look.previewSize })
+    : html`<div style=${`width:100%;max-width:${look.previewSize}px;`}>
+        ${itemPreviewTemplate(item, { ...look.matrix, previewSize: look.previewSize, forceAspectRatio: true })}
+      </div>`;
   return html`<div
-    class="gallery-item yc-carousel-item${controls === nothing ? "" : " yc-editable"}${state.pending}"
+    class="gallery-item yc-carousel-item${item.vertical ? " yc-carousel-item-vertical" : ""}${controls === nothing ? "" : " yc-editable"}${state.pending}"
     data-mode=${item.dataMode}
     data-favourite=${state.favourite}
     data-action="select-mode"
@@ -338,9 +351,7 @@ function carouselItem(g, item, look) {
     style=${`cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px;border-radius:8px;background:${look.bgName === "transparent" ? "transparent" : look.bgColor};max-width:100%;box-sizing:border-box;transition:all 0.2s ease;`}
     @click=${() => g.select(item.dataMode)}
   >
-    <div style=${`width:100%;max-width:${look.previewSize}px;`}>
-      ${itemPreviewTemplate(item, { ...look.matrix, previewSize: look.previewSize, forceAspectRatio: true })}
-    </div>
+    ${preview}
     ${look.showTitles
       ? html`<div
           class="gallery-item-title"
@@ -354,16 +365,34 @@ function carouselItem(g, item, look) {
 // ── Wheel ──────────────────────────────────────────────────────────────────
 
 /** The wheel's sizes from the gallery's options (Size, titles, height,
- * arrows). The item steps overlap: each item covers 35% of the previous. */
-function wheelGeometry(config) {
+ * arrows) and its items: each item covers 35% of the previous one. A
+ * vertical item is taller, its preview close to the carousel's (as tall as
+ * the landscape previews are wide), within 3/4 of the wheel. */
+function wheelGeometry(config, items = []) {
   const look = previewLook(config, "preview-wheel");
   const compact = !look.showTitles;
   const height = config.wheel_height || 300;
   const previewSize = look.previewSize;
-  const itemHeight = Math.max(compact ? 68 : 95, Math.round(previewSize * 0.25) + (compact ? 40 : 55));
-  const step = Math.round(itemHeight * 0.65);
-  // Two items show above and below the centred one.
-  const paddingTop = 2 * step;
+  // An item's height around its preview: title and padding.
+  const chrome = compact ? 40 : 55;
+  const itemHeight = Math.max(compact ? 68 : 95, Math.round(previewSize * 0.25) + chrome);
+  const verticalPreview = Math.max(
+    Math.round(previewSize * 0.25),
+    Math.min(previewSize, Math.round(height * 0.75) - chrome),
+  );
+  const heights = items.map((item) =>
+    item?.vertical ? Math.max(itemHeight, verticalPreview + chrome) : itemHeight,
+  );
+  // Each item's overlap with the previous one and its top (below the room
+  // left above the first one: two landscape steps).
+  const overlaps = heights.map((h, i) =>
+    i === 0 ? 0 : Math.round(Math.min(h, heights[i - 1]) * 0.35),
+  );
+  const tops = [];
+  heights.forEach((h, i) =>
+    tops.push(i === 0 ? 0 : tops[i - 1] + heights[i - 1] - overlaps[i]),
+  );
+  const paddingTop = 2 * Math.round(itemHeight * 0.65);
   const black = look.bgColor === "#000000";
   const transparent = look.bgColor === "transparent";
   return {
@@ -371,11 +400,12 @@ function wheelGeometry(config) {
     compact,
     height,
     previewSize,
-    itemHeight,
-    step,
+    // The preview size (matrixPreviewLayout previewSize) of an item.
+    previewSizeOf: (item) => (item?.vertical ? verticalPreview : previewSize),
     paddingTop,
-    // Centres item 0; each next item moves the column by one step.
-    baseOffset: paddingTop + itemHeight / 2 - height / 2,
+    // The column's offset that centres item `center`.
+    offsetFor: (center) =>
+      paddingTop + (tops[center] ?? 0) + (heights[center] ?? itemHeight) / 2 - height / 2,
     maxWidth: Math.max(350, previewSize + 150),
     columnWidth: Math.max(250, previewSize + 50),
     navPosition: config.wheel_nav_position || "bottom",
@@ -383,15 +413,17 @@ function wheelGeometry(config) {
       { square: "0", rounded: "8px", round: "50%" }[resolveSelectorButtonShape(config)] || "50%",
     transparent,
     // Every item's look but its 3D place (wheel-picker.js wheelItemPlace).
-    itemStyle: (index) =>
-      `cursor: pointer; padding: ${compact ? "8px" : "8px 12px"}; border-radius: 10px; background: ${transparent ? "rgba(255,255,255,0.08)" : look.bgColor}; border: ${black ? "1px solid rgba(255,255,255,0.25)" : "1px solid var(--divider-color, #e0e0e0)"}; ${transparent ? "backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); " : ""}min-height: ${itemHeight}px; height: ${itemHeight}px; box-shadow: ${black ? "0 1px 4px rgba(255,255,255,0.08)" : "0 1px 3px rgba(0,0,0,0.1)"}; margin-top: ${index === 0 ? "0" : `-${Math.round(itemHeight * 0.35)}px`}; `,
+    itemStyle: (index) => {
+      const h = heights[index] ?? itemHeight;
+      return `cursor: pointer; padding: ${compact ? "8px" : "8px 12px"}; border-radius: 10px; background: ${transparent ? "rgba(255,255,255,0.08)" : look.bgColor}; border: ${black ? "1px solid rgba(255,255,255,0.25)" : "1px solid var(--divider-color, #e0e0e0)"}; ${transparent ? "backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); " : ""}min-height: ${h}px; height: ${h}px; box-shadow: ${black ? "0 1px 4px rgba(255,255,255,0.08)" : "0 1px 3px rgba(0,0,0,0.1)"}; margin-top: ${index === 0 ? "0" : `-${overlaps[index]}px`}; `;
+    },
   };
 }
 
 /** The wheel (wheel-picker.js <yc-wheel>): a move picks the centred item,
  * unless the gallery only browses (navigateSelects false: a click picks). */
 export function wheelLayout(g) {
-  const geometry = wheelGeometry(g.config);
+  const geometry = wheelGeometry(g.config, g.items);
   const { look, compact } = geometry;
   return html`<div class="gc-preview-shell" data-shape=${resolveSelectorShape(g.config)} style="border-radius: 8px;">
     <yc-wheel
@@ -426,7 +458,10 @@ export function wheelLayout(g) {
                 >${item.title}</div>`
             : nothing}
           <div class="wheel-item-body">
-            ${itemPreviewTemplate(item, { ...look.matrix, previewSize: geometry.previewSize })}
+            ${itemPreviewTemplate(item, {
+              ...look.matrix,
+              previewSize: geometry.previewSizeOf(item),
+            })}
           </div>
         </div>`;
       }}
@@ -441,17 +476,24 @@ export function wheelLayout(g) {
 export function albumLayout(g, prefix, { width, radius, buttonShape }) {
   const { config } = g;
   const look = previewLook(config, "preview-album");
+  // The album card follows the preview size (55% = the 240px card).
+  const album = {
+    card_size: Math.round((width / 55) * 100),
+    album_3d_effect: config.album_3d_effect,
+    rounded_cards: radius,
+  };
+  // A vertical item's narrow card (album-item-vertical): its picture as wide
+  // as a quarter of a landscape card's (the entry's 12px padding aside).
+  const matrixOf = (item) =>
+    item.vertical
+      ? { ...g.matrix, forceAspectRatio: false, previewSize: albumCardWidth(album) - 24 }
+      : g.matrix;
   return html`<div class="gc-preview-shell">
     <yc-album
       prefix=${prefix}
       .items=${g.items}
       .target=${g.index}
-      .config=${{
-        // The album card follows the preview size (55% = the 240px card).
-        card_size: Math.round((width / 55) * 100),
-        album_3d_effect: config.album_3d_effect,
-        rounded_cards: radius,
-      }}
+      .config=${album}
       .wrap=${config.gallery_wrap_navigation === true}
       .navShape=${buttonShape}
       .onPick=${(item) => g.select(item.dataMode)}
@@ -469,7 +511,7 @@ export function albumLayout(g, prefix, { width, radius, buttonShape }) {
           title=${g.actionLabel ? state.label : nothing}
         >
           ${look.showTitles ? html`<div class="gallery-item-title">${item.title}</div>` : nothing}
-          ${itemPreviewTemplate(item, g.matrix)}
+          ${itemPreviewTemplate(item, matrixOf(item))}
           ${item.meta ? html`<div class="gallery-item-metadata">${item.meta}</div>` : nothing}${controls}
         </div>`;
       }}
@@ -486,7 +528,12 @@ export function originalLayout(g) {
   const view = config.effect_view === "list" ? "list" : "grid";
   const showBadges = config.show_badges !== false;
   const highlight = config.highlight_active_mode !== false;
-  return html`<div class="original-gallery ${view}">
+  // Packed tiles like the List and Grid (tile-grid.js): a vertical item (the
+  // lamp standing on its end) takes half a tile's place.
+  return html`<yc-tile-grid
+      class="original-gallery ${view}"
+      style=${`grid-template-columns: ${view === "list" ? tileColumnsFixed(1) : tileColumns(170, { gap: 10 })};`}
+    >
       ${g.pagination.items.map((item) => {
         const selected = g.active != null && item.dataMode === g.active;
         const state = itemState(g, item);
@@ -500,6 +547,7 @@ export function originalLayout(g) {
           data-active-mode=${highlight && selected ? "true" : nothing}
           data-favourite=${state.favourite}
           title=${item.title}
+          style=${tileSpan(item)}
           @click=${() => g.select(item.dataMode)}
         >
           ${item.preview === false
@@ -515,7 +563,7 @@ export function originalLayout(g) {
             : nothing}${controls}
         </button>`;
       })}
-    </div>${paginationTemplate(g)}`;
+    </yc-tile-grid>${paginationTemplate(g)}`;
 }
 
 // ── Pagination ─────────────────────────────────────────────────────────────

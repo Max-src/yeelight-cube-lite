@@ -8,7 +8,7 @@
  *     .items=${items}                   // [{dataMode, name, title, colorData,
  *                                       //   label?, swatch?, badge?, preview?,
  *                                       //   previewHtml?, meta?, favourite?,
- *                                       //   editable?}]
+ *                                       //   editable?, vertical?}]
  *     .active=${key}                    // the item the lamp shows (or null)
  *     .model=${this._controls}          // mode-controls model: favourites
  *     .revealKey=${key}                 // turn to this item once (optional)
@@ -26,10 +26,19 @@
  *                                       //   ("Sunset: Apply"; optional)
  *     .onSelect=${(key) => choose(key)} // a pick; resolves when applied
  *     .onQuery=${(query) => …}          // the search text (optional)
+ *     .filter=${filter}                 // an item filter beside the search
+ *                                       //   (optional, see below)
  *     .onRename=${(key, name) => …}     // user-owned items (optional)
  *     .onDelete=${(key) => …}           // user-owned items (optional)
  *     @gallery-updated=${() => paint()} // the items' DOM changed: repaint
  *   ></yc-collection-gallery>`
+ *
+ * A filter narrows the items like the search, with a compact icon toggle on
+ * the search row (the shared action-button group): { label, value, choices:
+ * [{ value, label, icon, title }], match(item, value), onChange(value),
+ * hidden }. The card keeps its value (the same on every section's gallery)
+ * and passes the same object while it does not change; `hidden` applies it
+ * without the toggle.
  *
  * The layouts are Lit templates (gallery-layouts.js): every item binds its
  * click, keyboard role and name, outline, pulse and star.
@@ -39,15 +48,16 @@
  * matches the label and the built-in name),
  * `title` captions the previews, `label` is an optional shorter button text
  * (filled, chips), `swatch` a CSS background shown by chips, `colorData` the
- * 100-pixel preview frame. Items that are not matrices bring their own
+ * 100-pixel preview frame (top row first), drawn as a lamp standing on its
+ * end with `vertical` (matrix-view.js). Items that are not matrices bring their own
  * preview markup instead (`previewHtml`, trusted: the card escapes it; see
  * itemPreviewTemplate), and `meta` is a short plain-text line under the
  * preview (list, grid, carousel, album: a palette's color count).
  *
  * Layouts (`style_selector_style`):
  *   text:     filled, dropdown, chips
- *   preview:  preview-list, preview-grid, preview-strip, preview-carousel,
- *             preview-wheel, preview-album
+ *   preview:  preview-list, preview-grid, preview-mosaic, preview-strip,
+ *             preview-carousel, preview-wheel, preview-album
  *   original: original (grid or list with `effect_view`, capability badges)
  * Shared options: show_search, gallery_sort (the card's order or A → Z,
  * sortGalleryItems), items_per_page (list, grid, original),
@@ -119,6 +129,7 @@ import { isActivationKey } from "./card-shell.js";
 import { defineOnce } from "./card-registration.js";
 import { isDarkTheme } from "./color-utils.js";
 import { actionButtonStyles } from "./action-button-utils.js";
+import { renderActionButtonGroup } from "./action-button-ui.js";
 import { itemLabel, itemMatchesQuery, sortGalleryItems } from "./card-config.js";
 
 // Class prefix of the album markup (album-view-coverflow.js).
@@ -160,13 +171,14 @@ export const collectionGalleryStyles = `
   .gc-preview-shell .yc-carousel-item {
     width: 100%;
   }
+  .gc-preview-shell .yc-carousel-item.yc-carousel-item-vertical {
+    width: fit-content;
+    margin-inline: auto;
+  }
   /* No preview is ever wider than the card (narrow cards, large Size). */
   .gc-preview-shell .gallery-matrix-preview,
   .gc-preview-shell .gallery-item-preview {
     max-width: 100% !important;
-  }
-  .gc-preview-shell[data-columns="2"] .gallery-display-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
   /* Every arrow of the gallery (carousel, album, wheel) has the look of
      its page buttons: a tint of the primary color, never a host card's or
@@ -261,8 +273,32 @@ export const collectionGalleryStyles = `
     flex-basis: 100%;
     color: var(--error-color, #db4437);
   }
+  /* The search field and the item filter's toggle, on one row. */
+  .yc-gallery-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  /* The filter's toggle: as wide as its icons (not a full action row),
+     each as tall as the search field. */
+  .yc-gallery-tools > .shared-button-group {
+    width: auto;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .yc-gallery-tools > .shared-button-group .shared-action-button {
+    flex: 0 0 auto;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0 8px;
+  }
   .yc-gallery-search {
     box-sizing: border-box;
+    flex: 1 1 140px;
     width: 100%;
     min-width: 0;
     padding: 10px;
@@ -331,6 +367,7 @@ class YcCollectionGallery extends LitElement {
     onQuery: { attribute: false, hasChanged: () => false },
     onRename: { attribute: false, hasChanged: () => false },
     onDelete: { attribute: false, hasChanged: () => false },
+    filter: { attribute: false },
     query: { state: true },
     _manage: { state: true },
     page: { state: true },
@@ -390,13 +427,15 @@ class YcCollectionGallery extends LitElement {
           ? { ...item, name: label, title: label, label, builtinName: item.name }
           : item;
       })
-      .filter((item) =>
-        itemMatchesQuery(
-          this.config,
-          item.dataMode,
-          item.builtinName || item.name,
-          query,
-        ),
+      .filter(
+        (item) =>
+          (!this.filter || this.filter.match(item, this.filter.value)) &&
+          itemMatchesQuery(
+            this.config,
+            item.dataMode,
+            item.builtinName || item.name,
+            query,
+          ),
       );
     return sortGalleryItems(this.config, shown, (item) => item.name);
   }
@@ -496,8 +535,11 @@ class YcCollectionGallery extends LitElement {
     const pagination = selectorPagination(this.config, items, style, this.page);
     this.page = pagination.currentPage;
     const label = this.searchLabel || "Search";
-    return html`${this.config.show_search !== false
-        ? html`<input
+    const filter = this.filter && !this.filter.hidden ? this.filter : null;
+    const search = this.config.show_search !== false;
+    return html`${search || filter
+        ? html`<div class="yc-gallery-tools">${search
+            ? html`<input
             class="yc-gallery-search"
             type="search"
             aria-label=${label}
@@ -512,6 +554,22 @@ class YcCollectionGallery extends LitElement {
               this.onQuery?.(this.query);
             }}
           />`
+            : ""}${filter
+            ? renderActionButtonGroup(
+                {
+                  label: filter.label,
+                  items: filter.choices,
+                  value: filter.value,
+                  buttonStyle: this.config.buttons_style || "modern",
+                  contentMode: "icon",
+                },
+                (value) => {
+                  this.page = 0;
+                  this.index = null;
+                  filter.onChange?.(value);
+                },
+              )
+            : ""}</div>`
         : ""}
       <div class="yc-stack yc-controls">
         ${this.heading
@@ -525,8 +583,9 @@ class YcCollectionGallery extends LitElement {
         >
           ${items.length
             ? this._layout(items, style, pagination)
-            : this.query.trim()
-              ? html`<div class="empty" role="status">No matching items.</div>`
+            : this.items.length
+              ? // Hidden by the search or the filter.
+                html`<div class="empty" role="status">No matching items.</div>`
               : this.emptyLabel && !this.items.length
                 ? html`<div class="yc-gallery-empty" role="status">
                     ${this.emptyLabel}
@@ -564,7 +623,7 @@ class YcCollectionGallery extends LitElement {
       index:
         this.index ??
         Math.max(0, items.findIndex((item) => item.dataMode === this.activeKey)),
-      matrix: { ...appearance, rows: 5, cols: 20, forceAspectRatio: true },
+      matrix: { ...appearance, forceAspectRatio: true },
       matrixWidth: appearance.width,
       select: (key) => this._select(key),
       navigate: (delta) => this._navigate(delta),

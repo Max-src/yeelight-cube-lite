@@ -4,7 +4,7 @@ import {
   normalizeImportedPalettes,
   toRgbTriplet,
 } from "../custom_components/yeelight_cube/www/palette-data-utils.js";
-import { rgbToCss } from "../custom_components/yeelight_cube/www/yeelight-cube-dotmatrix.js";
+import { rgbToCss } from "../custom_components/yeelight_cube/www/color-utils.js";
 
 test("rgbToCss only ever emits numeric channels", () => {
   assert.equal(rgbToCss([255, 0, 128]), "rgb(255,0,128)");

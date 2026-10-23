@@ -31,19 +31,23 @@ import { defineOnce } from "./card-registration.js";
  * --yc-album-perspective.
  */
 export function albumStyleVars(config = {}) {
-  // Card width: `card_size` % of the 240px baseline (the gallery derives it
-  // from its Size), within 30-200% so the coverflow never collapses.
-  const albumSizePct = Math.max(
-    30,
-    Math.min(200, Number(config.card_size) || 100),
-  );
   return [
-    `--yc-album-width:${Math.round((240 * albumSizePct) / 100)}px`,
+    `--yc-album-width:${albumCardWidth(config)}px`,
     `--yc-album-radius:${roundedCardsRadius(config.rounded_cards)}px`,
     // Room above the cards for the items' outside delete buttons.
     "--yc-album-pad:28px 14px",
     `--yc-album-perspective:${config.album_3d_effect !== false ? "1200px" : "none"}`,
   ].join(";");
+}
+
+/**
+ * A card's configured width (px): `card_size` % of the 240px baseline (the
+ * gallery derives it from its Size), within 30-200% so the coverflow never
+ * collapses. A vertical item's card is half as wide (album-item-vertical).
+ */
+export function albumCardWidth(config = {}) {
+  const albumSizePct = Math.max(30, Math.min(200, Number(config.card_size) || 100));
+  return Math.round((240 * albumSizePct) / 100);
 }
 
 /** The album CSS for items of `classPrefix` (static; see albumStyleVars). */
@@ -87,6 +91,12 @@ export function albumStyles(classPrefix = "album") {
       transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
       transform-style: preserve-3d;
       backface-visibility: hidden;
+    }
+
+    /* A vertical item (item.vertical): half the width, its picture standing
+       up at the landscape cards' pixel size. */
+    .${classPrefix}-album-item.album-item-vertical {
+      --yc-album-card: max(110px, min(var(--yc-album-width, 240px) / 2, 100% - 136px));
     }
     
     .album-card {
@@ -313,7 +323,7 @@ class YcAlbum extends LitElement {
       >
         ${this.items.map(
           (item, index) => html`<div
-            class="${prefix}-album-item${index === this.current ? " active" : ""}"
+            class="${prefix}-album-item${item?.vertical ? " album-item-vertical" : ""}${index === this.current ? " active" : ""}"
             data-idx=${index}
             style=${albumItemPlace(index - this.current, enable3D)}
             @click=${() => this._click(index)}
