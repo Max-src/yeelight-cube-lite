@@ -142,6 +142,9 @@
             },
             "extended_effects": {
                 "name": "Experimental Features"
+            },
+            "buttons_as_remote": {
+                "name": "Buttons as remote"
             }
         },
         "sensor": {
@@ -202,6 +205,23 @@
             },
             "matrix_preview_round": {
                 "name": "Matrix Preview (Round)"
+            }
+        },
+        "event": {
+            "lamp_buttons": {
+                "name": "Lamp buttons",
+                "state_attributes": {
+                    "event_type": {
+                        "state": {
+                            "right_button": "Right button",
+                            "effect_changed": "Effect changed",
+                            "music_mode_changed": "Music mode changed",
+                            "music_off": "Music turned off",
+                            "turned_on": "Turned on",
+                            "turned_off": "Turned off"
+                        }
+                    }
+                }
             }
         }
     },

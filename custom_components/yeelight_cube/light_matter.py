@@ -16,12 +16,15 @@ the Device Orientation select. Mixed into YeelightCubeLight.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 
 from homeassistant.core import callback  # type: ignore
 
 from .const import (
+    CONF_BUTTONS_AS_REMOTE,
+    CONF_REMOTE_SAVED_PLAYLIST,
     CONF_MATTER_MAC,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -29,7 +32,7 @@ from .const import (
     MUSIC_FLOW_EFFECTS,
     NATIVE_EFFECTS,
 )
-from .matter_commands import MatterCommands, MatterCommandsUnavailable
+from .matter_commands import EFFECTS_CLUSTER, MatterCommands, MatterCommandsUnavailable
 from .matter_discovery import async_offer_matter_lamps
 from .matter_link import ROTATION, ROTATION_ORIENTATIONS, MatterLink
 from .matrix_view import is_upside_down_mount
@@ -52,6 +55,20 @@ NATIVE_EFFECT_IDS: dict[int, str] = {
     spec["effect_id"]: name for name, spec in NATIVE_EFFECTS.items()
 }
 
+# Buttons as remote, with Matter settings: every slot of the lamp's playlist
+# (the right button steps through it) is an all-black drawing, custom ids
+# REMOTE_SLOT_BASE + slot, so a press shows black, not an effect, and is told
+# apart from the Yeelight app by its custom id (verified on a Cube Lite,
+# firmware 1.12.32: the lamp reports the slot's custom id on every press).
+REMOTE_DRAWING_EFFECT = 36
+REMOTE_SLOT_BASE = 1000
+REMOTE_SLOTS = range(REMOTE_SLOT_BASE, REMOTE_SLOT_BASE + 8)
+# 100 black pixels (0xff, 0, 0, 0): a drawing's 400 bytes, base64.
+REMOTE_BLACK = base64.b64encode(bytes((0xFF, 0, 0, 0)) * 100).decode("ascii")
+# Seconds after the playlist is written during which the lamp's reports are
+# that write's, not presses (the lamp may switch to a written slot).
+REMOTE_WRITE_SETTLE = 5.0
+
 # Seconds a direction write may take before the orientation change goes on
 # without it (the lamp keeps its direction).
 ROTATION_WRITE_TIMEOUT = 10.0
@@ -72,6 +89,17 @@ class MatterMixin:
         self._matter_commands: MatterCommands | None = None
         # The Matter link sensor (sensor.py), told when the link changes.
         self._matter_link_sensor = None
+        # The Lamp buttons event entity (event.py).
+        self._lamp_buttons_event = None
+        # Buttons as remote: a restore of what the lamp changed is running.
+        self._restoring_after_lamp = False
+        # Buttons as remote: the black playlist is being written or put back,
+        # and when it was last written (REMOTE_WRITE_SETTLE).
+        self._remote_playlist_busy = False
+        self._remote_playlist_written_at = -REMOTE_WRITE_SETTLE
+        # The black playlist is no longer on the lamp (a factory reset, the
+        # Yeelight app): written again, the saved one kept.
+        self._remote_playlist_stale = False
         # When a command to the lamp last started or ended (monotonic), and
         # the effect the lamp showed when it started (_note_lamp_command).
         self._lamp_command_at = 0.0
@@ -97,6 +125,7 @@ class MatterMixin:
         remembered = entry.data.get(CONF_MATTER_MAC) if entry is not None else None
         changed = self._matter.refresh(self._ip, remembered)
         self._check_matter_commands()
+        self._sync_remote_playlist()
         if not changed:
             return
         if entry is not None and self._matter.mac and self._matter.mac != remembered:
@@ -132,10 +161,11 @@ class MatterMixin:
         }
 
     def _matter_status_changed(self) -> None:
-        """Show a new link or commands state on the Matter link sensor."""
-        sensor = self._matter_link_sensor
-        if sensor is not None and getattr(sensor, "hass", None) is not None:
-            sensor.async_write_ha_state()
+        """Show a new link or commands state on the Matter link sensor, and
+        the Lamp buttons entity's availability."""
+        for entity in (self._matter_link_sensor, self._lamp_buttons_event):
+            if entity is not None and getattr(entity, "hass", None) is not None:
+                entity.async_write_ha_state()
 
     def _check_matter_commands(self) -> None:
         """Find which server delivers Yeelight commands now (with the link's
@@ -226,13 +256,30 @@ class MatterMixin:
         when the link is made are its state then: published, not applied."""
         if not initial:
             if name == "effect" and isinstance(value, int):
-                if not self._effect_echo(value):
-                    self._lamp_showed_effect(value)
+                if self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
+                    # A black slot: the press is its custom id (effect_sub).
+                    self._fx_mode_is_direct = False
+                elif not self._effect_echo(value):
+                    self._lamp_changed_effect(value)
+            elif name == "effect_sub" and value in REMOTE_SLOTS:
+                if self.remote_playlist_active and not self._remote_playlist_settling():
+                    self._lamp_event("right_button", {"slot": value - REMOTE_SLOT_BASE})
+                    self._restore_after_lamp_change()
+            elif name == "mic_music_on" and value is True:
+                # The left button started a microphone music mode: with
+                # buttons as remote, put back at once (its mode, the event,
+                # may be reported a moment later).
+                if self.buttons_as_remote and not self._music_flow_enabled and not self._matter_echo():
+                    self._restore_after_lamp_change(music=True)
             elif name == "mic_music_on" and value is False:
                 if not self._matter_echo():
-                    self._lamp_stopped_music_flow()
+                    self._lamp_event("music_off", {})
+                    if not self.buttons_as_remote:
+                        self._lamp_stopped_music_flow()
             elif name == "on_off" and isinstance(value, bool):
+                # The power button is followed, buttons as remote or not.
                 if not self._matter_echo():
+                    self._lamp_event("turned_on" if value else "turned_off", {})
                     self._lamp_switched(value)
             elif name == "level" and isinstance(value, int):
                 if not self._matter_echo():
@@ -243,6 +290,163 @@ class MatterMixin:
                 self._async_check_problems()
         if self.hass is not None:
             self.async_write_ha_state()
+
+    def _lamp_changed_effect(self, effect_id: int) -> None:
+        """The lamp switched to effect ``effect_id`` by itself (a button, the
+        app): an event, then followed, or put back (buttons as remote)."""
+        music = MUSIC_FLOW_EFFECT_IDS.get(effect_id)
+        if effect_id != DRAWING_EFFECT:
+            if music is not None:
+                self._lamp_event("music_mode_changed", {"mode": music})
+            else:
+                self._lamp_event(
+                    "effect_changed",
+                    {"effect": NATIVE_EFFECT_IDS.get(effect_id), "effect_id": effect_id},
+                )
+            if self.buttons_as_remote:
+                self._fx_mode_is_direct = False
+                if music is None and self.remote_playlist_active and not self._remote_playlist_settling():
+                    # A playlist effect although the playlist should be black.
+                    self._remote_playlist_stale = True
+                    self._sync_remote_playlist()
+                self._restore_after_lamp_change(music=music is not None)
+                return
+        self._lamp_showed_effect(effect_id)
+
+    @property
+    def buttons_as_remote(self) -> bool:
+        """Whether the lamp's buttons only fire events: what they change on
+        the lamp is put back (the Buttons as remote switch)."""
+        entry = self._config_entry
+        return bool(entry is not None and entry.options.get(CONF_BUTTONS_AS_REMOTE, False))
+
+    @property
+    def remote_playlist_active(self) -> bool:
+        """Whether the lamp's playlist is the all-black one (Buttons as
+        remote, with Matter settings): the user's is saved."""
+        entry = self._config_entry
+        return bool(entry is not None and entry.options.get(CONF_REMOTE_SAVED_PLAYLIST))
+
+    def _remote_playlist_settling(self) -> bool:
+        return time.monotonic() - self._remote_playlist_written_at < REMOTE_WRITE_SETTLE
+
+    def _sync_remote_playlist(self) -> None:
+        """Buttons as remote on: save the lamp's playlist and make every slot
+        black (needs Matter settings; until then a press shows its effect and
+        is put back). Off: write the saved playlist back. From the switch and
+        the minute check, so a step that could not run is tried again."""
+        channel, entry = self._matter_commands, self._config_entry
+        if channel is None or entry is None or self._remote_playlist_busy:
+            return
+        if self.buttons_as_remote == self.remote_playlist_active and not (
+            self.buttons_as_remote and self._remote_playlist_stale
+        ):
+            return
+        if self._matter is None or not self._matter.linked:
+            return
+
+        async def sync() -> None:
+            self._remote_playlist_busy = True
+            try:
+                if not await channel.async_available():
+                    return
+                if self.buttons_as_remote:
+                    await self._write_remote_playlist(channel, entry, keep_saved=self.remote_playlist_active)
+                    self._remote_playlist_stale = False
+                else:
+                    await self._write_saved_playlist(channel, entry)
+            except MatterCommandsUnavailable:
+                pass
+            except Exception as err:  # noqa: BLE001 -- tried again next minute
+                _LOGGER.warning("[MATTER] [%s] Could not write the lamp's playlist: %s", self._ip, err)
+            finally:
+                self._remote_playlist_busy = False
+
+        self._create_tracked_task(sync(), name=f"yeelight_cube_remote_playlist_{self._ip}")
+
+    async def _write_remote_playlist(self, channel, entry, keep_saved: bool = False) -> None:
+        """Save the lamp's playlist, then make every slot black. With
+        ``keep_saved`` (written again), the playlist saved first is kept."""
+        reply = await channel.async_command(EFFECTS_CLUSTER, "getPersistEffectList") or {}
+        slots = reply.get("effectList") or reply.get("effects") or []
+        saved = [
+            [int(slot.get("effectId", slot.get("effectID"))), int(slot.get("customId", slot.get("customID")))]
+            for slot in slots
+        ]
+        if not saved:
+            return
+        if not keep_saved:
+            # Saved before anything is written, so a partial write is undone.
+            self.hass.config_entries.async_update_entry(
+                entry, options={**entry.options, CONF_REMOTE_SAVED_PLAYLIST: saved}
+            )
+        for index in range(len(saved)):
+            await channel.async_command(EFFECTS_CLUSTER, "updatePersistEffectList", {
+                "index": index,
+                "effect": {
+                    "effectId": REMOTE_DRAWING_EFFECT,
+                    "customId": REMOTE_SLOT_BASE + index,
+                    "effectParams": [{"onoff": 1, "mode": REMOTE_DRAWING_EFFECT, "data": REMOTE_BLACK}],
+                },
+            })
+        self._remote_playlist_written_at = time.monotonic()
+        _LOGGER.info("[MATTER] [%s] Buttons as remote: the lamp's playlist is black (%s slots)", self._ip, len(saved))
+        # The lamp may have switched to a written slot: show the content again.
+        if self._is_on:
+            await self._async_put_content_back()
+
+    async def _write_saved_playlist(self, channel, entry) -> None:
+        """Write the saved playlist back (Buttons as remote turned off)."""
+        saved = entry.options.get(CONF_REMOTE_SAVED_PLAYLIST) or []
+        for index, (effect_id, custom_id) in enumerate(saved):
+            await channel.async_command(EFFECTS_CLUSTER, "updatePersistEffectList", {
+                "index": index,
+                "effect": {"effectId": effect_id, "customId": custom_id, "effectParams": [{"onoff": 1, "mode": effect_id}]},
+            })
+        self._remote_playlist_written_at = time.monotonic()
+        options = {key: value for key, value in entry.options.items() if key != CONF_REMOTE_SAVED_PLAYLIST}
+        self.hass.config_entries.async_update_entry(entry, options=options)
+        _LOGGER.info("[MATTER] [%s] Buttons as remote off: the lamp's playlist is back", self._ip)
+
+    def _lamp_event(self, event_type: str, data: dict) -> None:
+        """Fire a Lamp buttons event (event.py), if the entity is there."""
+        entity = self._lamp_buttons_event
+        if entity is not None and getattr(entity, "hass", None) is not None:
+            entity.lamp_event(event_type, data)
+
+    def _restore_after_lamp_change(self, *, music: bool = False) -> None:
+        """Buttons as remote: put back what the integration showed (its state
+        did not follow the lamp). One restore at a time; its own commands'
+        reports are their echoes."""
+        if self._restoring_after_lamp:
+            return
+        _LOGGER.info("[MATTER] [%s] Lamp button as remote: putting its content back", self._ip)
+        self._create_tracked_task(
+            self._async_put_content_back(music=music),
+            name=f"yeelight_cube_lamp_restore_{self._ip}",
+        )
+
+    async def _async_put_content_back(self, *, music: bool = False) -> None:
+        """Show the integration's content again, as its state says: its
+        music mode or none, its power, its picture, text or effect."""
+        if self._restoring_after_lamp:
+            return
+        self._restoring_after_lamp = True
+        try:
+            if music:
+                # The left button started a microphone music mode.
+                await self.async_set_music_flow(self._music_flow_enabled, restore_display=False)
+            if self._music_flow_enabled:
+                return
+            if not self._is_on:
+                await self.async_turn_off()
+                return
+            self._cube_matrix.forget_running_effect()
+            await self.async_apply_display_mode(update_type="text_change")
+        except Exception as err:  # noqa: BLE001 -- the lamp keeps what it shows
+            _LOGGER.warning("[MATTER] [%s] Could not put back the lamp's content: %s", self._ip, err)
+        finally:
+            self._restoring_after_lamp = False
 
     def _lamp_showed_effect(self, effect_id: int) -> None:
         """The lamp switched to effect ``effect_id`` by itself (a button, the

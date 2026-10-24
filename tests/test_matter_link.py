@@ -4,6 +4,7 @@ commissioned in Home Assistant's Matter server (2026-10-22)."""
 
 from pathlib import Path
 import asyncio
+import base64
 import sys
 import types
 import unittest
@@ -140,6 +141,7 @@ class FakeLight(MATTER.MatterMixin):
 
     def __init__(self):
         self._init_matter_state()
+        self._config_entry = None
         self._ip = LAMP_IP
         self._is_on = True
         self._mode = "Clock"
@@ -185,7 +187,23 @@ class FakeLight(MATTER.MatterMixin):
 
     def _create_tracked_task(self, coroutine, name=None):
         self.tasks.append(name)
-        coroutine.close()
+        if name and name.startswith(("yeelight_cube_lamp_restore", "yeelight_cube_remote_playlist")):
+            asyncio.run(coroutine)  # what buttons as remote puts back
+        else:
+            coroutine.close()
+
+    # What a restore sends (light_native, light.py).
+    async def async_set_music_flow(self, enabled, restore_display=True):
+        self.calls.append(("music_flow", enabled))
+
+    async def async_turn_on(self):
+        self.calls.append("turn_on")
+
+    async def async_turn_off(self):
+        self.calls.append("turn_off")
+
+    async def async_apply_display_mode(self, update_type=None):
+        self.calls.append("redraw")
 
 
 class FollowedReportTests(unittest.TestCase):
@@ -330,6 +348,157 @@ class FollowedReportTests(unittest.TestCase):
         self.light._matter_link_sensor = types.SimpleNamespace(hass=object(), async_write_ha_state=lambda: written.append(1))
         self.light._matter_status_changed()
         self.assertEqual([1], written)
+
+    def lamp_events(self):
+        events = []
+        self.light._lamp_buttons_event = types.SimpleNamespace(
+            hass=object(), lamp_event=lambda kind, data: events.append((kind, data))
+        )
+        return events
+
+    def test_what_the_lamp_changes_fires_lamp_buttons_events(self):
+        events = self.lamp_events()
+        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.report("effect", 34)  # the right button
+        self.report("effect", 85)  # the left button
+        self.report("mic_music_on", False)  # its long press
+        self.report("on_off", False)  # the right button's long press
+        self.assertEqual(
+            [
+                ("effect_changed", {"effect": "Bonfire", "effect_id": 34}),
+                ("music_mode_changed", {"mode": "Blossom"}),
+                ("music_off", {}),
+                ("turned_off", {}),
+            ],
+            events,
+        )
+        # Not the integration's own commands, the state when linked, or its
+        # drawing mode.
+        events.clear()
+        self.light._is_on, self.light._mode = True, "Solid Color"
+        self.report("effect", 39, initial=True)
+        self.report("effect", 50)
+        self.light._note_lamp_command()
+        self.report("on_off", True)
+        self.assertEqual([], events)
+
+    def test_buttons_as_remote_put_back_what_the_lamp_changed(self):
+        events = self.lamp_events()
+        forgotten = []
+        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: forgotten.append(1))
+        self.light._config_entry = types.SimpleNamespace(options={"buttons_as_remote": True})
+        self.report("effect", 34)  # the right button: an event, then the clock again
+        self.assertEqual(("Clock", "Rainbow"), (self.light._mode, self.light._native_effect))
+        self.assertEqual(["redraw"], self.light.calls)
+        self.assertEqual([1], forgotten)
+        self.light.calls.clear()
+        self.report("effect", 85)  # the left button: its music stopped, then the clock
+        self.assertFalse(self.light._music_flow_enabled)
+        self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
+        self.light.calls.clear()
+        # The left button's music, reported on before its mode: put back at once.
+        self.report("mic_music_on", True)
+        self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
+        self.light.calls.clear()
+        # The power button is followed, not put back.
+        self.report("on_off", False)
+        self.assertFalse(self.light._is_on)
+        self.report("on_off", True)
+        self.assertTrue(self.light._is_on)
+        self.assertNotIn("turn_on", self.light.calls)
+        self.assertEqual(4, len(events))
+
+    def remote_lamp(self, playlist):
+        """A lamp linked over Matter with settings available, Buttons as
+        remote on; what is sent to its effects cluster is recorded."""
+        sent = []
+
+        class Channel:
+            available = True
+
+            async def async_available(self):
+                return self.available
+
+            async def async_command(self, cluster, name, payload=None):
+                sent.append((name, payload))
+                return {"effectList": [{"effectId": e, "customId": c} for e, c in playlist]} if name == "getPersistEffectList" else None
+
+        entry = types.SimpleNamespace(options={"buttons_as_remote": True})
+
+        def update_entry(target, options):
+            target.options = options
+
+        self.light.hass = types.SimpleNamespace(config_entries=types.SimpleNamespace(async_update_entry=update_entry))
+        self.light._config_entry = entry
+        self.light._matter = types.SimpleNamespace(linked=True, node_id=2, values={})
+        self.light._matter_commands = Channel()
+        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        return entry, sent
+
+    def test_buttons_as_remote_makes_the_playlist_black_and_puts_it_back(self):
+        entry, sent = self.remote_lamp([(39, 39), (42, 42)])
+        self.light._sync_remote_playlist()
+        self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
+        writes = [payload for name, payload in sent if name == "updatePersistEffectList"]
+        self.assertEqual([0, 1], [w["index"] for w in writes])
+        self.assertEqual([1000, 1001], [w["effect"]["customId"] for w in writes])
+        black = base64.b64decode(writes[0]["effect"]["effectParams"][0]["data"])
+        self.assertEqual(bytes((0xFF, 0, 0, 0)) * 100, black)
+        self.assertTrue(self.light.remote_playlist_active)
+        self.assertIn("redraw", self.light.calls)  # the lamp may have switched to a slot
+        self.light._sync_remote_playlist()  # already black: nothing more
+        self.assertEqual(3, len(sent))
+
+        # A press: the lamp shows a black slot and reports its custom id.
+        events = self.lamp_events()
+        self.light.calls.clear()
+        self.report("effect_sub", 1001)  # the write's own report: ignored
+        self.assertEqual([], events)
+        self.light._remote_playlist_written_at = -100.0
+        self.report("effect", 36)
+        self.report("effect_sub", 1000)
+        self.assertEqual([("right_button", {"slot": 0})], events)
+        self.assertEqual(["redraw"], self.light.calls)
+
+        # Turned off: the saved playlist is written back.
+        sent.clear()
+        entry.options = {**entry.options, "buttons_as_remote": False}
+        self.light._sync_remote_playlist()
+        self.assertEqual(
+            [
+                {"index": 0, "effect": {"effectId": 39, "customId": 39, "effectParams": [{"onoff": 1, "mode": 39}]}},
+                {"index": 1, "effect": {"effectId": 42, "customId": 42, "effectParams": [{"onoff": 1, "mode": 42}]}},
+            ],
+            [payload for _name, payload in sent],
+        )
+        self.assertNotIn("remote_saved_playlist", entry.options)
+
+    def test_a_playlist_no_longer_black_is_written_again_keeping_the_saved_one(self):
+        entry, sent = self.remote_lamp([(39, 39), (42, 42)])
+        self.light._sync_remote_playlist()
+        sent.clear()
+        # A factory reset (or the Yeelight app) put effects back in the playlist.
+        self.light._remote_playlist_written_at = -100.0
+        self.report("effect", 34)
+        writes = [payload for name, payload in sent if name == "updatePersistEffectList"]
+        self.assertEqual([1000, 1001], [w["effect"]["customId"] for w in writes])
+        self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
+        self.assertFalse(self.light._remote_playlist_stale)
+
+    def test_without_matter_settings_the_playlist_is_left_alone(self):
+        entry, sent = self.remote_lamp([(39, 39)])
+        self.light._matter_commands.available = False
+        self.light._sync_remote_playlist()
+        self.assertEqual(([], False), (sent, self.light.remote_playlist_active))
+        self.light._matter = types.SimpleNamespace(linked=False, node_id=None, values={})
+        self.light._matter_commands.available = True
+        self.light._sync_remote_playlist()
+        self.assertEqual([], sent)
+
+    def test_the_lamp_buttons_entity_needs_the_matter_link(self):
+        self.assertEqual("not_linked", self.light.matter_link_state)
+        self.light._matter = types.SimpleNamespace(linked=True, node_id=2, values={})
+        self.assertNotEqual("not_linked", self.light.matter_link_state)
 
     def test_lan_control_off_is_a_problem_only_when_linked(self):
         self.assertFalse(self.light.matter_lan_control_off)

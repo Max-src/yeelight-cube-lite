@@ -149,11 +149,22 @@
             },
             "scroll_enabled": {
                 "default": "mdi:format-text-rotation-none"
+            },
+            "buttons_as_remote": {
+                "default": "mdi:remote",
+                "state": {
+                    "off": "mdi:remote-off"
+                }
             }
         },
         "text": {
             "display_text": {
                 "default": "mdi:format-text"
+            }
+        },
+        "event": {
+            "lamp_buttons": {
+                "default": "mdi:gesture-tap-button"
             }
         }
     },

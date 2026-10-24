@@ -260,7 +260,7 @@ Cube Lite found via Matter*, with its address filled in:
 - **Your first lamp:** it's found by the usual local network discovery
   instead.
 
-**What the link adds** (it only reads; nothing is sent over Matter):
+**What the link adds** (reading only: nothing below sends anything over Matter):
 
 - **The lamp's buttons:** an effect from the right button's playlist and the
   left button's microphone music modes (and its long press) show at once in
@@ -276,6 +276,56 @@ Cube Lite found via Matter*, with its address filled in:
   show it as the lamp draws it.
 - **LAN Control turned off** in the app: a Repairs message tells you, since
   Home Assistant cannot reach the lamp until it is on again.
+
+**The lamp's buttons in automations.** The **Lamp buttons** event entity
+fires when the lamp changes by itself. Use it as a trigger like a Zigbee
+remote (*When: Entity > Lamp buttons*):
+
+| Event | Usually | Data |
+| :-- | :-- | :-- |
+| `right_button` | Right button, with **Buttons as remote** and Matter settings (see below): always this button | `slot` |
+| `effect_changed` | Right button (next effect of its playlist) | `effect` (its name, when it's one of the native effects), `effect_id` |
+| `turned_off` / `turned_on` | Right button, long press | |
+| `music_mode_changed` | Left button (a microphone music mode) | `mode` |
+| `music_off` | Left button, long press | |
+
+The lamp doesn't say *which* button was pressed, only what changed:
+- **The Yeelight app:** picking an effect or a music mode there fires the
+  same events.
+- **This integration:** its own commands never fire them.
+- **Without Matter:** the entity is unavailable and never fires.
+
+**Buttons as remote.** By default the lamp's buttons work as usual, and the
+integration follows what they change. Turn on **Buttons as remote**
+(Configuration) to use them only as remote controls:
+- **What happens:** a press still fires its event, then the integration puts
+  back what it showed. It restores the picture, text or effect, and stops
+  the microphone music the left button started.
+- **Power:** the right button's long press still switches the lamp on or
+  off, and Home Assistant follows it.
+- **What you'll notice:** the lamp's own reaction can't be stopped, so it
+  shows for a moment before being put back. The left button can't be
+  changed or turned off: the lamp's firmware has no setting for it, and
+  always starts its own music modes.
+- **With Matter settings:** the right button blinks black instead. The
+  integration saves the lamp's playlist (the effects the right button steps
+  through) and makes every slot black. A press then shows black for a
+  moment instead of another effect, and fires `right_button`, which only
+  this button can cause. Matter settings need a Matter server that knows
+  Yeelight's Matter features (see below).
+  - **Turning the switch off** writes your playlist back.
+  - **If the playlist stops being black** (a factory reset of the lamp, or
+    editing it in the Yeelight app), it's made black again; your saved
+    playlist is kept.
+  - **Before removing the integration,** turn the switch off. Otherwise the
+    lamp keeps the black playlist, and you'd have to set its button
+    playlist again in the Yeelight app.
+- **The Yeelight app:** an effect or music mode picked there is put back too
+  while the switch is on. Power and brightness changed there are followed.
+- **Avoid long holds after power-up:** don't hold a button for more than
+  about 3 seconds in the first minute after the lamp powers up. The firmware
+  analysis points to a factory reset there (not tested), which would also
+  reset the playlist.
 
 **Changing the lamp's own settings over Matter.** The lamp can also be
 *controlled* over Matter, for example to turn its clock for the mount when
@@ -1007,6 +1057,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix Preview (Square)** | Camera | Local matrix preview with square pixels; Music Flow uses a static effect illustration |
 | **Estimated power** | Sensor | Estimated power draw of the lamp in W. See [Power Supply](#power-supply) |
 | **Estimated energy** | Sensor | Estimated energy used by the lamp in kWh, for the Energy dashboard. See [Power Supply](#power-supply) |
+| **Lamp buttons** | Event | What the lamp's buttons (or the Yeelight app) changed, as events for automations. Needs Matter: see [Matter (optional)](#matter-optional) |
 
 > [!TIP]
 > Use these camera entities with a "Picture Entity" card for quick previews: see [Matrix Preview Cameras](#matrix-preview-cameras) for the card settings that fit a lamp lying flat or standing up. For more responsive previews, use the custom [Preview Card](#preview-card).
@@ -1034,6 +1085,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
 | **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
+| **Buttons as remote** | Switch | The lamp's buttons fire **Lamp buttons** events, and the effect or music mode a press starts is put back (power still switches). Needs Matter: see [Matter (optional)](#matter-optional) |
 
 #### Diagnostic
 

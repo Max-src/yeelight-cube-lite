@@ -19,6 +19,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (proposed: matter-js/matterjs-server#1199), **Device Orientation** also sets
   the lamp's own direction, so its clock and native effects are turned for the
   mount; until then this stays off (the light's `matter` attribute says why).
+  A **Lamp buttons** event entity fires when the lamp's buttons (or the
+  Yeelight app) change an effect, its power or a microphone music mode, for
+  automations; **Buttons as remote** puts back the effect or music mode a
+  press started (power still switches), and with Matter settings makes the
+  right button's playlist black, so a press only blinks black. A **Matter
+  link** diagnostic sensor shows the
+  link, and a Cube Lite only in Matter is offered as discovered.
 - An administrators' diagnostics action, **DEBUG: Use TCP** (`force_tcp`),
   sends a lamp's commands over its TCP fallback for some minutes, to test it.
 - **Official pixel arts in the Draw card**: the 68 drawings of the Yeelight

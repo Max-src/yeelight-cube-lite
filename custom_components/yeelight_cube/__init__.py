@@ -612,7 +612,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CubeConfigEntry) -> bool
         ) from exc
     
     # Now set up all dependent platforms (they can safely read the light entity)
-    await hass.config_entries.async_forward_entry_setups(entry, ["switch", "text", "select", "sensor", "number", "button", "camera"])
+    await hass.config_entries.async_forward_entry_setups(entry, ["switch", "text", "select", "sensor", "number", "button", "camera", "event"])
     
     # Auto-dismiss built-in Yeelight discovery flows for this device.
     # The built-in Yeelight integration discovers CubeLite devices via zeroconf/DHCP
@@ -819,7 +819,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Unload platforms (removes entities tied to this entry, including sensors
     # if this entry was the one that created them).
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera"])
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera", "event"])
 
     # A local development Matter server's connection, shared by the lamps
     # (matter_commands.py): closed with the last one.

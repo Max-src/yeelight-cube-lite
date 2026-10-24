@@ -12,6 +12,7 @@ from tests.test_native_features import ROOT
 HOME_ASSISTANT = {
     "_async_abort_entries_match", "_abort_if_unique_id_configured",
     "_async_current_entries", "_set_confirm_only", "_get_reconfigure_entry",
+    "_trigger_event",  # EventEntity
 }
 
 

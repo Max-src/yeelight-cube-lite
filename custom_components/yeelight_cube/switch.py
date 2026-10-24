@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import CONF_CAMERA_FOLLOWS_ORIENTATION, MODE_CLOCK
+from .const import CONF_BUTTONS_AS_REMOTE, CONF_CAMERA_FOLLOWS_ORIENTATION, MODE_CLOCK
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
 
@@ -33,6 +33,7 @@ async def async_setup_entry(
     switches = [
         YeelightCubeAutoTurnOnSwitch(config_entry, light_entity),
         YeelightCubeCameraOrientationSwitch(config_entry, light_entity),
+        YeelightCubeButtonsAsRemoteSwitch(config_entry, light_entity),
         YeelightCubeClockShowDateSwitch(config_entry, light_entity),
         YeelightCubeClock12HourSwitch(config_entry, light_entity),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_entity),
@@ -101,6 +102,20 @@ class YeelightCubeCameraOrientationSwitch(_YeelightCubeOptionSwitch):
 
     def _changed(self) -> None:
         self._light_entity._notify_camera_preview()
+
+
+class YeelightCubeButtonsAsRemoteSwitch(_YeelightCubeOptionSwitch):
+    """Whether the lamp's buttons only fire the Lamp buttons events (needs
+    Matter): what a press changes on the lamp is put back at once
+    (light_matter._restore_after_lamp_change). Off: the lamp's buttons work
+    as usual and the integration follows them."""
+
+    option_key = CONF_BUTTONS_AS_REMOTE
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def _changed(self) -> None:
+        # With Matter settings: the lamp's playlist made black, or put back.
+        self._light_entity._sync_remote_playlist()
 
 
 class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
