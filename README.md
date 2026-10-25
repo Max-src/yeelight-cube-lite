@@ -862,8 +862,6 @@ card:
 grid_options:
   columns: 12
   rows: auto
-</details>
-
 ---
 # Standing up (Up / Down): a narrow card
 type: conditional
@@ -881,6 +879,8 @@ grid_options:
   columns: 3
   rows: auto
 ```
+
+</details>
 
 <details>
 <summary>View the camera's fits</summary>
@@ -1496,10 +1496,9 @@ Replace the example entity IDs with the **Music Flow effect** and **Content
 mode** entities created for your Cube Lite. There is no separate Music Flow
 switch: Music Flow starts and stops through Content mode.
 
----
-
 </details>
 
+---
 
 ## Requirements
 
