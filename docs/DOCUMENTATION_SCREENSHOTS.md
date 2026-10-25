@@ -5,6 +5,18 @@ are hand-maintained. Automation replaces **only** the image tables between
 `<!-- card-docs:KIND:GROUP:start -->` and matching `end` markers. Keep manual
 text outside these blocks. Missing, duplicate or reversed markers fail the run.
 
+## README overviews
+
+The opening README gallery combines existing generated screenshots into two
+labelled overview images. Run `npm run docs:overviews` to regenerate them;
+this needs Playwright Chromium but no Home Assistant instance or credentials.
+The composition is in [card-docs-overview.cjs](../tests/card-docs-overview.cjs).
+Images are cropped and labelled as example cards, not physical-lamp photos.
+
+`npm run docs:update` captures the cards, regenerates these overviews, then
+updates the README galleries. The existing screenshot workflow publishes the
+overview images alongside the individual captures.
+
 ## Coverage
 
 [The scenario catalogue](../tests/card-docs-catalogue.json) registers runtime

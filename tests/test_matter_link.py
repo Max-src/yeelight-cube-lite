@@ -193,7 +193,9 @@ class FakeLight(MATTER.MatterMixin):
             coroutine.close()
 
     # What a restore sends (light_native, light.py).
-    async def async_set_music_flow(self, enabled, restore_display=True):
+    async def async_set_music_flow(self, enabled, restore_display=True, *, persist_state=True):
+        if self._restoring_after_lamp:
+            assert not persist_state, "remote restoration should not wait for storage"
         self.calls.append(("music_flow", enabled))
 
     async def async_turn_on(self):
@@ -204,6 +206,9 @@ class FakeLight(MATTER.MatterMixin):
 
     async def async_apply_display_mode(self, update_type=None):
         self.calls.append("redraw")
+
+    def _native_clock_params(self):
+        return [40, 1, 2, {"mode": 40}]
 
 
 class FollowedReportTests(unittest.TestCase):
@@ -239,7 +244,8 @@ class FollowedReportTests(unittest.TestCase):
         self.light._mode = "Clock"
         self.light._lamp_command_at = -1000.0
         self.report("effect", 71)  # the GIF player: not an effect we know
-        self.assertEqual(("Clock", []), (self.light._mode, self.light.calls))
+        self.assertEqual(("Clock", ["stop_rotation"]), (self.light._mode, self.light.calls))
+        self.assertTrue(self.light._external_display)
 
     def test_the_app_resetting_the_lamp_right_after_a_command_is_followed(self):
         # The integration just drew text (the lamp reports 50 while it
@@ -281,7 +287,12 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual((82, 40), (self.light._brightness, self.light._last_hardware_brightness))
         # The integration's own power command: its echo.
         self.light._note_lamp_command()
-        self.report("on_off", False)
+        self.light._expect_lamp_power(True)
+        self.report("on_off", True)
+        self.assertTrue(self.light._is_on)
+        self.report("on_off", False)  # a genuine long press inside the echo window
+        self.assertFalse(self.light._is_on)
+        self.report("on_off", True)  # and its reversal is also genuine
         self.assertTrue(self.light._is_on)
 
     def test_the_lamp_turns_its_clock_with_its_direction_setting(self):
@@ -352,7 +363,8 @@ class FollowedReportTests(unittest.TestCase):
     def lamp_events(self):
         events = []
         self.light._lamp_buttons_event = types.SimpleNamespace(
-            hass=object(), lamp_event=lambda kind, data: events.append((kind, data))
+            hass=object(), lamp_event=lambda kind, data: events.append((kind, data)),
+            async_write_ha_state=lambda: None,
         )
         return events
 
@@ -379,34 +391,25 @@ class FollowedReportTests(unittest.TestCase):
         self.report("effect", 39, initial=True)
         self.report("effect", 50)
         self.light._note_lamp_command()
+        self.light._expect_lamp_power(True)
         self.report("on_off", True)
         self.assertEqual([], events)
 
-    def test_buttons_as_remote_put_back_what_the_lamp_changed(self):
+    def test_music_restoration_is_separate_opt_in_and_keeps_power_controls(self):
         events = self.lamp_events()
-        forgotten = []
-        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: forgotten.append(1))
-        self.light._config_entry = types.SimpleNamespace(options={"buttons_as_remote": True})
-        self.report("effect", 34)  # the right button: an event, then the clock again
-        self.assertEqual(("Clock", "Rainbow"), (self.light._mode, self.light._native_effect))
-        self.assertEqual(["redraw"], self.light.calls)
-        self.assertEqual([1], forgotten)
-        self.light.calls.clear()
-        self.report("effect", 85)  # the left button: its music stopped, then the clock
-        self.assertFalse(self.light._music_flow_enabled)
+        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.light._config_entry = types.SimpleNamespace(options={"restore_after_music_changes": True})
+        self.report("effect", 85)
         self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
+        self.assertEqual("Clock", self.light._mode)
         self.light.calls.clear()
-        # The left button's music, reported on before its mode: put back at once.
         self.report("mic_music_on", True)
         self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
-        self.light.calls.clear()
-        # The power button is followed, not put back.
         self.report("on_off", False)
         self.assertFalse(self.light._is_on)
         self.report("on_off", True)
         self.assertTrue(self.light._is_on)
-        self.assertNotIn("turn_on", self.light.calls)
-        self.assertEqual(4, len(events))
+        self.assertEqual(3, len(events))
 
     def remote_lamp(self, playlist):
         """A lamp linked over Matter with settings available, Buttons as
@@ -415,6 +418,7 @@ class FollowedReportTests(unittest.TestCase):
 
         class Channel:
             available = True
+            backend = "matter"
 
             async def async_available(self):
                 return self.available
@@ -473,17 +477,46 @@ class FollowedReportTests(unittest.TestCase):
         )
         self.assertNotIn("remote_saved_playlist", entry.options)
 
-    def test_a_playlist_no_longer_black_is_written_again_keeping_the_saved_one(self):
+    def test_external_effect_does_not_restore_or_rewrite_playlist(self):
         entry, sent = self.remote_lamp([(39, 39), (42, 42)])
         self.light._sync_remote_playlist()
         sent.clear()
-        # A factory reset (or the Yeelight app) put effects back in the playlist.
+        self.light.calls.clear()
         self.light._remote_playlist_written_at = -100.0
         self.report("effect", 34)
-        writes = [payload for name, payload in sent if name == "updatePersistEffectList"]
-        self.assertEqual([1000, 1001], [w["effect"]["customId"] for w in writes])
+        self.assertEqual([], sent)
+        self.assertNotIn("redraw", self.light.calls)
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
-        self.assertFalse(self.light._remote_playlist_stale)
+        self.assertEqual("external_display", self.light.buttons_remote_status)
+        self.assertFalse(self.light._rotation_active)
+        self.report("effect_sub", 1000)
+        self.assertNotIn("redraw", self.light.calls)  # don't restore stale settings
+        self.light._claim_display()  # a deliberate integration display resumes ownership
+        self.report("effect_sub", 1001)
+        self.assertIn("redraw", self.light.calls)
+
+    def test_external_music_is_followed_by_default_even_with_remote_enabled(self):
+        self.remote_lamp([(39, 39)])
+        self.report("mic_music_on", True)
+        self.report("effect", 85)
+        self.assertTrue(self.light._music_flow_enabled)
+        self.assertEqual("Blossom", self.light._music_flow_effect)
+        self.assertNotIn("redraw", self.light.calls)
+        self.assertNotIn(("music_flow", False), self.light.calls)
+        self.report("effect", 71)  # unknown external GIF must also stop our music recovery
+        self.assertFalse(self.light._music_flow_enabled)
+        self.assertTrue(self.light._external_display)
+
+    def test_unknown_external_effect_cancels_scroll_rotation_and_retry(self):
+        self.remote_lamp([(39, 39)])
+        retry = types.SimpleNamespace(done=lambda: False, cancel=Mock())
+        self.light._retry_display_task = retry
+        self.light._is_scrolling = True
+        self.report("effect", 71)
+        retry.cancel.assert_called_once()
+        self.assertFalse(self.light._is_scrolling)
+        self.assertFalse(self.light._rotation_active)
+        self.assertTrue(self.light._external_display)
 
     def test_without_matter_settings_the_playlist_is_left_alone(self):
         entry, sent = self.remote_lamp([(39, 39)])
@@ -494,6 +527,177 @@ class FollowedReportTests(unittest.TestCase):
         self.light._matter_commands.available = True
         self.light._sync_remote_playlist()
         self.assertEqual([], sent)
+
+    def test_restored_clock_report_does_not_rewrite_black_playlist(self):
+        entry, sent = self.remote_lamp([(39, 39), (42, 42)])
+        entry.options["remote_saved_playlist"] = [[39, 39], [42, 42]]
+        events = self.lamp_events()
+        # Include clock mixer/palette overrides of the outer effect id.
+        for effect_id in (40, 71, 15, 64):
+            with self.subTest(effect_id=effect_id):
+                self.light._native_clock_params = lambda: [effect_id, 1, 2, {"mode": 40}]
+                self.light._remote_playlist_written_at = -100.0
+                self.report("effect_sub", 1000)
+                self.light._note_lamp_command()
+                sent.clear()
+                events.clear()
+                self.light.calls.clear()
+                self.report("effect", effect_id)
+                self.assertEqual([], sent)
+                self.assertEqual([], events)
+                self.assertEqual([], self.light.calls)
+
+    def test_failed_playlist_install_retries_after_restart_without_replacing_backup(self):
+        entry, sent = self.remote_lamp([(39, 39), (42, 42)])
+        channel = self.light._matter_commands
+        command = channel.async_command
+
+        async def interrupted(cluster, name, payload=None):
+            if name == "updatePersistEffectList" and payload["index"] == 1:
+                raise RuntimeError("connection lost")
+            return await command(cluster, name, payload)
+
+        channel.async_command = interrupted
+        self.light._sync_remote_playlist()
+        self.assertFalse(entry.options["remote_playlist_installed"])
+        self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
+        self.assertEqual("setup_pending", self.light.buttons_remote_status)
+        # After a restart the persisted backup and incomplete marker survive.
+        self.light._init_matter_state()
+        self.light._matter = types.SimpleNamespace(linked=True, values={})
+        self.light._matter_commands = channel
+
+        async def partially_written(cluster, name, payload=None):
+            if name == "getPersistEffectList":
+                return {"effectList": [{"effectId": 36, "customId": 1000}, {"effectId": 42, "customId": 42}]}
+            return await command(cluster, name, payload)
+
+        channel.async_command = partially_written
+        sent.clear()
+        self.light._sync_remote_playlist()
+        self.assertEqual(2, len(sent))
+        self.assertTrue(entry.options["remote_playlist_installed"])
+        self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
+        self.assertEqual("active", self.light.buttons_remote_status)
+
+    def test_remote_status_and_pending_restoration_without_matter(self):
+        entry, sent = self.remote_lamp([(39, 39)])
+        published = []
+        self.light._buttons_as_remote_switch = types.SimpleNamespace(
+            hass=self.light.hass,
+            async_write_ha_state=lambda: published.append(self.light.buttons_remote_status),
+        )
+        self.assertEqual("setup_pending", self.light.buttons_remote_status)
+        self.light._matter_commands.backend = None
+        self.light._matter_commands.available = False
+        self.assertEqual("settings_unavailable", self.light.buttons_remote_status)
+        self.light._matter.linked = False
+        self.assertEqual("matter_unavailable", self.light.buttons_remote_status)
+        entry.options["remote_saved_playlist"] = [[39, 39]]
+        entry.options["buttons_as_remote"] = False
+        self.light._sync_remote_playlist()
+        self.assertEqual([], sent)
+        self.assertEqual("restoration_pending", self.light.buttons_remote_status)
+        self.light._matter.linked = True
+        self.light._matter_commands.available = True
+        self.light._sync_remote_playlist()
+        self.assertEqual("disabled", self.light.buttons_remote_status)
+        self.assertEqual("disabled", published[-1])
+        self.assertNotIn("remote_saved_playlist", entry.options)
+
+    def test_interrupted_restoration_then_reenable_reinstalls_black_slots(self):
+        entry, sent = self.remote_lamp([(39, 39), (42, 42)])
+        self.light._sync_remote_playlist()
+        command = self.light._matter_commands.async_command
+
+        async def interrupted(cluster, name, payload=None):
+            if name == "updatePersistEffectList" and payload["index"] == 1:
+                raise RuntimeError("connection lost")
+            return await command(cluster, name, payload)
+
+        self.light._matter_commands.async_command = interrupted
+        entry.options["buttons_as_remote"] = False
+        self.light._sync_remote_playlist()
+        self.assertEqual("restoration_pending", self.light.buttons_remote_status)
+        self.assertFalse(entry.options["remote_playlist_installed"])
+        self.light._matter_commands.async_command = command
+        entry.options["buttons_as_remote"] = True
+        sent.clear()
+        self.light._sync_remote_playlist()
+        self.assertEqual([36, 36], [p["effect"]["effectId"] for name, p in sent if name == "updatePersistEffectList"])
+        self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
+
+    def test_music_flow_is_reapplied_after_right_button(self):
+        entry, _ = self.remote_lamp([(39, 39)])
+        entry.options["remote_saved_playlist"] = [[39, 39]]
+        self.light._music_flow_enabled = True
+        self.report("effect_sub", 1000)
+        self.assertEqual([("music_flow", True)], self.light.calls)
+
+    def test_left_press_is_restored_on_first_report_after_unrelated_command(self):
+        self.light._config_entry = types.SimpleNamespace(options={"restore_after_music_changes": True})
+        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.light._note_lamp_command()  # clock/drawing just refreshed
+        self.report("mic_music_on", True)
+        self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
+        self.light.calls.clear()
+        # Its own stop report must not fire a spurious music_off automation.
+        events = self.lamp_events()
+        self.light._expect_lamp_music(False)
+        self.report("mic_music_on", False)
+        self.assertEqual([], events)
+        # A new press is opposite to the stop, even inside its echo window.
+        self.report("mic_music_on", True)
+        self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
+
+    def test_own_music_start_report_is_not_undone_before_state_update(self):
+        self.light._config_entry = types.SimpleNamespace(options={"buttons_as_remote": True})
+        self.light._expect_lamp_music(True)
+        self.report("mic_music_on", True)
+        self.assertEqual([], self.light.calls)
+        events = self.lamp_events()
+        self.report("mic_music_on", False)  # real long press, not our start
+        self.assertEqual([("music_off", {})], events)
+
+    def test_black_frame_power_echo_does_not_turn_logically_off_lamp_on(self):
+        self.light._is_on = False
+        self.light._expect_lamp_power(True)
+        events = self.lamp_events()
+        self.report("on_off", True)
+        self.assertFalse(self.light._is_on)
+        self.assertEqual([], events)
+        self.light._lamp_power_command_at = -1000.0
+        self.report("on_off", True)
+        self.assertTrue(self.light._is_on)
+        self.assertEqual([("turned_on", {})], events)
+
+    def test_clock_echo_is_ignored_but_another_effect_is_still_followed(self):
+        # The command bookkeeping also runs for LAN-only lamps. It needs no
+        # Matter channel or query to identify the clock being sent.
+        self.assertIsNone(self.light.matter_commands)
+        self.light._note_lamp_command()
+        self.report("effect", 40)
+        self.assertEqual([], self.light.calls)
+        self.report("effect", 34)
+        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+        # A late clock report after leaving it is the previous command's echo.
+        self.report("effect", 40)
+        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+
+    def test_each_black_slot_invalidates_drawing_mode_without_effect_report(self):
+        entry, _ = self.remote_lamp([(39, 39), (42, 42)])
+        entry.options["remote_saved_playlist"] = [[39, 39], [42, 42]]
+        self.light._mode = "Solid Color"
+        events = self.lamp_events()
+        for slot in (1000, 1001, 1000):
+            # Matter can report the slot before effect=36, or only the slot
+            # when the effect id has not changed. A previous redraw entered
+            # direct mode again; each press must invalidate that cached state.
+            self.light._fx_mode_is_direct = True
+            self.report("effect_sub", slot)
+            self.assertFalse(self.light._fx_mode_is_direct)
+        self.assertEqual(3, len(events))
+        self.assertEqual(["redraw"] * 3, self.light.calls)
 
     def test_the_lamp_buttons_entity_needs_the_matter_link(self):
         self.assertEqual("not_linked", self.light.matter_link_state)
@@ -508,6 +712,120 @@ class FollowedReportTests(unittest.TestCase):
     def test_effect_ids_and_firmware_modes(self):
         self.assertEqual("Streamer", MATTER.NATIVE_EFFECT_IDS[3])
         self.assertEqual("Flower Sea", MATTER.NATIVE_EFFECT_IDS[91])
+
+
+class RemoteConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_external_change_cancels_queued_remote_restoration(self):
+        light = FakeLight()
+        tasks = []
+        light._create_tracked_task = lambda coro, name=None: tasks.append(asyncio.create_task(coro))
+        light._restore_after_lamp_change()
+        light._lamp_changed_effect(71)
+        await asyncio.gather(*tasks)
+        self.assertNotIn("redraw", light.calls)
+        self.assertTrue(light._external_display)
+
+    async def test_external_drawing_shares_effect_id_but_not_remote_tag(self):
+        for order in (("effect", "effect_sub"), ("effect_sub", "effect")):
+            light = FakeLight()
+            light._config_entry = types.SimpleNamespace(options={
+                "buttons_as_remote": True, "remote_saved_playlist": [[39, 39]],
+            })
+            light._matter = types.SimpleNamespace(values={"effect": 40, "effect_sub": 1000})
+            tasks = []
+            def create_task(coro, name=None):
+                task = asyncio.create_task(coro)
+                tasks.append(task)
+                return task
+            light._create_tracked_task = create_task
+            for name in order:
+                value = 36 if name == "effect" else 0
+                light._matter.values[name] = value
+                light._on_matter_report(name, value, False)
+            await asyncio.gather(*tasks)
+            self.assertTrue(light._external_display)
+            self.assertNotIn("redraw", light.calls)
+
+    async def test_presses_during_restore_are_coalesced_and_music_request_kept(self):
+        light = FakeLight()
+        light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        started, finish = asyncio.Event(), asyncio.Event()
+        tasks = []
+
+        def create_task(coroutine, name=None):
+            task = asyncio.create_task(coroutine, name=name)
+            tasks.append(task)
+            return task
+
+        light._create_tracked_task = create_task
+
+        async def redraw(update_type=None):
+            light.calls.append("redraw")
+            if len(light.calls) == 1:
+                started.set()
+                await finish.wait()
+
+        light.async_apply_display_mode = redraw
+        light._restore_after_lamp_change()
+        light._restore_after_lamp_change()  # before the worker even starts
+        self.assertEqual(1, len(tasks))
+        await started.wait()
+        light._restore_after_lamp_change()
+        light._restore_after_lamp_change(music=True)
+        light._restore_after_lamp_change()
+        finish.set()
+        await asyncio.gather(*tasks)
+        self.assertEqual(["redraw", ("music_flow", False), "redraw"], light.calls)
+        self.assertFalse(light._restoring_after_lamp)
+
+    async def test_pending_restore_uses_latest_power_state(self):
+        light = FakeLight()
+        light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+
+        async def redraw(update_type=None):
+            light.calls.append("redraw")
+            light._restore_after_lamp_change(music=True)
+            light._is_on = False  # power changed while the redraw was in flight
+
+        light.async_apply_display_mode = redraw
+        await light._async_put_content_back()
+        self.assertEqual(["redraw", ("music_flow", False), "turn_off"], light.calls)
+
+    async def test_playlist_sync_reserves_worker_and_handles_toggle_during_write(self):
+        case = FollowedReportTests()
+        case.setUp()
+        entry, sent = case.remote_lamp([(39, 39), (42, 42)])
+        light = case.light
+        tasks = []
+
+        def create_task(coroutine, name=None):
+            task = asyncio.create_task(coroutine, name=name)
+            tasks.append(task)
+            return task
+
+        light._create_tracked_task = create_task
+        command = light._matter_commands.async_command
+        events = case.lamp_events()
+
+        async def toggle_during_write(cluster, name, payload=None):
+            if name == "updatePersistEffectList" and payload["effect"]["effectId"] == 36:
+                # The write's reports must not be mistaken for button presses.
+                light._on_matter_report("effect_sub", 1000, False)
+                entry.options["buttons_as_remote"] = False
+                light._sync_remote_playlist()
+            return await command(cluster, name, payload)
+
+        light._matter_commands.async_command = toggle_during_write
+        light._sync_remote_playlist()
+        light._sync_remote_playlist()
+        self.assertEqual(1, len(tasks))
+        await tasks[0]
+        await asyncio.gather(*tasks)
+        self.assertEqual([], events)
+        self.assertNotIn("remote_saved_playlist", entry.options)
+        self.assertEqual("disabled", light.buttons_remote_status)
+        writes = [payload["effect"]["effectId"] for name, payload in sent if name == "updatePersistEffectList"]
+        self.assertEqual([36, 36, 39, 42], writes)
 
 
 if __name__ == "__main__":

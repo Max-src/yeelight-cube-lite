@@ -1,63 +1,52 @@
 # Yeelight Cube Lite for Home Assistant
 
-![Yeelight Cube Smart Lamp Lite](images/yeelight-cube-light.png)
+<img src="images/yeelight-cube-light.png" alt="Yeelight Cube Smart Lamp Lite" width="320">
 
 A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a lamp with a **20×5 RGB LED matrix** (100 individually addressable pixels). Get full pixel-level control from your HA dashboard: draw pixel art, display scrolling text, apply gradients, color effects, and more.
 
 [![Home Assistant][ha_badge]][ha_link] [![HACS][hacs_badge]][hacs_link] [![GitHub Release][release_badge]][release] [![Buy Me a Coffee][bmac_badge]][bmac]
 
+## See what you can build
+
+[![Clock, native effects and pixel art cards](images/Cards/generated/overview-display.png)](#lovelace-cards)
+
+[Clock](#clock-card) / [Native effects](#native-effects-card) / [Pixel art](#draw-card)
+
+<details>
+<summary>See preview, gradient and palette controls</summary>
+
+[![Lamp preview, gradients and palette cards](images/Cards/generated/overview-colors.png)](#lovelace-cards)
+
+[Preview](#preview-card) / [Gradients](#gradient-card) / [Palettes](#palettes-card) / [Text colours](#colors-card)
+
+</details>
+
+These overviews use generated screenshots of the actual cards with example data.
+[Install with HACS](#installation-via-hacs), then [add your lamp](#setup).
+
 ---
 
 ## Table of Contents
 
-**[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
+**[`Cards at a glance`](#see-what-you-can-build)** / **[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Matter & buttons (optional)`](docs/MATTER.md)** / **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
 
 ---
 
 ## Features
 
-### Light Integration
-
-| Feature | Description |
+| What you can do | Where to start |
 | :-- | :-- |
-| **Full matrix control** | 20×5 RGB, individual pixel-level color |
-| **Brightness** | Full brightness control |
-| **Native clock** | 10 firmware clock styles (more via Experimental Features) with time / date / alternating content, 12/24-hour, and colon blink options |
-| **Native animations** | 18 LAN-compatible firmware effects with speed and direction controls where supported |
-| **Music Flow** | 6 device-microphone reactive effects with display and power-state restoration |
-| **Official pixel art** | 68 locally bundled, read-only drawings from the official Yeelight app; personal drawings stay separate |
-| **Device settings** | Power-on behavior, text scrolling, and physical-button preset list |
-| **Colors & gradients** | Gradient support across multiple modes |
-| **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
-| **Multi-lamp** | Control multiple lamps together or independently |
-| **Auto-discovery** | Zeroconf (mDNS) auto-detection on your network |
-| **Local-only** | All communication stays on your LAN, no cloud dependency |
+| Display a clock with time/date styles, colours and favourites | [Clock Card](#clock-card) |
+| Play native animations | [Native Effects Card](#native-effects-card) |
+| React to room sound with the lamp's microphone | [Music Flow: use the device's select controls](#music-flow) |
+| Draw pixel art or choose from 68 bundled official drawings | [Draw Card](#draw-card) |
+| Show scrolling text, palettes and gradients | [Colors](#colors-card) / [Palettes](#palettes-card) / [Gradient](#gradient-card) |
+| Preview and adjust brightness and colours; control one or several lamps | [Preview Card](#preview-card) |
+| Use the lamp's buttons in automations and restore the display after a press | [Matter and buttons (optional)](docs/MATTER.md) |
+| Keep control local, with automatic network discovery and no cloud dependency | [Setup](#setup) |
 
-### Customizable Lovelace Cards
-
-| Card | Description |
-| :-- | :-- |
-| **[Preview Card](#preview-card)** | Live lamp preview with brightness and color adjustments |
-| **[Clock Card](#clock-card)** | Time/date styles, color modes, live previews, favourites, and server-side rotation |
-| **[Native Effects Card](#native-effects-card)** | Firmware animation previews, color modes, favourites, rotation, and lamp controls |
-| **[Colors Card](#colors-card)** | Edit the colors used to display text and apply gradients |
-| **[Palettes Card](#palettes-card)** | Manage reusable lists of colors (palettes) |
-| **[Gradient Card](#gradient-card)** | Configure and preview gradient & color modes |
-| **[Draw Card](#draw-card)** | Pixel art editor with a personal gallery |
-
-> [!NOTE]
-> All cards support **light and dark themes** and adapt automatically to your Home Assistant theme.
-
-#### Clock Style Browsing
-
-Both cards offer **Text**, **Live Preview**, and **Original** browsers in the
-visual editor's **Previews** section. Styles follow your configured order and
-automatically filter to those that respond to the selected color mode or RGB
-override. This does not delete favourites. The former
-`show_only_responding_styles` toggle is no longer used.
-
-See [card configuration and behaviour](SERVICES.md#clock-and-native-effects-cards)
-for layout options, offline editing, and multi-lamp rotation.
+All seven cards have visual editors, light/dark themes and configurable layouts.
+Normal display controls use **LAN Control**; **Matter is an optional extra**.
 
 ---
 
@@ -89,6 +78,9 @@ Or manually add the custom repository:
 
 </details>
 
+<details>
+<summary>Manual installation, updates and removal</summary>
+
 ### Manual Installation
 
 1. Download the [latest release](https://github.com/Max-src/yeelight-cube-lite/releases)
@@ -104,6 +96,10 @@ dashboard card does not update after the restart, perform a hard browser refresh
 (`Ctrl+F5`).
 
 ### Removing the integration
+
+If you enabled **Right button as remote**, switch it off and wait for
+`remote_status: disabled` before removal, so your button playlist is restored.
+See [remote-mode recovery](docs/MATTER.md#buttons-as-remote).
 
 1. Remove the cards from your dashboards (they show an error once the
    integration is gone).
@@ -121,6 +117,8 @@ Your saved palettes, drawings and clock presets stay in
 `.storage/yeelight_cube.storage` in the configuration folder, so a later
 reinstallation finds them; delete that file to remove them too.
 
+</details>
+
 ---
 
 ## Setup
@@ -129,18 +127,8 @@ reinstallation finds them; delete that file to remove them too.
 
 Before adding the lamp to Home Assistant, you must first set it up using the official **Yeelight** app by Qingdao Yeelink ([App Store](https://apps.apple.com/us/app/yeelight/id6443416826) · [Google Play](https://play.google.com/store/apps/details?id=com.yeelight.yeelight_fluid)).
 
-> [!IMPORTANT]
-> Yeelight publishes three apps, and two of them changed names. The Cube Lite works with the one called **Yeelight** (formerly *Yeelight Station*), the app with the RGB products: Cube, Beam, Obsid.
->
-> | App | Formerly | For the Cube Lite? |
-> | --- | --- | --- |
-> | **Yeelight** | Yeelight Station | ✅ Yes |
-> | Yeelight Classic | Yeelight | ❌ No (bulbs, strips, ceiling lights) |
-> | Yeelight Pro | — | ❌ No (Yeelight Pro smart lighting solutions) |
-
-<!-- 📸 SCREENSHOT (optional): the app in the App Store or Google Play, so users recognise the right one
-     (its icon and the name "Yeelight", next to Yeelight Classic / Yeelight Pro if a search shows them).
-     Suggested file: images/App_Store_Yeelight.jpg, shown here at width="250". -->
+Use **Yeelight** (formerly *Yeelight Station*), the app for Cube, Beam and
+Obsid products. Yeelight Classic and Yeelight Pro do not support this lamp.
 
 <details>
 <summary>View setup steps</summary>
@@ -232,121 +220,17 @@ If the lamp is not discovered automatically (e.g. different subnet or mDNS is bl
 
 #### Matter (optional)
 
-The integration controls the lamp over your local network (LAN Control) and
-needs nothing else: Matter is an optional extra. Lamps without it work as
-before.
+**You do not need Matter for the cards, clock, text, drawings or effects.**
+The integration controls those over your local network with LAN Control.
 
-**Linking a lamp.** The Cube Lite is also a Matter device. Add it to Home
-Assistant's own **Matter** integration (Settings > Devices & services > Add
-integration > Matter, then add the device with its Matter pairing code, or
-share it from the Yeelight app). The integration finds it and links it to the
-same lamp by its IP address, then by its MAC address:
-- **Either order works.** It doesn't matter whether Matter or this
-  integration was set up first.
-- **Nothing to set up.** The link is checked every minute, so a lamp added
-  to Matter later is linked within a minute.
-- **No re-pairing on IP changes.** A new IP address is found again by the
-  MAC address.
-- **Where to check it:** the lamp's **Matter link** sensor (Diagnostic)
-  shows whether it's linked.
+Adding the same lamp to Home Assistant's Matter integration also enables
+**button events for automations** and follows supported changes made on the
+lamp or in the Yeelight app. **Right button as remote** restores the integration's
+display after a tagged playlist selection; setup requires Matter settings support.
+**Restore after music changes** is a separate opt-in that also catches music
+commands from apps. Ordinary external changes are accepted. A brief flash can remain.
 
-**A lamp only in Matter.** Suppose a Cube Lite is in Home Assistant's Matter
-integration but not set up here, and at least one other lamp is. It then
-appears under **Settings > Devices & services > Discovered** as *Yeelight
-Cube Lite found via Matter*, with its address filled in:
-- **To add it:** confirm.
-- **If it doesn't answer on your network:** the dialog asks you to turn on
-  **LAN Control** in the Yeelight app, then you can try again.
-- **Your first lamp:** it's found by the usual local network discovery
-  instead.
-
-**What the link adds** (reading only: nothing below sends anything over Matter):
-
-- **The lamp's buttons:** an effect from the right button's playlist and the
-  left button's microphone music modes (and its long press) show at once in
-  **Content mode**, **Native effect** and **Music Flow effect**, and stop a
-  running effect rotation.
-- **The Yeelight app:** an effect picked in the app is followed the same way,
-  and a direction set in the app changes **Device Orientation** (its arrows
-  are the app's).
-- **Power and brightness:** the lamp switched off with its button (long
-  press on the right one) or on and dimmed from the app shows so here.
-- **The clock and native effects:** the lamp's direction setting turns what
-  its firmware draws (Left and Up: upside down); the previews and cameras
-  show it as the lamp draws it.
-- **LAN Control turned off** in the app: a Repairs message tells you, since
-  Home Assistant cannot reach the lamp until it is on again.
-
-**The lamp's buttons in automations.** The **Lamp buttons** event entity
-fires when the lamp changes by itself. Use it as a trigger like a Zigbee
-remote (*When: Entity > Lamp buttons*):
-
-| Event | Usually | Data |
-| :-- | :-- | :-- |
-| `right_button` | Right button, with **Buttons as remote** and Matter settings (see below): always this button | `slot` |
-| `effect_changed` | Right button (next effect of its playlist) | `effect` (its name, when it's one of the native effects), `effect_id` |
-| `turned_off` / `turned_on` | Right button, long press | |
-| `music_mode_changed` | Left button (a microphone music mode) | `mode` |
-| `music_off` | Left button, long press | |
-
-The lamp doesn't say *which* button was pressed, only what changed:
-- **The Yeelight app:** picking an effect or a music mode there fires the
-  same events.
-- **This integration:** its own commands never fire them.
-- **Without Matter:** the entity is unavailable and never fires.
-
-**Buttons as remote.** By default the lamp's buttons work as usual, and the
-integration follows what they change. Turn on **Buttons as remote**
-(Configuration) to use them only as remote controls:
-- **What happens:** a press still fires its event, then the integration puts
-  back what it showed. It restores the picture, text or effect, and stops
-  the microphone music the left button started.
-- **Power:** the right button's long press still switches the lamp on or
-  off, and Home Assistant follows it.
-- **What you'll notice:** the lamp's own reaction can't be stopped, so it
-  shows for a moment before being put back. The left button can't be
-  changed or turned off: the lamp's firmware has no setting for it, and
-  always starts its own music modes.
-- **With Matter settings:** the right button blinks black instead. The
-  integration saves the lamp's playlist (the effects the right button steps
-  through) and makes every slot black. A press then shows black for a
-  moment instead of another effect, and fires `right_button`, which only
-  this button can cause. Matter settings need a Matter server that knows
-  Yeelight's Matter features (see below).
-  - **Turning the switch off** writes your playlist back.
-  - **If the playlist stops being black** (a factory reset of the lamp, or
-    editing it in the Yeelight app), it's made black again; your saved
-    playlist is kept.
-  - **Before removing the integration,** turn the switch off. Otherwise the
-    lamp keeps the black playlist, and you'd have to set its button
-    playlist again in the Yeelight app.
-- **The Yeelight app:** an effect or music mode picked there is put back too
-  while the switch is on. Power and brightness changed there are followed.
-- **Avoid long holds after power-up:** don't hold a button for more than
-  about 3 seconds in the first minute after the lamp powers up. The firmware
-  analysis points to a factory reset there (not tested), which would also
-  reset the playlist.
-
-**Changing the lamp's own settings over Matter.** The lamp can also be
-*controlled* over Matter, for example to turn its clock for the mount when
-you change **Device Orientation**. This needs a Matter server that knows
-Yeelight's Matter features. Home Assistant's Matter server doesn't know them
-yet: support has been proposed to it
-([matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199)).
-- **Until then:** these features stay off, everything else works as
-  described, and nothing breaks.
-- **Once the server supports them:** they turn on by themselves after a
-  Matter Server update. There's nothing to configure.
-
-**Status.** The **Matter link** sensor shows *Linked, settings available*
-when settings can be changed, and its attributes say which server delivers
-them or why none does. The light's `matter` attribute shows the linked node,
-what the lamp reports, and the same status:
-- `"commands"` is the server that delivers them, or `null`;
-- `"commands_unavailable"` says why not.
-
-The diagnostics show the same. Matter's own light entity controls the same
-lamp: you can disable it.
+[Set up Matter, use button events, and understand remote mode](docs/MATTER.md)
 
 ---
 
@@ -359,12 +243,17 @@ Every card comes with a **visual configuration editor** - click the pencil icon 
 > [!IMPORTANT]
 > After installing or updating, do a hard refresh (`Ctrl+F5`) in your browser if the cards don't appear.
 
+<details>
+<summary>Full dashboard examples</summary>
+
 <table>
   <tr>
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-4-cards-preview.png" alt="Preview, Colors, Palettes and Gradient cards"></td>
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-draw-card-preview.png" alt="Draw card"></td>
   </tr>
 </table>
+
+</details>
 
 <a id="clock-card"></a>
 
@@ -374,6 +263,20 @@ Browse firmware clock styles with live time/date previews, choose a color mode
 or custom RGB, and save your favourite style-and-color combinations. The card
 also provides content/format controls, brightness, animation speed, and a
 server-side favourites rotation that continues after you close the dashboard.
+
+<details>
+<summary>Style browsing and filtering</summary>
+
+The Clock and Native Effects cards offer **Text**, **Live Preview**, and
+**Original** browsers in the visual editor's **Previews** section. Styles
+follow your configured order and filter to those that respond to the selected
+colour mode or RGB override, without deleting favourites. The former
+`show_only_responding_styles` toggle is no longer used.
+
+See [card configuration and behaviour](SERVICES.md#clock-and-native-effects-cards)
+for layouts, offline editing and multi-lamp rotation.
+
+</details>
 
 <details>
 <summary>View card variations</summary>
@@ -901,6 +804,9 @@ show_name: false
 show_state: false
 ```
 
+<details>
+<summary>Camera orientation, sizing and layout examples</summary>
+
 #### A lamp standing on its end
 
 Turn on the lamp's **Camera Follows Orientation** switch (Configuration, off
@@ -956,6 +862,8 @@ card:
 grid_options:
   columns: 12
   rows: auto
+</details>
+
 ---
 # Standing up (Up / Down): a narrow card
 type: conditional
@@ -1027,6 +935,9 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 </details>
 
+<details>
+<summary>All per-device controls, settings and diagnostics</summary>
+
 #### Controls
 
 | Entity | Type | Description |
@@ -1085,7 +996,8 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
 | **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
-| **Buttons as remote** | Switch | The lamp's buttons fire **Lamp buttons** events, and the effect or music mode a press starts is put back (power still switches). Needs Matter: see [Matter (optional)](#matter-optional) |
+| **Right button as remote** | Switch | Restore after tagged right-button playlist selections. Requires Matter settings for setup; external app effects are accepted. See [Matter and buttons](docs/MATTER.md) |
+| **Restore after music changes** | Switch | Optional restoration after left-button or app music changes; off by default. Needs Matter reports |
 
 #### Diagnostic
 
@@ -1094,6 +1006,9 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Force Refresh** | Button | Re-activate connection for a stuck lamp |
 | **IP Address** | Sensor | Current IP address (updated after rediscovery) |
 | **Matter link** | Sensor | Whether the lamp is linked to Home Assistant's Matter integration: Not linked, Linked (read only), or Linked, settings available. See [Matter (optional)](#matter-optional) |
+
+
+</details>
 
 ### Global Entities
 
@@ -1320,6 +1235,9 @@ When Matrix content is active, the **Display Mode** entity or Gradient Card sele
 | **Panel Color Sequence** | Color sequence across all pixels |
 | **Custom Draw** | Pixel art mode (use the Draw Card) |
 
+<details>
+<summary>Display reference: pixel art, clock styles and native effects</summary>
+
 ### Built-in Pixel Art
 
 The integration includes 68 official drawings from the Yeelight app as
@@ -1484,7 +1402,26 @@ data:
     - "Clock: Yellow"
 ```
 
+</details>
+
+<a id="music-flow"></a>
+
 ### Music Flow
+
+**Music Flow is controlled through the lamp's entities, not a dedicated card
+or the Native Effects Card.** It uses the microphone inside the lamp and
+does not require Matter.
+
+1. Open **Settings → Devices & services → Yeelight Cube Lite** and select your lamp.
+2. Set **Music Flow effect** to a mode such as **Spectrum**.
+3. Set **Content mode** to **Music Flow**, then play sound near the lamp.
+4. To stop it, select **Matrix**, **Clock**, or **Native Effect** in **Content mode**.
+
+For dashboard access, add these two select entities to a standard Home
+Assistant **Entities card**.
+
+<details>
+<summary>Music Flow modes, restoration, previews and automation example</summary>
 
 Selecting **Music Flow** in the **Content Mode** selector starts the Cube Lite
 firmware's microphone-reactive renderer locally on the device. **Music Flow
@@ -1560,6 +1497,9 @@ mode** entities created for your Cube Lite. There is no separate Music Flow
 switch: Music Flow starts and stops through Content mode.
 
 ---
+
+</details>
+
 
 ## Requirements
 

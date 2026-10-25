@@ -423,10 +423,12 @@ CONF_CAMERA_FOLLOWS_ORIENTATION = "camera_follows_orientation"
 # Buttons as remote (switch.py): the lamp's buttons only fire the Lamp buttons
 # events, what they changed on the lamp is put back (light_matter.py).
 CONF_BUTTONS_AS_REMOTE = "buttons_as_remote"
+CONF_RESTORE_MUSIC_CHANGES = "restore_after_music_changes"
 # The lamp's own playlist (effect id, custom id per slot), saved while Buttons
 # as remote keeps an all-black one on the lamp (light_matter.py); written back
 # when it is turned off.
 CONF_REMOTE_SAVED_PLAYLIST = "remote_saved_playlist"
+CONF_REMOTE_PLAYLIST_INSTALLED = "remote_playlist_installed"
 # Config entry data: the MAC address of the lamp's Matter node, remembered once
 # linked so the link survives an IP change (matter_link.py).
 CONF_MATTER_MAC = "matter_mac"

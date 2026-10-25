@@ -105,6 +105,10 @@ class DisplayMixin:
 
     async def async_apply_display_mode(self, update_type: str = 'display_update', bypass_lock: bool = False):
         """Queue a display mode update to be processed sequentially"""
+        if getattr(self, "_external_display", False) and update_type in {
+            "display_update", "display_retry",
+        }:
+            return
         # A lamp that is off is never drawn on (pixel data turns it on) unless
         # commands may turn it on (the "auto-turn-on" option): every action
         # keeps its new content, shown when the lamp is turned on.
@@ -164,6 +168,7 @@ class DisplayMixin:
         }
         if (
             self._in_native_fw_mode
+            and not getattr(self, "_external_display", False)
             and self._mode not in FIRMWARE_MODES
             and update_type in _NATIVE_COMPETING_UPDATE_TYPES
             and not bypass_lock
@@ -228,15 +233,27 @@ class DisplayMixin:
         log_level = _LOGGER.info if is_retry else _LOGGER.debug
         log_level(f"[DISPLAY] async_apply_display_mode called - mode: '{self._mode}', text: '{self._custom_text}', type: '{update_type}', is_on: {self._is_on}")
         
+        async def apply_requested_display():
+            # External control can arrive while this operation waits for the
+            # device lock. Recheck before a queued retry/remote restore draws.
+            if getattr(self, "_external_display", False) and (
+                getattr(self, "_restoring_after_lamp", False)
+                or update_type in {"display_update", "display_retry"}
+            ):
+                return
+            await self._apply_display_mode_internal()
+
         # Execute the display update under the global lock with error handling
         return await self._execute_hardware_op(
-            lambda: self._apply_display_mode_internal(),
+            apply_requested_display,
             f"display:{update_type}",
             coalesce="display",
         )
 
     async def apply(self):
         try:
+            if claim := getattr(self, "_claim_display", None):
+                claim()
             # Fast-fail: if we're in cooldown after a failed connection attempt,
             # RAISE so the queue processor sees this as a failure and schedules
             # a retry. Previously this returned silently, which the queue processor
@@ -257,6 +274,9 @@ class DisplayMixin:
             
             # Direct mode is activated again below when it can no longer be
             # trusted (a reconnection, or idle too long).
+            # Even an all-black frame used for logical "off" powers the lamp.
+            if note_power := getattr(self, "_expect_lamp_power", None):
+                note_power(True)
             self._direct_mode_trusted()
 
             # Ensure lamp is in direct FX mode before sending pixel data

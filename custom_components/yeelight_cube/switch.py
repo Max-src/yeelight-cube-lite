@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import CONF_BUTTONS_AS_REMOTE, CONF_CAMERA_FOLLOWS_ORIENTATION, MODE_CLOCK
+from .const import CONF_BUTTONS_AS_REMOTE, CONF_RESTORE_MUSIC_CHANGES, CONF_CAMERA_FOLLOWS_ORIENTATION, MODE_CLOCK
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
 
@@ -34,6 +34,7 @@ async def async_setup_entry(
         YeelightCubeAutoTurnOnSwitch(config_entry, light_entity),
         YeelightCubeCameraOrientationSwitch(config_entry, light_entity),
         YeelightCubeButtonsAsRemoteSwitch(config_entry, light_entity),
+        YeelightCubeRestoreMusicChangesSwitch(config_entry, light_entity),
         YeelightCubeClockShowDateSwitch(config_entry, light_entity),
         YeelightCubeClock12HourSwitch(config_entry, light_entity),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_entity),
@@ -105,17 +106,34 @@ class YeelightCubeCameraOrientationSwitch(_YeelightCubeOptionSwitch):
 
 
 class YeelightCubeButtonsAsRemoteSwitch(_YeelightCubeOptionSwitch):
-    """Whether the lamp's buttons only fire the Lamp buttons events (needs
-    Matter): what a press changes on the lamp is put back at once
-    (light_matter._restore_after_lamp_change). Off: the lamp's buttons work
-    as usual and the integration follows them."""
+    """Restore after tagged right-button playlist selections (needs Matter)."""
 
     option_key = CONF_BUTTONS_AS_REMOTE
     _attr_entity_category = EntityCategory.CONFIG
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._register_on_light("_buttons_as_remote_switch")
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        super().async_entity_id_changed(old_entity_id)
+
+    @property
+    def extra_state_attributes(self):
+        return {"remote_status": self._light_entity.buttons_remote_status}
+
     def _changed(self) -> None:
         # With Matter settings: the lamp's playlist made black, or put back.
         self._light_entity._sync_remote_playlist()
+        self.async_write_ha_state()
+
+
+class YeelightCubeRestoreMusicChangesSwitch(_YeelightCubeOptionSwitch):
+    """Opt in to restoring music changes from both the left button and apps."""
+
+    option_key = CONF_RESTORE_MUSIC_CHANGES
+    _attr_entity_category = EntityCategory.CONFIG
 
 
 class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):

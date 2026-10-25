@@ -160,6 +160,45 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
 
 
 class NativeFeatureTests(unittest.TestCase):
+    def test_external_display_blocks_background_and_queued_restore_but_allows_user_content(self):
+        apply_mode = _load_standalone_functions(
+            LIGHT_SOURCE, {"async_apply_display_mode"},
+            {"_LOGGER": Mock(), "MUSIC_FLOW_EXIT_UPDATE_TYPES": set()},
+        )["async_apply_display_mode"]
+        calls = []
+        device = types.SimpleNamespace(
+            _external_display=True, _is_on=True, _rotation_resume_pending=False,
+            _rotation_active=False, _calibration_lock=False, _music_flow_enabled=False,
+            _in_native_fw_mode=True, _mode="Solid Color", _display_overlay=False,
+            _display_retry_count=0, MAX_DISPLAY_RETRIES=3, _ip="test", _custom_text="text",
+        )
+
+        async def draw():
+            calls.append("draw")
+
+        async def execute(func, name, **kwargs):
+            await func()
+
+        device._execute_hardware_op = execute
+        device._apply_display_mode_internal = draw
+        asyncio.run(apply_mode(device, "display_update"))
+        asyncio.run(apply_mode(device, "display_retry"))
+        self.assertEqual([], calls)
+        asyncio.run(apply_mode(device, "text_change"))
+        self.assertEqual(["draw"], calls)
+        calls.clear()
+        device._external_display = False
+        device._in_native_fw_mode = False
+        device._restoring_after_lamp = True
+
+        async def queued(func, name, **kwargs):
+            device._external_display = True  # console wins while waiting for device lock
+            await func()
+
+        device._execute_hardware_op = queued
+        asyncio.run(apply_mode(device, "text_change"))
+        self.assertEqual([], calls)
+
     @unittest.skipUnless(shutil.which("node"), "Node is required for preview parity")
     def test_clock_background_direction_matches_between_previews(self):
         # The camera (Python) and the cards (JS) draw a clock style's mixer
@@ -743,8 +782,10 @@ class NativeFeatureTests(unittest.TestCase):
         async def apply_display():
             applied.append("display")
 
+        persisted = []
+
         async def persist_music_flow():
-            return None
+            persisted.append(True)
 
         device._execute_hardware_op = execute
         device._apply_display_mode_internal = apply_display
@@ -773,6 +814,16 @@ class NativeFeatureTests(unittest.TestCase):
             [("set_power", ["off"])],
             device._cube_matrix.raw_commands,
         )
+        self.assertEqual(2, len(persisted))
+        # A remote press did not change the desired Music Flow state. Stop
+        # its physical music mode without a storage write before the redraw.
+        device._is_on = True
+        applied.clear()
+        asyncio.run(set_music_flow(False, restore_display=False, persist_state=False))
+        self.assertEqual(3, len(device._cube_matrix.commands))
+        self.assertEqual({"on": 0}, json.loads(device._cube_matrix.commands[-1][1][1]))
+        self.assertEqual([], applied)
+        self.assertEqual(2, len(persisted))
 
     def test_music_flow_stop_finalizes_state_when_display_restore_fails(self):
         helpers = _load_standalone_functions(

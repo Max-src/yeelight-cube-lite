@@ -150,6 +150,9 @@
             "scroll_enabled": {
                 "default": "mdi:format-text-rotation-none"
             },
+            "restore_after_music_changes": {
+                "default": "mdi:music-note-off"
+            },
             "buttons_as_remote": {
                 "default": "mdi:remote",
                 "state": {

@@ -293,6 +293,8 @@ class NativeModesMixin:
         it and set_fx_effect, and the clock its pause before it."""
         if not clock and await self._update_running_effect(params):
             return
+        if claim := getattr(self, "_claim_display", None):
+            claim()
         await self._leave_direct_mode()
         if clock:
             self._hardware_operation_phase = "clock:set_fx_effect"
@@ -301,6 +303,8 @@ class NativeModesMixin:
             await asyncio.sleep(0.1)
         # The lamp's answer is checked: a refused activation (rate limit)
         # fails here instead of leaving HA believing it changed.
+        if note_power := getattr(self, "_expect_lamp_power", None):
+            note_power(True)
         await self._cube_matrix.send_raw_command(
             "set_fx_effect", params, abortive_close=not clock, check_reply=True
         )
@@ -335,6 +339,8 @@ class NativeModesMixin:
     def _native_renderer_shown(self) -> None:
         """The lamp shows a firmware renderer (effect or clock): state and
         previews follow."""
+        if claim := getattr(self, "_claim_display", None):
+            claim()
         self._is_on = True
         self._fx_mode_is_direct = False
         self._in_native_fw_mode = True
@@ -397,8 +403,15 @@ class NativeModesMixin:
         self,
         enabled: bool,
         restore_display: bool = True,
+        *,
+        persist_state: bool = True,
     ) -> None:
-        """Start or stop device-microphone music flow through private LAN control."""
+        """Start or stop device-microphone music flow through private LAN control.
+
+        Remote-button restoration reapplies an unchanged desired state with
+        persist_state=False, so disk I/O does not delay the following redraw.
+        Normal user changes still persist immediately for restart recovery.
+        """
         if enabled and (
             self._rotation_active
             or self._rotation_resume_pending
@@ -406,12 +419,18 @@ class NativeModesMixin:
             self.stop_effect_rotation()
 
         async def _write_music_flow() -> None:
+            if enabled and (claim := getattr(self, "_claim_display", None)):
+                claim()
             was_music_flow_enabled = self._music_flow_enabled
             previous_power = self._is_on
             payload = _build_music_flow_payload(enabled, self._music_flow_effect)
 
             await self._leave_direct_mode()
             try:
+                if note_music := getattr(self, "_expect_lamp_music", None):
+                    note_music(enabled)
+                if enabled and (note_power := getattr(self, "_expect_lamp_power", None)):
+                    note_power(True)
                 result = await self._cube_matrix.send_command_with_recovery(
                     "set_ps",
                     ["mic_music_mode", payload],
@@ -447,6 +466,8 @@ class NativeModesMixin:
                     await asyncio.sleep(0.1)
                     if restore_power is False:
                         self._cube_matrix.close_fast_socket()
+                        if note_power := getattr(self, "_expect_lamp_power", None):
+                            note_power(False)
                         await self._cube_matrix.send_raw_command(
                             "set_power",
                             ["off"],
@@ -465,7 +486,8 @@ class NativeModesMixin:
                 self._notify_camera_preview()
                 if self.hass is not None:
                     self.async_write_ha_state()
-                await self._persist_music_flow_runtime_state()
+                if persist_state:
+                    await self._persist_music_flow_runtime_state()
 
         success = await self._execute_hardware_op(
             _write_music_flow,

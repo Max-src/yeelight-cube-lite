@@ -1312,6 +1312,8 @@ class YeelightCubeLight(
         was_music_flow_enabled = self._music_flow_enabled
         if was_music_flow_enabled or self._mode in FIRMWARE_MODES:
             self._cube_matrix.close_fast_socket()
+            if note_power := getattr(self, "_expect_lamp_power", None):
+                note_power(False)
             await self._cube_matrix.send_raw_command("set_power", ["off"])
             # Powered off: its brightness is set again on the way back.
             self._last_hardware_brightness = None

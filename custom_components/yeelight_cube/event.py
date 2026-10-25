@@ -4,10 +4,11 @@ The lamp reports over Matter what its buttons change: an effect (the right
 button's playlist), its power (the right button's long press), a microphone
 music mode (the left button) and its end (the left button's long press). The
 Yeelight app changes the same values, so its changes fire the same events;
-the integration's own commands never do. With Buttons as remote and Matter
-settings, the right button steps through an all-black playlist only it
-reaches: "right_button", unambiguous. Unavailable while the lamp is not
-linked to Home Assistant's Matter integration: without Matter it never fires.
+recognized echoes of integration commands are filtered. With Right button as
+remote and Matter settings, tagged black playlist selections fire
+"right_button". Another app replaying those tags is indistinguishable.
+Unavailable while the lamp is not linked to Home Assistant's Matter
+integration: without Matter it never fires.
 """
 from __future__ import annotations
 
