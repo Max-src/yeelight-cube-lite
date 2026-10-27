@@ -428,8 +428,9 @@ class YeelightCubeLight(
     def estimated_power(self) -> float | None:
         """Estimated draw in W (lamp_power.py): 0 while the lamp is not
         reachable (most often unplugged); the electronics alone while off;
-        unknown while the firmware draws the matrix (clock, native effect,
-        Music Flow), whose frames Home Assistant cannot see."""
+        while the firmware draws the matrix (clock, native effect, Music
+        Flow), whose frames Home Assistant cannot see, the simulated
+        preview's average (unknown until it has samples)."""
         if not self.available:
             return 0.0
         if not self._is_on:
@@ -1310,7 +1311,12 @@ class YeelightCubeLight(
         """Internal turn_off implementation that executes in the queue."""
         _LOGGER.debug("[TURN_OFF] Executing turn_off")
         was_music_flow_enabled = self._music_flow_enabled
-        if was_music_flow_enabled or self._mode in FIRMWARE_MODES:
+        # Buttons: Wake Lamp When Off turned off: "off" is a black picture on
+        # a powered lamp, as for a drawing, so a remote button's press still
+        # reaches the integration (a powered-down lamp's click only powers
+        # it on).
+        keep_powered = getattr(self, "remote_keeps_lamp_powered", False)
+        if (was_music_flow_enabled or self._mode in FIRMWARE_MODES) and not keep_powered:
             self._cube_matrix.close_fast_socket()
             if note_power := getattr(self, "_expect_lamp_power", None):
                 note_power(False)
@@ -1318,8 +1324,10 @@ class YeelightCubeLight(
             # Powered off: its brightness is set again on the way back.
             self._last_hardware_brightness = None
         else:
+            if was_music_flow_enabled:
+                await self._send_music_off()
             await self.erase_all()
-            await self.apply()
+            await self.apply(off_frame=True)
         self._is_on = False
         self._music_flow_enabled = False
         self._music_flow_restore_power = None
@@ -1461,23 +1469,27 @@ class YeelightCubeLight(
         raise ValueError(f"Unknown native effect: {name}")
 
     async def async_set_button_effects(self, effect_names: list[str]) -> None:
-        """Write up to eight ordered presets used by the physical button."""
+        """Write up to eight ordered presets used by the physical button:
+        over Matter when a server delivers Yeelight's commands (the lamp
+        refuses this write over LAN), else over LAN (light_matter)."""
         if not 1 <= len(effect_names) <= 8:
             raise ValueError("The physical button list must contain 1 to 8 effects")
-        self._cube_matrix.close_fast_socket()
-        try:
-            for index, name in enumerate(effect_names):
-                result = await self._cube_matrix.send_command_with_recovery(
-                    "update_persist_effect_list",
-                    [index, self._effect_persist_item(name)],
-                )
-                if result is None:
-                    raise CubeConnectionError(
-                        f"Physical-button preset slot {index + 1} was skipped "
-                        "during connection cooldown"
+        items = [self._effect_persist_item(name) for name in effect_names]
+        write_over_matter = getattr(self, "_write_button_playlist", None)
+        if write_over_matter is None or not await write_over_matter(items):
+            self._cube_matrix.close_fast_socket()
+            try:
+                for index, item in enumerate(items):
+                    result = await self._cube_matrix.send_command_with_recovery(
+                        "update_persist_effect_list", [index, item],
                     )
-        finally:
-            self._cube_matrix.close_command_socket()
+                    if result is None:
+                        raise CubeConnectionError(
+                            f"Physical-button preset slot {index + 1} was skipped "
+                            "during connection cooldown"
+                        )
+            finally:
+                self._cube_matrix.close_command_socket()
         self._button_effects = list(effect_names)
         if self.hass is not None:
             self.async_write_ha_state()

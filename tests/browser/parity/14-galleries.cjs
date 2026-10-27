@@ -122,7 +122,7 @@ module.exports = async (t) => {
     );
     native.remove();
 
-    // Clock editor: Show Effect Browser + Original sub-settings, no
+    // Clock editor: Show Style Browser + Original sub-settings, no
     // Experimental Effects toggle.
     const editor = document.createElement("yeelight-cube-clock-card-editor");
     editor.setConfig({
@@ -134,7 +134,7 @@ module.exports = async (t) => {
     document.body.append(editor);
     await editor.updateComplete;
     const text = editor.shadowRoot.textContent;
-    results.editorShowBrowser = text.includes("Show Effect Browser");
+    results.editorShowBrowser = text.includes("Show Style Browser");
     results.editorDisplay =
       !!editor.shadowRoot.querySelector('[data-value="grid"]') &&
       !!editor.shadowRoot.querySelector('[data-value="list"]');

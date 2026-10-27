@@ -420,10 +420,15 @@ VERTICAL_DEVICE_ORIENTATIONS = ("down", "up")
 # Config entry option: the preview cameras draw a lamp standing on one end
 # vertical (off: always landscape). The "Camera Follows Orientation" switch.
 CONF_CAMERA_FOLLOWS_ORIENTATION = "camera_follows_orientation"
-# Buttons as remote (switch.py): the lamp's buttons only fire the Lamp buttons
+# Right as Remote (switch.py): the lamp's buttons only fire the Lamp buttons
 # events, what they changed on the lamp is put back (light_matter.py).
 CONF_BUTTONS_AS_REMOTE = "buttons_as_remote"
 CONF_RESTORE_MUSIC_CHANGES = "restore_after_music_changes"
+# Wake Lamp When Off (switch.py, on by default): with Right or Left as
+# Remote, a press on a lamp that is off turns it on with its content; off:
+# presses only fire events and "off" keeps the lamp powered, black, so the
+# presses still reach the integration (light_matter.py, light.py turn_off).
+CONF_BUTTONS_WAKE_LAMP = "buttons_wake_lamp"
 # The lamp's own playlist (effect id, custom id per slot), saved while Buttons
 # as remote keeps an all-black one on the lamp (light_matter.py); written back
 # when it is turned off.

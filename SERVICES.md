@@ -199,7 +199,7 @@ Set individual RGB colors for each character in the displayed text.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `text_colors` | Yes | List of `[R, G, B]` arrays, one per character |
+| `text_colors` | Yes | List of `[R, G, B]` arrays (1–100): gradient stops, or one color per character in the sequence modes |
 | `save_as_palette` | No | Save these colors as a new palette at the same time (default: `false`) |
 | `entity_id` | Yes | Target lamp entity |
 
@@ -293,6 +293,8 @@ data:
 
 ---
 
+<a id="-drawing-services"></a>
+
 ## 🖼️ Drawing Services
 
 Push pixel art to the lamp, and manage the saved pixel art collection.
@@ -322,7 +324,7 @@ Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20�
 | **Missing positions** | Treated as black (off) |
 | **Order** | Entries can be in any order |
 | **Duplicates** | Last entry for a position wins |
-| **Out of range** | Positions outside 0-99 are ignored |
+| **Out of range** | Positions above 99 are ignored; negative or non-integer positions make the call fail |
 | **Grouped positions** | `position` accepts a single index or a list of indexes |
 
 <details>
@@ -429,7 +431,7 @@ Display a pixel art on the lamp: a saved one by index, or a saved or official
 > [!TIP]
 > Use this template in **Developer Tools > Template** to list all saved drawings with their indexes:
 > ```jinja
-> {% set arts = state_attr('sensor.yeelight_cube_saved_pixel_arts', 'pixel_arts') %}
+> {% set arts = state_attr('sensor.saved_drawings', 'pixel_arts') %}
 > {% for art in arts %}{{ loop.index0 }}: {{ art.name }}
 > {% endfor %}
 > ```
@@ -492,7 +494,7 @@ Retrieve saved pixel art data. Returns the pixel art in the same format accepted
 
 | Field | Required | Default | Description |
 | :-- | :-- | :-- | :-- |
-| `idx` | Yes | - | 0-based index of the pixel art |
+| `idx` | No | `0` | 0-based index of the pixel art |
 | `group_by_color` | No | `false` | Group pixels by color instead of flat list |
 
 ```yaml
@@ -509,6 +511,7 @@ data:
 
 ```yaml
 name: "Magic Lamp"
+orientation: horizontal
 pixels:
   - position: 7
     color: [255, 191, 1]
@@ -523,6 +526,7 @@ pixels:
 
 ```yaml
 name: "Magic Lamp"
+orientation: horizontal
 pixels:
   - color: [0, 128, 255]
     position: [12, 13, 32, 33]
@@ -706,7 +710,7 @@ Set the gradient angle (for Angle Gradient mode).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `angle` | Yes | Angle in degrees (0-360) |
+| `angle` | Yes | Angle in degrees (0-360 in the UI; not range-checked) |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -947,8 +951,9 @@ data:
 `Sunset`, `Carousel`, `Blue Yellow`, `Ice Blue`, `Blue White`,
 `Spectrum Crumble`, `Drift`, `Spectrum Bands`, `Twinkle`
 
-Names are matched exactly. Additional unnamed firmware modes exist but are hidden
-because they have no stable name.
+Names are matched exactly. The 61 unnamed firmware modes are named by their
+mode number (for example `"2"`): they are experimental and can be selected by
+that name.
 
 </details>
 
@@ -1029,7 +1034,7 @@ are unique per kind. Neither service sends anything to the lamp.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `name` | Yes | Display name (1–40 characters) |
+| `name` | Yes | Display name (1–40 characters, no `<` or `>`; not a built-in clock style's name) |
 | `color` | Yes | RGB color as three integers 0–255 |
 | `preset_id` | No | Existing id when editing; omit to create |
 | `kind` | No | `style` (solid clock style) or `color_mode` (reusable color) — default `style` for new presets, preserved when editing |
@@ -1037,9 +1042,11 @@ are unique per kind. Neither service sends anything to the lamp.
 ```yaml
 action: yeelight_cube.save_clock_preset
 data:
-  name: "Sunset"
+  name: "Warm Orange"
   color: [255, 110, 0]
 ```
+
+`delete_clock_preset` takes only `preset_id` (required).
 
 ```yaml
 action: yeelight_cube.delete_clock_preset
@@ -1070,7 +1077,8 @@ data:
 ### `set_device_orientation`
 
 Set the physical mount orientation, which determines the direction native
-effects and text flow.
+effects and text flow. It fails with `lamp_off` when a target is off and
+auto-turn-on is disabled.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1112,7 +1120,8 @@ data:
   entity_id: light.cubelite_a904
 ```
 
-Duplicates (same name and color mode) are dropped. An empty list is valid and
+Duplicates (same name, color mode and color) are dropped; an unknown color
+mode, or `custom` without a valid color, falls back to `normal`. An empty list is valid and
 clears the favourites.
 
 ---
@@ -1175,10 +1184,12 @@ To preserve a favourite's color, use an object item such as
 `{name: Rainbow, color_mode: white_orange}` or
 `{name: Rainbow, color_mode: custom, color: [255, 80, 20]}`.
 
-Start requires at least two distinct normalised items. It is
-**fire-and-forget**: every lamp's loop is scheduled concurrently and the service
-returns immediately, so several lamps advance in parallel rather than one
-waiting for the next. Only the validation above is raised synchronously.
+Start is **fire-and-forget**: every lamp's loop is scheduled concurrently and
+the service returns immediately, so several lamps advance in parallel rather
+than one waiting for the next. The call fails at once only when `items` has
+fewer than two entries. A list with fewer than two distinct entries once
+normalised (for example the same name twice) is refused by each lamp in the
+background: the call succeeds, nothing starts, and a warning is logged.
 
 Each lamp's entity loop still waits for its own first display operation before
 marking itself active. For a known, enabled item, that step awaits the display
@@ -1309,13 +1320,15 @@ data:
 
 ---
 
+<a id="-configuration-services"></a>
+
 ## ⚙️ Configuration Services
 
 Adjust brightness and real-time color effects.
 
 ### `set_brightness`
 
-Set lamp brightness as a percentage.
+Set lamp brightness as a percentage. Turns the lamp on if it is off.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1337,17 +1350,20 @@ Apply real-time color effects to the lamp output.
 
 | Field | Required | Range | Description |
 | :-- | :-- | :-- | :-- |
-| `hue_shift` | No | -180 to +180 | Color wheel rotation |
-| `temperature` | No | -100 to +100 | Cool/warm adjustment |
-| `saturation` | No | 0-200 | Color richness |
-| `vibrance` | No | 0-200 | Smart saturation |
-| `contrast` | No | 0-200 | Contrast level |
-| `glow` | No | 0-100 | Bloom on highlights |
-| `grayscale` | No | 0-100 | Grayscale intensity |
-| `invert` | No | 0-100 | Color inversion |
-| `tint_hue` | No | 0-360 | Color for tint overlay |
-| `tint_strength` | No | 0-100 | Tint overlay intensity |
+| `hue_shift` | No | -180 to +180 (default 0) | Color wheel rotation |
+| `temperature` | No | -100 to +100 (default 0) | Cool/warm adjustment |
+| `saturation` | No | 0-200 (default 100) | Color richness |
+| `vibrance` | No | 0-200 (default 100) | Smart saturation |
+| `contrast` | No | 0-200 (default 100) | Contrast level |
+| `glow` | No | 0-100 (default 0) | Bloom on highlights |
+| `grayscale` | No | 0-100 (default 0) | Grayscale intensity |
+| `invert` | No | 0-100 (default 0) | Color inversion |
+| `tint_hue` | No | 0-360 (default 0) | Color for tint overlay |
+| `tint_strength` | No | 0-100 (default 0) | Tint overlay intensity |
 | `entity_id` | Yes | - | Target lamp entity |
+
+Fields you leave out are reset to their default, not kept: send every value
+you want to keep.
 
 ```yaml
 action: yeelight_cube.set_preview_adjustments
@@ -1410,7 +1426,7 @@ All three cards share Actions visibility, button styling and the **Actions & Ord
 
 ### `save_state`
 
-Snapshot the lamp's current display state so it can be restored later. Captures everything that determines what is shown: text, text/gradient colors, display mode, gradient angle, full-panel setting, drawing/pixel art, font, alignment, orientation, brightness, all color effects and a running effect/clock rotation.
+Snapshot the lamp's current display state so it can be restored later. Captures everything that determines what is shown: text, text/gradient colors, display mode, gradient angle, full-panel setting, drawing/pixel art, font, alignment, orientation, brightness, all color effects, the clock style and options, the native effect with its speed, direction and colors, the Music Flow effect, the background color, scroll settings and a running effect/clock rotation.
 
 Only **one** snapshot is kept per lamp — calling `save_state` again overwrites the previous one.
 
@@ -1474,9 +1490,19 @@ data:
 Update one to eight leading slots in the native preset list cycled by the
 Cube Lite's physical button.
 
+- **Needs Matter settings.** The list is written over Matter when a server
+  delivers Yeelight's commands (see
+  [Optional Matter settings](docs/MATTER.md#optional-matter-settings)). The
+  lamp refuses this write over the local network, so without such a server
+  the call fails with `button_effects_refused`.
+- **Not with Buttons: Right as Remote on.** That switch keeps the list black
+  and puts your list back when it is turned off: the call is refused until
+  then.
+- **The lamp keeps no speed** for the button's presets.
+
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `effects` | Yes | Ordered native effect names or `Clock: <style>` names, maximum 8 |
+| `effects` | Yes | 1–8 entries: official native effect names (the 18 listed under `set_native_effect`) or `Clock: <style>` with any clock style name. The call waits for the lamp and fails if it refuses a slot |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -1682,7 +1708,7 @@ a mode Home Assistant does not know about; use **Force Refresh** afterwards.
 
 ## 🔗 Multi-Entity Operations
 
-All services that accept `entity_id` support targeting multiple lamps in a single call by passing a list. All targets receive the command simultaneously.
+Most services that accept `entity_id` also accept a list of lamps and update them in parallel. `set_brightness`, `set_font`, `set_alignment`, `set_orientation`, `preview_gradient_modes`, `save_palette` and `test_display` act on the first lamp of a list only.
 
 **Each lamp on its own.** A service checks its data, records the new settings on
 every target and returns; each lamp is then updated in the background, so one
@@ -1690,8 +1716,10 @@ slow or unreachable lamp never holds up the others or the call.
 
 - A lamp **not reached** keeps the requested settings (its card shows it
   unavailable) and shows them once it is back: the integration redraws its whole
-  requested state on reconnecting. This holds for every service, including
-  `set_native_effect`.
+  requested state on reconnecting. This holds for every service that updates
+  the display, including `set_native_effect`. `set_brightness`,
+  `set_device_orientation`, `set_button_effects` and `set_favourites` wait
+  for the lamp and return its error.
 - A lamp that **refuses** a change (the lamp answers with an error, such as
   too many commands in a short time) or fails while applying it publishes the
   reason in its `last_command_error` attribute, `{service, message, at}`:
@@ -1787,13 +1815,13 @@ result through an event on the HA event bus.
 
 | Service | Returns |
 | :-- | :-- |
-| `get_pixel_art` | Response data: `{ name, pixels }` in flat or grouped format (see [get_pixel_art](#get_pixel_art)) |
+| `get_pixel_art` | Response data (required: call it with `response_variable`): `{ name, orientation, pixels }` in flat or grouped format (see [get_pixel_art](#get_pixel_art)) |
 | `preview_gradient_modes` | Event `yeelight_cube_gradient_preview_response` with 20×5 pixel matrices per mode |
 | `list_managed_devices` | Event `yeelight_cube_managed_devices_list` with `devices` (list of IP addresses) |
 | `is_device_managed` | Event `yeelight_cube_device_check_result` with `ip_address` and `is_managed` |
 | `test_device_detection` | Event `yeelight_cube_detection_test_result` with `would_be_detected` |
 | `create_cube_discovery`, `ignore_yeelight_discovery`, `ignore_specific_yeelight` | Events `yeelight_cube_cube_discovery_created`, `yeelight_cube_yeelight_discovery_ignored`, `yeelight_cube_yeelight_device_ignored` |
-| `query_raw`, `get_capabilities`, `bulb_call`, `send_fx_effect` | Optional response data (debug services) |
+| `query_raw`, `get_capabilities`, `bulb_call`, `send_fx_effect`, `set_default`, `force_tcp` | Optional response data (debug services; `force_tcp` returns each lamp's transport) |
 
 ---
 

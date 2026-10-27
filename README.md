@@ -17,7 +17,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 [![Lamp preview, gradients and palette cards](images/Cards/generated/overview-colors.png)](#lovelace-cards)
 
-[Preview](#preview-card) / [Gradients](#gradient-card) / [Palettes](#palettes-card) / [Text colours](#colors-card)
+[Preview](#preview-card) / [Gradients](#gradient-card) / [Palettes](#palettes-card) / [Colors](#colors-card)
 
 </details>
 
@@ -28,7 +28,7 @@ These overviews use generated screenshots of the actual cards with example data.
 
 ## Table of Contents
 
-**[`Cards at a glance`](#see-what-you-can-build)** / **[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Matter & buttons (optional)`](docs/MATTER.md)** / **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
+**[`Cards at a glance`](#see-what-you-can-build)** · **[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Matter & buttons (optional)`](#matter-optional)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Requirements`](#requirements)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
 
 ---
 
@@ -41,7 +41,7 @@ These overviews use generated screenshots of the actual cards with example data.
 | React to room sound with the lamp's microphone | [Music Flow: use the device's select controls](#music-flow) |
 | Draw pixel art or choose from 68 bundled official drawings | [Draw Card](#draw-card) |
 | Show scrolling text, palettes and gradients | [Colors](#colors-card) / [Palettes](#palettes-card) / [Gradient](#gradient-card) |
-| Preview and adjust brightness and colours; control one or several lamps | [Preview Card](#preview-card) |
+| Preview the lamp live and adjust its brightness and colors | [Preview Card](#preview-card) |
 | Use the lamp's buttons in automations and restore the display after a press | [Matter and buttons (optional)](docs/MATTER.md) |
 | Keep control local, with automatic network discovery and no cloud dependency | [Setup](#setup) |
 
@@ -97,9 +97,9 @@ dashboard card does not update after the restart, perform a hard browser refresh
 
 ### Removing the integration
 
-If you enabled **Right button as remote**, switch it off and wait for
+If you enabled **Buttons: Right as Remote**, switch it off and wait for
 `remote_status: disabled` before removal, so your button playlist is restored.
-See [remote-mode recovery](docs/MATTER.md#buttons-as-remote).
+See [remote-mode recovery](docs/MATTER.md#limits-and-what-to-expect).
 
 1. Remove the cards from your dashboards (they show an error once the
    integration is gone).
@@ -115,7 +115,8 @@ See [remote-mode recovery](docs/MATTER.md#buttons-as-remote).
 
 Your saved palettes, drawings and clock presets stay in
 `.storage/yeelight_cube.storage` in the configuration folder, so a later
-reinstallation finds them; delete that file to remove them too.
+reinstallation finds them (a deleted lamp's favourites and rotation are
+removed with it); delete that file to remove them too.
 
 </details>
 
@@ -225,10 +226,19 @@ The integration controls those over your local network with LAN Control.
 
 Adding the same lamp to Home Assistant's Matter integration also enables
 **button events for automations** and follows supported changes made on the
-lamp or in the Yeelight app. **Right button as remote** restores the integration's
-display after a tagged playlist selection; setup requires Matter settings support.
-**Restore after music changes** is a separate opt-in that also catches music
-commands from apps. Ordinary external changes are accepted. A brief flash can remain.
+lamp or in the Yeelight app. Two switches turn the lamp's buttons into a
+remote, one per button: **Buttons: Right as Remote** restores the
+integration's display after a right-button press, and **Buttons: Left as
+Remote** after the left button starts music (it also catches music commands
+from apps). **Buttons: Wake Lamp When Off** decides whether a press turns an
+off lamp on, or only fires its event. Ordinary external changes are
+accepted. A brief flash can remain.
+
+> [!NOTE]
+> **Buttons: Right as Remote** and the lamp's direction from **Device
+> Orientation** need Yeelight's Matter commands, which Home Assistant's own
+> Matter server doesn't support yet (proposed upstream). The button events
+> and the other two switches work today.
 
 [Set up Matter, use button events, and understand remote mode](docs/MATTER.md)
 
@@ -238,7 +248,7 @@ commands from apps. Ordinary external changes are accepted. A brief flash can re
 
 This component includes custom Lovelace cards for your dashboards.
 
-Every card comes with a **visual configuration editor** - click the pencil icon to customize without YAML. Each section can be configured independently, and most sections offer **multiple display styles and layout modes**.
+Every card comes with a **visual configuration editor** - click the pencil icon to customize without YAML. Each section can be configured independently, and most sections offer **multiple display styles and layout modes**. Every card also accepts `title`, `show_card_background` (off: a transparent card) and `show_lamp_status` (the lamp's state in the header).
 
 > [!IMPORTANT]
 > After installing or updating, do a hard refresh (`Ctrl+F5`) in your browser if the cards don't appear.
@@ -303,7 +313,7 @@ for layouts, offline editing and multi-lamp rotation.
 | Feature | Description |
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
-| **Style browser** | Search clock styles using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card (or show them A → Z). Your custom styles can be renamed and deleted (with confirmation) from the gallery |
+| **Style browser** | Search clock styles using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card (or show them A → Z). Your custom styles can be renamed and deleted (with confirmation) from the gallery |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
@@ -357,7 +367,7 @@ effect_view: grid
 items_per_page: 4
 show_favourites: true
 show_rotation: true
-rotation_interval: 30
+rotation_interval: 30   # seconds; used until the lamp has its own interval
 ```
 
 </details>
@@ -402,7 +412,7 @@ available where supported. Experimental effects require the lamp's
 | Feature | Description |
 | :-- | :-- |
 | **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) |
+| **Effect browser** | Search effects using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -456,7 +466,7 @@ effect_view: grid
 items_per_page: 4
 show_favourites: true
 show_rotation: true
-rotation_interval: 30
+rotation_interval: 30   # seconds; used until the lamp has its own interval
 ```
 
 </details>
@@ -530,7 +540,7 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 | **Refresh & power** | Quick buttons to force-refresh or toggle power |
 | **Device orientation** | Right / Down / Left / Up control with configurable button layout; the preview rotates to match the physical mount |
 | **Brightness slider** | Configurable slider styles |
-| **Color adjustments** | Effect sliders with multiple layout modes, change indicators, and reset buttons |
+| **Color adjustments** | Adjustment sliders with multiple layout modes, change indicators, and reset buttons |
 
 <details>
 <summary>View editor sections</summary>
@@ -631,7 +641,7 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Browse & apply** | The shared gallery: List, Grid, Mosaic, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; five swatch styles (round, square, gradient bar, gradient background, stripes) and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies. The palette the lamps show is highlighted; your order or A → Z |
+| **Browse & apply** | The shared gallery: List, Grid, Mosaic, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; the shared swatches: Swatches (row, grid, expandable, scroll, fan, wave or spiral; square, rounded or circle), Gradient, Stripes, Fill, Honeycomb, Blinds or Treemap (older `swatch_style` options migrate automatically), and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies. The palette the lamps show is highlighted; your order or A → Z |
 | **Manage** | Rename (Allow Rename) and delete palettes from the gallery; a delete always asks for confirmation |
 | **Arrange** | Reorder your palettes in the card editor (drag or ▲ ▼); the order is saved for every card, lamp and the Matrix: Palette select |
 | **Import/Export** | Load and save full palette collections |
@@ -684,7 +694,7 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 | **Selection feedback** | The chosen item pulses while the command is in flight and settles once the lamp confirms |
 | **Active mode label** | Optional chip showing the currently active mode by name (handy when titles are hidden) |
 | **Apply to whole panel** | Independent toggle to apply gradients to the full panel instead of just the text |
-| **Angle selector** | Slider, number input, or a rotary control: rectangle or square, wheel (optional arrow window), compass (needle, beam, arrow, star or rectangle shapes, optional snapping to N/NE/E…), mini-matrix (optionally showing the lamp's text) or capsule. A lamp update never moves the angle you are dragging |
+| **Angle selector** | Rectangle or square bar, wheel (optional arrow mask), compass (needle, beam, arrow, star or rectangle overlay), mini-matrix (optionally showing the lamp's text) or capsule slider; optional snapping to N/NE/E… (all but the mini-matrix) and the angle shown as text or an editable number. A lamp update never moves the angle you are dragging |
 
 > **Upgrading from an older version?** The former "Color Mode Selector" and "Gradient Preview" sections were merged into a single **Mode Selector** — they served the same purpose. Existing configs (including the former angle styles and selector layouts) migrate automatically, in the card and in its editor; pick a text style in the editor if you prefer the old compact buttons. Text styles skip the preview computation entirely, making them noticeably lighter.
 
@@ -744,6 +754,7 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 | **Drawing matrix** | Interactive 20×5 matrix, landscape or vertical (Rotate tool; a vertical pixel art opens vertical and is saved so) |
 | **Action buttons** | Apply to lamp, upload from image, save, or clear |
 | **Pixel art gallery** | The shared gallery: Grid, List, Mosaic, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search. A pick (a click; carousel and wheel arrows only browse) loads the pixel art into the drawing (and sends it to the lamp with "Apply to lamp automatically"); vertical pixel arts show standing up; the pixel art on the canvas is highlighted; your order or A → Z. Rename (Allow Rename) and delete them from the gallery (a delete always asks for confirmation); reorder them in the card editor's Arrange list (saved for every card and the Matrix: Pixel Art select) |
+| **Official pixel arts** | The 68 official drawings appear in the gallery beside yours, grouped (All, My drawings, each official collection) as tabs or another section layout; choose which ones the card shows, and filter by orientation (All / Horizontal / Vertical, or follow the lamp's) |
 | **Import/Export** | Import and export collections as JSON |
 
 <details>
@@ -943,7 +954,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | Entity | Type | Description |
 | :-- | :-- | :-- |
 | **Auto Turn On** | Switch | Automatically turn on the lamp when a mode, drawing, text or color change is applied while it is off. When disabled, the change is kept and shown when the lamp is turned on |
-| **Yeelight Cube Lite** | Light | Main light entity (on/off and brightness; RGB color in Matrix mode) |
+| **(the lamp's name)** | Light | Main light entity, named after the lamp (on/off and brightness; RGB color in Matrix mode) |
 | **Content mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
 | **Matrix: Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
 | **Matrix: Display Text** | Text | Text shown by the Matrix text modes |
@@ -956,8 +967,8 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Native effect** | Select | One of the 18 LAN-compatible firmware-native animations (more with Experimental Features) |
 | **Animation speed** | Number | Speed for the native clock and for effects that support it (1–255 device units; unavailable when the selected effect has no speed control) |
 | **Music Flow effect** | Select | Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
+| **Clock: Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date |
 | **Device Orientation** | Select | Physical mount orientation: Right / Down / Left / Up (applies to all modes) |
-| **Camera Follows Orientation** | Switch | Draw the Matrix Preview cameras vertical while the lamp stands on one end (Down / Up), like the cards. Off by default: always landscape. See [Matrix Preview Cameras](#matrix-preview-cameras) |
 | **Experimental Features** | Switch | Reveal firmware animation modes and clock styles the Yeelight app never exposed. Off by default |
 
 #### Sensors
@@ -968,7 +979,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix Preview (Square)** | Camera | Local matrix preview with square pixels; Music Flow uses a static effect illustration |
 | **Estimated power** | Sensor | Estimated power draw of the lamp in W. See [Power Supply](#power-supply) |
 | **Estimated energy** | Sensor | Estimated energy used by the lamp in kWh, for the Energy dashboard. See [Power Supply](#power-supply) |
-| **Lamp buttons** | Event | What the lamp's buttons (or the Yeelight app) changed, as events for automations. Needs Matter: see [Matter (optional)](#matter-optional) |
+| **Lamp buttons** | Event | What the lamp's buttons (or the Yeelight app) changed, as events for automations: `right_button`, `effect_changed`, `music_mode_changed`, `music_off`, `turned_on`, `turned_off`. Unavailable until the lamp is linked to Matter: see [Matter (optional)](#matter-optional) |
 
 > [!TIP]
 > Use these camera entities with a "Picture Entity" card for quick previews: see [Matrix Preview Cameras](#matrix-preview-cameras) for the card settings that fit a lamp lying flat or standing up. For more responsive previews, use the custom [Preview Card](#preview-card).
@@ -977,7 +988,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
-| **Clock: Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date only |
+| **Camera Follows Orientation** | Switch | Draw the Matrix Preview cameras vertical while the lamp stands on one end (Down / Up), like the cards. Off by default: always landscape. See [Matrix Preview Cameras](#matrix-preview-cameras) |
 | **Clock: Show date** | Switch | Shortcut for Time & Date (alternate time with the date); stays in sync with Clock: Content |
 | **Clock: 12-hour format** | Switch | Use 12-hour time instead of 24-hour time |
 | **Clock: Blink colon** | Switch | Blink the time separator in Clock mode |
@@ -996,8 +1007,9 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
 | **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
-| **Right button as remote** | Switch | Restore after tagged right-button playlist selections. Requires Matter settings for setup; external app effects are accepted. See [Matter and buttons](docs/MATTER.md) |
-| **Restore after music changes** | Switch | Optional restoration after left-button or app music changes; off by default. Needs Matter reports |
+| **Buttons: Right as Remote** | Switch | Off by default. Replaces the lamp's right-button playlist with tagged black entries (the original is written back when turned off): a press fires `right_button` and the integration's content comes back. Needs Matter settings; its `remote_status` attribute shows the actual state. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
+| **Buttons: Left as Remote** | Switch | Off by default. Undoes microphone music started or changed by the left button (or an app): the integration's content comes back. Needs the Matter link. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
+| **Buttons: Wake Lamp When Off** | Switch | On by default. With Right or Left as Remote, a press on a lamp that is off turns it on with its content. Off: presses only fire their events and the lamp stays dark ("off" then keeps it powered, black). See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 
 #### Diagnostic
 
@@ -1068,7 +1080,7 @@ Stores all saved color palettes.
 | `count` | integer | Number of saved palettes |
 | `content_hash` | string | MD5 hash; changes on every modification |
 
-**State:** numeric count (e.g. `3`)
+**State:** `"N palettes"` (e.g. `"3 palettes"`)
 
 ---
 
@@ -1126,7 +1138,7 @@ All entities (light, selectors, sliders, text, switches) can be used in standard
 | Action | Description | Key Fields |
 | :-- | :-- | :-- |
 | `yeelight_cube.apply_custom_pixels` | Push pixel array to lamp | `pixels`, `entity_id` |
-| `yeelight_cube.apply_pixel_art` | Apply saved art by index | `idx`, `entity_id` |
+| `yeelight_cube.apply_pixel_art` | Apply a saved art by index, or a saved or built-in one by name | `idx` or `name`, `entity_id` |
 | `yeelight_cube.save_pixel_art` | Save a pixel array as named art | `pixels`, `name` |
 
 #### Palettes & Colors
@@ -1158,6 +1170,31 @@ automation:
       data:
         entity_id: light.yeelight_cube_192_168_4_139
         mode: "Text Color Sequence"
+```
+
+</details>
+
+<details>
+<summary>🔘 Lamp button: toggle the room's light (Matter)</summary>
+
+The **Lamp buttons** event entity's state is the time of its last event: the
+automation triggers on any new state and checks the event type. Details and
+the other events: [Button events for automations](docs/MATTER.md#button-events-for-automations).
+
+```yaml
+automation:
+  alias: "Lamp button: toggle the room's light"
+  triggers:
+    - trigger: state
+      entity_id: event.cubelite_lamp_buttons
+      not_from: [unavailable, unknown]
+  conditions:
+    - condition: template
+      value_template: "{{ trigger.to_state.attributes.event_type == 'right_button' }}"
+  actions:
+    - action: light.toggle
+      target:
+        entity_id: light.living_room
 ```
 
 </details>
@@ -1210,7 +1247,7 @@ data:
 
 ## Display Modes
 
-The **Content Mode** entity selects the active content source:
+The **Content mode** entity selects the active content source:
 
 | Content mode | Description |
 | :-- | :-- |
@@ -1219,7 +1256,7 @@ The **Content Mode** entity selects the active content source:
 | **Native Effect** | Run one of 18 LAN-compatible firmware-native animations |
 | **Music Flow** | Run the firmware's microphone-reactive renderer (see [Music Flow](#music-flow)) |
 
-When Matrix content is active, the **Display Mode** entity or Gradient Card selects the renderer:
+When Matrix content is active, the **Matrix: Display Mode** entity or Gradient Card selects the renderer:
 
 | Mode | Description |
 | :-- | :-- |
@@ -1275,7 +1312,8 @@ The clock command uses the Cube Lite's private LAN protocol. The firmware does
 not report the active clock configuration back to Home Assistant, so entity
 states represent the last settings requested by this integration. Changes made
 from the Yeelight app or physical button may therefore not appear immediately in
-Home Assistant. Camera previews approximate the firmware palettes and may
+Home Assistant (without Matter; with it, a switch to another effect or a music
+mode is followed). Camera previews approximate the firmware palettes and may
 differ slightly from the physical LEDs.
 
 ### Native Effects
@@ -1380,17 +1418,17 @@ percentage on every card. Enable **Show Raw Value (device units)**
 (`slider_show_raw_value`) to display the device value (speed 1–255, brightness
 3–255) instead of a percentage; the current device value is shown exactly.
 
-While Clock or Native Effect mode is active, the integration intentionally
-pauses periodic `get_prop` polling because this firmware query can stop the
-native renderer and switch the display to another mode. Home Assistant therefore
-keeps the last settings requested by the integration until another command is
-sent. Brightness remains available and is applied after activating the native
+The lamp's state is never read back (see [How the State Updates](#how-the-state-updates)),
+so while Clock or Native Effect mode is active, Home Assistant keeps the last
+settings requested by the integration until another command is sent.
+Brightness remains available and is applied after activating the native
 renderer so it does not cancel the selected clock or animation.
 
 The `set_button_effects` action writes one to eight ordered presets to the
-physical-button slots. Updating a shorter list only overwrites those leading
-slots because the private LAN protocol does not expose a documented truncate
-operation.
+physical-button slots, over Matter (it needs
+[Matter settings](docs/MATTER.md#optional-matter-settings), and **Buttons:
+Right as Remote** off). Updating a shorter list only overwrites those leading
+slots: the lamp has no command that shortens the list.
 
 ```yaml
 action: yeelight_cube.set_button_effects
@@ -1423,7 +1461,7 @@ Assistant **Entities card**.
 <details>
 <summary>Music Flow modes, restoration, previews and automation example</summary>
 
-Selecting **Music Flow** in the **Content Mode** selector starts the Cube Lite
+Selecting **Music Flow** in the **Content mode** selector starts the Cube Lite
 firmware's microphone-reactive renderer locally on the device. **Music Flow
 Effect** selects one of the six official modes: Gather, Breathing, Blossom,
 Spectrum, Music Note, or Impact.
@@ -1444,8 +1482,8 @@ The integration also preserves the lamp's previous power state:
   fails, Home Assistant still records Music Flow as off. Reselect a content
   mode or use **Force Refresh** to retry the display render.
 
-Periodic native-property polling is paused while Music Flow is active because
-opening another control transaction can interrupt the firmware renderer.
+The hourly clock check is skipped while Music Flow is active, because opening
+another control connection can interrupt the firmware renderer.
 Selecting Matrix, Clock, Native Effect, text, or pixel art is treated as an
 explicit content change and stops Music Flow first.
 
@@ -1469,7 +1507,8 @@ viewing a preview sends no command to the lamp.
 > [!NOTE]
 > The firmware does not expose live microphone-animation frames. Changes made
 > from another app while Music Flow is active may not be reflected in Home
-> Assistant until Music Flow stops or another HA command runs.
+> Assistant until Music Flow stops or another HA command runs. With the Matter
+> link, a music mode started or stopped on the lamp or in the app is followed.
 
 ```yaml
 sequence:
@@ -1527,9 +1566,16 @@ switch: Music Flow starts and stops through Content mode.
 - **The lamp's state is never read back:** the Cube Lite answers no state
   query. Home Assistant shows what it last sent: a change takes effect at once
   in Home Assistant and the cards, and is sent to the lamp right after.
-- **Changes made elsewhere are not seen:** the Yeelight app or the lamp's own
-  button change the lamp without Home Assistant knowing; the next change from
-  Home Assistant (or **Force Refresh**) shows its state on the lamp again.
+- **Changes made elsewhere:** without Matter, the Yeelight app or the lamp's
+  buttons change the lamp without Home Assistant knowing; the next change from
+  Home Assistant (or **Force Refresh**) shows its state on the lamp again. With
+  the lamp linked to Home Assistant's Matter integration, its power,
+  brightness, effect or music mode and the app's direction are followed, and
+  the buttons fire **Lamp buttons** events (see [Matter (optional)](#matter-optional)).
+  An app's own effect or drawing settings still cannot be read, but with the
+  buttons as a remote a press shows the Yeelight app's clock, colour,
+  animation or built-in pixel art again, and **Buttons: Wake Lamp When Off**
+  decides whether a press turns an off lamp on.
 - **Reachability** is checked in the background (more often while the lamp is
   out of reach): the light becomes unavailable while the lamp does not answer,
   and its last state is sent again when it is back.
@@ -1549,9 +1595,10 @@ switch: Music Flow starts and stops through Content mode.
   an earlier picture again; it settles on the right one by itself.
 - **Music Flow** uses the microphone inside the lamp; its preview in the cards
   is a static picture (the lamp sends no frames back).
-- **Physical button presets** (`set_button_effects`) are written as the
-  Yeelight app does, but have not been confirmed to work over the local
-  network.
+- **Physical button presets** (`set_button_effects`) need
+  [Matter settings](docs/MATTER.md#optional-matter-settings): the lamp
+  refuses this write over the local network. They can't be changed while
+  **Buttons: Right as Remote** is on.
 - **A weak power supply** makes the lamp freeze or drop off the network on
   bright pictures; see [Power Supply](#power-supply).
 

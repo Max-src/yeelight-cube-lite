@@ -698,6 +698,24 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await light._apply_rotation_step({"name": "Rainbow"}))
             light._wait_rotation_retry.assert_not_awaited()
 
+    async def test_a_remote_press_draws_over_a_firmware_renderer(self):
+        # Another app's drawing (a firmware renderer) is on the lamp and the
+        # integration's content is a drawing: background text is suppressed,
+        # a remote button's restore is not (it was left black, live test).
+        for update_type, drawn in (("text_change", False), ("remote_restore", True)):
+            with self.subTest(update_type=update_type):
+                light = make_light(self.helpers)
+                light._mode = "Custom Draw"
+                light._calibration_lock = False
+                light._music_flow_enabled = False
+                light._in_native_fw_mode = True
+                light._display_overlay = False
+                light._display_retry_count = 0
+                light.MAX_DISPLAY_RETRIES = 3
+                light._custom_text = ""
+                await self.helpers["async_apply_display_mode"](light, update_type=update_type)
+                self.assertEqual(drawn, light._execute_hardware_op.await_count == 1)
+
     async def test_display_dispatch_preserves_hardware_failure(self):
         light = make_light(self.helpers)
         light._calibration_lock = False

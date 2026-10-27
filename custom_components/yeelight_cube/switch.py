@@ -7,7 +7,13 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import CONF_BUTTONS_AS_REMOTE, CONF_RESTORE_MUSIC_CHANGES, CONF_CAMERA_FOLLOWS_ORIENTATION, MODE_CLOCK
+from .const import (
+    CONF_BUTTONS_AS_REMOTE,
+    CONF_BUTTONS_WAKE_LAMP,
+    CONF_CAMERA_FOLLOWS_ORIENTATION,
+    CONF_RESTORE_MUSIC_CHANGES,
+    MODE_CLOCK,
+)
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
 
@@ -35,6 +41,7 @@ async def async_setup_entry(
         YeelightCubeCameraOrientationSwitch(config_entry, light_entity),
         YeelightCubeButtonsAsRemoteSwitch(config_entry, light_entity),
         YeelightCubeRestoreMusicChangesSwitch(config_entry, light_entity),
+        YeelightCubeButtonsWakeLampSwitch(config_entry, light_entity),
         YeelightCubeClockShowDateSwitch(config_entry, light_entity),
         YeelightCubeClock12HourSwitch(config_entry, light_entity),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_entity),
@@ -133,6 +140,15 @@ class YeelightCubeRestoreMusicChangesSwitch(_YeelightCubeOptionSwitch):
     """Opt in to restoring music changes from both the left button and apps."""
 
     option_key = CONF_RESTORE_MUSIC_CHANGES
+    _attr_entity_category = EntityCategory.CONFIG
+
+
+class YeelightCubeButtonsWakeLampSwitch(_YeelightCubeOptionSwitch):
+    """With Right or Left as Remote: a press on a lamp that is off turns it
+    on (off: presses only fire events, light_matter.buttons_wake_lamp)."""
+
+    option_key = CONF_BUTTONS_WAKE_LAMP
+    default = True  # what a lamp's button is expected to do
     _attr_entity_category = EntityCategory.CONFIG
 
 

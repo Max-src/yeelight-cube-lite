@@ -16,6 +16,7 @@ from homeassistant.core import callback  # type: ignore
 
 from .const import (
     CONF_BUTTONS_AS_REMOTE,
+    CONF_BUTTONS_WAKE_LAMP,
     CONF_RESTORE_MUSIC_CHANGES,
     CONF_REMOTE_SAVED_PLAYLIST,
     CONF_REMOTE_PLAYLIST_INSTALLED,
@@ -24,8 +25,14 @@ from .const import (
     MODE_NATIVE_EFFECT,
     MUSIC_FLOW_EFFECT_IDS,
     MUSIC_FLOW_EFFECTS,
+    NATIVE_CLOCK_APPLY,
+    NATIVE_CLOCK_EFFECT_ID,
+    NATIVE_CLOCK_STYLES,
+    NATIVE_EFFECT_APPLY,
     NATIVE_EFFECTS,
+    clock_style_default_color,
 )
+from .builtin_pixel_art import app_pixel_art_argb
 from .matter_commands import EFFECTS_CLUSTER, MatterCommands, MatterCommandsUnavailable
 from .matter_discovery import async_offer_matter_lamps
 from .matter_link import ROTATION, ROTATION_ORIENTATIONS, MatterLink
@@ -49,7 +56,7 @@ NATIVE_EFFECT_IDS: dict[int, str] = {
     spec["effect_id"]: name for name, spec in NATIVE_EFFECTS.items()
 }
 
-# Buttons as remote, with Matter settings: every slot of the lamp's playlist
+# Right as Remote, with Matter settings: every slot of the lamp's playlist
 # (the right button steps through it) is an all-black drawing, custom ids
 # REMOTE_SLOT_BASE + slot, so a press shows black, not an effect, and is told
 # apart from the Yeelight app by its custom id (verified on a Cube Lite,
@@ -62,6 +69,28 @@ REMOTE_BLACK = base64.b64encode(bytes((0xFF, 0, 0, 0)) * 100).decode("ascii")
 # Seconds after the playlist is written during which the lamp's reports are
 # that write's, not presses (the lamp may switch to a written slot).
 REMOTE_WRITE_SETTLE = 5.0
+# Seconds a report of effect 0, 36, 40 or 71 waits for the values that tell
+# what it shows (a Cube Lite reports them within a millisecond, in either
+# order) before it is read.
+EXTERNAL_DRAWING_WAIT = 0.25
+# The Yeelight app's content a remote press can show again
+# (_app_content_command), told by its custom id (read in the app's
+# decompile) or its colour: its clock (the style, the integration's styles
+# 1-14), its animations (the app's tile; the lamp plays the GIF it stores),
+# its built-in pixel art, and its plain colour (effect 0, live test
+# 2026-10-27: the colour is Color Control's hue and saturation). Its own
+# drawings carry a Yeelight cloud id: their pixels cannot be read back.
+APP_COLOUR_EFFECT = 0
+APP_GIF_EFFECT = 71
+APP_GIF_TILES = frozenset((72, 77, 79, 93))
+APP_CLOCK_STYLES = range(1, 15)
+APP_CONTENT_EFFECTS = frozenset(
+    (APP_COLOUR_EFFECT, REMOTE_DRAWING_EFFECT, NATIVE_CLOCK_EFFECT_ID, APP_GIF_EFFECT)
+)
+# Seconds after a black slot's press during which a microphone-off report is
+# that press's (the black drawing stops the music, reported about 0.8 s
+# later on a Cube Lite), not the left button's long press.
+REMOTE_PRESS_MUSIC_OFF = 2.0
 
 # Seconds a direction write may take before the orientation change goes on
 # without it (the lamp keeps its direction).
@@ -87,16 +116,38 @@ class MatterMixin:
         self._lamp_buttons_event = None
         self._buttons_as_remote_switch = None
         self._external_display = False
-        self._black_effect_check = None
-        # Buttons as remote: a restore of what the lamp changed is running.
+        # The command (method, params) that shows the Yeelight app's content
+        # again while it is the external display (_app_content_command), or
+        # None.
+        self._app_content: tuple[str, list] | None = None
+        # When effect and effect_sub were last reported (a drawing's custom
+        # id is trusted only when it came with it, _app_content_command).
+        self._effect_reported_at = 0.0
+        self._effect_sub_reported_at = 0.0
+        # When a press, or the echo of a command, was last reported: a
+        # content check scheduled before it is moot (_check_lamp_content).
+        self._content_reports_ignored_at = -1.0
+        self._lamp_content_check = None
+        # The Music Flow shown was started on the lamp (a button, an app), on
+        # top of the integration's content, not by the integration.
+        self._music_from_lamp = False
+        # The integration's own Music Flow mode, while the lamp shows
+        # another one (the left button): what a remote press brings back.
+        self._own_music_effect: str | None = None
+        # Right as Remote: a restore of what the lamp changed is scheduled
+        # or running, and another pass (with music) is wanted.
         self._restoring_after_lamp = False
-        self._lamp_restore_scheduled = False
         self._lamp_restore_pending = False
         self._lamp_restore_music = False
-        # Buttons as remote: the black playlist is being written or put back,
+        # Right as Remote: the black playlist is being written or put back,
         # and when it was last written (REMOTE_WRITE_SETTLE).
         self._remote_playlist_busy = False
         self._remote_playlist_written_at = -REMOTE_WRITE_SETTLE
+        # When a black slot was last pressed (REMOTE_PRESS_MUSIC_OFF).
+        self._remote_press_at = -REMOTE_PRESS_MUSIC_OFF
+        # Why the black playlist cannot be installed ("no_playlist",
+        # "backup_missing"), shown as remote_status; None when it can.
+        self._remote_setup_problem: str | None = None
         # When a command to the lamp last started or ended (monotonic), and
         # the effect the lamp showed when it started (_note_lamp_command).
         self._lamp_command_at = 0.0
@@ -204,7 +255,9 @@ class MatterMixin:
     def _matter_summary(self) -> dict | None:
         """The light's `matter` attribute: the node and what it reports, and
         which server delivers Yeelight commands ("commands": "matter", "dev"
-        or None); None without a node."""
+        or None), and the Yeelight app's content a remote press shows again
+        ("app_content": the command's method, effect and custom id, or
+        hue and saturation, _app_content); None without a node."""
         if not self._matter:
             return None
         summary = self._matter.summary()
@@ -212,6 +265,9 @@ class MatterMixin:
             summary["commands"] = self._matter_commands.backend
             if self._matter_commands.reason:
                 summary["commands_unavailable"] = self._matter_commands.reason
+        if summary is not None and self._app_content is not None:
+            method, params = self._app_content
+            summary["app_content"] = [method, *params[:2]]
         return summary
 
     @property
@@ -228,9 +284,14 @@ class MatterMixin:
     def _expected_effect(self) -> int | None:
         """The effect the lamp reports for the light's state: Music Flow's,
         the native effect's, the clock command's outer id, or DRAWING_EFFECT
-        when this integration draws; None when unknown or off."""
-        if not self._is_on or self._external_display:
-            return None
+        when this integration draws; the Yeelight app's content's when it is
+        shown again (_replay_app_content); while off, DRAWING_EFFECT (the
+        black picture that keeps a lamp powered, light._internal_turn_off);
+        None when unknown."""
+        if not self._is_on:
+            return DRAWING_EFFECT
+        if self._external_display:
+            return self._app_content_effect()
         if self._music_flow_enabled:
             return MUSIC_FLOW_EFFECTS.get(self._music_flow_effect)
         if self._mode == MODE_NATIVE_EFFECT:
@@ -289,35 +350,68 @@ class MatterMixin:
         when the link is made are its state then: published, not applied."""
         if not initial:
             if name == "effect" and isinstance(value, int):
+                self._effect_reported_at = time.monotonic()
                 if self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
                     # A black slot: the press is its custom id (effect_sub).
                     self._fx_mode_is_direct = False
-                    self._check_external_drawing()
-                elif not self._effect_echo(value):
+                    self._check_lamp_content()
+                elif self._effect_echo(value):
+                    self._content_reports_ignored_at = time.monotonic()
+                elif value in APP_CONTENT_EFFECTS:
+                    # The app's colour, drawing, clock or animation: told by
+                    # its colour or id.
+                    self._fx_mode_is_direct = False
+                    self._check_lamp_content()
+                else:
                     self._lamp_changed_effect(value)
-            elif name == "effect_sub" and value in REMOTE_SLOTS:
-                if self.buttons_as_remote and self.remote_playlist_active and not self._remote_playlist_settling():
+            elif name == "effect_sub" and value not in REMOTE_SLOTS:
+                self._effect_sub_reported_at = time.monotonic()
+                # The app's next clock style or picture: only the id changes.
+                values = self._matter.values if self._matter else {}
+                if self._matter_echo():
+                    self._content_reports_ignored_at = time.monotonic()
+                elif values.get("effect") in APP_CONTENT_EFFECTS:
+                    self._check_lamp_content()
+            elif name in ("hue", "saturation"):
+                # The app's next colour: only the colour changes.
+                values = self._matter.values if self._matter else {}
+                if self._matter_echo():
+                    self._content_reports_ignored_at = time.monotonic()
+                elif values.get("effect") == APP_COLOUR_EFFECT:
+                    self._check_lamp_content()
+            elif name == "effect_sub":
+                self._effect_sub_reported_at = time.monotonic()
+                # Also while the saved playlist waits to be written back
+                # (switch off): the lamp shows black, so put the content back.
+                if self.remote_playlist_active and not self._remote_playlist_settling():
                     # The slot alone proves the lamp left direct mode. Its
                     # effect=36 report may arrive later, or not change at all.
                     self._fx_mode_is_direct = False
+                    self._remote_press_at = time.monotonic()
+                    self._content_reports_ignored_at = self._remote_press_at
                     self._lamp_event("right_button", {"slot": value - REMOTE_SLOT_BASE})
-                    self._restore_after_lamp_change()
+                    self._wake_for_press()
+                    self._restore_after_lamp_change(music=self._take_back_display())
             elif name == "mic_music_on" and value is True:
-                # The left button started a microphone music mode: with
-                # buttons as remote, put back at once (its mode, the event,
-                # may be reported a moment later).
+                # The left button started a microphone music mode: with Left
+                # as Remote, put back at once (its mode, the event, may be
+                # reported a moment later).
                 if not self._music_echo(True):
                     if self.restore_after_music_changes:
-                        self._restore_after_lamp_change(music=True)
+                        self._take_back_from_music()
                     else:
-                        self._accept_external_display()
+                        self._accept_external_display(stale=False)
             elif name == "mic_music_on" and value is False:
-                if not self._music_echo(False):
+                if self._music_stopped_by_remote_press():
+                    # The black slot stopped it; the press's restore shows
+                    # the content (the music too, when it was the integration's).
+                    pass
+                elif not self._music_echo(False):
                     self._lamp_event("music_off", {})
                     if not self.restore_after_music_changes:
                         self._lamp_stopped_music_flow()
             elif name == "on_off" and isinstance(value, bool):
-                # The power button is followed, buttons as remote or not.
+                # The power button is followed, Right as Remote or not.
                 if not self._power_echo(value):
                     self._lamp_event("turned_on" if value else "turned_off", {})
                     self._lamp_switched(value)
@@ -331,32 +425,45 @@ class MatterMixin:
         if self.hass is not None:
             self.async_write_ha_state()
 
-    def _check_external_drawing(self) -> None:
-        """Effect 36 alone also names app drawings. Let its custom id arrive.
+    def _check_lamp_content(self) -> None:
+        """Effects 0 (a plain colour), 36 (a drawing), 40 (the clock) and 71
+        (an animation) are told by their colour or custom id: let it arrive,
+        then read them.
 
-        Tagged slots restore immediately in effect_sub; only the ambiguous
-        drawing report waits, so this doesn't delay remote-button handling.
+        Tagged slots restore immediately in effect_sub; only these reports
+        wait, so this doesn't delay remote-button handling. A black slot
+        (effect 36, a REMOTE_SLOTS id) is the press's, not another app's,
+        and so is what the lamp reports once the press's restore showed
+        the content again: a press or an echo since then ends the check.
         """
-        if self._black_effect_check is not None:
+        if self._lamp_content_check is not None:
             return
+        scheduled_at = time.monotonic()
 
         async def check() -> None:
             try:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(EXTERNAL_DRAWING_WAIT)
+                if self._content_reports_ignored_at >= scheduled_at:
+                    return
                 values = self._matter.values if self._matter else {}
-                if (values.get("effect") == REMOTE_DRAWING_EFFECT
-                        and values.get("effect_sub") not in REMOTE_SLOTS):
-                    self._lamp_changed_effect(REMOTE_DRAWING_EFFECT)
+                effect = values.get("effect")
+                if effect in APP_CONTENT_EFFECTS and not (
+                    effect == REMOTE_DRAWING_EFFECT
+                    and values.get("effect_sub") in REMOTE_SLOTS
+                ):
+                    self._lamp_changed_effect(effect)
+                    if self.hass is not None:
+                        self.async_write_ha_state()  # its `matter` attribute
             finally:
-                self._black_effect_check = None
+                self._lamp_content_check = None
 
-        self._black_effect_check = self._create_tracked_task(
-            check(), name=f"yeelight_cube_external_drawing_{self._ip}",
+        self._lamp_content_check = self._create_tracked_task(
+            check(), name=f"yeelight_cube_lamp_content_{self._ip}",
         )
 
     def _lamp_changed_effect(self, effect_id: int) -> None:
         """The lamp switched to effect ``effect_id`` by itself (a button, the
-        app): an event, then followed, or put back (buttons as remote)."""
+        app): an event, then followed, or put back (Right as Remote)."""
         music = MUSIC_FLOW_EFFECT_IDS.get(effect_id)
         if effect_id != DRAWING_EFFECT:
             if music is not None:
@@ -368,15 +475,149 @@ class MatterMixin:
                 )
             if music is not None and self.restore_after_music_changes:
                 self._fx_mode_is_direct = False
-                self._restore_after_lamp_change(music=True)
+                self._take_back_from_music()
                 return
-        self._accept_external_display()
+        if music is None:
+            content = self._app_content_command(effect_id)
+            self._accept_external_display()
+            self._app_content = content
+        else:
+            self._accept_external_display(stale=False)
         self._lamp_showed_effect(effect_id)
 
-    def _accept_external_display(self) -> None:
-        """An app took over. Reports cannot reconstruct its full settings."""
-        self._external_display = True
-        self._lamp_restore_pending = False
+    def _app_content_command(self, effect_id: int) -> tuple[str, list] | None:
+        """The command (method, params) that shows the Yeelight app's content
+        the lamp reports (effect ``effect_id`` and its custom id or colour)
+        again, as the app sent it; None when it cannot be rebuilt (its own
+        drawings).
+
+        - Plain colour (0): its hue and saturation (set_hsv); its brightness
+          is the lamp's, followed on its own.
+        - Official effect: as the app starts it. Settings saved in the app
+          are not reported.
+        - Animation (71): the app's tile; the lamp plays the GIF it stores.
+        - Clock (40): the app's style is the integration's style of the same
+          id. The time or date, colon and 12-hour settings are not reported:
+          the integration's are used.
+        - Built-in pixel art (36): the id is trusted only when it was
+          reported with the drawing (the app also sends drawings without
+          one, and the lamp may keep the previous id); the gallery follows
+          the lamp's direction, as in the app.
+        """
+        if effect_id in NATIVE_EFFECT_IDS:
+            # As the app starts it (no settings: the effect's own speed,
+            # colour and direction), not with Home Assistant's direction
+            # for the mount.
+            return "set_fx_effect", [effect_id, 0, NATIVE_EFFECT_APPLY]
+        values = self._matter.values if self._matter else {}
+        if effect_id == APP_COLOUR_EFFECT:
+            hue, saturation = values.get("hue"), values.get("saturation")
+            if not isinstance(hue, int) or not isinstance(saturation, int):
+                return None
+            # Matter's 0-254 as degrees and percent.
+            return "set_hsv", [
+                min(359, round(hue * 360 / 254)), min(100, round(saturation * 100 / 254)),
+                "sudden", 30,
+            ]
+        sub = values.get("effect_sub")
+        if not isinstance(sub, int):
+            return None
+        if effect_id == APP_GIF_EFFECT and sub in APP_GIF_TILES:
+            return "set_fx_effect", [APP_GIF_EFFECT, sub, NATIVE_EFFECT_APPLY, {"onoff": 1}]
+        if effect_id == NATIVE_CLOCK_EFFECT_ID and sub in APP_CLOCK_STYLES:
+            style = NATIVE_CLOCK_STYLES[sub]
+            config = {
+                "mode": NATIVE_CLOCK_EFFECT_ID,
+                "mixer": style["mixer"],
+                "data": base64.b64encode(self._native_clock_data_bytes()).decode("ascii"),
+            }
+            color = clock_style_default_color(style)
+            if color is not None:
+                config["color"] = [int(color)]
+            return "set_fx_effect", [NATIVE_CLOCK_EFFECT_ID, sub, NATIVE_CLOCK_APPLY, config]
+        if (
+            effect_id == REMOTE_DRAWING_EFFECT
+            and self._effect_sub_reported_at >= self._effect_reported_at - EXTERNAL_DRAWING_WAIT
+        ):
+            pixels = app_pixel_art_argb(sub, vertical=values.get("rotation") in (1, 3))
+            if pixels is not None:
+                data = b"".join(int(argb).to_bytes(4, "big") for argb in pixels)
+                return "set_fx_effect", [REMOTE_DRAWING_EFFECT, sub, NATIVE_EFFECT_APPLY, {
+                    "onoff": 1, "mode": REMOTE_DRAWING_EFFECT, "mixer": 0,
+                    "data": base64.b64encode(data).decode("ascii"),
+                }]
+        return None
+
+    def _app_content_effect(self) -> int | None:
+        """The effect the lamp reports for _app_content (its echo)."""
+        if self._app_content is None:
+            return None
+        method, params = self._app_content
+        return params[0] if method == "set_fx_effect" else APP_COLOUR_EFFECT
+
+    def _take_back_from_music(self) -> None:
+        """Left as Remote: a left press's music is undone, back to what was
+        shown before it (the Yeelight app's content too, when it can be
+        shown again)."""
+        self._wake_for_press()
+        if self._app_content is None:
+            self._claim_display()
+        self._restore_after_lamp_change(music=True)
+
+    def _wake_for_press(self) -> None:
+        """A remote button's press on a lamp that is off (its black picture,
+        light._internal_turn_off): with Wake Lamp When Off, it comes on with
+        its content; without, the restore shows the black picture again."""
+        if not self._is_on and self.buttons_wake_lamp:
+            _LOGGER.info("[MATTER] [%s] Button as remote: waking the lamp", self._ip)
+            self._is_on = True
+            self._followed_lamp()
+
+    def _take_back_display(self) -> bool:
+        """A remote button's press: the integration's content comes back,
+        even after another app's (black, or music nobody chose, is never
+        better), or that app's content when it can be shown again
+        (_app_content). Music the lamp started gives way to what was shown
+        before it; the integration's own Music Flow comes back with its own
+        mode. True when the music must be set again."""
+        music = False
+        if self._music_flow_enabled:
+            if self._music_from_lamp:
+                self._drop_music_flow()
+                music = True
+            elif self._own_music_effect is not None:
+                self._music_flow_effect = self._own_music_effect
+                self._create_tracked_task(
+                    self._persist_music_flow_runtime_state(),
+                    name=f"yeelight_cube_music_flow_persist_{self._ip}",
+                )
+                self._followed_lamp()
+                music = True
+        if self._app_content is None:
+            self._claim_display()
+        return music
+
+    def _music_stopped_by_remote_press(self) -> bool:
+        """A microphone-off report just after a black slot's press: the
+        press stopped the music, not the left button."""
+        return (
+            self.remote_playlist_active
+            and time.monotonic() - self._remote_press_at < REMOTE_PRESS_MUSIC_OFF
+        )
+
+    def _accept_external_display(self, *, stale: bool = True) -> None:
+        """The lamp shows what a button or an app started. ``stale``: the
+        reports cannot rebuild its settings (an app's effect or drawing), so
+        background redraws and pending restores stop until the integration
+        shows something again, or a remote button's press brings its content
+        back (_take_back_display). A music mode is followed on top of the
+        content (_music_from_lamp) and doesn't change that. Either way the
+        lamp shows something: it is on (also after the black picture of an
+        "off" that kept it powered)."""
+        if stale:
+            self._external_display = True
+            self._lamp_restore_pending = False
+        self._is_on = True
         self._stop_own_animations()
         self._fx_mode_is_direct = False
         self._in_native_fw_mode = True
@@ -389,7 +630,11 @@ class MatterMixin:
         self._matter_status_changed()
 
     def _claim_display(self) -> None:
-        """A new integration display command makes its settings restorable again."""
+        """A new integration display command makes its settings restorable
+        again (its own Music Flow included), not another app's."""
+        self._music_from_lamp = False
+        self._own_music_effect = None
+        self._app_content = None
         if self._external_display:
             self._external_display = False
             self._matter_status_changed()
@@ -399,6 +644,21 @@ class MatterMixin:
         """Independent opt-in: music reports cannot identify a physical press."""
         entry = self._config_entry
         return bool(entry is not None and entry.options.get(CONF_RESTORE_MUSIC_CHANGES, False))
+
+    @property
+    def buttons_wake_lamp(self) -> bool:
+        """Buttons: Wake Lamp When Off (on by default)."""
+        entry = self._config_entry
+        return entry is None or bool(entry.options.get(CONF_BUTTONS_WAKE_LAMP, True))
+
+    @property
+    def remote_keeps_lamp_powered(self) -> bool:
+        """"Off" keeps the lamp powered, black (light._internal_turn_off):
+        a remote button must not wake it, and a powered-down lamp's click
+        only powers it on, unreported as a press."""
+        return not self.buttons_wake_lamp and (
+            self.remote_playlist_active or self.restore_after_music_changes
+        )
 
     @property
     def buttons_as_remote(self) -> bool:
@@ -424,6 +684,8 @@ class MatterMixin:
             return "external_display"
         if self._remote_playlist_busy:
             return "setup_pending"
+        if self._remote_setup_problem:
+            return self._remote_setup_problem
         installed = self._config_entry.options.get(CONF_REMOTE_PLAYLIST_INSTALLED, False)
         if self.remote_playlist_active:
             return "active" if installed else "setup_pending"
@@ -433,7 +695,7 @@ class MatterMixin:
         return self._remote_playlist_busy or time.monotonic() - self._remote_playlist_written_at < REMOTE_WRITE_SETTLE
 
     def _sync_remote_playlist(self) -> None:
-        """Buttons as remote on: save the lamp's playlist and make every slot
+        """Right as Remote on: save the lamp's playlist and make every slot
         black (needs Matter settings; until then ordinary changes are
         followed without restoration). Off: write the saved playlist back. From the switch and
         the minute check, so a step that could not run is tried again."""
@@ -491,8 +753,18 @@ class MatterMixin:
             [int(slot.get("effectId", slot.get("effectID"))), int(slot.get("customId", slot.get("customID")))]
             for slot in slots
         ]
+        # The read is tried again every minute: a playlist fixed in the
+        # Yeelight app is picked up then.
         if not saved:
+            self._set_remote_setup_problem("no_playlist")
             return
+        if not keep_saved and any(custom_id in REMOTE_SLOTS for _effect_id, custom_id in saved):
+            # Black slots from an earlier install whose backup is gone (the
+            # integration removed without turning the switch off): saving them
+            # as the backup would lose the lamp's own playlist for good.
+            self._set_remote_setup_problem("backup_missing")
+            return
+        self._set_remote_setup_problem(None)
         if not keep_saved:
             # Saved before anything is written, so a partial write is undone.
             self.hass.config_entries.async_update_entry(
@@ -511,13 +783,27 @@ class MatterMixin:
         self.hass.config_entries.async_update_entry(
             entry, options={**entry.options, CONF_REMOTE_PLAYLIST_INSTALLED: True}
         )
-        _LOGGER.info("[MATTER] [%s] Buttons as remote: the lamp's playlist is black (%s slots)", self._ip, len(saved))
+        _LOGGER.info("[MATTER] [%s] Right as Remote: the lamp's playlist is black (%s slots)", self._ip, len(saved))
         # The lamp may have switched to a written slot: show the content again.
         if self._is_on:
             await self._async_put_content_back()
 
+    def _set_remote_setup_problem(self, problem: str | None) -> None:
+        """Why the black playlist cannot be installed (remote_status), logged
+        once when it changes."""
+        if problem == self._remote_setup_problem:
+            return
+        self._remote_setup_problem = problem
+        if problem == "no_playlist":
+            _LOGGER.warning("[MATTER] [%s] Right as Remote: the lamp's playlist is empty", self._ip)
+        elif problem == "backup_missing":
+            _LOGGER.warning(
+                "[MATTER] [%s] Right as Remote: the lamp's playlist already holds black slots "
+                "and their backup is gone; reset the playlist in the Yeelight app", self._ip,
+            )
+
     async def _write_saved_playlist(self, channel, entry) -> None:
-        """Write the saved playlist back (Buttons as remote turned off)."""
+        """Write the saved playlist back (Right as Remote turned off)."""
         saved = entry.options.get(CONF_REMOTE_SAVED_PLAYLIST) or []
         # A partial restoration also invalidates the black-playlist marker:
         # turning remote mode back on must finish installing it again.
@@ -534,7 +820,40 @@ class MatterMixin:
             CONF_REMOTE_SAVED_PLAYLIST, CONF_REMOTE_PLAYLIST_INSTALLED,
         )}
         self.hass.config_entries.async_update_entry(entry, options=options)
-        _LOGGER.info("[MATTER] [%s] Buttons as remote off: the lamp's playlist is back", self._ip)
+        _LOGGER.info("[MATTER] [%s] Right as Remote off: the lamp's playlist is back", self._ip)
+
+    async def _write_button_playlist(self, items: list[dict]) -> bool:
+        """set_button_effects over Matter: the lamp refuses this write over
+        LAN (`invalid params`, not on its LAN allow-list). ``items`` are
+        light._effect_persist_item's. True when written; False when no
+        server delivers Yeelight's commands (the caller tries LAN)."""
+        channel = self._matter_commands
+        if channel is None:
+            return False
+        try:
+            if not await channel.async_available():
+                return False
+            for index, item in enumerate(items):
+                params = []
+                for config in item["effect_params"]:
+                    # The playlist keeps no speed; colours are copied into a
+                    # buffer of 4 (MATTER_COMMANDS.md: send exactly 4).
+                    config = {key: value for key, value in config.items() if key != "rate"}
+                    if "color" in config:
+                        config["color"] = (list(config["color"]) + [0, 0, 0, 0])[:4]
+                    params.append(config)
+                await channel.async_command(EFFECTS_CLUSTER, "updatePersistEffectList", {
+                    "index": index,
+                    "effect": {
+                        "effectId": item["effect_id"],
+                        "customId": item["custom_id"],
+                        "effectParams": params,
+                    },
+                })
+        except MatterCommandsUnavailable:
+            return False
+        _LOGGER.info("[MATTER] [%s] Button playlist written (%s slots)", self._ip, len(items))
+        return True
 
     def _lamp_event(self, event_type: str, data: dict) -> None:
         """Fire a Lamp buttons event (event.py), if the entity is there."""
@@ -542,36 +861,43 @@ class MatterMixin:
         if entity is not None and getattr(entity, "hass", None) is not None:
             entity.lamp_event(event_type, data)
 
-    def _restore_after_lamp_change(self, *, music: bool = False) -> None:
-        """Buttons as remote: put back what the integration showed (its state
-        did not follow the lamp). One restore at a time; its own commands'
-        reports are their echoes."""
-        self._lamp_restore_pending = True
-        self._lamp_restore_music |= music
-        if self._restoring_after_lamp or self._lamp_restore_scheduled:
-            return
-        self._lamp_restore_scheduled = True
-        _LOGGER.info("[MATTER] [%s] Lamp button as remote: putting its content back", self._ip)
-        self._create_tracked_task(
-            self._async_put_content_back(music=music),
-            name=f"yeelight_cube_lamp_restore_{self._ip}",
-        )
-
-    async def _async_put_content_back(self, *, music: bool = False) -> None:
-        """Show the integration's content again, as its state says: its
-        music mode or none, its power, its picture, text or effect."""
+    def _request_lamp_restore(self, music: bool) -> bool:
+        """Ask for a restore pass; True when none is scheduled or running, so
+        the caller starts _run_lamp_restore (one at a time). None while
+        another app shows content that cannot be shown again: the
+        integration's would be stale."""
+        if self._restore_blocked():
+            return False
         self._lamp_restore_pending = True
         self._lamp_restore_music |= music
         if self._restoring_after_lamp:
-            return
-        self._lamp_restore_scheduled = False
-        if self._external_display:
-            self._lamp_restore_pending = False
-            self._lamp_restore_music = False
-            return
+            return False
         self._restoring_after_lamp = True
+        return True
+
+    def _restore_after_lamp_change(self, *, music: bool = False) -> None:
+        """Right as Remote: put back what the integration showed (its state
+        did not follow the lamp). Its own commands' reports are their echoes."""
+        if self._request_lamp_restore(music):
+            _LOGGER.info("[MATTER] [%s] Button as remote: putting the content back", self._ip)
+            self._create_tracked_task(
+                self._run_lamp_restore(), name=f"yeelight_cube_lamp_restore_{self._ip}",
+            )
+
+    async def _async_put_content_back(self, *, music: bool = False) -> None:
+        """Show the integration's content again now (or in the restore
+        already running)."""
+        if self._request_lamp_restore(music):
+            await self._run_lamp_restore()
+
+    async def _run_lamp_restore(self) -> None:
+        """Show the integration's content again, as its state says: its
+        music mode or none, its power, its picture, text or effect; or the
+        Yeelight app's content that can be shown again (_app_content).
+        Passes repeat while new requests arrive; another app's display
+        stops them."""
         try:
-            while self._lamp_restore_pending and not self._external_display:
+            while self._lamp_restore_pending and not self._restore_blocked():
                 self._lamp_restore_pending = False
                 restore_music = self._lamp_restore_music
                 self._lamp_restore_music = False
@@ -582,19 +908,55 @@ class MatterMixin:
                     await self.async_set_music_flow(
                         self._music_flow_enabled, restore_display=False, persist_state=False,
                     )
-                if self._external_display:
+                if self._restore_blocked():
                     break
                 if self._music_flow_enabled:
                     continue
                 if not self._is_on:
                     await self.async_turn_off()
                     continue
+                if self._app_content is not None:
+                    await self._replay_app_content(self._app_content)
+                    continue
                 self._cube_matrix.forget_running_effect()
-                await self.async_apply_display_mode(update_type="text_change")
+                # Not suppressed while the lamp runs a firmware renderer (the
+                # black slot, an app's drawing): putting it back is the point.
+                await self.async_apply_display_mode(update_type="remote_restore")
         except Exception as err:  # noqa: BLE001 -- the lamp keeps what it shows
             _LOGGER.warning("[MATTER] [%s] Could not put back the lamp's content: %s", self._ip, err)
         finally:
             self._restoring_after_lamp = False
+            self._lamp_restore_pending = False
+            self._lamp_restore_music = False
+
+    def _restore_blocked(self) -> bool:
+        """Another app shows content that cannot be shown again."""
+        return self._external_display and self._app_content is None
+
+    async def _replay_app_content(self, content: tuple[str, list]) -> None:
+        """Show the Yeelight app's content again, as the app sent it
+        (_app_content_command). It stays another app's display: the
+        integration's state is left as it was."""
+        _LOGGER.info("[MATTER] [%s] Button as remote: showing the Yeelight app's content again", self._ip)
+        method, params = content
+        effect = method == "set_fx_effect"
+        clock = effect and params[0] == NATIVE_CLOCK_EFFECT_ID
+
+        async def send() -> None:
+            await self._leave_direct_mode()
+            if clock:
+                await asyncio.sleep(0.1)  # as light_native._send_native
+            self._expect_lamp_power(True)
+            await self._cube_matrix.send_raw_command(
+                method, params, abortive_close=not clock, check_reply=True
+            )
+            if effect:
+                self._cube_matrix.note_running_effect(params)
+            else:
+                self._cube_matrix.forget_running_effect()
+            self._in_native_fw_mode = True
+
+        await self._execute_hardware_op(send, "matter:app_content")
 
     def _lamp_showed_effect(self, effect_id: int) -> None:
         """The lamp switched to effect ``effect_id`` by itself (a button, the
@@ -608,12 +970,7 @@ class MatterMixin:
             self._follow_music_flow(music)
             return
         if self._music_flow_enabled:
-            self._music_flow_enabled = False
-            self._music_flow_restore_power = None
-            self._create_tracked_task(
-                self._persist_music_flow_runtime_state(),
-                name=f"yeelight_cube_music_flow_persist_{self._ip}",
-            )
+            self._drop_music_flow()
         name = NATIVE_EFFECT_IDS.get(effect_id)
         if name is None:
             _LOGGER.debug("[MATTER] [%s] Lamp shows effect %s (not followed)", self._ip, effect_id)
@@ -639,6 +996,9 @@ class MatterMixin:
         self._stop_own_animations()
         if not self._music_flow_enabled:
             self._music_flow_restore_power = True
+            self._music_from_lamp = True
+        elif not self._music_from_lamp and self._own_music_effect is None:
+            self._own_music_effect = self._music_flow_effect
         self._music_flow_enabled = True
         self._music_flow_effect = effect
         self._mark_firmware_drawing()
@@ -654,12 +1014,7 @@ class MatterMixin:
         if not self._music_flow_enabled:
             return
         _LOGGER.info("[MATTER] [%s] Lamp stopped Music Flow on its own", self._ip)
-        self._music_flow_enabled = False
-        self._music_flow_restore_power = None
-        self._create_tracked_task(
-            self._persist_music_flow_runtime_state(),
-            name=f"yeelight_cube_music_flow_persist_{self._ip}",
-        )
+        self._drop_music_flow()
         self._followed_lamp()
 
     def _lamp_switched(self, on: bool) -> None:
@@ -672,12 +1027,7 @@ class MatterMixin:
         if not on:
             self._stop_own_animations()
             if self._music_flow_enabled:
-                self._music_flow_enabled = False
-                self._music_flow_restore_power = None
-                self._create_tracked_task(
-                    self._persist_music_flow_runtime_state(),
-                    name=f"yeelight_cube_music_flow_persist_{self._ip}",
-                )
+                self._drop_music_flow()
         self._is_on = on
         # Its brightness and drawing mode are set again by the next command.
         self._fx_mode_is_direct = False
@@ -749,6 +1099,18 @@ class MatterMixin:
             self.stop_effect_rotation()
         self._is_scrolling = False
         self.stop_scroll_timer()
+
+    def _drop_music_flow(self) -> None:
+        """Music Flow is off (the lamp left it, or a right press undoes the
+        lamp's): off here too, and saved."""
+        self._music_from_lamp = False
+        self._own_music_effect = None
+        self._music_flow_enabled = False
+        self._music_flow_restore_power = None
+        self._create_tracked_task(
+            self._persist_music_flow_runtime_state(),
+            name=f"yeelight_cube_music_flow_persist_{self._ip}",
+        )
 
     def _mark_firmware_drawing(self) -> None:
         """The lamp's firmware draws (as after this integration starts an

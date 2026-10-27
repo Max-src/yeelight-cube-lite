@@ -7,11 +7,11 @@
 > entity, and most users never need them. Nothing here is required for normal
 > use of the lamp.
 
-The `set_color_calibration` service lets you adjust the color/brightness
+The `set_color_calibration` service (administrators only) lets you adjust the color/brightness
 correction pipeline **at runtime** so you can dial in values against a real
 lamp without restarting Home Assistant. Changes are applied immediately but are
 **not persisted** — once you find values you like, copy them into the code
-defaults in [`light.py`](../light.py) so they survive a restart.
+defaults in [`light_color.py`](../custom_components/yeelight_cube/light_color.py) so they survive a restart.
 
 All current values are also published on the light entity as
 `calib_*` attributes, so you can read back the live state.
@@ -97,7 +97,7 @@ brightness 1, so it never fights System 1 at the dim end.
 2. Read the live state back from the light entity's `calib_*` attributes to
    confirm what is currently applied.
 3. When satisfied, paste the numbers into the corresponding constants/defaults
-   in [`light.py`](../light.py) so they survive a restart:
+   in [`light_color.py`](../custom_components/yeelight_cube/light_color.py) so they survive a restart:
    - System 1 → `self._calib_gamma_*`, `_calib_hw_*`, `_calib_channel_balance`
    - System 2 → `self._calib_gain_*`
 

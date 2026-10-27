@@ -47,9 +47,13 @@ MIC_MUSIC_MODE = _path(VENDOR_ENDPOINT, _vendor(0xFC01), _vendor(3))
 ROTATION = _path(VENDOR_ENDPOINT, _vendor(0xFC02), _vendor(1))
 EFFECT = _path(VENDOR_ENDPOINT, _vendor(0xFC05), _vendor(0))
 EFFECT_SUB = _path(VENDOR_ENDPOINT, _vendor(0xFC05), _vendor(1))
-# Standard Matter clusters of the light endpoint: on/off and its level.
+# Standard Matter clusters of the light endpoint: on/off, its level, and the
+# plain colour the Yeelight app sets (Color Control: hue and saturation,
+# 0-254).
 ON_OFF = _path(1, 6, 0)
 LEVEL = _path(1, 8, 0)
+HUE = _path(1, 768, 0)
+SATURATION = _path(1, 768, 1)
 BASIC_VENDOR_ID = _path(0, 40, 2)
 NETWORK_INTERFACES = _path(0, 51, 0)
 # What the light follows, by name (light_matter.py MATTER_REPORTS).
@@ -62,6 +66,8 @@ REPORTED = {
     "rotation": ROTATION,
     "effect": EFFECT,
     "effect_sub": EFFECT_SUB,
+    "hue": HUE,
+    "saturation": SATURATION,
 }
 
 # The app's direction arrows (CubeControl rotation angle), verified with the

@@ -144,10 +144,13 @@
                 "name": "Experimental Features"
             },
             "buttons_as_remote": {
-                "name": "Right button as remote"
+                "name": "Buttons: Right as Remote"
             },
             "restore_after_music_changes": {
-                "name": "Restore after music changes"
+                "name": "Buttons: Left as Remote"
+            },
+            "buttons_wake_lamp": {
+                "name": "Buttons: Wake Lamp When Off"
             }
         },
         "sensor": {
@@ -371,6 +374,9 @@
         },
         "button_effects_refused": {
             "message": "One or more lamps did not accept the button presets."
+        },
+        "button_effects_remote_on": {
+            "message": "Turn Buttons: Right as Remote off first: it keeps the button playlist black, and puts your playlist back when turned off."
         }
     },
     "services": {

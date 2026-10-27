@@ -13,19 +13,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   brightness, and the effects and direction picked in the Yeelight app now
   show in Home Assistant (the clock and native-effect previews turned as the
   lamp turns them with its direction), and a
-  Repairs message reports LAN Control turned off. Read-only, through Home
-  Assistant's own Matter connection; lamps without Matter work as before.
+  Repairs message reports LAN Control turned off. Through Home Assistant's own
+  Matter connection, read-only until its Matter server knows Yeelight's Matter
+  features; lamps without Matter work as before.
   Once Home Assistant's Matter server knows Yeelight's Matter features
   (proposed: matter-js/matterjs-server#1199), **Device Orientation** also sets
   the lamp's own direction, so its clock and native effects are turned for the
   mount; until then this stays off (the light's `matter` attribute says why).
   A **Lamp buttons** event entity fires when the lamp's buttons (or the
   Yeelight app) change an effect, its power or a microphone music mode, for
-  automations; **Buttons as remote** puts back the effect or music mode a
-  press started (power still switches), and with Matter settings makes the
-  right button's playlist black, so a press only blinks black. A **Matter
-  link** diagnostic sensor shows the
-  link, and a Cube Lite only in Matter is offered as discovered.
+  automations (unavailable without the Matter link). **Buttons: Right as Remote** (with Matter settings) backs up the
+  right button's playlist and makes it black, so a press fires
+  `right_button`, blinks black and puts the integration's display back
+  (music the lamp started gives way to what was shown before it, and a
+  press brings it back even after another app's effect; after the Yeelight
+  app's effect, colour, clock, animation or built-in pixel art, the press
+  shows that again);
+  turning it off writes the playlist back, and its `remote_status` attribute
+  says what it is doing. **Buttons: Left as Remote** separately undoes
+  microphone music started by the left button or an app. **Buttons: Wake
+  Lamp When Off** (on by default) makes a remote press turn a lamp that is
+  off on with its content; turned off, presses only fire their events and
+  "off" keeps the lamp powered, black, so they are still seen. Power still
+  switches either way. A **Matter link** diagnostic sensor shows the link,
+  and a Cube Lite only in Matter is offered as discovered.
 - An administrators' diagnostics action, **DEBUG: Use TCP** (`force_tcp`),
   sends a lamp's commands over its TCP fallback for some minutes, to test it.
 - **Official pixel arts in the Draw card**: the 68 drawings of the Yeelight
@@ -148,6 +159,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   so does any change the lamp refuses (a live update left the clock dark).
 
 ### Fixed
+- `set_button_effects` is written over Matter when a server delivers
+  Yeelight's commands: the lamp refuses this write over the local network.
+  It is refused while **Buttons: Right as Remote** is on, which keeps the
+  button playlist black.
+- Turning a lamp off while it showed a drawing, text or gradient briefly
+  reported it on again, so the cards' power button kept turning it off and it
+  could not be turned back on from them.
+- A remote button's press left the lamp black when the Yeelight app's own
+  drawing replaced a drawing from Home Assistant.
 - The Lamp Preview card lost its frame (padding and rounded corners) while
   the lamp stood on its end. Every matrix preview (galleries, Lamp Preview,
   drawing grid, gradient angle preview, Clock previews and preset editor)

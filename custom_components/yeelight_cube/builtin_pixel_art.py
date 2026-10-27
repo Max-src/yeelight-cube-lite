@@ -48,6 +48,32 @@ def _official_pos_to_lamp_pos(position: int) -> int:
     return row * _COLS + col
 
 
+# The Yeelight app's custom id for a built-in pixel art it shows on the lamp:
+# APP_PIXEL_ART_BASE + (group + 1) * 100 + item, the group and item keys of
+# its gallery file (the horizontal one for a lamp set Left or Right in the
+# app, else the vertical one). Read in the app's decompile
+# (pixel_art_preset_model.dart).
+APP_PIXEL_ART_BASE = 0x40000000
+
+
+@lru_cache(maxsize=2)
+def _load_gallery(filename: str) -> dict:
+    """An official gallery file: {group: {item: JSON list of 100 ARGB}}."""
+    with (_PRESET_DIR / filename).open(encoding="utf-8") as preset_file:
+        return json.load(preset_file)
+
+
+def app_pixel_art_argb(custom_id: int, vertical: bool) -> list[int] | None:
+    """The 100 ARGB pixels, in the app's order, of the built-in pixel art the
+    Yeelight app shows under ``custom_id``; None when it is none."""
+    group, item = divmod(custom_id - APP_PIXEL_ART_BASE, 100)
+    if group < 1:
+        return None
+    gallery = _load_gallery("vertical.json" if vertical else "horizontal.json")
+    picture = gallery.get(str(group - 1), {}).get(str(item))
+    return json.loads(picture) if picture is not None else None
+
+
 @lru_cache(maxsize=1)
 def get_builtin_pixel_arts() -> tuple[dict, ...]:
     """Load the official horizontal and vertical recommendation galleries:
@@ -59,8 +85,7 @@ def get_builtin_pixel_arts() -> tuple[dict, ...]:
         ("Horizontal", "horizontal.json"),
         ("Vertical", "vertical.json"),
     ):
-        with (_PRESET_DIR / filename).open(encoding="utf-8") as preset_file:
-            groups = json.load(preset_file)
+        groups = _load_gallery(filename)
 
         index = 1
         for group_key in sorted(groups, key=int):

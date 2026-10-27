@@ -156,7 +156,9 @@ class DisplayMixin:
         # an automation keeps pushing text to it" conflict.
         #
         # DELIBERATE switches to matrix content (pixel_art, color_change from the
-        # content-mode select, turn_on, brightness_change) are NOT in this set, so
+        # content-mode select, turn_on, brightness_change, and remote_restore: a
+        # remote button's press putting the content back after the lamp or
+        # another app showed its own) are NOT in this set, so
         # they pass through; when they render, apply() -> ensure_fx_ready()
         # clears _in_native_fw_mode, so subsequent updates flow normally again.
         #
@@ -204,7 +206,7 @@ class DisplayMixin:
         # Now only explicit user actions restart retries.
         user_action_types = {
             'turn_on', 'turn_off', 'brightness_change', 'text_change',
-            'color_change', 'pixel_art', 'power_limit',
+            'color_change', 'pixel_art', 'power_limit', 'remote_restore',
         }
         is_user_action = update_type in user_action_types
         if not is_retry and self._display_retry_count >= self.MAX_DISPLAY_RETRIES:
@@ -250,7 +252,9 @@ class DisplayMixin:
             coalesce="display",
         )
 
-    async def apply(self):
+    async def apply(self, *, off_frame: bool = False):
+        """Draw the display. ``off_frame``: the black picture turn_off draws
+        (the lamp stays powered): the light stays off."""
         try:
             if claim := getattr(self, "_claim_display", None):
                 claim()
@@ -397,7 +401,9 @@ class DisplayMixin:
 
             # IMPORTANT: When we send pixel data, the lamp automatically turns on
             # So we must update our internal state to match the hardware state
-            if not self._is_on:
+            # (not for turn_off's black picture: marking the light on there
+            # made cards see it on and send turn_off again on every click).
+            if not self._is_on and not off_frame:
                 _LOGGER.debug("[APPLY] Lamp auto-turned on by pixel data, updating state")
                 self._is_on = True
             

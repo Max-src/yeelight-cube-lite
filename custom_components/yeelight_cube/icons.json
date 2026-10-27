@@ -153,6 +153,12 @@
             "restore_after_music_changes": {
                 "default": "mdi:music-note-off"
             },
+            "buttons_wake_lamp": {
+                "default": "mdi:lightbulb-on-outline",
+                "state": {
+                    "off": "mdi:lightbulb-off-outline"
+                }
+            },
             "buttons_as_remote": {
                 "default": "mdi:remote",
                 "state": {

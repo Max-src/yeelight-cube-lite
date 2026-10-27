@@ -8,7 +8,7 @@ before.
 
 ## Link your lamp
 
- The Cube Lite is also a Matter device. Add it to Home
+The Cube Lite is also a Matter device. Add it to Home
 Assistant's own **Matter** integration (Settings > Devices & services > Add
 integration > Matter, then add the device with its Matter pairing code, or
 share it from the Yeelight app). The integration finds it and links it to the
@@ -26,7 +26,8 @@ same lamp by its IP address, then by its MAC address:
 integration but not set up here, and at least one other lamp is. It then
 appears under **Settings > Devices & services > Discovered** as *Yeelight
 Cube Lite found via Matter*, with its address filled in:
-- **To add it:** confirm.
+- **To add it:** confirm. It appears within about 10 minutes of being
+  added to Matter.
 - **If it doesn't answer on your network:** the dialog asks you to turn on
   **LAN Control** in the Yeelight app, then you can try again.
 - **Your first lamp:** it's found by the usual local network discovery
@@ -46,6 +47,10 @@ Cube Lite found via Matter*, with its address filled in:
 - **The clock and native effects:** the lamp's direction setting turns what
   its firmware draws (Left and Up: upside down); the previews and cameras
   show it as the lamp draws it.
+- **Device Orientation** (with [Matter settings](#optional-matter-settings),
+  not yet with Home Assistant's own Matter server): changing it here also
+  sets the lamp's own direction, which the lamp applies to the next clock or
+  native effect it starts.
 - **LAN Control turned off** in the app: a Repairs message tells you, since
   Home Assistant cannot reach the lamp until it is on again.
 
@@ -57,9 +62,9 @@ remote (*When: Entity > Lamp buttons*):
 
 | Event | Usually | Data |
 | :-- | :-- | :-- |
-| `right_button` | Right button, with **Right button as remote** and Matter settings (see below): identifies a black playlist slot | `slot` |
-| `effect_changed` | Right button (next effect of its playlist) | `effect` (its name, when it's one of the native effects), `effect_id` |
-| `turned_off` / `turned_on` | Power changes (button or app) | |
+| `right_button` | Right button, with **Buttons: Right as Remote** and Matter settings (see below): identifies a black playlist slot | `slot` |
+| `effect_changed` | Right button (next effect of its playlist), left button held, or an app | `effect` (its name, when it's one of the native effects), `effect_id` |
+| `turned_off` / `turned_on` | Power changes: the right button held, a click on a powered-down lamp, or an app | |
 | `music_mode_changed` | Left button (a microphone music mode) | `mode` |
 | `music_off` | Left button, long press | |
 
@@ -68,55 +73,175 @@ The lamp doesn't say *which* button was pressed, only what changed:
   same events.
 - **This integration:** reports recognized as its own command echoes are filtered out.
 - **Without Matter:** the entity is unavailable and never fires.
+- **One press, two event types:** a right-button press fires `right_button`
+  while **Buttons: Right as Remote** is active, and `effect_changed` otherwise.
+  An automation meant for both cases triggers on both.
+
+**Example: the right button toggles the room's light.** An event entity's
+state is the time of its last event, so the automation triggers on any new
+state and checks the event type:
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: event.cubelite_lamp_buttons
+    not_from: [unavailable, unknown]
+conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'right_button' }}"
+actions:
+  - action: light.toggle
+    target:
+      entity_id: light.living_room
+```
+
+Use `music_mode_changed` the same way for the left button. With **Buttons:
+Wake Lamp When Off** off, these presses work while the lamp stays dark.
 
 ## Buttons as remote
 
-There are two independent switches under **Configuration**:
+> [!IMPORTANT]
+> **What works with Home Assistant's own Matter server today:** the button
+> events, **Buttons: Left as Remote** and **Buttons: Wake Lamp When Off**.
+> **Buttons: Right as Remote** also needs Yeelight's Matter commands, which
+> Home Assistant's Matter server doesn't know yet (proposed upstream:
+> [matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199)).
+> Until then it shows `settings_unavailable` and right presses are only
+> followed. See [Optional Matter settings](#optional-matter-settings).
+
+In this section, **your content** is what you chose in Home Assistant (a
+clock, an effect, Music Flow, text or a drawing), and **followed** means
+Home Assistant's controls change to show what the lamp now shows.
+
+### Quick start
+
+| You want | Switches |
+| :-- | :-- |
+| A remote that keeps your content: presses fire their events, the lamp goes back to your content | **Buttons: Right as Remote** and **Buttons: Left as Remote** on |
+| A dark remote for automations (at night, for example): presses only fire their events | The same, and **Buttons: Wake Lamp When Off** off |
+| Only the events: the buttons keep working as usual | None: the **Lamp buttons** entity fires anyway |
+
+### The switches
+
+Three switches under **Configuration**:
 
 | Switch | Default | What it does |
 | :-- | :-- | :-- |
-| **Right button as remote** | Off | Installs tagged black playlist entries, fires `right_button` when one is selected, then restores the integration's display. Requires Matter settings support to install the playlist. |
-| **Restore after music changes** | Off | Restores after microphone music starts or changes, whether from the left button **or an app**. Requires Matter reports; no playlist settings support is needed. |
+| **Buttons: Right as Remote** | Off | Backs up the right button's playlist and replaces it with tagged black entries. A press fires `right_button`, then your content comes back. Needs [Matter settings](#optional-matter-settings); its `remote_status` attribute shows what it is doing. |
+| **Buttons: Left as Remote** | Off | Undoes microphone music as soon as it starts or changes, whether from the left button **or an app**: your content comes back. Needs only the Matter link. |
+| **Buttons: Wake Lamp When Off** | On | For the buttons that are a remote. **On:** a press on a lamp that is off turns it on with your content. **Off:** presses only fire their events and the lamp stays dark. See [When the lamp is off](#when-the-lamp-is-off). |
 
-Existing **Buttons as remote** settings keep their saved preference and entity
-ID; the displayed name becomes **Right button as remote**. Music restoration
-is now a separate opt-in, so ordinary music commands from apps work by default.
+### What each press does
 
-### Other apps stay in control
+| Press | No remote | Right as Remote | Left as Remote | Both |
+| :-- | :-- | :-- | :-- | :-- |
+| Right | The next playlist effect, followed | Black blink, your content back | The next playlist effect, followed | Black blink, your content back |
+| Left | Music, followed on top of your content | Music, followed on top of your content | Music flash, your content back | Music flash, your content back |
+| Left, then right | The playlist effect replaces the music | The music stops, your content back | The playlist effect | Your content back |
+| Left held | The lamp stops what runs and shows a plain colour or its last effect, followed | Same; the next right press brings your content back | Same: the switch can't catch a held press | Same; the next right press brings your content back |
+| Right held | Power off or on, followed | Same | Same | Same |
 
-Normal external effects, drawings and music changes are accepted. They do not
-trigger a restore or a playlist rewrite. The integration stops its scrolling,
-rotation and pending display retries when an external effect is reported.
-The optional music-restoration switch deliberately overrides this for music.
+- **A press always wins.** With its switch on, a press brings your content
+  back even after another app showed something, so the lamp never stays
+  black, or on music nobody chose. When that something is the Yeelight app's
+  effect, colour, clock, animation or built-in pixel art, the press shows it
+  again instead (see [Content from other apps](#content-from-other-apps)).
+- **Music Flow you chose in Home Assistant** is your content too: a right
+  press brings it back in its own mode, even if the left button switched the
+  lamp to another preset.
+- **A right press stops music:** the black entry also stops the microphone,
+  reported about a second later. A microphone-off report within 2 seconds of
+  a right press belongs to that press, so it fires no `music_off`.
 
-Reports contain effect IDs, not a complete copy of an app's drawing, colours,
-speed or other settings. After external control, `remote_status` shows
-`external_display`: tagged selections still fire events, but the integration
-will not restore its older content. Apply a clock, effect, drawing or text
-from this integration again (or use **Force refresh**) to resume restoration.
-The cards may still show the last requested settings for content they cannot
-reconstruct.
+### When the lamp is off
 
-This is not a universal source detector. A tagged entry identifies our remote
-playlist, not a physical input: another app replaying the same tagged entry
-can produce the same event. Ordinary untagged playlist selections cannot be
-reliably distinguished from app commands. Changes that produce no new Matter
-report, or an indistinguishable report, cannot be reliably detected either.
+For a lamp turned off from Home Assistant:
 
-### What to expect and how to turn it off
+| Press while off | Wake Lamp When Off on (default) | Wake Lamp When Off off |
+| :-- | :-- | :-- |
+| Right, with Right as Remote | The lamp comes on with your content | `right_button` fires; the lamp stays dark |
+| Left, with Left as Remote | The lamp comes on with your content (not music) | A short music flash, then dark again |
+| A button that is not a remote | Its own action (playlist effect, music), followed | Same |
 
-- The right button briefly shows black before restoration. Music restoration,
-  when enabled, can briefly show a music animation. See
-  [visible flashes and firmware limits](BUTTONS_REMOTE.md).
-- Power still works normally: the right button's long press is followed.
-- The original playlist is backed up before setup. Interrupted writes are
-  retried without replacing that backup.
-- Turning **Right button as remote** off restores the original playlist.
+- **With the switch on,** Home Assistant's "off" powers the lamp down after
+  an effect, a clock or Music Flow. A click then powers it on by itself, with
+  what it showed: it is followed, but reported only as `turned_on` (the lamp
+  steps no playlist entry).
+- **With the switch off,** "off" keeps the lamp powered with a black picture,
+  as it already does for a drawing (about 0.4 W), so presses still reach
+  Home Assistant.
+- **A lamp powered down from its own button** (right held) or the Yeelight
+  app always comes on at a click.
+
+### Content from other apps
+
+**Effects and music modes** picked in another app (or with the buttons) are
+followed. **Drawings, clocks, colours and animations** are only shown on the
+lamp: the reports carry IDs, not a copy of their pixels or settings, so Home
+Assistant's controls keep their own settings. After one of these:
+- The **Buttons: Right as Remote** switch's `remote_status` attribute shows
+  `external_display`, and the integration stops redrawing by itself (its
+  scrolling, rotation and pending display retries stop too).
+- The next remote press, any content applied from Home Assistant, or **Force
+  Refresh** brings your content back, except for the Yeelight app's content
+  that can be shown again (below).
+
+Some of the Yeelight app's content is reported with an ID that says what it
+is. A remote press then shows that content again, not yours:
+
+| Set in the Yeelight app | A remote press shows |
+| :-- | :-- |
+| An official effect | That effect, followed, as the app starts it (its own speed, colour and direction, not Home Assistant's direction for the mount). Changes saved in the app's effect editor are not reported |
+| Winter, Dream, Halloween, Moonlight | The animation again: the lamp plays the one it stores (it may first show rainbow bands for a few seconds) |
+| A clock | The same clock style, with its colours. The rest uses the **Clock** settings of Home Assistant (see below) |
+| A built-in pixel art | The same picture, from the gallery of the lamp's direction, as in the app |
+| A plain colour | The same colour |
+| Your own drawings, community drawings | Your content: their pixels are on the phone and Yeelight's cloud only |
+| Music from the phone | Your content: the phone streams it |
+
+- **A clock's other settings** (time or date, the blinking colon, 12-hour
+  time) are not reported. The app shows 12-hour time when the phone does (its
+  24-hour setting), so a phone in 12-hour time and Home Assistant in 24-hour
+  time give a clock that comes back in 24-hour time.
+- **A colour picked again** (the one the lamp already had) is not reported:
+  the press then brings back what was shown before.
+- **Until Home Assistant shows something,** the app's content stays another
+  app's display (`external_display`). Home Assistant forgets it when it
+  restarts.
+
+### Limits and what to expect
+
+- **A short flash remains.** The lamp reacts to a press before Home
+  Assistant hears of it, so restoration can only follow:
+
+  | Button | What you may see | Why |
+  | :-- | :-- | :-- |
+  | Right | Black for a moment. Until the remote playlist is installed, the press's effect stays: it is followed, not undone | The button selects a playlist entry before restoration arrives. |
+  | Left | A brief microphone-reactive animation (with **Buttons: Left as Remote**) | The button starts one of its fixed music presets. Nothing known turns this off, not even switching music off beforehand. |
+
+  The lamp reports what a press changed, never the press itself. Firmware
+  details: [Lamp buttons: firmware findings](MATTER_COMMANDS.md#lamp-buttons-firmware-findings).
+- **Not a universal source detector.** A tagged entry identifies the remote
+  playlist, not a physical input: another app replaying the same tagged
+  entry produces the same event. Ordinary playlist selections cannot be told
+  apart from app commands, and changes that produce no new Matter report, or
+  an indistinguishable one, cannot be detected.
+- **Power still works normally:** the right button's long press is followed.
+- **Your playlist is backed up** before setup. Interrupted writes are
+  retried without replacing that backup. The lamp only gives back each
+  entry's ids, not a drawing's pixels: if your playlist holds drawings,
+  check them in the Yeelight app after turning the switch off.
+- **Turning Buttons: Right as Remote off** restores the original playlist.
   If Matter settings are unavailable, restoration waits until they return.
-  Wait for `remote_status: disabled` before removing the integration.
-- If another app edits the playlist, the integration does not overwrite it
-  merely because it sees an unfamiliar effect. To reinstall the remote
+  Meanwhile a press on a black entry still brings your content back. Wait
+  for `remote_status: disabled` before removing the integration.
+- **If another app edits the playlist,** the integration does not overwrite
+  it merely because it sees an unfamiliar effect. To reinstall the remote
   playlist, turn the switch off, wait for restoration, then turn it on again.
+  The `set_button_effects` action edits the same playlist: use it with
+  **Buttons: Right as Remote** off.
+- **After a Home Assistant restart,** whether music was started on the lamp
+  isn't known any more: a right press brings that music back instead.
 
 <details>
 <summary>Remote status values</summary>
@@ -126,38 +251,50 @@ The switch keeps your preference even while the feature cannot operate.
 | `remote_status` | Meaning |
 | :-- | :-- |
 | `active` | The tagged playlist was installed and Matter reports are linked. |
-| `external_display` | Another app took control. Events remain available, but the integration will not restore stale content. |
-| `settings_unavailable` | Reports are linked, but playlist setup is unavailable. Untagged changes are followed without restoration. |
+| `external_display` | Another app showed an effect or a drawing: the integration doesn't redraw by itself until the next remote press or content applied from Home Assistant. A press shows the Yeelight app's effect, colour, clock, animation or built-in pixel art again ([Content from other apps](#content-from-other-apps)). Events remain available. |
+| `settings_unavailable` | Reports are linked, but playlist setup is unavailable (Home Assistant's own Matter server today). Right presses are followed without restoration. |
 | `setup_pending` | Playlist installation or interrupted setup is pending. |
+| `no_playlist` | The lamp's playlist is empty: add effects to it in the Yeelight app. Checked again every minute. |
+| `backup_missing` | The lamp still holds black slots from an earlier setup whose backup is gone (the integration was removed with the switch on). Nothing is written, so the lamp's playlist is never lost: reset it in the Yeelight app. Checked again every minute. |
 | `matter_unavailable` | Remote mode is requested, but no Matter link is available. |
 | `restoration_pending` | Remote mode is off, but the original playlist still needs restoration. |
 | `disabled` | Remote mode is off and no restoration is pending. |
 
 `active` records completed setup; it does not continuously verify a playlist
-edited by another app. Status belongs to the right-button switch, independently
-of the music-restoration preference.
+edited by another app. The status belongs to **Buttons: Right as Remote**,
+independently of **Buttons: Left as Remote**.
 
 </details>
 
 ## Optional Matter settings
 
 Some features, including the black button playlist and writing the lamp's
-orientation, need a Matter server that supports Yeelight's vendor commands.
+orientation, need a Matter server that delivers Yeelight's own Matter
+commands. **Home Assistant's own Matter server doesn't yet:** the definition
+is proposed upstream
+([matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199))
+and the integration uses it as soon as the server knows it, with nothing to
+change on your side.
+
 Check the **Matter link** sensor: **Linked, settings available** means these
 commands are available on your installation. A read-only link still provides
-button events and display restoration, but cannot replace the playlist.
+button events, **Buttons: Left as Remote** and **Buttons: Wake Lamp When
+Off**, but cannot install the black playlist: **Buttons: Right as Remote**
+then shows `settings_unavailable` and doesn't restore.
 
 Normal clock, text, drawing and effect controls continue over LAN. For protocol
 and developer details, see [Matter commands](MATTER_COMMANDS.md).
 
 ## Check the connection
 
- The **Matter link** sensor shows *Linked, settings available*
+The **Matter link** sensor shows *Linked, settings available*
 when settings can be changed, and its attributes say which server delivers
 them or why none does. The light's `matter` attribute shows the linked node,
 what the lamp reports, and the same status:
 - `"commands"` is the server that delivers them, or `null`;
-- `"commands_unavailable"` says why not.
+- `"commands_unavailable"` says why not;
+- `"app_content"`, while a remote press would show the Yeelight app's content
+  again: the command that does it.
 
 The diagnostics show the same. Matter's own light entity controls the same
 lamp: you can disable it.

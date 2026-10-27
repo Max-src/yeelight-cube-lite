@@ -254,7 +254,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
           "Previews",
           html`
             ${createToggleRow(
-              "Show Effect Browser",
+              "Show Style Browser",
               "show_gallery",
               config.show_gallery !== false,
               (event) => this._onSwitchChange(event, "show_gallery"),

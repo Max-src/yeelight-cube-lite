@@ -4,8 +4,8 @@ The lamp reports over Matter what its buttons change: an effect (the right
 button's playlist), its power (the right button's long press), a microphone
 music mode (the left button) and its end (the left button's long press). The
 Yeelight app changes the same values, so its changes fire the same events;
-recognized echoes of integration commands are filtered. With Right button as
-remote and Matter settings, tagged black playlist selections fire
+recognized echoes of integration commands are filtered. With Buttons: Right as
+Remote and Matter settings, tagged black playlist selections fire
 "right_button". Another app replaying those tags is indistinguishable.
 Unavailable while the lamp is not linked to Home Assistant's Matter
 integration: without Matter it never fires.

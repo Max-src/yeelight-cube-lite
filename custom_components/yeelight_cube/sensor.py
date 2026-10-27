@@ -229,8 +229,8 @@ class YeelightCubeIPSensor(Entity):
 
 class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
     """Estimated power draw of the lamp (lamp_power.py), from the frames the
-    integration sends; unknown while the firmware draws the matrix (clock,
-    native effects, Music Flow). Stays available while the lamp is not
+    integration sends, or from the simulated preview while the firmware draws
+    the matrix (clock, native effects, Music Flow). Stays available while the lamp is not
     reachable and reads 0 W then, so an energy total keeps counting."""
 
     _attr_should_poll = False

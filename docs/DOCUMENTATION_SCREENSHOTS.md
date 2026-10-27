@@ -87,7 +87,9 @@ Playwright/Chromium versions; cross-platform antialiasing can differ.
 
 ## Local Commands
 
-Use Node 22 and Python 3, then `npm ci` and `npx playwright install chromium`.
+Use Node 22 and Python 3 with Pillow (`python -m pip install pillow`: the
+camera screenshots are drawn by `camera.py`), then `npm ci` and
+`npx playwright install chromium`.
 On Linux use `npx playwright install --with-deps chromium`.
 
 For a fresh disposable HA on localhost:8123 (POSIX shell):
@@ -111,7 +113,7 @@ substrings for focused capture; unset it for a complete run.
 - `npm run docs:screenshots`: capture registered images, writing only after all comparisons pass.
 - `npm run docs:readme`: refresh gallery blocks using existing images.
 - `npm run docs:check`: fail if galleries are stale or images are missing.
-- `npm run docs:update`: capture, then refresh galleries.
+- `npm run docs:update`: capture, regenerate the overviews, then refresh galleries.
 - `node --test tests/card-docs.test.mjs`: verify preservation of manual content and marker validation.
 
 ## Automatic Updates

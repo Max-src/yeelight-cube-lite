@@ -20,7 +20,8 @@ commands to the lamp, in this order:
 
 1. **Home Assistant's own Matter server**, once it knows the Yeelight
    clusters. The channel checks once with `getCurrentEffect`, a read-only
-   command, and checks again when the server's version changes.
+   command, and checks again when the server's version changes. A check
+   the lamp doesn't answer is tried again 10 minutes later.
 2. **A local development server**, only on a development install. Its module
    is not part of the repository.
 3. **None.** The channel raises `MatterCommandsUnavailable`.
@@ -80,7 +81,7 @@ fallback.
 | Live changes | `setRate`, `setDirection`, `setMixer`, `setData` | `{rate}`, `{direction}` (0 up, 1 down, 2 left, 3 right), `{mixer}`, `{data}` |
 | Drawing | `setEffect`, effect 36, apply 2 | `data`: 400 bytes, 100 × (0xff, R, G, B), column by column from the left, each from the bottom row |
 | Read running effect | `getCurrentEffect` | Returns `{effect: {...}}` |
-| Playlist | `getPersistEffectList`, `updatePersistEffectList` | `{index: 0-7, effect: {effectId, customId, effectParams: [{onoff: 1, mode}]}}`. The speed is not stored |
+| Playlist | `getPersistEffectList`, `updatePersistEffectList` | `{index: 0-7, effect: {effectId, customId, effectParams: [{onoff: 1, mode}]}}`. The speed is not stored. A read returns only `effectId` and `customId` per slot, even for a drawing: its pixels cannot be read back |
 | Microphone music | `setMicMusicMode` | `{on: true, effectId: 83-88, palette: [16 ARGB]}`. The palette is required. `{on: false}` stops |
 | GIF upload | `sendGifDataFragment` | 509-byte XMODEM packets (`[1, n, 255-n, 504 bytes padded 0x1a, CRC-16/CCITT-FALSE hi, lo]`), then `[4]`. Each answer must be `{status: 6}`. Play with `setEffect` effect 71 |
 
@@ -93,3 +94,28 @@ tables; a 4-colour one-frame GIF showed as all red.
   firmware copies these lists into fixed buffers.
 - Never send effects 41 or 43: they hang the lamp.
 - Never use the update cluster (`0x1312FC11`).
+
+## Lamp buttons: firmware findings
+
+From reverse-engineering MCU v34 and Cube Lite firmware 1.12.32; other
+versions may differ.
+
+- **No press events.** Listening found no button notifications on LAN, idle
+  TCP or SSDP. Matter mirrors what a press changed (effect and custom ids,
+  microphone on/off and mode, power): the consequence of a press, reported
+  after the lamp has already reacted, never the press itself.
+- **Right button.** It steps through the persistent playlist above, which can
+  be edited. *Buttons: Right as Remote* writes all-black drawings there with
+  custom ids 1000-1007; the lamp reports the slot's custom id on every press,
+  together with effect 36 (within a millisecond on a Cube Lite).
+- **Left button.** The key handler `0x01e31de0` calls `0x01e31c08`, which
+  starts microphone capture (`0x01e31b8a`) and then loads one of the fixed
+  presets at `0x01e3f6f4` (effects 83, 84, 85, 86, 88). Turning music off
+  beforehand does not disable it, no remapping or disable setting was found,
+  and a custom all-black music palette has not been shown to replace these
+  presets. Non-music renderers stop capture again (`0x01e3205a`), but the
+  next press starts it.
+- **Restoration timing.** The black (or music) interval after a press is the
+  Matter report, the command queue and the LAN redraw, not a deliberate
+  sleep. The clock and direct-mode settle delays stay: removing them lost
+  activations and frames on the lamp.

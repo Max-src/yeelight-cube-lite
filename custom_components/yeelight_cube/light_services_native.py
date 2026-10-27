@@ -477,6 +477,10 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         """Set the ordered native-effect list cycled by the physical button."""
         targets = _resolve_entities(service_call, "SET_BUTTON_EFFECTS")
         effect_names = service_call.data["effects"]
+        # Right as Remote keeps the playlist black (its backup is written
+        # back when the switch is turned off): it must not be overwritten.
+        if any(getattr(target, "remote_playlist_active", False) for target in targets):
+            raise invalid("button_effects_remote_on")
         results = await asyncio.gather(
             *(
                 target._execute_hardware_op(

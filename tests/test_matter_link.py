@@ -5,6 +5,7 @@ commissioned in Home Assistant's Matter server (2026-10-22)."""
 from pathlib import Path
 import asyncio
 import base64
+import json
 import sys
 import types
 import unittest
@@ -32,6 +33,7 @@ CUBE_ATTRIBUTES = {
     LINK.EFFECT_SUB: 72,
 }
 LAMP_IP, LAMP_MAC = "192.168.4.139", "cc:ba:97:44:38:98"
+PRESETS = Path(__file__).parent.parent / "custom_components" / "yeelight_cube" / "presets"
 
 
 def node(node_id, attributes):
@@ -210,6 +212,10 @@ class FakeLight(MATTER.MatterMixin):
     def _native_clock_params(self):
         return [40, 1, 2, {"mode": 40}]
 
+    async def _replay_app_content(self, content):
+        method, params = content
+        self.calls.append(("replay", params))
+
 
 class FollowedReportTests(unittest.TestCase):
     def setUp(self):
@@ -243,7 +249,7 @@ class FollowedReportTests(unittest.TestCase):
         self.report("effect", 3)
         self.light._mode = "Clock"
         self.light._lamp_command_at = -1000.0
-        self.report("effect", 71)  # the GIF player: not an effect we know
+        self.report("effect", 64)  # an experimental mode: not an effect we know
         self.assertEqual(("Clock", ["stop_rotation"]), (self.light._mode, self.light.calls))
         self.assertTrue(self.light._external_display)
 
@@ -489,11 +495,11 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
         self.assertEqual("external_display", self.light.buttons_remote_status)
         self.assertFalse(self.light._rotation_active)
+        # A remote press still shows it again (as the app starts it): the
+        # lamp would otherwise stay black on every press.
         self.report("effect_sub", 1000)
-        self.assertNotIn("redraw", self.light.calls)  # don't restore stale settings
-        self.light._claim_display()  # a deliberate integration display resumes ownership
-        self.report("effect_sub", 1001)
-        self.assertIn("redraw", self.light.calls)
+        self.assertIn(("replay", [34, 0, 4]), self.light.calls)
+        self.assertEqual("external_display", self.light.buttons_remote_status)
 
     def test_external_music_is_followed_by_default_even_with_remote_enabled(self):
         self.remote_lamp([(39, 39)])
@@ -503,7 +509,7 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual("Blossom", self.light._music_flow_effect)
         self.assertNotIn("redraw", self.light.calls)
         self.assertNotIn(("music_flow", False), self.light.calls)
-        self.report("effect", 71)  # unknown external GIF must also stop our music recovery
+        self.report("effect", 64)  # an unknown external effect must also stop our music recovery
         self.assertFalse(self.light._music_flow_enabled)
         self.assertTrue(self.light._external_display)
 
@@ -512,11 +518,32 @@ class FollowedReportTests(unittest.TestCase):
         retry = types.SimpleNamespace(done=lambda: False, cancel=Mock())
         self.light._retry_display_task = retry
         self.light._is_scrolling = True
-        self.report("effect", 71)
+        self.report("effect", 64)
         retry.cancel.assert_called_once()
         self.assertFalse(self.light._is_scrolling)
         self.assertFalse(self.light._rotation_active)
         self.assertTrue(self.light._external_display)
+
+    def test_set_button_effects_goes_over_matter(self):
+        # The lamp refuses update_persist_effect_list over LAN.
+        _entry, sent = self.remote_lamp([])
+        items = [
+            {"effect_id": 39, "custom_id": 0, "effect_params": [{"mode": 39, "onoff": 1, "rate": 50, "direction": 1}]},
+            {"effect_id": 40, "custom_id": 6, "effect_params": [{"mode": 40, "mixer": 0, "color": [33553920], "data": "AQAAAA=="}]},
+        ]
+        self.assertTrue(asyncio.run(self.light._write_button_playlist(items)))
+        self.assertEqual([
+            ("updatePersistEffectList", {"index": 0, "effect": {
+                "effectId": 39, "customId": 0, "effectParams": [{"mode": 39, "onoff": 1, "direction": 1}]}}),
+            ("updatePersistEffectList", {"index": 1, "effect": {
+                "effectId": 40, "customId": 6, "effectParams": [
+                    {"mode": 40, "mixer": 0, "color": [33553920, 0, 0, 0], "data": "AQAAAA=="}]}}),
+        ], sent)
+        # No server delivers Yeelight's commands: the light tries LAN.
+        sent.clear()
+        self.light._matter_commands.available = False
+        self.assertFalse(asyncio.run(self.light._write_button_playlist(items)))
+        self.assertEqual([], sent)
 
     def test_without_matter_settings_the_playlist_is_left_alone(self):
         entry, sent = self.remote_lamp([(39, 39)])
@@ -627,6 +654,74 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual([36, 36], [p["effect"]["effectId"] for name, p in sent if name == "updatePersistEffectList"])
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
 
+    def test_black_slots_without_a_backup_are_never_saved_as_the_backup(self):
+        # Removed without turning the switch off: the lamp still holds black
+        # slots, and the backup went with the old config entry.
+        entry, sent = self.remote_lamp([(36, 1000), (36, 1001)])
+        self.light._sync_remote_playlist()
+        self.assertNotIn("remote_saved_playlist", entry.options)
+        self.assertEqual([], [p for name, p in sent if name == "updatePersistEffectList"])
+        self.assertEqual("backup_missing", self.light.buttons_remote_status)
+
+    def test_an_empty_playlist_is_reported_not_left_pending(self):
+        entry, sent = self.remote_lamp([])
+        self.light._sync_remote_playlist()
+        self.assertEqual("no_playlist", self.light.buttons_remote_status)
+        self.assertNotIn("remote_saved_playlist", entry.options)
+
+    def test_a_black_slot_is_restored_while_the_backup_waits_to_be_written(self):
+        # Switch off, but Matter settings are gone: the black playlist stays
+        # on the lamp until restoration, and a press still shows black.
+        entry, _ = self.remote_lamp([(39, 39)])
+        entry.options.update(buttons_as_remote=False, remote_saved_playlist=[[39, 39]])
+        self.assertEqual("restoration_pending", self.light.buttons_remote_status)
+        events = self.lamp_events()
+        self.report("effect_sub", 1000)
+        self.assertEqual([("right_button", {"slot": 0})], events)
+        self.assertEqual(["redraw"], self.light.calls)
+
+    def test_right_button_goes_back_to_the_content_before_left_button_music(self):
+        # Seen on a Cube Lite: an effect, a left press (music), then right
+        # presses stayed black. Remote mode stays active, and a black slot
+        # undoes the lamp's music: the effect shown before it comes back.
+        entry, _ = self.remote_lamp([(39, 39)])
+        entry.options["remote_saved_playlist"] = [[39, 39]]
+        entry.options["remote_playlist_installed"] = True
+        self.light._matter_commands.backend = "matter"
+        self.light._mode, self.light._native_effect = "Native Effect", "Bonfire"
+        events = self.lamp_events()
+        self.report("mic_music_on", True)
+        self.report("effect", 83)
+        self.assertTrue(self.light._music_flow_enabled)
+        self.assertEqual("active", self.light.buttons_remote_status)
+        self.light.calls.clear()
+        self.report("effect_sub", 1000)
+        self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
+        self.assertFalse(self.light._music_flow_enabled)
+        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+        # The black slot stopped the microphone, reported about 0.8 s later:
+        # no music_off event for it.
+        self.report("mic_music_on", False)
+        self.assertEqual(
+            ["music_mode_changed", "right_button"], [event for event, _data in events],
+        )
+        # A long press later is the left button again.
+        self.light._remote_press_at = -100.0
+        self.report("mic_music_on", False)
+        self.assertEqual("music_off", events[-1][0])
+
+    def test_right_button_brings_back_music_the_integration_started(self):
+        entry, _ = self.remote_lamp([(39, 39)])
+        entry.options["remote_saved_playlist"] = [[39, 39]]
+        self.light._music_flow_enabled = True  # chosen in Home Assistant
+        self.light._claim_display()
+        self.report("mic_music_on", True)  # the left button changes its mode
+        self.report("effect", 84)
+        self.light.calls.clear()
+        self.report("effect_sub", 1000)
+        self.assertEqual([("music_flow", True)], self.light.calls)
+        self.assertTrue(self.light._music_flow_enabled)
+
     def test_music_flow_is_reapplied_after_right_button(self):
         entry, _ = self.remote_lamp([(39, 39)])
         entry.options["remote_saved_playlist"] = [[39, 39]]
@@ -712,6 +807,395 @@ class FollowedReportTests(unittest.TestCase):
     def test_effect_ids_and_firmware_modes(self):
         self.assertEqual("Streamer", MATTER.NATIVE_EFFECT_IDS[3])
         self.assertEqual("Flower Sea", MATTER.NATIVE_EFFECT_IDS[91])
+
+
+class ButtonCombinationTests(unittest.TestCase):
+    """Every switch combination (Right / Left as Remote) and press sequence
+    of docs/MATTER.md's table; the lamp shows the Native Effect Bonfire
+    (34), chosen in Home Assistant."""
+
+    def lamp(self, right, left):
+        case = FollowedReportTests()
+        case.setUp()
+        entry, _ = case.remote_lamp([(39, 39), (42, 42)])
+        entry.options.update(buttons_as_remote=right, restore_after_music_changes=left)
+        if right:
+            entry.options.update(remote_saved_playlist=[[39, 39], [42, 42]], remote_playlist_installed=True)
+        light = case.light
+        light._remote_playlist_written_at = -100.0
+        light._mode, light._native_effect = "Native Effect", "Bonfire"
+        self.case, self.light = case, light
+        return light
+
+    def right(self):
+        self.light._remote_press_at = -100.0
+        if self.light.remote_playlist_active:
+            self.case.report("effect", 36)
+            self.case.report("effect_sub", 1000)
+        else:
+            self.case.report("effect", 39)  # the lamp's own playlist: Rainbow
+
+    def left(self, preset=83):
+        self.case.report("mic_music_on", True)
+        self.case.report("effect", preset)
+
+    def left_hold(self, back=34):
+        # reset_fx_effect: the lamp stops what runs and shows another effect.
+        self.light._remote_press_at = -100.0
+        self.case.report("mic_music_on", False)
+        self.case.report("effect", back)
+
+    def shows_own_content(self, mode=("Native Effect", "Bonfire")):
+        light = self.light
+        self.assertIn("redraw", light.calls)
+        self.assertFalse(light._music_flow_enabled)
+        self.assertFalse(light._external_display)
+        self.assertEqual(mode, (light._mode, light._native_effect))
+
+    def shows_followed_effect(self, effect_id, name):
+        """An effect the lamp switched to by itself: followed, and shown
+        again as the app starts it."""
+        light = self.light
+        self.assertIn(("replay", [effect_id, 0, 4]), light.calls)
+        self.assertNotIn("redraw", light.calls)
+        self.assertFalse(light._music_flow_enabled)
+        self.assertEqual(("Native Effect", name), (light._mode, light._native_effect))
+
+    def test_right_press(self):
+        for left in (False, True):
+            with self.subTest(left=left):
+                self.lamp(True, left)
+                self.right()
+                self.shows_own_content()
+                self.lamp(False, left)
+                self.right()
+                self.assertEqual("Rainbow", self.light._native_effect)  # followed
+                self.assertNotIn("redraw", self.light.calls)
+
+    def test_left_press(self):
+        for right in (False, True):
+            with self.subTest(right=right):
+                self.lamp(right, True)
+                self.left()
+                self.shows_own_content()
+                self.lamp(right, False)
+                self.left()
+                self.assertTrue(self.light._music_flow_enabled)  # followed on top
+                self.assertNotIn("redraw", self.light.calls)
+
+    def test_left_then_right_brings_back_what_was_shown_before_the_music(self):
+        for left in (False, True):
+            with self.subTest(left=left):
+                self.lamp(True, left)
+                self.left()
+                self.light.calls.clear()
+                self.right()
+                self.shows_own_content()
+
+    def test_left_as_remote_after_a_followed_playlist_effect(self):
+        # Right as Remote off: the playlist's Rainbow is followed (another
+        # app's effect, as far as the reports tell); the left press is still
+        # undone, back to that followed effect.
+        self.lamp(False, True)
+        self.right()
+        self.light.calls.clear()
+        self.left()
+        self.shows_followed_effect(39, "Rainbow")
+
+    def test_right_press_after_a_left_hold_is_never_stuck_black(self):
+        for left in (False, True):
+            for start_with_music in (False, True):
+                with self.subTest(left=left, music=start_with_music):
+                    self.lamp(True, left)
+                    if start_with_music:
+                        self.left()
+                    self.left_hold()  # the lamp shows Bonfire again, followed
+                    self.light.calls.clear()
+                    self.right()
+                    self.shows_followed_effect(34, "Bonfire")
+                    self.right()  # and on every press after it
+                    self.assertEqual(2, self.light.calls.count(("replay", [34, 0, 4])))
+
+    def test_right_press_after_a_left_hold_on_text(self):
+        light = self.lamp(True, False)
+        light._mode = "Solid Color"
+        self.left_hold(back=50)
+        light.calls.clear()
+        self.right()
+        self.shows_own_content(("Solid Color", "Bonfire"))
+
+    def test_right_press_after_another_apps_effect(self):
+        self.lamp(True, False)
+        self.case.report("effect", 42)  # an app's Ocean Waves: followed
+        self.assertTrue(self.light._external_display)
+        self.light.calls.clear()
+        self.right()
+        self.shows_followed_effect(42, "Ocean Waves")
+
+    def test_left_press_keeps_another_apps_display_external_until_a_press(self):
+        light = self.lamp(True, False)
+        self.case.report("effect", 42)
+        self.left()
+        self.assertTrue(light._external_display)  # music doesn't end it
+        light.calls.clear()
+        self.right()
+        self.shows_followed_effect(42, "Ocean Waves")
+
+    def test_a_press_on_a_lamp_that_is_off(self):
+        # Off in Home Assistant, the lamp powered and black (a drawing's off,
+        # or any off without Wake Lamp When Off).
+        for wake in (True, False):
+            for press in ("right", "left"):
+                with self.subTest(wake=wake, press=press):
+                    light = self.lamp(True, True)
+                    self.case.light._config_entry.options["buttons_wake_lamp"] = wake
+                    light._is_on = False
+                    light.calls.clear()
+                    self.right() if press == "right" else self.left()
+                    self.assertEqual(wake, light._is_on)
+                    self.assertIn("redraw" if wake else "turn_off", light.calls)
+                    self.assertNotIn("turn_off" if wake else "redraw", light.calls)
+                    self.assertFalse(light._music_flow_enabled)
+
+    def test_off_keeps_the_lamp_powered_only_for_a_remote_that_must_not_wake_it(self):
+        for right, left, wake, kept in (
+            (True, False, False, True), (False, True, False, True),
+            (True, True, True, False), (False, False, False, False),
+        ):
+            with self.subTest(right=right, left=left, wake=wake):
+                light = self.lamp(right, left)
+                self.case.light._config_entry.options["buttons_wake_lamp"] = wake
+                self.assertEqual(kept, light.remote_keeps_lamp_powered)
+
+    def test_the_black_picture_of_off_is_its_echo(self):
+        light = self.lamp(True, False)
+        light._is_on = False
+        light._note_lamp_command()  # turn_off: black, the lamp left Bonfire
+        self.case.report("effect", 50)
+        self.assertFalse(light._external_display)
+        self.assertFalse(light._is_on)
+
+    def test_another_apps_content_on_a_lamp_that_is_off_turns_it_on(self):
+        light = self.lamp(True, False)
+        light._is_on = False
+        self.case.report("effect", 42)
+        self.assertTrue(light._is_on)
+
+    def test_right_press_brings_back_the_integrations_own_music_mode(self):
+        light = self.lamp(True, False)
+        light._music_flow_enabled, light._music_flow_effect = True, "Breathing"
+        self.left(preset=83)  # the lamp's next preset: Gather
+        self.assertEqual("Gather", light._music_flow_effect)
+        light.calls.clear()
+        self.right()
+        self.assertEqual(["refresh", ("music_flow", True)], light.calls)  # its select shows it
+        self.assertEqual("Breathing", light._music_flow_effect)
+
+
+class AppContentTests(unittest.IsolatedAsyncioTestCase):
+    """With Right as Remote on, a press shows the Yeelight app's content
+    again when its reports tell what it is: its clock, an animation, a
+    built-in pixel art. Its own drawings cannot be rebuilt: the press brings
+    back the integration's content (Bonfire, chosen in Home Assistant)."""
+
+    def setUp(self):
+        wait = MATTER.EXTERNAL_DRAWING_WAIT
+        MATTER.EXTERNAL_DRAWING_WAIT = 0
+        self.addCleanup(setattr, MATTER, "EXTERNAL_DRAWING_WAIT", wait)
+
+    def lamp(self, left=False):
+        case = FollowedReportTests()
+        case.setUp()
+        entry, _ = case.remote_lamp([(39, 39), (42, 42)])
+        entry.options.update(
+            remote_saved_playlist=[[39, 39], [42, 42]], remote_playlist_installed=True,
+            restore_after_music_changes=left,
+        )
+        light = case.light
+        light._remote_playlist_written_at = -100.0
+        light._mode, light._native_effect = "Native Effect", "Bonfire"
+        light._matter.values.update(rotation=2, effect=34, effect_sub=0, hue=150, saturation=254)
+        self.sent, self.methods, self.tasks = [], [], []
+
+        async def send_raw_command(command, params, **kwargs):
+            self.sent.append(params)
+            self.methods.append(command)
+            # The lamp reports what it shows now, before the press's content
+            # check (EXTERNAL_DRAWING_WAIT) reads the reports.
+            effect = params[0] if command == "set_fx_effect" else 0
+            light._matter.values["effect"] = effect
+            light._on_matter_report("effect", effect, False)
+
+        self.events = []
+        light._lamp_buttons_event = types.SimpleNamespace(
+            hass=object(), lamp_event=lambda kind, data: self.events.append(kind),
+            async_write_ha_state=lambda: None,
+        )
+
+        async def execute(func, op_name, **kwargs):
+            light._note_lamp_command()
+            await func()
+
+        async def leave_direct_mode():
+            pass
+
+        def create_task(coroutine, name=None):
+            task = asyncio.create_task(coroutine)
+            self.tasks.append(task)
+            return task
+
+        light._cube_matrix = types.SimpleNamespace(
+            forget_running_effect=lambda: None, note_running_effect=lambda params: None,
+            send_raw_command=send_raw_command,
+        )
+        light._execute_hardware_op = execute
+        light._leave_direct_mode = leave_direct_mode
+        # The real replay, not FakeLight's record of it.
+        light._replay_app_content = types.MethodType(MATTER.MatterMixin._replay_app_content, light)
+        light._native_clock_data_bytes = lambda: bytes((1, 0, 0, 0))
+        light._create_tracked_task = create_task
+        self.light = light
+        return light
+
+    async def report(self, *reports):
+        for name, value in reports:
+            self.light._matter.values[name] = value
+            self.light._on_matter_report(name, value, False)
+        while self.tasks:
+            await self.tasks.pop(0)
+
+    async def right(self):
+        self.light._remote_press_at = -100.0
+        await self.report(("effect", 36), ("effect_sub", 1000))
+
+    def shows_app_content(self, params, method="set_fx_effect"):
+        light = self.light
+        self.assertEqual([params], self.sent)
+        self.assertEqual([method], self.methods)
+        self.assertNotIn("redraw", light.calls)
+        self.assertTrue(light._external_display)  # still the app's
+        self.assertEqual(("Native Effect", "Bonfire"), (light._mode, light._native_effect))
+
+    def shows_own_content(self):
+        self.assertEqual([], self.sent)
+        self.assertIn("redraw", self.light.calls)
+        self.assertFalse(self.light._external_display)
+
+    @staticmethod
+    def pixel_art_data(filename, group, item):
+        argb = json.loads(json.loads(
+            (PRESETS / filename).read_text(encoding="utf-8"))[group][item])
+        return base64.b64encode(b"".join(p.to_bytes(4, "big") for p in argb)).decode("ascii")
+
+    async def test_an_animation_comes_back(self):
+        for reports in ((("effect", 71), ("effect_sub", 77)), (("effect_sub", 77), ("effect", 71))):
+            with self.subTest(order=[name for name, _ in reports]):
+                self.lamp()
+                await self.report(*reports)
+                await self.right()
+                self.shows_app_content([71, 77, 4, {"onoff": 1}])
+
+    async def test_a_clock_comes_back_with_its_style(self):
+        self.lamp()
+        await self.report(("effect", 40), ("effect_sub", 6))
+        await self.report(("effect_sub", 9))  # the app's next style: only the id changes
+        self.light._matter.summary = lambda: {"node_id": 2}
+        self.light._matter_commands.reason = None
+        self.assertEqual(["set_fx_effect", 40, 9], self.light._matter_summary()["app_content"])
+        await self.right()
+        self.shows_app_content([40, 9, 2, {
+            "mode": 40, "mixer": 0, "data": base64.b64encode(bytes((1, 0, 0, 0))).decode("ascii"),
+            "color": [12046834],
+        }])
+
+    async def test_a_plain_colour_comes_back(self):
+        # Live test 2026-10-27: a colour from the app is effect 0, its colour
+        # Color Control's hue and saturation (light red: 2, 197).
+        for reports in ((("hue", 2), ("saturation", 197), ("effect", 0)),
+                        (("effect", 0), ("hue", 2), ("saturation", 197))):
+            with self.subTest(order=[name for name, _ in reports]):
+                self.lamp()
+                await self.report(*reports)
+                await self.right()
+                self.shows_app_content([3, 78, "sudden", 30], "set_hsv")
+
+    async def test_the_replay_is_not_taken_for_a_new_app_change(self):
+        # Live test 2026-10-27: the black slot's effect 36 started the content
+        # check; it then read the replayed colour (effect 0) as the app's.
+        self.lamp()
+        await self.report(("hue", 2), ("saturation", 197), ("effect", 0))
+        self.events.clear()
+        await self.right()
+        self.assertEqual(["right_button"], self.events)
+        self.assertEqual(1, len(self.sent))
+
+    async def test_the_apps_next_colour_is_told_by_the_colour_alone(self):
+        self.lamp()
+        await self.report(("effect", 0))
+        await self.report(("hue", 100))  # another colour: the effect stays 0
+        await self.right()
+        self.shows_app_content([142, 100, "sudden", 30], "set_hsv")
+        await self.report(("effect", 0), ("hue", 100))  # the replay's own reports
+        self.assertEqual(1, len(self.sent))
+
+    async def test_a_built_in_pixel_art_comes_back_from_the_gallery_of_the_lamps_direction(self):
+        for rotation, filename in ((2, "horizontal.json"), (1, "vertical.json")):
+            with self.subTest(rotation=rotation):
+                light = self.lamp()
+                light._matter.values["rotation"] = rotation
+                await self.report(("effect", 36), ("effect_sub", 0x40000000 + 200 + 3))
+                await self.right()
+                self.shows_app_content([36, 0x40000000 + 203, 4, {
+                    "onoff": 1, "mode": 36, "mixer": 0,
+                    "data": self.pixel_art_data(filename, "1", "3"),
+                }])
+
+    async def test_a_built_in_pixel_art_after_a_press_is_told_by_its_id_alone(self):
+        self.lamp()
+        await self.right()  # black slot: effect 36 already
+        self.light.calls.clear()
+        await self.report(("effect_sub", 0x40000000 + 100))
+        self.assertTrue(self.light._external_display)
+        await self.right()
+        self.assertEqual(36, self.sent[0][0])
+
+    async def test_an_old_id_is_not_trusted_for_a_drawing(self):
+        light = self.lamp()
+        # A built-in picture's id left from before; the app now sends a
+        # drawing without an id: only the effect is reported.
+        light._matter.values["effect_sub"] = 0x40000000 + 100
+        await self.report(("effect", 36))
+        self.assertTrue(light._external_display)
+        await self.right()
+        self.shows_own_content()
+
+    async def test_the_apps_own_drawings_cannot_come_back(self):
+        self.lamp()
+        await self.report(("effect", 36), ("effect_sub", 123456))  # a Yeelight cloud id
+        await self.right()
+        self.shows_own_content()
+
+    async def test_left_as_remote_undoes_the_music_back_to_the_apps_content(self):
+        light = self.lamp(left=True)
+        await self.report(("effect", 71), ("effect_sub", 72))
+        await self.report(("mic_music_on", True), ("effect", 83))
+        self.assertIn(("music_flow", False), light.calls)
+        self.shows_app_content([71, 72, 4, {"onoff": 1}])
+
+    async def test_its_own_reports_are_echoes(self):
+        light = self.lamp()
+        await self.report(("effect", 40), ("effect_sub", 6))
+        await self.right()
+        await self.report(("effect", 40), ("effect_sub", 6))  # the lamp shows it again
+        self.assertEqual(1, len(self.sent))
+        self.assertTrue(light._external_display)
+
+    async def test_a_home_assistant_command_forgets_it(self):
+        light = self.lamp()
+        await self.report(("effect", 71), ("effect_sub", 77))
+        light._claim_display()  # what every display command does
+        await self.right()
+        self.shows_own_content()
 
 
 class RemoteConcurrencyTests(unittest.IsolatedAsyncioTestCase):

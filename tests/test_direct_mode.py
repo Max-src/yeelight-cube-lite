@@ -124,6 +124,65 @@ class ApplyOrderTests(unittest.TestCase):
         )
         self.assertNotIn("_cube_matrix.draw_matrices_fast", self.apply)  # always _draw_direct
 
+    def test_turn_offs_black_picture_keeps_the_light_off(self):
+        # Live 2026-10-27: marking the light on for turn_off's black frame
+        # made the preview card send turn_off again on every click.
+        self.assertIn("if not self._is_on and not off_frame:", self.apply)
+        light = (ROOT / "light.py").read_text(encoding="utf-8")
+        turn_off = light[light.index("async def _internal_turn_off("):]
+        turn_off = turn_off[: turn_off.index("\n    async def ")]
+        self.assertIn("await self.apply(off_frame=True)", turn_off)
+
+
+class TurnOffTests(unittest.IsolatedAsyncioTestCase):
+    """light._internal_turn_off: an effect, clock or Music Flow powers the
+    lamp down, unless a remote button must not wake it (Buttons: Wake Lamp
+    When Off off): then, as for a drawing, a black picture on a powered
+    lamp, so the presses still reach the integration."""
+
+    def lamp(self, mode, music=False, keep_powered=False):
+        fns = _load_standalone_functions(
+            (ROOT / "light.py").read_text(encoding="utf-8"),
+            {"_internal_turn_off"},
+            {"_LOGGER": logging.getLogger("t"), "FIRMWARE_MODES": ("Clock", "Native Effect")},
+        )
+        self.calls = []
+
+        def record(name):
+            async def call(*args, **kwargs):
+                self.calls.append(name if not args else (name, *args))
+            return call
+
+        lamp = types.SimpleNamespace(
+            _mode=mode, _music_flow_enabled=music, remote_keeps_lamp_powered=keep_powered,
+            _is_on=True, hass=None, _music_flow_restore_power=None,
+            _last_hardware_brightness=100, _last_apply_time=1,
+            _cube_matrix=types.SimpleNamespace(
+                close_fast_socket=lambda: None, send_raw_command=record("raw"),
+            ),
+            _expect_lamp_power=lambda on: None,
+            erase_all=record("erase"), apply=record("apply"),
+            _send_music_off=record("music_off"),
+            _persist_music_flow_runtime_state=record("persist"),
+            _refresh_music_flow_entities=lambda: None, _notify_camera_preview=lambda: None,
+        )
+        lamp._internal_turn_off = fns["_internal_turn_off"].__get__(lamp)
+        return lamp
+
+    async def test_off_powers_down_or_draws_black(self):
+        for mode, music, keep, expected in (
+            ("Native Effect", False, False, [("raw", "set_power", ["off"])]),
+            ("Clock", False, True, ["erase", "apply"]),
+            ("Native Effect", True, True, ["music_off", "erase", "apply", "persist"]),
+            ("Custom Draw", False, False, ["erase", "apply"]),
+        ):
+            with self.subTest(mode=mode, music=music, keep_powered=keep):
+                lamp = self.lamp(mode, music, keep)
+                await lamp._internal_turn_off()
+                self.assertEqual(expected, self.calls)
+                self.assertFalse(lamp._is_on)
+                self.assertFalse(lamp._music_flow_enabled)
+
 
 class BrightnessRetryTests(unittest.IsolatedAsyncioTestCase):
     """A brightness that could not be sent (lamp unreachable) is queued, and

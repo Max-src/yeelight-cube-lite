@@ -79,3 +79,6 @@ tools/matter-live-test-results.json
 
 # Claude Code agents' temporary working copies
 .claude/worktrees/
+tools/matter-live-test-app-content.py
+tools/matter-live-test-app-content-results.json
+tools/matter-live-test-app-content-results-*.json

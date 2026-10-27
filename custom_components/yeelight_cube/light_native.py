@@ -497,6 +497,18 @@ class NativeModesMixin:
         if not success:
             raise failed("music_flow_failed")
 
+    async def _send_music_off(self) -> None:
+        """Stop the lamp's microphone music, inside a hardware operation
+        (light._internal_turn_off keeping the lamp powered)."""
+        if note_music := getattr(self, "_expect_lamp_music", None):
+            note_music(False)
+        try:
+            await self._cube_matrix.send_command_with_recovery(
+                "set_ps", ["mic_music_mode", _build_music_flow_payload(False, self._music_flow_effect)],
+            )
+        finally:
+            self._cube_matrix.close_command_socket()
+
     async def async_set_music_flow_effect(self, option: str) -> None:
         """Select a device-microphone music flow effect."""
         if option not in MUSIC_FLOW_EFFECTS:
