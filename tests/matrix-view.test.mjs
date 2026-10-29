@@ -226,33 +226,42 @@ test("every preview's frame: a vertical one keeps the landscape look", async () 
   );
 });
 
-test("firmware content as the lamp draws it: turned by its own direction setting", () => {
+test("the firmware clock as the lamp draws it: turned by its mount profile", () => {
   return import(`${www}matrix-view.js`).then(
-    ({ firmwareLampFrame, lampTurnsContent }) => {
-      assert.equal(lampTurnsContent({}), false); // no Matter: as drawn by default
-      assert.equal(lampTurnsContent({ matter: { rotation: 0 } }), true); // Left
-      assert.equal(lampTurnsContent({ matter: { rotation: 1 } }), true); // Up
-      assert.equal(lampTurnsContent({ matter: { rotation: 2 } }), false); // Right
-      assert.equal(lampTurnsContent({ matter: { rotation: 3 } }), false); // Down
+    ({ firmwareClockFrame, lampTurnsClock }) => {
+      assert.equal(lampTurnsClock({}), false); // unknown: the default 270°, upright
+      assert.equal(lampTurnsClock({ mount_profile: { profile: null, in_use: 3 } }), false);
+      assert.equal(lampTurnsClock({ mount_profile: { profile: 0, in_use: 0 } }), true);
+      assert.equal(lampTurnsClock({ mount_profile: { profile: null } }), false);
+      assert.equal(lampTurnsClock({ mount_profile: { profile: 0 } }), true); // 0°
+      assert.equal(lampTurnsClock({ mount_profile: { profile: 1 } }), true); // 90°
+      assert.equal(lampTurnsClock({ mount_profile: { profile: 2 } }), false); // 180°
+      assert.equal(lampTurnsClock({ mount_profile: { profile: 3 } }), false); // 270°
+      // The Matter value alone is not trusted (light_mount_profile).
+      assert.equal(lampTurnsClock({ matter: { rotation: 0 } }), false);
       assert.deepEqual(
-        firmwareLampFrame([1, 2, 3], { matter: { rotation: 0 } }),
+        firmwareClockFrame([1, 2, 3], { mount_profile: { profile: 0 } }),
         [3, 2, 1],
       );
       const frame = [1, 2, 3];
       assert.equal(
-        firmwareLampFrame(frame, { matter: { rotation: 2 } }),
+        firmwareClockFrame(frame, { mount_profile: { profile: 2 } }),
         frame,
       );
     },
   );
 });
 
-test("native effect previews turn with the lamp's direction setting too", async () => {
+test("native effect previews do not turn with the lamp's profile (compensated)", async () => {
   const { nativeEffectFrame } = await import(
     `${www}native-effect-card-utils.js`
   );
   const effect = { name: "Waterfall" };
-  const right = nativeEffectFrame(effect, { matter: { rotation: 2 } }, 1.5);
-  const left = nativeEffectFrame(effect, { matter: { rotation: 0 } }, 1.5);
-  assert.deepEqual(left, [...right].reverse());
+  const reference = nativeEffectFrame(effect, { mount_profile: { profile: 2 } }, 1.5);
+  for (const profile of [0, 1, 3, null]) {
+    assert.deepEqual(
+      nativeEffectFrame(effect, { mount_profile: { profile } }, 1.5),
+      reference,
+    );
+  }
 });

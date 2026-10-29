@@ -286,9 +286,11 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         if getattr(le, "_music_flow_enabled", False):
             base = self._get_music_flow_preview()
         elif mode == MODE_CLOCK:
-            base = self._firmware_lamp_frame(self._get_clock_preview())
+            base = self._firmware_clock_frame(self._get_clock_preview())
         elif mode == MODE_NATIVE_EFFECT:
-            base = self._firmware_lamp_frame(self._get_native_effect_preview())
+            # Compensated for the lamp's mount profile (light_native): drawn
+            # as calibrated, whatever the lamp's own direction setting.
+            base = self._get_native_effect_preview()
         else:
             base = getattr(le, "_base_matrix_colors", None)
         if not base or len(base) != 100:
@@ -333,11 +335,11 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             return self._get_native_effect_preview()
         return None
 
-    def _firmware_lamp_frame(self, frame: list) -> list:
-        """Firmware content (clock, native effect; lamp order) as the lamp
-        draws it: its own direction setting (followed over Matter) may turn
-        it a half turn (light_matter.lamp_turns_content)."""
-        if getattr(self._light_entity, "lamp_turns_content", False):
+    def _firmware_clock_frame(self, frame: list) -> list:
+        """The firmware clock (lamp order) as the lamp draws it: its saved
+        mount profile turns it a half turn on 0 and 1
+        (light_mount_profile.lamp_turns_clock)."""
+        if getattr(self._light_entity, "lamp_turns_clock", False):
             return frame[::-1]
         return frame
 

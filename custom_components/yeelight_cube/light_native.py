@@ -14,6 +14,7 @@ from .color_utils import rgb_to_argb
 from .light_color import hardware_brightness_for
 from .cube_matrix import CubeConnectionError, encode_rgb_frame
 from .light_display import ACTIVATION_TIMING
+from .mount_profile import compensate_direction
 
 from homeassistant.util import dt as dt_util  # type: ignore
 
@@ -50,16 +51,19 @@ MUSIC_FLOW_HARD_TIMEOUT = 12.0
 # from light.py at call time to avoid a circular import at module load.
 
 
-def mount_effect_direction(orientation: str, lamp_turns_content: bool = False) -> str | None:
+def mount_effect_direction(orientation: str) -> str | None:
     """The native effect direction that flows the same way for the viewer
-    of a lamp mounted this way (DEVICE_ORIENTATION_TO_EFFECT_DIR); the
-    opposite one when the lamp's firmware already turns its effects with its
-    own direction setting (light_matter.lamp_turns_content), or the flow
-    would be turned twice."""
-    direction = DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
-    if direction is not None and lamp_turns_content:
-        return {"Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left"}[direction]
-    return direction
+    of a lamp mounted this way (DEVICE_ORIENTATION_TO_EFFECT_DIR). Whatever
+    the lamp's own direction setting turns is undone on the value sent
+    (lamp_direction), so it is the same for every mount profile."""
+    return DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
+
+
+def lamp_direction(light, value: int) -> int:
+    """A firmware direction value, as calibrated (on a lamp at mount profile
+    2), for this lamp: compensated for the profile it saved (mount_profile.py;
+    unchanged when unknown)."""
+    return compensate_direction(value, getattr(light, "effect_profile", None))
 
 
 def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
@@ -250,9 +254,9 @@ class NativeModesMixin:
             self._native_effect_direction, effect_name
         )
         if direction is not None:
-            effect_config["direction"] = effect_direction_value(
+            effect_config["direction"] = lamp_direction(self, effect_direction_value(
                 ALL_NATIVE_EFFECTS[effect_name], direction
-            )
+            ))
 
         # A few mixers only render in full color when the outer command id
         # (first array element) is overridden; otherwise the default clock id is
@@ -368,20 +372,18 @@ class NativeModesMixin:
             # reboot/restore) always honors the orientation arrows -- instead of
             # using a stale _native_effect_direction that only got synced when
             # the orientation was changed while already in Native Effect mode.
-            desired = mount_effect_direction(
-                self._device_orientation, getattr(self, "lamp_turns_content", False)
-            )
+            desired = mount_effect_direction(self._device_orientation)
             if desired in directions and desired != self._native_effect_direction:
                 self._native_effect_direction = desired
                 if self._native_effect_direction_select_entity:
                     self._native_effect_direction_select_entity.async_update_from_light()
             if self._native_effect_direction not in directions:
                 self._native_effect_direction = directions[0]
-            effect_config["direction"] = effect_direction_value(
+            effect_config["direction"] = lamp_direction(self, effect_direction_value(
                 spec, self._native_effect_direction
-            )
+            ))
         elif spec.get("direction_fixed") is not None:
-            effect_config["direction"] = spec["direction_fixed"]
+            effect_config["direction"] = lamp_direction(self, spec["direction_fixed"])
         color_mode = self._native_effect_color_mode
         palette_id = CLOCK_COLOR_MODES.get(color_mode)
         if not effect_supports_color_mode(self._native_effect, color_mode):

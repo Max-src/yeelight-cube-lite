@@ -128,6 +128,25 @@ class MatterCommandsTests(unittest.TestCase):
         unreachable = FakeDev(None)
         self.assertFalse(run(commands(dev=unreachable).async_available()))
 
+    def test_a_dev_node_left_behind_by_a_factory_reset_is_not_used(self):
+        # Its old attributes still match the lamp; writing to it is aborted.
+        dead = node(1, dict(CUBE_ATTRIBUTES))
+        dead.available = False
+        dev = FakeServer(knows_yeelight=True, nodes=[dead])
+        channel = commands(dev=FakeDev(dev))
+        self.assertFalse(run(channel.async_available()))
+        self.assertIn("the lamp is not shared to the development server", channel.reason)
+        # Paired again: its new node is.
+        dev.nodes.append(node(4, dict(CUBE_ATTRIBUTES)))
+        run(channel.async_write("2/320011266/319946753", 2))
+        self.assertEqual("dev", channel.backend)
+
+    def test_a_link_read_through_the_dev_server_reports_it(self):
+        dev = FakeServer(knows_yeelight=True, nodes=[node(1, dict(CUBE_ATTRIBUTES))])
+        channel = commands(link_to(dev, node_id=1), FakeDev(dev))
+        self.assertTrue(run(channel.async_available()))
+        self.assertEqual("dev", channel.backend)
+
     def test_a_lamp_that_does_not_answer_is_checked_again_later(self):
         official = FakeServer(knows_yeelight=True, error=TimeoutError("no answer"))
         channel = commands(link_to(official))

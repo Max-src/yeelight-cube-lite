@@ -2,7 +2,6 @@ import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import { VISIBILITY_KEYS, visibleItems } from "./visible-items.js";
 import {
   deviceOrientation,
-  firmwareLampFrame,
   viewerFrame,
 } from "./matrix-view.js";
 export {
@@ -144,19 +143,17 @@ export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
     1,
     Math.min(255, Number(attrs.native_effect_speed) || 50),
   );
-  // As the viewer sees the lamp (matrix-view.js): drawn as the lamp draws
-  // it (its direction setting may turn it, Matter), top row first, turned
-  // for an upside-down mount like every preview.
+  // As the viewer sees the lamp (matrix-view.js): top row first, turned for
+  // an upside-down mount like every preview. The lamp's own direction
+  // setting does not turn it: the integration compensates the direction it
+  // sends for it (light_native.lamp_direction).
   return viewerFrame(
-    firmwareLampFrame(
-      renderNativeEffectOriented(
-        effect.name,
-        elapsed * (0.25 + speed / 55),
-        nativeEffectDirection(effect, attrs),
-        attrs.native_effect_color || null,
-        attrs.native_effect_color_mode || "normal",
-      ),
-      attrs,
+    renderNativeEffectOriented(
+      effect.name,
+      elapsed * (0.25 + speed / 55),
+      nativeEffectDirection(effect, attrs),
+      attrs.native_effect_color || null,
+      attrs.native_effect_color_mode || "normal",
     ),
     deviceOrientation(attrs),
   );

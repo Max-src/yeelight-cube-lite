@@ -10,9 +10,13 @@ server refuses Yeelight's vendor clusters for writes and commands).
 
 A node is the lamp's when it is a Yeelight Cube Lite whose Wi-Fi interface
 has the lamp's IP address, or the MAC address remembered from an earlier
-link (the IP may change). Re-checked every minute (light._async_check_problems),
-so Matter set up before or after the lamp, or a re-commissioned node, links
-on its own; without the Matter integration nothing happens.
+link (the IP may change), and that its server reaches now: a node left
+behind when the lamp was factory reset (which erases its Matter pairing)
+keeps its old attributes, but is unavailable. Re-checked every minute
+(light._async_check_problems), so Matter set up before or after the lamp, or
+a re-commissioned node, links on its own; without the Matter integration
+nothing happens. Other servers (the development one, matter_commands.py) are
+read the same way when Home Assistant's own has no live node for the lamp.
 """
 from __future__ import annotations
 
@@ -45,6 +49,9 @@ LAN_CONTROL = _path(VENDOR_ENDPOINT, _vendor(0xFC01), _vendor(1))
 MIC_MUSIC_ON = _path(VENDOR_ENDPOINT, _vendor(0xFC01), _vendor(2))
 MIC_MUSIC_MODE = _path(VENDOR_ENDPOINT, _vendor(0xFC01), _vendor(3))
 ROTATION = _path(VENDOR_ENDPOINT, _vendor(0xFC02), _vendor(1))
+# The modules the Yeelight app saves with the orientation (its Save writes
+# [2, 2, 2, 2] first): a mark that the orientation was saved (mount_profile).
+TOPOLOGY = _path(VENDOR_ENDPOINT, _vendor(0xFC02), _vendor(0))
 EFFECT = _path(VENDOR_ENDPOINT, _vendor(0xFC05), _vendor(0))
 EFFECT_SUB = _path(VENDOR_ENDPOINT, _vendor(0xFC05), _vendor(1))
 # Standard Matter clusters of the light endpoint: on/off, its level, and the
@@ -64,6 +71,7 @@ REPORTED = {
     "mic_music_on": MIC_MUSIC_ON,
     "mic_music_mode": MIC_MUSIC_MODE,
     "rotation": ROTATION,
+    "topology": TOPOLOGY,
     "effect": EFFECT,
     "effect_sub": EFFECT_SUB,
     "hue": HUE,
@@ -126,6 +134,12 @@ def node_matches(attributes: dict, ip: str | None, mac: str | None) -> str | Non
     return None
 
 
+def node_available(node) -> bool:
+    """Whether the node's server reaches it now (a node whose lamp was
+    factory reset stays listed, unavailable)."""
+    return getattr(node, "available", True) is not False
+
+
 def _attributes(node) -> dict:
     data = getattr(node, "node_data", None)
     attributes = getattr(data, "attributes", None)
@@ -151,9 +165,17 @@ class MatterLink:
     state then, not a change).
     """
 
-    def __init__(self, hass, on_report: Callable[[str, Any, bool], None]) -> None:
+    def __init__(
+        self,
+        hass,
+        on_report: Callable[[str, Any, bool], None],
+        other_clients: Callable[[], list] = lambda: [],
+    ) -> None:
         self._hass = hass
         self._on_report = on_report
+        # Other Matter servers' connected clients, read when Home Assistant's
+        # own has no live node for the lamp.
+        self._other_clients = other_clients
         self._client = None
         self.node_id: int | None = None
         self.mac: str | None = None
@@ -171,26 +193,31 @@ class MatterLink:
 
     def refresh(self, ip: str | None, mac: str | None) -> bool:
         """Link (or keep, or drop) the lamp's node; True when that changed."""
-        client = matter_client(self._hass)
         found = None
-        if client is not None:
+        for client in [matter_client(self._hass), *self._other_clients()]:
+            if client is None:
+                continue
             try:
                 nodes = client.get_nodes()
             except Exception as err:  # noqa: BLE001 -- the client is not ours
                 _LOGGER.debug("Matter nodes unavailable: %s", err)
                 nodes = []
             for node in nodes:
+                if not node_available(node):
+                    continue
                 node_mac = node_matches(_attributes(node), ip, mac)
                 if node_mac is not None:
-                    found = (node, node_mac)
+                    found = (client, node, node_mac)
                     break
+            if found is not None:
+                break
         if found is None:
             if not self.linked:
                 return False
             _LOGGER.info("Matter link released (node %s)", self.node_id)
             self.release()
             return True
-        node, node_mac = found
+        client, node, node_mac = found
         if client is self._client and node.node_id == self.node_id:
             return False
         self.release()

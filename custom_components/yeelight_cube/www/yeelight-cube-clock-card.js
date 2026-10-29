@@ -81,7 +81,7 @@ import {
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import {
-  firmwareLampFrame,
+  firmwareClockFrame,
   deviceOrientation,
   isVerticalMount,
   viewerFrame,
@@ -1135,7 +1135,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       title: s.name,
       name: s.name,
       colorData: viewerFrame(
-        firmwareLampFrame(
+        firmwareClockFrame(
           renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
           this._attrs(),
         ),

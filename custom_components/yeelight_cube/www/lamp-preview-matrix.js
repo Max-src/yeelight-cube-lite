@@ -14,7 +14,7 @@ import {
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import { matrixFrame } from "./matrix-frame.js";
 import {
-  firmwareLampFrame,
+  firmwareClockFrame,
   deviceOrientation,
   isVerticalMount,
   matrixView,
@@ -164,8 +164,8 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       this._frozenBackgroundPhase ??
       ((now - this._clockAnimStartedAt) / 1000) * rate;
     const { fontMap, metrics } = this._getNativeClockFont();
-    // As the lamp draws it: its direction setting may turn it (Matter).
-    const pix = firmwareLampFrame(
+    // As the lamp draws it: its mount profile may turn it (firmwareClockFrame).
+    const pix = firmwareClockFrame(
       renderClockFrame(st.attributes, fontMap, metrics, phase),
       st.attributes,
     );
@@ -226,17 +226,14 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       this._nativeFrozenPhase ??
       ((now - this._nativeAnimStartedAt) / 1000) * rate;
     // Lamp order (row 0 = physical bottom), like every frame painted here:
-    // _paintDots turns it the way the viewer sees it, once. As the lamp
-    // draws it: its direction setting may turn it (Matter).
-    const raw = firmwareLampFrame(
-      renderNativeEffectOriented(
-        effect,
-        phase,
-        dir,
-        st.attributes.native_effect_color || null,
-        st.attributes.native_effect_color_mode || "normal",
-      ),
-      st.attributes,
+    // _paintDots turns it the way the viewer sees it, once. The lamp's
+    // mount profile does not turn it (the sent direction is compensated).
+    const raw = renderNativeEffectOriented(
+      effect,
+      phase,
+      dir,
+      st.attributes.native_effect_color || null,
+      st.attributes.native_effect_color_mode || "normal",
     );
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);

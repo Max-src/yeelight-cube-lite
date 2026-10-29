@@ -2,10 +2,35 @@ import ipaddress
 import logging
 import voluptuous as vol # type: ignore
 from homeassistant import config_entries # type: ignore
+from homeassistant.core import callback # type: ignore
+from homeassistant.helpers.selector import ( # type: ignore
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo # type: ignore
-from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID, CONF_MATTER_MAC, LAN_PORT, PROBE_TIMEOUT
-from .cube_matrix import check_tcp
+from .const import (
+    DOMAIN,
+    CONF_IP,
+    CONF_DEVICE_ID,
+    CONF_MATTER_MAC,
+    CONF_MOUNT_PROFILE,
+    CONF_MOUNT_PROFILE_SOURCE,
+    LAN_PORT,
+    PROBE_TIMEOUT,
+)
+from .cube_matrix import check_tcp, send_once
 from .discovery import is_cube_device, parse_service_name, normalize_device_id
+from .mount_profile import (
+    FIRE_BASE_PROFILES,
+    FIRE_CHECK_PARAMS,
+    FIRMWARE_DEFAULT_PROFILE,
+    PROFILE_DEGREES,
+    PROFILES,
+    SOURCE_USER,
+    valid_profile,
+)
+from .runtime_data import lamp_of
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +64,12 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """The lamp's options: how it is mounted (its saved mount profile)."""
+        return YeelightCubeOptionsFlow()
+
     _discovered_ip: str = ""
     _discovered_name: str = ""
     _discovered_device_id: str = ""
@@ -62,9 +93,8 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not await _lamp_answers(ip_address):
                     errors["base"] = "cannot_connect"
                 else:
-                    return self.async_create_entry(
-                        title=f"Yeelight Cube ({ip_address})",
-                        data={CONF_IP: ip_address}
+                    return await self._async_add_lamp(
+                        f"Yeelight Cube ({ip_address})", {CONF_IP: ip_address}
                     )
 
         return self.async_show_form(
@@ -192,7 +222,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data = {CONF_IP: self._discovered_ip}
                 if self._discovered_mac:
                     data[CONF_MATTER_MAC] = self._discovered_mac
-                return self.async_create_entry(title=f"Yeelight Cube ({self._discovered_ip})", data=data)
+                return await self._async_add_lamp(f"Yeelight Cube ({self._discovered_ip})", data)
             errors["base"] = "lan_control_needed"
         return self.async_show_form(
             step_id="matter_confirm",
@@ -206,10 +236,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {CONF_IP: self._discovered_ip}
             if self._discovered_device_id:
                 data[CONF_DEVICE_ID] = self._discovered_device_id
-            return self.async_create_entry(
-                title=f"Yeelight Cube ({self._discovered_ip})",
-                data=data,
-            )
+            return await self._async_add_lamp(f"Yeelight Cube ({self._discovered_ip})", data)
 
         self._set_confirm_only()
         return self.async_show_form(
@@ -218,6 +245,67 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "name": self._discovered_name,
                 "host": self._discovered_ip,
             }
+        )
+
+    async def _async_add_lamp(self, title: str, data: dict):
+        """The lamp answers: ask how it is mounted (its saved orientation)
+        before it is added."""
+        self._new_title, self._new_data = title, data
+        return await self.async_step_orientation()
+
+    async def async_step_orientation(self, user_input=None):
+        """How is the lamp mounted? The orientation saved in the Yeelight app
+        (it turns the lamp's effects; nothing reads it over LAN), a lamp never
+        set (the firmware's 270°), a check on the lamp, or read over Matter."""
+        errors = {}
+        if user_input is not None:
+            choice = user_input[CONF_MOUNT_PROFILE]
+            if choice == MOUNT_CHECK:
+                try:
+                    await send_once(
+                        self._new_data[CONF_IP], LAN_PORT, "set_fx_effect",
+                        list(FIRE_CHECK_PARAMS), PROBE_TIMEOUT,
+                    )
+                except OSError:
+                    errors["base"] = "mount_check_failed"
+                else:
+                    return await self.async_step_orientation_check()
+            elif choice == MOUNT_FROM_MATTER:
+                return self.async_create_entry(title=self._new_title, data=self._new_data)
+            else:
+                profile = FIRMWARE_DEFAULT_PROFILE if choice == MOUNT_NEVER_SET else valid_profile(choice)
+                return self._create_with_profile(profile)
+        return self.async_show_form(
+            step_id="orientation",
+            data_schema=vol.Schema({vol.Required(CONF_MOUNT_PROFILE): SelectSelector(SelectSelectorConfig(
+                options=[*(str(profile) for profile in PROFILES), MOUNT_NEVER_SET, MOUNT_CHECK, MOUNT_FROM_MATTER],
+                translation_key="initial_orientation",
+                mode=SelectSelectorMode.LIST,
+            ))}),
+            errors=errors,
+        )
+
+    async def async_step_orientation_check(self, user_input=None):
+        """The lamp plays Fire: where is its bright flame base?"""
+        if user_input is not None:
+            base = user_input[FLAME_BASE]
+            if base in FIRE_BASE_PROFILES:
+                return self._create_with_profile(FIRE_BASE_PROFILES[base])
+            return await self.async_step_orientation()
+        return self.async_show_form(
+            step_id="orientation_check",
+            data_schema=vol.Schema({vol.Required(FLAME_BASE): SelectSelector(SelectSelectorConfig(
+                options=[*FIRE_BASE_PROFILES, FLAME_UNCLEAR],
+                translation_key="flame_base",
+                mode=SelectSelectorMode.LIST,
+            ))}),
+        )
+
+    def _create_with_profile(self, profile: int):
+        return self.async_create_entry(
+            title=self._new_title,
+            data=self._new_data,
+            options={CONF_MOUNT_PROFILE: profile, CONF_MOUNT_PROFILE_SOURCE: SOURCE_USER},
         )
 
     async def async_step_reconfigure(self, user_input=None):
@@ -262,3 +350,103 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return vol.Schema({
             vol.Required(CONF_IP): str,
         })
+
+
+# The orientation step's answers: "check it on the lamp", "never set in the
+# app" (the firmware's default), "read it over Matter" (setup only); and the
+# Fire check's "I could not tell".
+MOUNT_CHECK = "check"
+MOUNT_NEVER_SET = "never"
+MOUNT_FROM_MATTER = "matter"
+FLAME_BASE = "flame_base"
+FLAME_UNCLEAR = "unclear"
+
+
+class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
+    """How is the lamp mounted? The orientation saved on the lamp (the
+    Yeelight app's orientation page: 0°, 90°, 180°, 270°) turns its built-in
+    effects, and nothing reads it over LAN: the user says which it is, or
+    checks it on the lamp (Fire at direction Up, mount_profile.py)."""
+
+    _checking = False
+
+    async def async_step_init(self, user_input=None):
+        errors = {}
+        lamp = lamp_of(self.config_entry)
+        if user_input is not None:
+            choice = user_input[CONF_MOUNT_PROFILE]
+            if choice == MOUNT_CHECK:
+                if lamp is None:
+                    errors["base"] = "lamp_not_loaded"
+                elif not await lamp.async_show_mount_check():
+                    errors["base"] = "mount_check_failed"
+                else:
+                    self._checking = True
+                    return await self.async_step_mount_check()
+            elif choice == MOUNT_NEVER_SET:
+                return await self._async_save(lamp, FIRMWARE_DEFAULT_PROFILE)
+            elif (profile := valid_profile(choice)) is not None:
+                return await self._async_save(lamp, profile)
+        current, source = lamp.mount_profile if lamp is not None else (
+            valid_profile(self.config_entry.options.get(CONF_MOUNT_PROFILE)), SOURCE_USER
+        )
+        options = [str(profile) for profile in PROFILES] + [MOUNT_NEVER_SET, MOUNT_CHECK]
+        key = vol.Required(CONF_MOUNT_PROFILE)
+        if current is not None:
+            key = vol.Required(CONF_MOUNT_PROFILE, default=str(current))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({key: SelectSelector(SelectSelectorConfig(
+                options=options, translation_key="mount_profile", mode=SelectSelectorMode.LIST,
+            ))}),
+            errors=errors,
+            description_placeholders={
+                "current": (
+                    f"not set ({PROFILE_DEGREES[FIRMWARE_DEFAULT_PROFILE]}° in use, a lamp never saved)"
+                    if current is None else f"{PROFILE_DEGREES[current]}°"
+                ),
+                "source": source if current is not None else "unknown",
+            },
+        )
+
+    async def async_step_mount_check(self, user_input=None):
+        """The lamp plays Fire: where is its bright flame base?"""
+        lamp = lamp_of(self.config_entry)
+        if user_input is not None:
+            base = user_input[FLAME_BASE]
+            if base in FIRE_BASE_PROFILES:
+                self._checking = False
+                return await self._async_save(lamp, FIRE_BASE_PROFILES[base], after_check=True)
+            # Unclear: the content comes back, and the choice is asked again.
+            self._checking = False
+            if lamp is not None:
+                await lamp._async_end_mount_check()
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="mount_check",
+            data_schema=vol.Schema({vol.Required(FLAME_BASE): SelectSelector(SelectSelectorConfig(
+                options=[*FIRE_BASE_PROFILES, FLAME_UNCLEAR],
+                translation_key="flame_base",
+                mode=SelectSelectorMode.LIST,
+            ))}),
+        )
+
+    async def _async_save(self, lamp, profile: int, *, after_check: bool = False):
+        """Keep the answer: through the lamp when it is loaded (what it shows
+        follows), else in the options alone."""
+        if lamp is not None:
+            await lamp.async_set_user_mount_profile(profile, after_check=after_check)
+            return self.async_create_entry(data=dict(self.config_entry.options))
+        return self.async_create_entry(data={
+            **self.config_entry.options,
+            CONF_MOUNT_PROFILE: profile,
+            CONF_MOUNT_PROFILE_SOURCE: SOURCE_USER,
+        })
+
+    @callback
+    def async_remove(self) -> None:
+        """Closed during the Fire check: the lamp's content comes back."""
+        lamp = lamp_of(self.config_entry) if self._checking else None
+        self._checking = False
+        if lamp is not None:
+            self.hass.async_create_task(lamp._async_end_mount_check())

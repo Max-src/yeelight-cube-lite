@@ -12,7 +12,7 @@ import {
 } from "./clock-preview-utils.js";
 import {
   MATRIX_SIZE,
-  firmwareLampFrame,
+  firmwareClockFrame,
   isVerticalMount,
   viewerFrame,
 } from "./matrix-view.js";
@@ -237,7 +237,7 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     // the viewer sees the lamp, top row first (matrix-view.js).
     const frame = viewerFrame(
       // As the lamp draws it: its direction setting may turn it (Matter).
-      firmwareLampFrame(renderClockFrame(attrs, fontMap, metrics, phase), this._attrs()),
+      firmwareClockFrame(renderClockFrame(attrs, fontMap, metrics, phase), this._attrs()),
       this._previewOrientation(),
     );
     const brightnessScale = isCurrent

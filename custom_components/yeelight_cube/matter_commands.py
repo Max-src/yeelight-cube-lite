@@ -27,6 +27,7 @@ from .matter_link import (
     MatterLink,
     _attributes,
     _vendor,
+    node_available,
     node_matches,
 )
 
@@ -70,6 +71,24 @@ def _dev_server(hass):
     except ImportError:
         return None
     return dev_server(hass)
+
+
+def dev_clients(hass) -> list:
+    """The development server's client while it is connected (none without
+    its module), for the link to read the lamp through it too."""
+    dev = _dev_server(hass)
+    return [dev.client] if dev is not None and dev.client is not None else []
+
+
+def has_dev_server(hass) -> bool:
+    """Whether a development server is set up (its module is present)."""
+    return _dev_server(hass) is not None
+
+
+async def async_connect_dev_server(hass) -> bool:
+    """Connect the development server (when present); True once connected."""
+    dev = _dev_server(hass)
+    return dev is not None and await dev.async_client() is not None
 
 
 async def async_close_dev_connections(hass) -> None:
@@ -124,7 +143,10 @@ class MatterCommands:
                     self._checked[key] = delivers
             if self._checked.get(key):
                 self.reason = None
-                return "matter", link.client, link.node_id
+                # The link may read the lamp through the development server.
+                dev = self._dev(self._hass)
+                backend = "dev" if dev is not None and link.client is dev.client else "matter"
+                return backend, link.client, link.node_id
             reasons.append(
                 "Home Assistant's Matter server does not know the Yeelight clusters"
                 if key in self._checked
@@ -160,6 +182,8 @@ class MatterCommands:
         except Exception:  # noqa: BLE001
             return None
         for node in nodes:
+            if not node_available(node):
+                continue  # a node left behind by a factory reset
             if node_matches(_attributes(node), self._ip(), mac) is not None:
                 return node.node_id
         return None

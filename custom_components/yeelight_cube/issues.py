@@ -15,21 +15,33 @@ UNREACHABLE_AFTER = 30 * 60
 # UDP failing this long (s) while the lamp answers over TCP: the network
 # blocks it (a failure is only retried after cube_matrix.UDP_RETRY_AFTER).
 UDP_BLOCKED_AFTER = 15 * 60
+# A lamp whose orientation is still unknown after this long (s) is reported:
+# time for a Matter link to read it first.
+ORIENTATION_UNKNOWN_AFTER = 10 * 60
 # The issues, by translation key (strings.json "issues").
-ISSUES = ("lamp_unreachable", "udp_blocked", "lan_control_off")
+ISSUES = ("lamp_unreachable", "udp_blocked", "lan_control_off", "orientation_unknown")
 
 
 def lamp_problems(
-    state: dict, available: bool, since_added: float, lan_control_off: bool = False
+    state: dict,
+    available: bool,
+    since_added: float,
+    lan_control_off: bool = False,
+    orientation_unknown: bool = False,
 ) -> set[str]:
     """The issues a lamp has, from its connection state
     (cube_matrix.connection_state) and availability. ``since_added``: how
     long its light has been running (s), for a lamp that has not answered a
     command since. ``lan_control_off``: the lamp reports LAN Control off over
-    Matter (light_matter.py), which only the Yeelight app can turn back on."""
+    Matter (light_matter.py), which only the Yeelight app can turn back on.
+    ``orientation_unknown``: nothing says which orientation the lamp saved
+    (light_mount_profile.py): its effects may move the wrong way until the
+    user says it in Configure, or Matter reads it."""
     problems = set()
     if lan_control_off:
         problems.add("lan_control_off")
+    if orientation_unknown and since_added >= ORIENTATION_UNKNOWN_AFTER:
+        problems.add("orientation_unknown")
     since_success = state.get("since_success")
     if not available and (since_added if since_success is None else since_success) >= UNREACHABLE_AFTER:
         problems.add("lamp_unreachable")

@@ -437,6 +437,13 @@ CONF_REMOTE_PLAYLIST_INSTALLED = "remote_playlist_installed"
 # Config entry data: the MAC address of the lamp's Matter node, remembered once
 # linked so the link survives an IP change (matter_link.py).
 CONF_MATTER_MAC = "matter_mac"
+# Config entry options: the lamp's saved mount profile 0-3 (mount_profile.py),
+# who set it ("user": the options' choice or the Fire check; "matter": the
+# last value Matter confirmed), and the Matter node whose rotationAngle is
+# trusted (written by the integration, or changed in the app, since linked).
+CONF_MOUNT_PROFILE = "mount_profile"
+CONF_MOUNT_PROFILE_SOURCE = "mount_profile_source"
+CONF_MOUNT_PROFILE_NODE = "mount_profile_node"
 # Physical mount -> matrix/text/pixel flip. right/down keep content upright;
 # left/up are 180 deg from them (verified against hardware for custom pixel art).
 DEVICE_ORIENTATION_TO_FLIP = {

@@ -53,12 +53,14 @@ from .pixel_art_storage import expand_pixels
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin, hardware_brightness_for
 from .issues import lamp_problems, report_problems
-from .light_native import NativeModesMixin, mount_effect_direction
+from .light_native import NativeModesMixin, lamp_direction, mount_effect_direction
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
 from .light_matter import MatterMixin
+from .light_mount_profile import MountProfileMixin
+from .mount_profile import SOURCE_UNKNOWN
 from .light_brightness import BrightnessMixin
 from .light_display import ACTIVATION_TIMING, DisplayMixin
 
@@ -164,7 +166,9 @@ def cleanup_module_state(ip: str) -> None:
 #                        (_RESTORED_ATTRIBUTES) and the save/restore_state snapshot.
 #   light_rotation.py   (RotationMixin)       — effect / clock rotation loop,
 #                        favourites and their persistence.
-#   light_services*.py                         — entity-facing actions
+#   light_mount_profile.py (MountProfileMixin) — the lamp's saved mount
+#                        profile (options, Matter), the Fire check.
+#   light_services*.py                        — entity-facing actions
 #                        (registered by async_setup_light_services, re-exported
 #                        from the bottom of this file).
 #
@@ -182,6 +186,7 @@ class YeelightCubeLight(
     StateRestoreMixin,
     RotationMixin,
     MatterMixin,
+    MountProfileMixin,
     LightEntity,
     RestoreEntity,
 ):
@@ -201,6 +206,7 @@ class YeelightCubeLight(
         "rotation_intervals",
         "effect_rotation",
         "matter",
+        "mount_profile",
         "button_effects",
         "last_hardware_brightness",
         "calib_gamma_r", "calib_gamma_g", "calib_gamma_b",
@@ -596,9 +602,10 @@ class YeelightCubeLight(
         There is no single firmware command for this, so we translate it to the
         mechanisms that actually work and apply immediately for the current mode:
           - matrix / text / pixel art: normal vs flipped (180 deg) pixel flip
-          - native effects: the effect's own `direction` field (if supported)
-          - clock and native effects, over Matter: the lamp's own direction
-            setting, which its firmware applies when they start
+          - native effects: the effect's own `direction` field (if supported),
+            compensated for the lamp's saved mount profile (light_native)
+          - the clock, over Matter: the lamp's own direction setting, which
+            its firmware applies when the clock starts
             (light_matter._sync_lamp_rotation); without Matter the clock
             stays as it is
         The 90 deg visual rotation for up/down is handled by the preview card.
@@ -624,7 +631,7 @@ class YeelightCubeLight(
         if self._mode == MODE_NATIVE_EFFECT:
             spec = ALL_NATIVE_EFFECTS.get(self._native_effect, {})
             directions = spec.get("directions")
-            desired = mount_effect_direction(orientation, self.lamp_turns_content)
+            desired = mount_effect_direction(orientation)
             if directions and desired in directions:
                 self._native_effect_direction = desired
                 if self._native_effect_direction_select_entity:
@@ -805,6 +812,9 @@ class YeelightCubeLight(
             # The lamp's Matter node and what it reports (light_matter.py);
             # None without one.
             "matter": self._matter_summary(),
+            # The lamp's saved mount profile (light_mount_profile.py): 0-3 or
+            # None, and its source ("matter", "user", "unknown").
+            "mount_profile": self._mount_profile_summary(),
             "rgb_color": self._rgb_color,
             "full_panel": self._full_panel,
             # Color effects (used by lamp preview card)
@@ -1374,6 +1384,7 @@ class YeelightCubeLight(
             self._cube_matrix.connection_state(), self.available,
             time.monotonic() - self._added_at,
             lan_control_off=self.matter_lan_control_off,
+            orientation_unknown=self.mount_profile[1] == SOURCE_UNKNOWN,
         )
         self._reported_problems = report_problems(
             self.hass, self, problems, self._reported_problems
@@ -1458,9 +1469,9 @@ class YeelightCubeLight(
                 direction = self._native_effect_direction
                 if direction not in directions:
                     direction = directions[0]
-                config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
-                    direction
-                ]
+                config["direction"] = lamp_direction(
+                    self, NATIVE_EFFECT_DIRECTION_VALUES[direction]
+                )
             return {
                 "effect_id": spec["effect_id"],
                 "custom_id": 0,

@@ -41,24 +41,22 @@ export const isUpsideDownMount = (orientation) =>
 export const deviceOrientation = (attributes) =>
   attributes?.device_orientation || DEFAULT_ORIENTATION;
 
-// The lamp's own direction setting (the Yeelight app's), reported over
-// Matter as the light's `matter.rotation`: its arrows by value.
-const LAMP_ROTATIONS = ["left", "up", "right", "down"];
-
 /**
- * Whether the lamp's firmware draws its own content (clock, native effects)
- * turned a half turn: its own direction setting (followed over Matter) is an
- * upside-down one (Left / Up). Unknown without Matter: drawn as by default.
- * Mirrors light_matter.lamp_turns_content.
+ * Whether the lamp's firmware draws its clock turned a half turn: the mount
+ * profile it runs (the Yeelight app's orientation, the light's
+ * `mount_profile.in_use`; the firmware default 3 when none is known) is 0
+ * or 1. Native effects never are (the integration compensates their
+ * direction). Mirrors light_mount_profile.lamp_turns_clock.
  */
-export const lampTurnsContent = (attributes) =>
-  isUpsideDownMount(LAMP_ROTATIONS[attributes?.matter?.rotation]);
+export const lampTurnsClock = (attributes) => {
+  const profile = attributes?.mount_profile;
+  return [0, 1].includes(profile?.in_use ?? profile?.profile);
+};
 
-/** A frame of firmware content (renderClockFrame, renderNativeEffectOriented:
- * lamp order) as the lamp draws it, turned with its direction setting
- * (lampTurnsContent). */
-export const firmwareLampFrame = (frame, attributes) =>
-  lampTurnsContent(attributes) ? [...frame].reverse() : frame;
+/** A frame of the firmware clock (renderClockFrame: lamp order) as the lamp
+ * draws it, turned with its mount profile (lampTurnsClock). */
+export const firmwareClockFrame = (frame, attributes) =>
+  lampTurnsClock(attributes) ? [...frame].reverse() : frame;
 
 /** Reverse the row order of a row-major frame (lamp order <-> top-first). */
 export function flipMatrixVertical(pixels, cols = MATRIX_COLS, rows = MATRIX_ROWS) {

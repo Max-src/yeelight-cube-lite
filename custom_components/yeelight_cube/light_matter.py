@@ -21,6 +21,7 @@ from .const import (
     CONF_REMOTE_SAVED_PLAYLIST,
     CONF_REMOTE_PLAYLIST_INSTALLED,
     CONF_MATTER_MAC,
+    CONF_MOUNT_PROFILE_NODE,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     MUSIC_FLOW_EFFECT_IDS,
@@ -33,10 +34,17 @@ from .const import (
     clock_style_default_color,
 )
 from .builtin_pixel_art import app_pixel_art_argb
-from .matter_commands import EFFECTS_CLUSTER, MatterCommands, MatterCommandsUnavailable
+from .matter_commands import (
+    EFFECTS_CLUSTER,
+    MatterCommands,
+    MatterCommandsUnavailable,
+    async_connect_dev_server,
+    dev_clients,
+    has_dev_server,
+)
 from .matter_discovery import async_offer_matter_lamps
 from .matter_link import ROTATION, ROTATION_ORIENTATIONS, MatterLink
-from .matrix_view import is_upside_down_mount
+from .mount_profile import SOURCE_MATTER, saved_on_lamp, valid_profile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,11 +164,22 @@ class MatterMixin:
         self._lamp_power_command_at = -MATTER_ECHO_WINDOW
         self._expected_lamp_music: bool | None = None
         self._lamp_music_command_at = -MATTER_ECHO_WINDOW
+        # The lamp's rotationAngle as last seen (read when linked, reported,
+        # or written here): a report of the same value is no change.
+        self._lamp_rotation_seen = None
+        # The write that confirms the lamp's profile on a node not confirmed
+        # yet (_check_mount_profile), and the (node, server) it was tried with.
+        self._mount_profile_write = None
+        self._mount_profile_tried: tuple | None = None
+        # Connecting the other Matter servers (_connect_other_matter_servers).
+        self._matter_connect = None
 
     # ── The link ────────────────────────────────────────────────────────
     def _start_matter_link(self) -> None:
         """From async_added_to_hass: follow the lamp's Matter node, if any."""
-        self._matter = MatterLink(self.hass, self._on_matter_report)
+        self._matter = MatterLink(
+            self.hass, self._on_matter_report, lambda: dev_clients(self.hass)
+        )
         self.async_on_remove(self._matter.release)
         self._matter_commands = MatterCommands(self.hass, self._matter, lambda: self._ip)
         self._refresh_matter_link()
@@ -176,8 +195,11 @@ class MatterMixin:
         entry = self._config_entry
         remembered = entry.data.get(CONF_MATTER_MAC) if entry is not None else None
         changed = self._matter.refresh(self._ip, remembered)
+        if not self._matter.linked:
+            self._connect_other_matter_servers()
         self._check_matter_commands()
         self._sync_remote_playlist()
+        self._check_mount_profile()
         if not changed:
             return
         if entry is not None and self._matter.mac and self._matter.mac != remembered:
@@ -187,6 +209,28 @@ class MatterMixin:
         if self.hass is not None:
             self.async_write_ha_state()
         self._matter_status_changed()
+
+    def _connect_other_matter_servers(self) -> None:
+        """Not linked: connect the other Matter servers (the development
+        one, when present), then look for the lamp's node on them too."""
+        if (
+            self._matter_connect is not None
+            or not has_dev_server(self.hass)
+            or dev_clients(self.hass)
+        ):
+            return
+
+        async def connect() -> None:
+            try:
+                connected = await async_connect_dev_server(self.hass)
+            finally:
+                self._matter_connect = None
+            if connected:
+                self._refresh_matter_link()
+
+        self._matter_connect = self._create_tracked_task(
+            connect(), name=f"yeelight_cube_matter_connect_{self._ip}"
+        )
 
     @property
     def matter_link_state(self) -> str:
@@ -238,6 +282,8 @@ class MatterMixin:
             if (channel.backend, channel.reason) != before and self.hass is not None:
                 self.async_write_ha_state()
                 self._matter_status_changed()
+                # A server now delivers the write that confirms the profile.
+                self._check_mount_profile()
 
         self._matter_commands_check = self._create_tracked_task(
             check(), name=f"yeelight_cube_matter_commands_{self._ip}"
@@ -348,7 +394,11 @@ class MatterMixin:
     def _on_matter_report(self, name: str, value, initial: bool) -> None:
         """A value the lamp reports (matter_link.REPORTED). The values read
         when the link is made are its state then: published, not applied."""
-        if not initial:
+        if name == "rotation":
+            seen, self._lamp_rotation_seen = self._lamp_rotation_seen, value
+            if not initial and value != seen:
+                self._lamp_turned(value)
+        elif not initial:
             if name == "effect" and isinstance(value, int):
                 self._effect_reported_at = time.monotonic()
                 if self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
@@ -418,8 +468,6 @@ class MatterMixin:
             elif name == "level" and isinstance(value, int):
                 if not self._matter_echo():
                     self._lamp_dimmed(value)
-            elif name == "rotation":  # never written here: no echo
-                self._lamp_turned(value)
             elif name == "lan_control":
                 self._async_check_problems()
         if self.hass is not None:
@@ -1046,28 +1094,23 @@ class MatterMixin:
         self._last_hardware_brightness = None
         self._followed_lamp()
 
-    @property
-    def lamp_turns_content(self) -> bool:
-        """Whether the lamp's firmware draws its own content (clock, native
-        effects) turned a half turn: its own direction setting (the Yeelight
-        app's, followed over Matter) is an upside-down one (Left / Up),
-        verified live for the clock on all four and for an effect."""
-        rotation = self._matter.values.get("rotation") if self._matter and self._matter.linked else None
-        return is_upside_down_mount(ROTATION_ORIENTATIONS.get(rotation))
-
-    async def _sync_lamp_rotation(self, orientation: str) -> bool:
-        """Set the lamp's own direction setting to the Device Orientation
-        over Matter (matter_commands.py), so its firmware turns the clock and
-        native effects for the mount, as the Yeelight app does. True when it
-        was written now (the lamp applies it to the next clock or effect it
-        starts); False when it already matched or no server delivers it (as
-        before: the firmware's content is not turned)."""
+    async def _sync_lamp_rotation(self, orientation: str, *, force: bool = False) -> bool:
+        """Set the lamp's own direction setting (its mount profile,
+        mount_profile.py) to the Device Orientation over Matter
+        (matter_commands.py), as the Yeelight app's orientation page does:
+        its firmware turns the clock for the mount (native effects are
+        compensated for any profile, light_native). True when it was written
+        now (the lamp applies it to the next clock or effect it starts);
+        False when it already matched (unless ``force``: a value read on a
+        node not confirmed yet may not be the lamp's) or no server delivers
+        it (as before). A write confirms the profile on this node."""
         rotation = ORIENTATION_ROTATIONS.get(orientation)
         link, channel = self._matter, self._matter_commands
         if rotation is None or channel is None or link is None or not link.linked:
             return False
-        if link.values.get("rotation") == rotation:
+        if link.values.get("rotation") == rotation and not force:
             return False
+        node = link.node_id
         try:
             await asyncio.wait_for(channel.async_write(ROTATION, rotation), ROTATION_WRITE_TIMEOUT)
         except MatterCommandsUnavailable:
@@ -1076,15 +1119,90 @@ class MatterMixin:
             _LOGGER.warning("[MATTER] [%s] Could not set the lamp's direction: %s", self._ip, err)
             return False
         _LOGGER.info("[MATTER] [%s] Lamp direction set to %s", self._ip, orientation)
-        # As the lamp will report it: previews turn now.
+        # As the lamp will report it: previews turn now, its echo is no change.
         link.values["rotation"] = rotation
+        self._lamp_rotation_seen = rotation
+        if link.node_id == node:
+            self._store_mount_profile(rotation, SOURCE_MATTER, node)
         return True
 
+    def _mount_profile_confirmed(self) -> bool:
+        """Whether the linked node's rotationAngle is the lamp's profile: it
+        was written here, or changed in the Yeelight app, since this node was
+        linked. A lamp re-added after a factory reset is a new node (it reads
+        0 while it runs 3), so it is not."""
+        link, entry = self._matter, self._config_entry
+        return bool(
+            link is not None and link.linked and entry is not None
+            and entry.options.get(CONF_MOUNT_PROFILE_NODE) == link.node_id
+        )
+
+    @callback
+    def _check_mount_profile(self) -> None:
+        """A node not confirmed yet. A value only a save gives (set in the
+        Yeelight app, mount_profile.saved_on_lamp) is the lamp's: kept as it
+        is, never overwritten. The Wi-Fi chip's default (0 with no saved
+        topology: a lamp never saved, or reset, running 3): the Device
+        Orientation is written once (per node and server that delivers
+        commands), then trusted."""
+        link = self._matter
+        if link is None or not link.linked or self._mount_profile_confirmed():
+            return
+        rotation = link.values.get("rotation")
+        if saved_on_lamp(rotation, link.values.get("topology")):
+            _LOGGER.info(
+                "[MATTER] [%s] Lamp direction %s saved on the lamp: followed",
+                self._ip, rotation,
+            )
+            if self._store_mount_profile(rotation, SOURCE_MATTER, link.node_id):
+                self._create_tracked_task(
+                    self._async_reapply_for_mount_profile(lamp_changed=False),
+                    name=f"yeelight_cube_mount_profile_{self._ip}",
+                )
+            return
+        if self._mount_profile_write is not None:
+            return
+        channel = self._matter_commands
+        tried = (link.node_id, channel.backend if channel is not None else None)
+        if tried == self._mount_profile_tried:
+            return
+        self._mount_profile_tried = tried
+        self._mount_profile_write = self._create_tracked_task(
+            self._async_confirm_mount_profile(),
+            name=f"yeelight_cube_mount_profile_{self._ip}",
+        )
+
+    async def _async_confirm_mount_profile(self) -> None:
+        try:
+            if not await self._sync_lamp_rotation(self._device_orientation, force=True):
+                _LOGGER.debug(
+                    "[MATTER] [%s] Lamp direction not confirmed (no server delivers "
+                    "the write): its Matter value is not used", self._ip,
+                )
+                return
+            _LOGGER.info(
+                "[MATTER] [%s] Lamp direction confirmed on node %s",
+                self._ip, self._matter.node_id if self._matter else None,
+            )
+            await self._async_reapply_for_mount_profile(lamp_changed=True)
+        finally:
+            self._mount_profile_write = None
+
     def _lamp_turned(self, rotation) -> None:
-        """The Yeelight app's direction changed: the same Device Orientation
+        """The Yeelight app's direction changed: the lamp saved it (the
+        app's Save writes the lamp and this attribute alike), so this node's
+        value is its profile from now on; and the same Device Orientation
         here (its arrows are the app's)."""
+        link = self._matter
+        if valid_profile(rotation) is not None and link is not None and link.linked:
+            self._store_mount_profile(rotation, SOURCE_MATTER, link.node_id)
         orientation = ROTATION_ORIENTATIONS.get(rotation)
         if orientation is None or orientation == self._device_orientation:
+            # Only the profile changed: effects are compensated anew.
+            self._create_tracked_task(
+                self._async_reapply_for_mount_profile(lamp_changed=False),
+                name=f"yeelight_cube_mount_profile_{self._ip}",
+            )
             return
         _LOGGER.info("[MATTER] [%s] Direction set to %s in the Yeelight app", self._ip, orientation)
         self._create_tracked_task(

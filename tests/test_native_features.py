@@ -26,14 +26,17 @@ NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
 # its own: the activations and the helpers they call. live_effect_changes is a
 # module function; the others are methods (NATIVE_ACTIVATION_METHODS).
 NATIVE_ACTIVATION = frozenset({
-    "mount_effect_direction",
+    "mount_effect_direction", "lamp_direction",
     "_activate_native_effect", "_native_effect_params",
     "_activate_native_clock", "_native_clock_params",
     "_send_native", "_update_running_effect", "_native_renderer_shown",
     "_native_brightness_due", "live_effect_changes",
 })
-NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {"live_effect_changes", "mount_effect_direction"}
+NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {
+    "live_effect_changes", "mount_effect_direction", "lamp_direction",
+}
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
+MOUNT_PROFILE = runpy.run_path(ROOT / "mount_profile.py")
 # Shared module-level names every loaded helper may reference.
 def import_pure_module(name: str) -> types.ModuleType:
     """One of the integration's modules that imports no Home Assistant, with
@@ -73,6 +76,7 @@ _DEFAULT_NAMESPACE = {
         "MODE_CLOCK", "MODE_NATIVE_EFFECT", "FIRMWARE_MODES", "ROTATION_KIND_MODES",
     )},
     **{name: COLOR_UTILS[name] for name in ("rgb_to_argb", "argb_to_rgb")},
+    "compensate_direction": MOUNT_PROFILE["compensate_direction"],
     **ERRORS,
 }
 # The light entity is split across light.py and its light_*.py mixins. Join them
@@ -2752,7 +2756,7 @@ class NativeFeatureTests(unittest.TestCase):
         activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
         self.assertIn("resolve_clock_mixer_direction(", activate)
         self.assertIn("self._native_effect_direction", activate)
-        self.assertIn('effect_config["direction"] = effect_direction_value(', activate)
+        self.assertIn('effect_config["direction"] = lamp_direction(self, effect_direction_value(', activate)
 
         # The fx-explorer reflects a clock command's direction byte so the
         # preview tracks whatever direction was applied on the lamp.

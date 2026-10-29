@@ -62,3 +62,53 @@ class OutageLogLevelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SendOnceTests(unittest.IsolatedAsyncioTestCase):
+    """One LAN command to a lamp not set up yet (the setup's Fire check)."""
+
+    def setUp(self):
+        import json
+
+        self.send_once = _load_standalone_functions(
+            CUBE_MATRIX_SOURCE,
+            {"send_once"},
+            {"asyncio": asyncio, "socket": socket, "json": json, "_RST_LINGER": struct.pack("ii", 1, 0)},
+        )["send_once"]
+
+    async def lamp(self, *replies):
+        """A lamp that answers each command with ``replies`` (raw lines)."""
+        received = []
+
+        async def handle(reader, writer):
+            received.append(await reader.readline())
+            for reply in replies:
+                writer.write(reply)
+            await writer.drain()
+            writer.close()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        self.addAsyncCleanup(self.close, server)
+        return server.sockets[0].getsockname()[1], received
+
+    @staticmethod
+    async def close(server):
+        server.close()
+        await server.wait_closed()
+
+    async def test_the_answer_comes_after_a_notification(self):
+        port, received = await self.lamp(
+            b'{"method":"props","params":{"power":"on"}}\r\n', b'{"id":1,"result":["ok"]}\r\n'
+        )
+        await self.send_once("127.0.0.1", port, "set_fx_effect", [34, 0, 4, {"mode": 34}], 2.0)
+        self.assertEqual(
+            b'{"id":1,"method":"set_fx_effect","params":[34,0,4,{"mode":34}]}\r\n', received[0]
+        )
+
+    async def test_a_refusal_or_no_answer_raises(self):
+        port, _ = await self.lamp(b'{"id":1,"error":{"code":-1,"message":"refused"}}\r\n')
+        with self.assertRaises(OSError):
+            await self.send_once("127.0.0.1", port, "set_fx_effect", [], 2.0)
+        port, _ = await self.lamp()  # closes without answering
+        with self.assertRaises(OSError):
+            await self.send_once("127.0.0.1", port, "set_fx_effect", [], 2.0)

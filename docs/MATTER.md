@@ -44,15 +44,61 @@ Cube Lite found via Matter*, with its address filled in:
   are the app's).
 - **Power and brightness:** the lamp switched off with its button (long
   press on the right one) or on and dimmed from the app shows so here.
-- **The clock and native effects:** the lamp's direction setting turns what
-  its firmware draws (Left and Up: upside down); the previews and cameras
-  show it as the lamp draws it.
+- **The lamp's orientation:** read from the lamp once it is confirmed, so
+  native effects move the right way for any orientation, and the clock
+  previews are turned as the lamp turns it: see
+  [The lamp's orientation](#the-lamps-orientation).
 - **Device Orientation** (with [Matter settings](#optional-matter-settings),
   not yet with Home Assistant's own Matter server): changing it here also
   sets the lamp's own direction, which the lamp applies to the next clock or
   native effect it starts.
 - **LAN Control turned off** in the app: a Repairs message tells you, since
   Home Assistant cannot reach the lamp until it is on again.
+
+## The lamp's orientation
+
+The lamp saves an orientation (the Yeelight app's orientation page: 0°, 90°,
+180°, 270°, its arrows Left, Up, Right, Down) and turns every native effect's
+direction by it. The integration sends each effect's direction compensated for
+that orientation, so an effect moves the same way whichever is saved. The
+firmware clock is drawn upside down for 0° and 90°: the previews and cameras
+show it so. Only the app's **Save** or a Matter write sets it; nothing reads it
+over the local network.
+
+Over Matter the lamp reports the value, but a lamp never saved (or factory
+reset) reads **0°** while it runs **270°**. So, on a lamp linked for the first
+time (or paired again, as a new Matter node):
+1. **Saved in the app:** a value only a save gives is the lamp's, read and
+   followed, never overwritten: 90°, 180° or 270° (the lamp starts at 0°), or
+   0° with the module layout the app's Save writes with it.
+2. **Never saved** (0° without that layout): with Matter settings, the
+   integration writes the lamp's orientation once, from **Device
+   Orientation**, then follows the lamp's value.
+3. **A change saved in the app later** is followed too, and **Device
+   Orientation** follows it.
+4. **Otherwise** (a read-only link to a lamp never saved): the orientation
+   chosen in the lamp's **Configure** is used, as without Matter
+   ([Set the lamp's orientation](../README.md#set-the-lamps-orientation-before-judging-effect-directions)).
+   Until one is known, effects move as for 270°, what such a lamp runs.
+
+Only a node the Matter server reaches counts: the node a factory reset left
+behind (still listed, with its old values, unavailable) is ignored, on Home
+Assistant's server and on any other one the integration reads.
+
+**When you add the lamp**, its setup asks how it is mounted: choose **Read it
+over Matter** if the lamp is (or will be) in Home Assistant's Matter
+integration. Without Matter, a change made later in the app is not seen:
+choose the new arrow in the lamp's **Configure**.
+
+**After a factory reset** (both buttons held about 6 seconds): the lamp loses
+its orientation and its Matter pairing. Pair it with Home Assistant's Matter
+integration again (it becomes a new node, linked by its IP address as
+before), then save the orientation in the app, or let the integration write
+it (Matter settings), or set it in **Configure**.
+
+The light's `mount_profile` attribute shows the known orientation (`profile`
+0-3, or `null`), its `source` (`matter`, `user` or `unknown`) and the one in
+use (`in_use`).
 
 ## Button events for automations
 

@@ -99,6 +99,41 @@ async def check_tcp(ip: str, port: int, timeout: float) -> None:
     await asyncio.to_thread(_connect)
 
 
+async def send_once(ip: str, port: int, method: str, params: list, timeout: float) -> None:
+    """Send one LAN command to a lamp not set up yet (the setup's Fire
+    check) and wait for its answer. Raises OSError (no answer, refused)."""
+    payload = json.dumps({"id": 1, "method": method, "params": params}, separators=(",", ":"))
+
+    def _send() -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(timeout)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER)
+            sock.connect((ip, port))
+            sock.sendall(payload.encode() + b"\r\n")
+            pending = b""
+            while True:
+                chunk = sock.recv(1024)  # socket.timeout (an OSError) ends it
+                if not chunk:
+                    raise OSError(f"the lamp did not answer {method}")
+                pending += chunk
+                *lines, pending = pending.split(b"\n")
+                for line in lines:
+                    try:
+                        answer = json.loads(line)
+                    except ValueError:
+                        continue
+                    # Notifications ("props") may come first: only its answer.
+                    if isinstance(answer, dict) and answer.get("id") == 1:
+                        if "error" in answer:
+                            raise OSError(f"the lamp refused {method}: {answer['error']}")
+                        return
+        finally:
+            sock.close()
+
+    await asyncio.to_thread(_send)
+
+
 class CubeConnectionError(BulbException):
     """A command did not reach the lamp: it is unreachable, the connection is
     in its reconnect cooldown, or the socket died. Worth retrying once the

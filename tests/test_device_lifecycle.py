@@ -192,6 +192,10 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             _abort_if_unique_id_configured=Mock(), _get_schema=lambda: None,
             async_create_entry=lambda **kwargs: {"type": "entry", **kwargs},
             async_show_form=lambda **kwargs: {"type": "form", **kwargs},
+            # Then the orientation step (tests/ha), here the entry it adds.
+            _async_add_lamp=AsyncMock(
+                side_effect=lambda title, data: {"type": "entry", "title": title, "data": data}
+            ),
         )
 
     async def test_manual_setup_adds_only_a_lamp_that_answers(self):
@@ -210,14 +214,20 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("entry", result["type"])
 
     def test_no_empty_options_dialog(self):
-        # The options are written by the lamp's entities (Auto Turn On,
-        # Experimental Features): no Configure dialog with nothing in it.
+        # Most options are written by the lamp's entities (Auto Turn On,
+        # Experimental Features); the Configure dialog asks only how the lamp
+        # is mounted (its saved mount profile), never nothing.
         flow = (ROOT / "config_flow.py").read_text(encoding="utf-8")
-        self.assertNotIn("OptionsFlow", flow)
-        self.assertNotIn("async_get_options_flow", flow)
+        self.assertIn("class YeelightCubeOptionsFlow(config_entries.OptionsFlow)", flow)
         import json
 
-        self.assertNotIn("options", json.loads((ROOT / "strings.json").read_text(encoding="utf-8")))
+        strings = json.loads((ROOT / "strings.json").read_text(encoding="utf-8"))
+        # Asked when the lamp is added too.
+        self.assertEqual({"mount_profile"}, set(strings["config"]["step"]["orientation"]["data"]))
+        options = strings["options"]
+        self.assertEqual({"init", "mount_check"}, set(options["step"]))
+        self.assertEqual({"mount_profile"}, set(options["step"]["init"]["data"]))
+        self.assertEqual({"flame_base"}, set(options["step"]["mount_check"]["data"]))
 
     def test_only_a_network_or_lamp_error_retries_the_setup(self):
         # A bug fails the setup visibly instead of looking like an

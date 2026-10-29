@@ -6,13 +6,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The lamp's orientation:** the lamp turns every native effect's direction
+  by the orientation saved on it (the Yeelight app's orientation page, 0° to
+  270°). The integration now knows it per lamp and sends each direction
+  compensated for it, so effects move the same way on any lamp; the clock
+  previews turn as the lamp turns its clock (0° and 90°). Set it in the lamp's
+  **Configure** (**How is the lamp mounted?**), with an optional check on the
+  lamp (Fire: where is the bright flame base?). Over Matter, an orientation
+  saved in the app is read from the lamp (90°-270°, or 0° with the module
+  layout the app's Save writes) and never overwritten; a lamp never saved
+  (it reads 0° while running 270°) gets **Device Orientation** written once
+  (with Matter settings). A lamp paired again after a factory reset is a new
+  Matter node: checked again. Nodes a reset left behind (unavailable, with
+  their old values) are ignored, and the development Matter server is read
+  too when Home Assistant's has no live node. The light's `mount_profile`
+  attribute shows the orientation and its source. Adding a lamp now asks
+  how it is mounted (the arrow saved in the app, never set, a check on the
+  lamp, or read over Matter); a lamp whose orientation is still unknown gets
+  a Repairs message pointing to **Configure**. **Changed default:** a lamp
+  whose orientation is not known now moves as for 270°, what the firmware
+  runs when it was never saved or after a reset (earlier versions assumed
+  180°: set it in **Configure** if you saved 180° in the app).
 - **Matter link (optional):** a lamp also added to Home Assistant's Matter
   integration is linked automatically (by its IP address, then its MAC
   address), whichever was set up first. The lamp's buttons (the playlist
   effects, the microphone music modes and their long press), its power and
   brightness, and the effects and direction picked in the Yeelight app now
-  show in Home Assistant (the clock and native-effect previews turned as the
-  lamp turns them with its direction), and a
+  show in Home Assistant (the clock previews turned as the lamp turns them
+  with its orientation), and a
   Repairs message reports LAN Control turned off. Through Home Assistant's own
   Matter connection, read-only until its Matter server knows Yeelight's Matter
   features; lamps without Matter work as before.

@@ -144,6 +144,7 @@ Obsid products. Yeelight Classic and Yeelight Pro do not support this lamp.
 
 4. **Enable LAN Control**: in the app, go to your lamp's **Device Settings** and activate **LAN Control**. This is required for the integration to communicate with the lamp over your local network
 5. **Find the lamp's IP address**: in Device Settings → **Device info**, find the IP address assigned to the lamp (e.g. `192.168.4.139`)
+6. **Save the lamp's orientation**: open the lamp's orientation (direction) page, pick the arrow for how the lamp is mounted, and tap **Save**. The lamp turns its built-in effects by this setting: see [Set the lamp's orientation](#set-the-lamps-orientation-before-judging-effect-directions)
 
 <!-- 📸 SCREENSHOTS TO CHECK: the three images below were taken in the app when it was still called
      Yeelight Station. If the current app's screens look different (titles, layout, the LAN Control
@@ -218,6 +219,46 @@ If the lamp is not discovered automatically (e.g. different subnet or mDNS is bl
 <blockquote><strong>ℹ️ Note:</strong> Each lamp needs to be added separately. If you have multiple lamps, repeat the process for each one.</blockquote>
 
 </details>
+
+#### Set the lamp's orientation (before judging effect directions)
+
+The lamp saves an orientation (the Yeelight app's orientation page: the
+arrow you pick, then **Save**; 0°, 90°, 180° or 270°) and turns **every
+built-in effect's direction** by it. Your drawings, text and pictures are not
+affected. Home Assistant cannot read this setting over your local network, so
+it asks **when you add the lamp** (*How is the lamp mounted?*):
+
+| Your situation | Choose |
+| :-- | :-- |
+| You saved an arrow in the app | The same arrow (left 0°, up 90°, right 180°, down 270°) |
+| Never set in the app, or after a factory reset | **Never set** (the lamp then runs 270°). Or, better, set it in the app now (orientation page, the arrow for how the lamp is mounted, **Save**) and choose that arrow |
+| Not sure | **Check it on the lamp**: it plays Fire, and you say where the bright base of the flames is (top 0°, left 90°, bottom 180°, right 270°) |
+| The lamp is (or will be) in Home Assistant's Matter integration | **Read it over Matter**: an orientation saved in the app is read from the lamp, and followed when you change it later |
+
+**Later changes:** without Matter, Home Assistant cannot see a change made
+later in the app: choose the new arrow in the lamp's **Configure**
+(**Settings → Devices & services → Yeelight Cube Lite**, the lamp's entry).
+With Matter, it follows on its own. A lamp added with an earlier version, or
+whose orientation is still unknown after 10 minutes, gets a **Repairs**
+message (*Set the orientation of …*) pointing to **Configure**.
+
+Until it is known, effects move as for **270°**: what the lamp runs when its
+orientation was never saved in the app, or after a factory reset. (Earlier
+versions assumed 180°: if you had saved 180° in the app, choose it in
+**Configure**.) With the lamp also linked over Matter, an orientation saved in the app is read
+from the lamp and followed; a lamp never saved gets **Device Orientation**
+written once (with a Matter server that delivers Yeelight's settings): see
+[Matter](docs/MATTER.md#the-lamps-orientation).
+
+> [!IMPORTANT]
+> **A factory reset** (both buttons held about 6 seconds) erases the saved
+> orientation: the lamp then behaves as 270° until it is saved again. Save it
+> again in the app, or set it again in **Configure**. A reset also removes the
+> lamp from Matter: pair it with Home Assistant's Matter integration again.
+
+The light's `mount_profile` attribute shows the known orientation (`profile`
+0-3 for 0°-270°, or `null`), where it comes from (`source`: `matter`, `user`
+or `unknown`), and the one in use (`in_use`: the default 3 when unknown).
 
 #### Matter (optional)
 
@@ -1659,6 +1700,7 @@ drawn by the lamp itself, so lower their brightness instead.
 | **Lamp stuck / unresponsive** | Press the **Force Refresh** button entity, or use the refresh button on the Preview card |
 | **Lamp freezes on a bright picture or drops off the network** | The power supply is too weak, especially with two lamps on one port. Use a stronger supply or set the **Power limit**. See [Power Supply](#power-supply) |
 | **Colors look off** | Color accuracy correction is built-in and applied automatically |
+| **Effects move the wrong way** | The lamp turns its effects by the orientation saved on it. Set it in the lamp's **Configure** (or save it in the Yeelight app): see [Set the lamp's orientation](#set-the-lamps-orientation-before-judging-effect-directions). After a factory reset, set it again |
 | **Music Flow does not react to sound** | Music Flow uses the microphone inside the lamp, not a Home Assistant microphone. Play audio near the lamp and try another Music Flow Effect |
 | **Changing content stops Music Flow** | This is expected. Selecting Matrix, Clock, Native Effect, text, or pixel art exits Music Flow and applies the requested content |
 | **Music Flow turns off but the old display does not return** | The stop command has already been recorded. Press **Force Refresh** or reselect Matrix, Clock, or Native Effect to retry the display render |

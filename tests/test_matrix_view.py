@@ -91,24 +91,25 @@ class CameraOrientationTests(unittest.TestCase):
         self.assertNotIn('("left", "up")', source)
         self.assertNotIn("_RECTS_FLIPPED", source)
 
-    def test_the_camera_firmware_content_turns_with_the_lamp(self):
+    def test_the_camera_clock_turns_with_the_lamps_mount_profile(self):
         source = (ROOT / "camera.py").read_text(encoding="utf-8")
         colors = function_source(source, "_get_matrix_colors")
-        self.assertIn("self._firmware_lamp_frame(self._get_clock_preview())", colors)
-        self.assertIn("self._firmware_lamp_frame(self._get_native_effect_preview())", colors)
-        turn = function_source(source, "_firmware_lamp_frame")
-        self.assertIn('getattr(self._light_entity, "lamp_turns_content", False)', turn)
+        self.assertIn("self._firmware_clock_frame(self._get_clock_preview())", colors)
+        # Native effects are compensated on the lamp: never turned here.
+        self.assertIn("base = self._get_native_effect_preview()", colors)
+        turn = function_source(source, "_firmware_clock_frame")
+        self.assertIn('getattr(self._light_entity, "lamp_turns_clock", False)', turn)
         self.assertIn("return frame[::-1]", turn)
 
-    def test_effects_flow_the_same_way_when_the_lamp_turns_them(self):
+    def test_effects_flow_with_the_mount_whatever_the_lamps_profile(self):
         source = (ROOT / "light_native.py").read_text(encoding="utf-8")
         namespace = {"DEVICE_ORIENTATION_TO_EFFECT_DIR": {"left": "Left", "up": "Up", "right": "Right"}}
         exec(compile(function_source(source, "mount_effect_direction"), "light_native", "exec"), namespace)
         direction = namespace["mount_effect_direction"]
         self.assertEqual("Left", direction("left"))
-        self.assertEqual("Right", direction("left", True))  # the firmware turns it too
-        self.assertEqual("Down", direction("up", True))
+        self.assertEqual("Up", direction("up"))
         self.assertEqual("Right", direction("right"))
+        self.assertIsNone(direction("sideways"))
 
     def test_the_clock_restarts_only_when_the_lamps_direction_was_set(self):
         source = (ROOT / "light.py").read_text(encoding="utf-8")

@@ -7,7 +7,7 @@ from unittest.mock import Mock
 from tests.test_native_features import CONSTANTS, LIGHT_SOURCE, ROOT, _load_standalone_functions
 
 SOURCE = (ROOT / "issues.py").read_text(encoding="utf-8")
-CONSTANT_NAMES = ("UNREACHABLE_AFTER", "UDP_BLOCKED_AFTER", "ISSUES")
+CONSTANT_NAMES = ("UNREACHABLE_AFTER", "UDP_BLOCKED_AFTER", "ORIENTATION_UNKNOWN_AFTER", "ISSUES")
 NAMESPACE = {
     name: value for name, value in (
         line.split(" = ", 1) for line in SOURCE.splitlines()
@@ -48,6 +48,15 @@ class LampProblemTests(unittest.TestCase):
         self.assertNotIn("udp_blocked", self.problems(state, False, 3600))
 
 
+    def test_an_unknown_orientation_after_a_while(self):
+        # Matter may read it first: only reported after ten minutes.
+        state = {"since_success": 1, "udp_failing_for": None}
+        self.assertEqual(set(), self.problems(state, True, 9 * 60, orientation_unknown=True))
+        self.assertEqual({"orientation_unknown"}, self.problems(state, True, 11 * 60, orientation_unknown=True))
+        self.assertEqual(set(), self.problems(state, True, 11 * 60, orientation_unknown=False))
+        self.assertIn("orientation_unknown=self.mount_profile[1] == SOURCE_UNKNOWN", LIGHT_SOURCE)
+
+
 class ReportProblemTests(unittest.TestCase):
     def setUp(self):
         self.registry = SimpleNamespace(
@@ -63,7 +72,7 @@ class ReportProblemTests(unittest.TestCase):
     def test_only_changes_reach_the_registry(self):
         # First check (nothing known): every issue is set or cleared.
         reported = self.report(None, self.light, set(), None)
-        self.assertEqual(3, self.registry.async_delete_issue.call_count)
+        self.assertEqual(4, self.registry.async_delete_issue.call_count)
         self.registry.async_delete_issue.reset_mock()
         # Unchanged: nothing sent.
         reported = self.report(None, self.light, set(), reported)
@@ -87,6 +96,7 @@ class ReportProblemTests(unittest.TestCase):
                 ("yeelight_cube", "lamp_unreachable_e1"),
                 ("yeelight_cube", "udp_blocked_e1"),
                 ("yeelight_cube", "lan_control_off_e1"),
+                ("yeelight_cube", "orientation_unknown_e1"),
             },
             {call.args[1:] for call in self.registry.async_delete_issue.call_args_list},
         )

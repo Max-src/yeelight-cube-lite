@@ -113,6 +113,35 @@ class MatterLinkTests(unittest.TestCase):
         self.assertEqual({}, self.client.subscriptions)
         self.assertIsNone(self.link.summary())
 
+    def test_a_node_left_behind_by_a_factory_reset_is_not_linked(self):
+        # The reset erased the lamp's pairing: its old node stays listed with
+        # its old attributes (IP, MAC, rotation), unavailable.
+        dead = node(2, dict(CUBE_ATTRIBUTES))
+        dead.available = False
+        self.client.nodes = [dead]
+        self.assertFalse(self.link.refresh(LAMP_IP, LAMP_MAC))
+        self.assertFalse(self.link.linked)
+        # Paired again: a new node, available.
+        self.client.nodes = [dead, node(5, dict(CUBE_ATTRIBUTES))]
+        self.assertTrue(self.link.refresh(LAMP_IP, LAMP_MAC))
+        self.assertEqual(5, self.link.node_id)
+        # The saved topology is read with the rotation (mount_profile).
+        self.assertEqual(2, self.link.values["rotation"])
+        self.assertIn("topology", self.link.values)
+
+    def test_another_server_is_read_when_home_assistants_has_no_live_node(self):
+        dead = node(2, dict(CUBE_ATTRIBUTES))
+        dead.available = False
+        self.client.nodes = [dead]
+        dev = FakeClient([node(1, dict(CUBE_ATTRIBUTES))])
+        link = LINK.MatterLink(hass_with(self.client), lambda *report: None, lambda: [dev])
+        self.assertTrue(link.refresh(LAMP_IP, None))
+        self.assertEqual((1, dev), (link.node_id, link.client))
+        # Home Assistant's own, once it has a live node, comes first.
+        self.client.nodes = [node(6, dict(CUBE_ATTRIBUTES))]
+        self.assertTrue(link.refresh(LAMP_IP, None))
+        self.assertEqual((6, self.client), (link.node_id, link.client))
+
     def test_without_matter_nothing_happens(self):
         link = LINK.MatterLink(hass_with(None), Mock())
         self.assertFalse(link.refresh(LAMP_IP, None))
@@ -136,9 +165,10 @@ def load_light_matter():
 
 
 MATTER = load_light_matter()
+MOUNT = import_pure_module("light_mount_profile")
 
 
-class FakeLight(MATTER.MatterMixin):
+class FakeLight(MATTER.MatterMixin, MOUNT.MountProfileMixin):
     """The light's state the mixin reads and writes."""
 
     def __init__(self):
@@ -301,12 +331,14 @@ class FollowedReportTests(unittest.TestCase):
         self.report("on_off", True)  # and its reversal is also genuine
         self.assertTrue(self.light._is_on)
 
-    def test_the_lamp_turns_its_clock_with_its_direction_setting(self):
-        self.assertFalse(self.light.lamp_turns_content)  # no Matter: unknown
-        self.light._matter = types.SimpleNamespace(linked=True, values={"rotation": 0})
-        self.assertTrue(self.light.lamp_turns_content)  # Left
+    def test_the_lamp_turns_its_clock_with_its_confirmed_direction_setting(self):
+        self.assertFalse(self.light.lamp_turns_clock)  # no Matter: unknown
+        self.light._matter = types.SimpleNamespace(linked=True, node_id=2, values={"rotation": 0})
+        self.assertFalse(self.light.lamp_turns_clock)  # read, not confirmed: not trusted
+        self.light._config_entry = types.SimpleNamespace(options={"mount_profile_node": 2})
+        self.assertTrue(self.light.lamp_turns_clock)  # Left (0°)
         self.light._matter.values["rotation"] = 2
-        self.assertFalse(self.light.lamp_turns_content)  # Right
+        self.assertFalse(self.light.lamp_turns_clock)  # Right (180°)
 
     def test_the_matter_attribute_names_the_server_for_yeelight_commands(self):
         self.assertIsNone(self.light._matter_summary())  # no node
@@ -332,12 +364,17 @@ class FollowedReportTests(unittest.TestCase):
                 written.append((path, value))
 
         channel = Channel()
-        self.light._matter = types.SimpleNamespace(linked=True, values={"rotation": 2})
+        self.light._matter = types.SimpleNamespace(linked=True, node_id=2, values={"rotation": 2})
         self.light._matter_commands = channel
+        self.light._config_entry = types.SimpleNamespace(options={})
+        self.light.hass = types.SimpleNamespace(config_entries=types.SimpleNamespace(
+            async_update_entry=lambda entry, options: setattr(entry, "options", options)
+        ))
         sync = lambda orientation: asyncio.run(self.light._sync_lamp_rotation(orientation))
         self.assertTrue(sync("left"))  # written: the lamp turns its clock
         self.assertEqual([(LINK.ROTATION, 0)], written)
-        self.assertTrue(self.light.lamp_turns_content)  # previews turn now
+        self.assertEqual((0, "matter"), self.light.mount_profile)  # confirmed by the write
+        self.assertTrue(self.light.lamp_turns_clock)  # previews turn now
         self.assertFalse(sync("left"))  # already: nothing to restart
         self.assertEqual(1, len(written))
         # No server delivers it (the official one today): as before.
