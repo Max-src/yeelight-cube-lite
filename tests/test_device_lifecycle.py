@@ -225,9 +225,9 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         # Asked when the lamp is added too.
         self.assertEqual({"mount_profile"}, set(strings["config"]["step"]["orientation"]["data"]))
         options = strings["options"]
-        self.assertEqual({"init", "mount_check"}, set(options["step"]))
+        self.assertEqual({"init", "mount_check", "mount_result"}, set(options["step"]))
         self.assertEqual({"mount_profile"}, set(options["step"]["init"]["data"]))
-        self.assertEqual({"flame_base"}, set(options["step"]["mount_check"]["data"]))
+        self.assertEqual({"stars"}, set(options["step"]["mount_check"]["data"]))
 
     def test_only_a_network_or_lamp_error_retries_the_setup(self):
         # A bug fails the setup visibly instead of looking like an

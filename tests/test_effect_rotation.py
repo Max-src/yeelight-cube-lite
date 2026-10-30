@@ -69,6 +69,8 @@ def _rotation_helpers():
             "_force_refresh_impl",
             "async_force_refresh",
             "_save_display_state",
+            "_display_attributes",
+            "_running_rotation",
             "_async_resume_display_rotation",
             "_text_waits_for_matrix",
             "_duration_text",
@@ -182,8 +184,8 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
           "_save_rotation_state", "_device_store",
           "_restore_rotation_settings", "_async_resume_saved_rotation",
           "set_rotation_interval", "_retime_rotation",
-          "_save_display_state", "_async_resume_display_rotation",
-          "_text_waits_for_matrix")
+          "_save_display_state", "_display_attributes", "_running_rotation",
+          "_async_resume_display_rotation", "_text_waits_for_matrix")
     light._DISPLAY_STATE_ATTRS = ("_mode",)
     return light
 

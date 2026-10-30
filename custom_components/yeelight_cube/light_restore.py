@@ -312,30 +312,38 @@ class StateRestoreMixin:
         "_preview_tint_strength",
     )
 
+    def _display_attributes(self) -> dict:
+        """The display state now (_DISPLAY_STATE_ATTRS), deep-copied so later
+        mutations to lists like _custom_pixels / _text_colors don't corrupt
+        it (save_state, the orientation check)."""
+        return {
+            attr: copy.deepcopy(getattr(self, attr, None))
+            for attr in self._DISPLAY_STATE_ATTRS
+        }
+
+    def _running_rotation(self) -> dict | None:
+        """The rotation running now (kind, items, interval), or None: what
+        is shown in between stops it, so it is started again after."""
+        if not (self._rotation_active or self._rotation_resume_pending):
+            return None
+        return {
+            "kind": self._rotation_kind,
+            "items": [dict(item) for item in self._rotation_items],
+            "interval": self._rotation_interval,
+        }
+
     def _save_display_state(self):
         """Snapshot the current display state into self._saved_display_state.
 
         Overwrites any previously saved snapshot -- only one is kept per
-        entity.  Values are deep-copied so later mutations to lists like
-        _custom_pixels / _text_colors don't corrupt the snapshot."""
-        self._saved_display_state = {
-            attr: copy.deepcopy(getattr(self, attr, None))
-            for attr in self._DISPLAY_STATE_ATTRS
-        }
+        entity."""
+        self._saved_display_state = self._display_attributes()
         # Over the firmware clock / native effect, the next text is a
         # deliberate overlay (see _text_waits_for_matrix): shown once.
         self._display_overlay = self._mode in FIRMWARE_MODES
         # The rotation running now: what is shown in between (a text, a
         # pixel art...) stops it, so restore_state starts it again.
-        self._saved_display_rotation = (
-            {
-                "kind": self._rotation_kind,
-                "items": [dict(item) for item in self._rotation_items],
-                "interval": self._rotation_interval,
-            }
-            if self._rotation_active or self._rotation_resume_pending
-            else None
-        )
+        self._saved_display_rotation = self._running_rotation()
 
     def _restore_display_state(self):
         """Restore attributes from the saved snapshot and refresh linked
@@ -345,6 +353,12 @@ class StateRestoreMixin:
         self._display_overlay = False
         if not snapshot:
             return False
+        self._apply_display_attributes(snapshot)
+        return True
+
+    def _apply_display_attributes(self, snapshot: dict) -> None:
+        """Set the display state back (_display_attributes), its linked
+        helper entities too; the caller re-renders it."""
         for attr, value in snapshot.items():
             setattr(self, attr, copy.deepcopy(value))
         # Migration: pre-4-way states saved only _orientation. If the device
@@ -358,7 +372,6 @@ class StateRestoreMixin:
         self._scroll_direction = 1
         self.stop_scroll_timer()
         self._refresh_linked_entities()
-        return True
 
     def _text_waits_for_matrix(self) -> bool:
         """A text sent while the lamp shows its firmware clock / native effect
@@ -371,18 +384,20 @@ class StateRestoreMixin:
         wait again)."""
         return self._mode in FIRMWARE_MODES and not self._display_overlay
 
-    async def _async_resume_display_rotation(self) -> None:
-        """After restore_state: start again the rotation that ran when the
-        state was saved, if it no longer runs and the lamp is on. Started
-        alone, it joins the lamps still running it (same item, same steps)."""
-        saved = getattr(self, "_saved_display_rotation", None)
+    async def _async_resume_display_rotation(self, saved: dict | None = None) -> bool:
+        """After restore_state (or the orientation check, its own ``saved``):
+        start again the rotation that ran when the state was saved, if it no
+        longer runs and the lamp is on. Started alone, it joins the lamps
+        still running it (same item, same steps). True when it started."""
+        if saved is None:
+            saved = getattr(self, "_saved_display_rotation", None)
         if (
             not saved
             or self._rotation_active
             or self._rotation_resume_pending
             or not self._is_on
         ):
-            return
+            return False
         try:
             await self.start_effect_rotation(
                 saved["items"], saved["interval"], saved["kind"]
@@ -390,6 +405,7 @@ class StateRestoreMixin:
             _LOGGER.info(
                 "[RESTORE_STATE] [%s] Resumed the %s rotation", self._ip, saved["kind"]
             )
+            return True
         except HomeAssistantError as err:
             # An unreachable lamp: the health check resumes a rotation it holds.
             _LOGGER.warning(

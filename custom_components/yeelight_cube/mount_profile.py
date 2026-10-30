@@ -39,7 +39,7 @@ REFERENCE_PROFILE = 2
 FIRMWARE_DEFAULT_PROFILE = 3
 
 # Where the profile in use comes from: read over Matter (confirmed, or one
-# only a save gives), set by the user (options, the Fire check), or not known
+# only a save gives), set by the user (options, the check on the lamp), or not known
 # (then FIRMWARE_DEFAULT_PROFILE, what a lamp never saved runs).
 SOURCE_MATTER = "matter"
 SOURCE_USER = "user"
@@ -48,10 +48,23 @@ SOURCE_UNKNOWN = "unknown"
 # The app's orientation buttons, by profile.
 PROFILE_DEGREES = {0: 0, 1: 90, 2: 180, 3: 270}
 
-# The guided check: Fire (mode 34) at direction 0, sent as is (not
-# compensated). Where its bright flame base shows tells the profile.
-FIRE_CHECK_PARAMS = [34, 0, 4, {"mode": 34, "onoff": 1, "rate": 50, "direction": 0}]
-FIRE_BASE_PROFILES = {"top": 0, "left": 1, "bottom": 2, "right": 3}
+# The app's arrow for each profile (its rotationAngle, matter_link).
+PROFILE_ARROWS = {0: "left", 1: "up", 2: "right", 3: "down"}
+
+# The guided check: Shooting Star (mode 47) at direction 3, sent as is (not
+# compensated): the way its stars fly tells the profile, a different way on
+# each. Measured on the user's lamps (2026-10-29, both mounted Right, the
+# default): with the lamp drawing direction 0 / 1 / 2 / 3 (DIRECTION_TABLE)
+# the stars fly right / left / up / down. No effect flies the way the app's
+# arrow points on every profile (the table turns a flat lamp's effects
+# lengthwise), so the answer is translated into the arrow (star_check_profile).
+STAR_CHECK_PARAMS = [47, 0, 4, {"mode": 47, "onoff": 1, "rate": 50, "direction": 3}]
+STAR_DRAWN_MOTION = ("right", "left", "up", "down")
+# The four ways, clockwise, and how many quarter turns clockwise a Device
+# Orientation turns what the viewer sees (the previews' rule, matrix_view.py:
+# left / up upside down, down / up standing with the lamp's left end on top).
+MOTIONS = ("up", "right", "down", "left")
+MOUNT_QUARTER_TURNS = {"right": 0, "down": 1, "left": 2, "up": 3}
 
 # The module type the app's Save writes into the topology ([2, 2, 2, 2]:
 # the Cube Lite's four 5 x 5 matrix tiles, kTypeMatrix).
@@ -145,3 +158,21 @@ def clock_turned(profile: int | None) -> bool:
     drawn a half turn from the calibration's: it tests ``profile & ~1 == 2``,
     upright on 2 and 3, turned on 0 and 1. Unknown: the default 3, upright."""
     return valid_profile(profile) in (0, 1)
+
+
+def star_check_profile(seen: str, device_orientation: str | None = None) -> int | None:
+    """The profile of a lamp whose check stars fly ``seen`` (up / right /
+    down / left) for someone facing it, mounted as ``device_orientation``
+    says (default: Right); None for anything else."""
+    if seen not in MOTIONS:
+        return None
+    turns = MOUNT_QUARTER_TURNS.get(device_orientation or "right", 0)
+    on_lamp = MOTIONS[(MOTIONS.index(seen) - turns) % 4]
+    drawn = STAR_DRAWN_MOTION.index(on_lamp)
+    sent = STAR_CHECK_PARAMS[3]["direction"]
+    return next(profile for profile in PROFILES if DIRECTION_TABLE[profile][sent] == drawn)
+
+
+def arrow_text(profile: int) -> str:
+    """The app's arrow for a profile, as the dialogs name it."""
+    return f"Arrow {PROFILE_ARROWS[profile]} ({PROFILE_DEGREES[profile]}°)"

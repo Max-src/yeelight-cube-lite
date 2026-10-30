@@ -128,6 +128,11 @@ export function createYeelightCubeEntityPicker(
             type=${single ? "radio" : "checkbox"}
             name=${single ? "yeelight-cube-entity" : nothing}
             .checked=${isSelected}
+            @click=${(event) => {
+              // Its own change toggles it: the row's click would toggle it
+              // back (a click on the box did nothing).
+              event.stopPropagation();
+            }}
             @change=${(event) => {
               event.stopPropagation();
               toggle(entityId);

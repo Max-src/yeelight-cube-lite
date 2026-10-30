@@ -72,12 +72,30 @@ class CompensationTests(unittest.TestCase):
             [PROFILE.clock_turned(p) for p in (0, 1, 2, 3, None)],
         )
 
-    def test_the_fire_check(self):
-        params = PROFILE.FIRE_CHECK_PARAMS
-        self.assertEqual(34, params[3]["mode"])
-        self.assertEqual(0, params[3]["direction"])  # Up, sent as is
-        # Fire's flame base at direction 0, per profile.
-        self.assertEqual({"top": 0, "left": 1, "bottom": 2, "right": 3}, PROFILE.FIRE_BASE_PROFILES)
+    def test_the_star_check_as_measured_on_the_lamps(self):
+        params = PROFILE.STAR_CHECK_PARAMS
+        self.assertEqual((47, 47, 3), (params[0], params[3]["mode"], params[3]["direction"]))
+        check = PROFILE.star_check_profile
+        # 2026-10-29: the bottom lamp (180 degrees, read over Matter) flew
+        # left, the top lamp (reset, 270 degrees) down.
+        self.assertEqual(2, check("left"))
+        self.assertEqual(3, check("down"))
+        self.assertEqual({"right": 0, "up": 1, "left": 2, "down": 3},
+                         {seen: check(seen) for seen in ("right", "up", "left", "down")})
+        self.assertIsNone(check("unclear"))
+        self.assertEqual("Arrow down (270°)", PROFILE.arrow_text(3))
+
+    def test_the_star_check_on_every_mount(self):
+        check = PROFILE.star_check_profile
+        for mount in ("right", "down", "left", "up"):
+            # Four ways, four profiles, on every mount.
+            self.assertEqual([0, 1, 2, 3], sorted(check(seen, mount) for seen in PROFILE.MOTIONS), mount)
+        # Upside down (Left): the viewer sees it turned a half turn.
+        self.assertEqual(check("left"), check("right", "left"))
+        # Standing (Down): the lamp's left end on top, so its "left" is "up".
+        self.assertEqual(check("left"), check("up", "down"))
+        self.assertEqual(check("left"), check("down", "up"))
+        self.assertEqual(check("left"), check("left", None))
 
 
 class ResolutionTests(unittest.TestCase):
@@ -372,8 +390,9 @@ class LanOnlyTests(unittest.TestCase):
         self.assertEqual((3, "user"), light.mount_profile)
         light.async_apply_display_mode.assert_not_awaited()
 
-    def test_the_fire_check_is_sent_as_is_and_the_content_comes_back(self):
-        light = ProfileLight()
+    def test_the_star_check_is_sent_as_is_and_the_content_comes_back(self):
+        light = CheckLight()
+        light._rotation_active = False
         sent = []
 
         async def send(method, params, **kwargs):
@@ -390,14 +409,15 @@ class LanOnlyTests(unittest.TestCase):
         # On a lamp at 3, the check is not compensated: its answer is the profile.
         light._config_entry.options.update(mount_profile=3, mount_profile_source="user")
         self.assertTrue(asyncio.run(light.async_show_mount_check()))
-        self.assertEqual([("set_fx_effect", PROFILE.FIRE_CHECK_PARAMS)], sent)
-        # The flame base was at the bottom: 180°.
-        asyncio.run(light.async_set_user_mount_profile(PROFILE.FIRE_BASE_PROFILES["bottom"], after_check=True))
+        self.assertEqual([("set_fx_effect", PROFILE.STAR_CHECK_PARAMS)], sent)
+        # The stars flew left: 180°.
+        asyncio.run(light.async_set_user_mount_profile(PROFILE.star_check_profile("left"), after_check=True))
         self.assertEqual((2, "user"), light.mount_profile)
         light.async_apply_display_mode.assert_awaited_once()
 
     def test_a_check_on_a_lamp_that_was_off_turns_it_off_again(self):
-        light = ProfileLight()
+        light = CheckLight()
+        light._rotation_active = False
         light._is_on = False
         light._cube_matrix = SimpleNamespace(send_raw_command=AsyncMock(), forget_running_effect=Mock())
 
@@ -410,6 +430,125 @@ class LanOnlyTests(unittest.TestCase):
         asyncio.run(light.async_show_mount_check())
         asyncio.run(light._async_end_mount_check())
         self.assertIn("turn_off", light.calls)
+
+
+
+def _restore_methods():
+    """light_restore's snapshot helpers, as the light has them."""
+    import ast
+    import copy
+
+    from tests.test_native_features import ROOT, _load_standalone_functions
+
+    source = (ROOT / "light_restore.py").read_text(encoding="utf-8")
+    names = {"_display_attributes", "_running_rotation", "_apply_display_attributes",
+             "_async_resume_display_rotation"}
+
+    class HomeAssistantError(Exception):
+        pass
+
+    functions = _load_standalone_functions(source, names, {
+        "copy": copy, "ORIENTATION_FLIPPED": CONSTANTS["ORIENTATION_FLIPPED"],
+        "HomeAssistantError": HomeAssistantError, "_LOGGER": Mock(),
+    })
+    attrs = next(
+        ast.literal_eval(node.value)
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "_DISPLAY_STATE_ATTRS"
+    )
+    return {name: functions[name] for name in names}, attrs
+
+
+RESTORE_METHODS, DISPLAY_STATE_ATTRS = _restore_methods()
+
+
+class CheckLight(ProfileLight):
+    """A lamp showing a clock rotation, with the real snapshot helpers."""
+
+    _DISPLAY_STATE_ATTRS = DISPLAY_STATE_ATTRS
+    locals().update(RESTORE_METHODS)
+
+    def __init__(self, options=None):
+        super().__init__(options)
+        for attr in DISPLAY_STATE_ATTRS:
+            setattr(self, attr, None)
+        self._mode, self._native_clock_style, self._orientation = "Clock", 12, "normal"
+        self._device_orientation = "right"
+        self._rotation_active, self._rotation_kind = True, "clock"
+        self._rotation_items, self._rotation_interval = [{"name": "Prism"}, {"name": "Pulse"}], 60
+        self.sent, self.started = [], []
+        self._scroll_offset, self._scroll_direction = 0, 1
+
+        async def send(method, params, **kwargs):
+            self.sent.append((method, params))
+
+        async def run(func, name):
+            await func()
+            return True
+
+        self._cube_matrix = SimpleNamespace(send_raw_command=send, forget_running_effect=Mock())
+        self._execute_hardware_op = run
+        self._leave_direct_mode = AsyncMock()
+        self.async_apply_display_mode = AsyncMock()
+
+    def stop_effect_rotation(self, persist=True):
+        self._rotation_active = False
+        self.calls.append("stop_rotation")
+
+    async def start_effect_rotation(self, items, interval, kind):
+        self.started.append((kind, [item["name"] for item in items], interval))
+        self._rotation_active = True
+
+
+class CheckRestoreTests(unittest.TestCase):
+    """What the lamp showed comes back after the check."""
+
+    def test_a_rotation_is_held_and_started_again(self):
+        light = CheckLight()
+        self.assertTrue(asyncio.run(light.async_show_mount_check()))
+        self.assertFalse(light._rotation_active)  # does not draw over the stars
+        asyncio.run(light.async_set_user_mount_profile(3, after_check=True))
+        self.assertEqual([("clock", ["Prism", "Pulse"], 60)], light.started)
+        self.assertEqual(("Clock", 12), (light._mode, light._native_clock_style))
+
+    def test_the_checks_own_reports_are_not_followed(self):
+        light = CheckLight()
+        light._rotation_active = False
+        light._matter = SimpleNamespace(linked=True, node_id=7, values={})
+        asyncio.run(light.async_show_mount_check())
+        # The lamp reports the stars (Shooting Star, 47) over Matter: not the
+        # app or a button, so not followed (the clock stays the content).
+        light._on_matter_report("effect", 47, False)
+        light._on_matter_report("on_off", True, False)
+        self.assertEqual("Clock", light._mode)
+        self.assertFalse(light._external_display)
+        asyncio.run(light._async_end_mount_check())
+        # Deliberate, as restore_state's: after the stars (a firmware mode) a
+        # text_change over a drawing is dropped (light_display).
+        light.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
+        # Afterwards, a report is the lamp's own again.
+        self.assertFalse(light._mount_check_active)
+
+    def test_the_apps_content_is_shown_again(self):
+        light = CheckLight()
+        light._rotation_active = False
+        light._external_display, light._app_content = True, ("set_hsv", [120, 100])
+        asyncio.run(light.async_show_mount_check())
+        asyncio.run(light._async_end_mount_check())
+        self.assertIn(("replay", [120, 100]), light.calls)
+        light.async_apply_display_mode.assert_not_awaited()
+        self.assertTrue(light._external_display)
+
+    def test_a_check_the_lamp_refused_changes_nothing(self):
+        light = CheckLight()
+
+        async def refused(func, name):
+            return False
+
+        light._execute_hardware_op = refused
+        self.assertFalse(asyncio.run(light.async_show_mount_check()))
+        self.assertFalse(light._mount_check_active)
+        self.assertEqual([("clock", ["Prism", "Pulse"], 60)], light.started)  # going on
 
 
 if __name__ == "__main__":

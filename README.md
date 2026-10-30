@@ -231,8 +231,8 @@ it asks **when you add the lamp** (*How is the lamp mounted?*):
 | Your situation | Choose |
 | :-- | :-- |
 | You saved an arrow in the app | The same arrow (left 0°, up 90°, right 180°, down 270°) |
-| Never set in the app, or after a factory reset | **Never set** (the lamp then runs 270°). Or, better, set it in the app now (orientation page, the arrow for how the lamp is mounted, **Save**) and choose that arrow |
-| Not sure | **Check it on the lamp**: it plays Fire, and you say where the bright base of the flames is (top 0°, left 90°, bottom 180°, right 270°) |
+| Never set in the app, or after a factory reset | **Arrow down (270°), or never set**: what such a lamp runs. Or, better, set it in the app now (orientation page, the arrow for how the lamp is mounted, **Save**) and choose that arrow |
+| Not sure | **Check it on the lamp**: it shows shooting stars, you say which way they fly (as you see the lamp, mounted as its **Device Orientation** says), and it tells you the app's arrow before saving it |
 | The lamp is (or will be) in Home Assistant's Matter integration | **Read it over Matter**: an orientation saved in the app is read from the lamp, and followed when you change it later |
 
 **Later changes:** without Matter, Home Assistant cannot see a change made

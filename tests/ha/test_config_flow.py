@@ -179,9 +179,8 @@ async def test_a_lamp_found_in_matter_is_added_once_it_answers_over_lan(hass, la
 async def test_a_lamp_found_in_matter_without_a_mac(hass, lamp_answers):
     result = await start(hass, MATTER, {CONF_IP: "192.168.4.139"})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    result = await oriented(hass, result, "never")
+    result = await oriented(hass, result, "3")  # arrow down, or never set
     assert result["data"] == {CONF_IP: "192.168.4.139"}
-    # Never set in the app: the firmware's 270 degrees.
     assert result["options"] == {"mount_profile": 3, "mount_profile_source": "user"}
 
 
@@ -261,9 +260,7 @@ async def test_options_keep_the_orientation_of_a_lamp_not_loaded(hass):
     item = entry(hass, data={CONF_IP: "192.168.4.90"}, options={"auto_turn_on": False})
     result = await hass.config_entries.options.async_init(item.entry_id)
     assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "init")
-    assert result["description_placeholders"] == {
-        "current": "not set (270° in use, a lamp never saved)", "source": "unknown",
-    }
+    assert result["description_placeholders"] == {"now": "not set (270° in use)"}
     # The check needs the lamp.
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"mount_profile": "check"})
     assert result["errors"] == {"base": "lamp_not_loaded"}
@@ -272,22 +269,23 @@ async def test_options_keep_the_orientation_of_a_lamp_not_loaded(hass):
     assert item.options == {"auto_turn_on": False, "mount_profile": 3, "mount_profile_source": "user"}
     # Shown as kept the next time.
     result = await hass.config_entries.options.async_init(item.entry_id)
-    assert result["description_placeholders"] == {"current": "270°", "source": "user"}
+    assert result["description_placeholders"] == {"now": "270°, set here"}
 
 
 async def test_options_set_the_orientation_through_the_lamp(hass):
     item = entry(hass, data={CONF_IP: "192.168.4.91"})
     lamp = loaded(item, profile=(2, "matter"))
     result = await hass.config_entries.options.async_init(item.entry_id)
-    assert result["description_placeholders"] == {"current": "180°", "source": "matter"}
+    assert result["description_placeholders"] == {"now": "180°, read from the lamp over Matter"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"mount_profile": "1"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     lamp.async_set_user_mount_profile.assert_awaited_once_with(1, after_check=False)
 
 
-async def test_the_fire_check_sets_the_orientation_from_the_flame_base(hass):
+async def test_the_star_check_finds_the_arrow(hass):
     item = entry(hass, data={CONF_IP: "192.168.4.92"})
     lamp = loaded(item, check=False)
+    lamp.device_orientation = "right"
     result = await hass.config_entries.options.async_init(item.entry_id)
     configure = hass.config_entries.options.async_configure
     result = await configure(result["flow_id"], {"mount_profile": "check"})
@@ -295,15 +293,32 @@ async def test_the_fire_check_sets_the_orientation_from_the_flame_base(hass):
     lamp.async_show_mount_check.return_value = True
     result = await configure(result["flow_id"], {"mount_profile": "check"})
     assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "mount_check")
-    # Unclear: the content comes back and the choice is asked again.
-    result = await configure(result["flow_id"], {"flame_base": "unclear"})
+    # Can't tell: the content comes back and the choice is asked again.
+    result = await configure(result["flow_id"], {"stars": "unclear"})
     assert result["step_id"] == "init"
     lamp._async_end_mount_check.assert_awaited_once()
     result = await configure(result["flow_id"], {"mount_profile": "check"})
-    result = await configure(result["flow_id"], {"flame_base": "right"})
+    # The stars fly down: shown as the app's arrow, saved on Submit.
+    result = await configure(result["flow_id"], {"stars": "down"})
+    assert (result["step_id"], result["description_placeholders"]) == (
+        "mount_result", {"arrow": "Arrow down (270°)"},
+    )
+    lamp.async_set_user_mount_profile.assert_not_awaited()
+    result = await configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     lamp.async_set_user_mount_profile.assert_awaited_once_with(3, after_check=True)
     lamp._async_end_mount_check.assert_awaited_once()  # not again on close
+
+
+async def test_the_star_check_follows_the_mount(hass):
+    item = entry(hass, data={CONF_IP: "192.168.4.97"})
+    lamp = loaded(item)
+    lamp.device_orientation = "down"  # standing: the lamp's left end on top
+    result = await hass.config_entries.options.async_init(item.entry_id)
+    configure = hass.config_entries.options.async_configure
+    result = await configure(result["flow_id"], {"mount_profile": "check"})
+    result = await configure(result["flow_id"], {"stars": "up"})
+    assert result["description_placeholders"] == {"arrow": "Arrow right (180°)"}
 
 
 async def test_closing_the_options_during_the_check_brings_the_content_back(hass):
@@ -332,21 +347,18 @@ async def test_setup_checks_the_orientation_on_the_lamp(hass, lamp_answers):
         send.side_effect = None
         result = await configure(result["flow_id"], {"mount_profile": "check"})
         assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "orientation_check")
-        # Fire at direction Up, sent as is to the lamp being added.
+        # The check's shooting stars, sent as is to the lamp being added.
         assert send.await_args.args[:3] == ("192.168.4.95", 55443, "set_fx_effect")
-        assert send.await_args.args[3][3]["mode"] == 34
-        # Unclear: asked again.
-        result = await configure(result["flow_id"], {"flame_base": "unclear"})
+        assert send.await_args.args[3][3]["mode"] == 47
+        # Can't tell: asked again.
+        result = await configure(result["flow_id"], {"stars": "unclear"})
         assert result["step_id"] == "orientation"
         result = await configure(result["flow_id"], {"mount_profile": "check"})
-        result = await configure(result["flow_id"], {"flame_base": "bottom"})
+        result = await configure(result["flow_id"], {"stars": "left"})
+        assert (result["step_id"], result["description_placeholders"]) == (
+            "orientation_result", {"arrow": "Arrow right (180°)"},
+        )
+        result = await configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["options"] == {"mount_profile": 2, "mount_profile_source": "user"}
 
-
-async def test_options_offer_never_set(hass):
-    item = entry(hass, data={CONF_IP: "192.168.4.96"})
-    result = await hass.config_entries.options.async_init(item.entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"mount_profile": "never"})
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert item.options == {"mount_profile": 3, "mount_profile_source": "user"}

@@ -12,7 +12,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   compensated for it, so effects move the same way on any lamp; the clock
   previews turn as the lamp turns its clock (0° and 90°). Set it in the lamp's
   **Configure** (**How is the lamp mounted?**), with an optional check on the
-  lamp (Fire: where is the bright flame base?). Over Matter, an orientation
+  lamp (shooting stars: which way do they fly? The answer is shown as the
+  app's arrow before it is saved). Over Matter, an orientation
   saved in the app is read from the lamp (90°-270°, or 0° with the module
   layout the app's Save writes) and never overwritten; a lamp never saved
   (it reads 0° while running 270°) gets **Device Orientation** written once

@@ -95,6 +95,12 @@ APP_CLOCK_STYLES = range(1, 15)
 APP_CONTENT_EFFECTS = frozenset(
     (APP_COLOUR_EFFECT, REMOTE_DRAWING_EFFECT, NATIVE_CLOCK_EFFECT_ID, APP_GIF_EFFECT)
 )
+# What the orientation check's stars change on the lamp, reported over
+# Matter: not followed while it runs (light_mount_profile).
+MOUNT_CHECK_REPORTS = frozenset({
+    "effect", "effect_sub", "hue", "saturation", "on_off", "mic_music_on", "mic_music_mode",
+})
+
 # Seconds after a black slot's press during which a microphone-off report is
 # that press's (the black drawing stops the music, reported about 0.8 s
 # later on a Cube Lite), not the left button's long press.
@@ -394,6 +400,12 @@ class MatterMixin:
     def _on_matter_report(self, name: str, value, initial: bool) -> None:
         """A value the lamp reports (matter_link.REPORTED). The values read
         when the link is made are its state then: published, not applied."""
+        if not initial and name in MOUNT_CHECK_REPORTS and getattr(self, "_mount_check_active", False):
+            # The orientation check's stars (light_mount_profile): the lamp
+            # did not change on its own; what it showed comes back after.
+            if self.hass is not None:
+                self.async_write_ha_state()
+            return
         if name == "rotation":
             seen, self._lamp_rotation_seen = self._lamp_rotation_seen, value
             if not initial and value != seen:

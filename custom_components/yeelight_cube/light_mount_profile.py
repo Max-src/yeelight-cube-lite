@@ -19,7 +19,7 @@ from .const import (
     MODE_NATIVE_EFFECT,
 )
 from .mount_profile import (
-    FIRE_CHECK_PARAMS,
+    STAR_CHECK_PARAMS,
     SOURCE_MATTER,
     SOURCE_USER,
     clock_turned,
@@ -88,7 +88,7 @@ class MountProfileMixin:
         return True
 
     async def async_set_user_mount_profile(self, profile: int, *, after_check: bool = False) -> None:
-        """The user's answer (options: the app's orientation, or the Fire
+        """The user's answer (options: the app's orientation, or the stars
         check): kept, and what the lamp shows follows it. After the check,
         its content (or its off state) comes back."""
         profile = valid_profile(profile)
@@ -102,40 +102,75 @@ class MountProfileMixin:
         elif self.effect_profile != before:
             await self._async_reapply_for_mount_profile(lamp_changed=False)
 
+    @property
+    def _mount_check_active(self) -> bool:
+        """The check's stars are on the lamp (async_show_mount_check): what
+        the lamp reports meanwhile is the check, not a change of its own."""
+        return getattr(self, "_mount_check", None) is not None
+
     async def async_show_mount_check(self) -> bool:
-        """Play Fire at direction 0 as is (not compensated): where its bright
-        flame base shows tells the lamp's profile (FIRE_BASE_PROFILES). False
-        when the lamp did not take it."""
-        if getattr(self, "_mount_check_was_on", None) is None:
-            self._mount_check_was_on = self._is_on
+        """Play the check's Shooting Star as is (not compensated): the way
+        its stars fly tells the lamp's profile (mount_profile
+        star_check_profile). What the lamp showed is kept first, as
+        save_state keeps it but in a snapshot of its own (an automation's
+        save_state stays as it is): its content and settings, a running
+        rotation (stopped meanwhile, so it does not draw over the stars), the
+        Yeelight app's content when that was shown, and whether it was on.
+        False when the lamp did not take the check."""
+        if not self._mount_check_active:
+            self._mount_check = {
+                "on": self._is_on,
+                "display": self._display_attributes(),
+                "rotation": self._running_rotation(),
+                "external": getattr(self, "_external_display", False),
+                "app_content": getattr(self, "_app_content", None),
+            }
+            if self._mount_check["rotation"] is not None:
+                self.stop_effect_rotation()
 
         async def show() -> None:
-            if claim := getattr(self, "_claim_display", None):
-                claim()
             await self._leave_direct_mode()
             await self._cube_matrix.send_raw_command(
-                "set_fx_effect", list(FIRE_CHECK_PARAMS), check_reply=True
+                "set_fx_effect", list(STAR_CHECK_PARAMS), check_reply=True
             )
             # What runs is not the light's effect: the next one is sent in full.
             self._cube_matrix.forget_running_effect()
             self._fx_mode_is_direct = False
             self._in_native_fw_mode = True
 
-        return bool(await self._execute_hardware_op(show, "mount_check"))
+        if await self._execute_hardware_op(show, "mount_check"):
+            return True
+        # Not shown: the lamp still shows its content, the rotation goes on.
+        await self._async_end_mount_check()
+        return False
 
     async def _async_end_mount_check(self) -> None:
-        """Put back what the lamp showed before the Fire check."""
-        was_on = getattr(self, "_mount_check_was_on", None)
-        self._mount_check_was_on = None
-        if was_on is None:
+        """Put back what the lamp showed before the check (its snapshot): the
+        Yeelight app's content again when it was the app's and can be sent
+        again, the rotation again (in step with the lamps still running it),
+        else the content; or off again."""
+        snapshot, self._mount_check = getattr(self, "_mount_check", None), None
+        if snapshot is None:
             await self._async_reapply_for_mount_profile(lamp_changed=False)
             return
+        self._apply_display_attributes(snapshot["display"])
         self._cube_matrix.forget_running_effect()
         self._notify_camera_preview()
-        if was_on:
-            await self.async_apply_display_mode(update_type="text_change")
-        else:
+        if not snapshot["on"]:
             await self.async_turn_off()
+            return
+        content = snapshot["app_content"]
+        if snapshot["external"] and content is not None:
+            self._external_display, self._app_content = True, content
+            await self._replay_app_content(content)
+            return
+        if snapshot["rotation"] is not None and await self._async_resume_display_rotation(
+            snapshot["rotation"]
+        ):
+            return
+        # A deliberate redraw, as restore_state's: the stars left the lamp in
+        # a firmware mode, where a text_change over a drawing is dropped.
+        await self.async_apply_display_mode(update_type="color_change")
 
     async def _async_reapply_for_mount_profile(self, *, lamp_changed: bool) -> None:
         """The profile in use changed: a native effect is sent again with its
