@@ -7,10 +7,11 @@ The Cube Lite's Yeelight Matter clusters can do what LAN cannot:
 - upload a GIF;
 - read the running effect's settings.
 
-Home Assistant's Matter server reads these clusters (`matter_link.py`), but
-refuses to write them or send their commands until it knows the clusters.
-The definition is proposed upstream:
-[matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199).
+Home Assistant's Matter server reads these clusters (`matter_link.py`), and
+writes them and sends their commands from matterjs-server 1.5.4, which
+knows the clusters
+([matter-js/matterjs-server#1203](https://github.com/matter-js/matterjs-server/pull/1203)).
+Older servers refuse them.
 
 ## In the integration: `matter_commands.py`
 

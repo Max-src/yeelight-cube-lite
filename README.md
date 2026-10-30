@@ -277,9 +277,9 @@ accepted. A brief flash can remain.
 
 > [!NOTE]
 > **Buttons: Right as Remote** and the lamp's direction from **Device
-> Orientation** need Yeelight's Matter commands, which Home Assistant's own
-> Matter server doesn't support yet (proposed upstream). The button events
-> and the other two switches work today.
+> Orientation** need Yeelight's Matter commands, which Home Assistant's
+> Matter server supports from matterjs-server 1.5.4. With an older server,
+> the button events and the other two switches still work.
 
 [Set up Matter, use button events, and understand remote mode](docs/MATTER.md)
 

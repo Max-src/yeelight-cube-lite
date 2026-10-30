@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-30
 
 ### Added
 - **The lamp's orientation:** the lamp turns every native effect's direction
@@ -36,12 +36,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   show in Home Assistant (the clock previews turned as the lamp turns them
   with its orientation), and a
   Repairs message reports LAN Control turned off. Through Home Assistant's own
-  Matter connection, read-only until its Matter server knows Yeelight's Matter
-  features; lamps without Matter work as before.
-  Once Home Assistant's Matter server knows Yeelight's Matter features
-  (proposed: matter-js/matterjs-server#1199), **Device Orientation** also sets
-  the lamp's own direction, so its clock and native effects are turned for the
-  mount; until then this stays off (the light's `matter` attribute says why).
+  Matter connection: Yeelight's Matter features are in Home Assistant's Matter
+  Server from matterjs-server 1.5.4 (matter-js/matterjs-server#1203), with
+  which **Device Orientation** also sets the lamp's own direction (its clock
+  and native effects turned for the mount) and **Buttons: Right as Remote**
+  can install its black playlist. With an older Matter Server the link is
+  read-only (the light's `matter` attribute says why); lamps without Matter
+  work as before.
   A **Lamp buttons** event entity fires when the lamp's buttons (or the
   Yeelight app) change an effect, its power or a microphone music mode, for
   automations (unavailable without the Matter link). **Buttons: Right as Remote** (with Matter settings) backs up the
@@ -247,6 +248,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Clock and Native Effects previews do the same, and all three now draw the
   same brightness the same way (the Native Effects preview used a plain
   linear scale, so a dim lamp looked almost black there only).
+- In the card editors' lamp picker, a click on a lamp's checkbox did
+  nothing (it toggled the lamp twice); a click anywhere on the row now
+  toggles it once.
 
 ## [1.3.6] - 2026-10-16
 

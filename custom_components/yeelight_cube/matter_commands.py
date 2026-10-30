@@ -1,9 +1,10 @@
 """Yeelight writes and commands to a lamp over Matter (optional).
 
 Home Assistant's Matter server reads the lamp's Yeelight clusters
-(matter_link.py) but refuses writes and commands until it knows them
-(proposed upstream: matter-js/matterjs-server#1199). This module finds a
-server that can deliver them to the lamp, in this order:
+(matter_link.py); it writes them and sends their commands from
+matterjs-server 1.5.4 (matter-js/matterjs-server#1203), and refuses them
+before. This module finds a server that can deliver them to the lamp, in
+this order:
 
 1. Home Assistant's own Matter server, once it knows the Yeelight clusters:
    checked with a read-only command (getCurrentEffect), again after the

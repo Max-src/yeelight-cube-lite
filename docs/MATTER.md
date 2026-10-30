@@ -49,7 +49,8 @@ Cube Lite found via Matter*, with its address filled in:
   previews are turned as the lamp turns it: see
   [The lamp's orientation](#the-lamps-orientation).
 - **Device Orientation** (with [Matter settings](#optional-matter-settings),
-  not yet with Home Assistant's own Matter server): changing it here also
+  from matterjs-server 1.5.4 with Home Assistant's own Matter server):
+  changing it here also
   sets the lamp's own direction, which the lamp applies to the next clock or
   native effect it starts.
 - **LAN Control turned off** in the app: a Repairs message tells you, since
@@ -147,13 +148,13 @@ Wake Lamp When Off** off, these presses work while the lamp stays dark.
 ## Buttons as remote
 
 > [!IMPORTANT]
-> **What works with Home Assistant's own Matter server today:** the button
-> events, **Buttons: Left as Remote** and **Buttons: Wake Lamp When Off**.
-> **Buttons: Right as Remote** also needs Yeelight's Matter commands, which
-> Home Assistant's Matter server doesn't know yet (proposed upstream:
-> [matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199)).
-> Until then it shows `settings_unavailable` and right presses are only
-> followed. See [Optional Matter settings](#optional-matter-settings).
+> **Buttons: Right as Remote** needs Yeelight's Matter commands, which Home
+> Assistant's Matter server knows from matterjs-server 1.5.4
+> ([matter-js/matterjs-server#1203](https://github.com/matter-js/matterjs-server/pull/1203)).
+> With an older server it shows `settings_unavailable` and right presses are
+> only followed; the button events, **Buttons: Left as Remote** and
+> **Buttons: Wake Lamp When Off** work either way. See
+> [Optional Matter settings](#optional-matter-settings).
 
 In this section, **your content** is what you chose in Home Assistant (a
 clock, an effect, Music Flow, text or a drawing), and **followed** means
@@ -316,10 +317,10 @@ independently of **Buttons: Left as Remote**.
 
 Some features, including the black button playlist and writing the lamp's
 orientation, need a Matter server that delivers Yeelight's own Matter
-commands. **Home Assistant's own Matter server doesn't yet:** the definition
-is proposed upstream
-([matter-js/matterjs-server#1199](https://github.com/matter-js/matterjs-server/issues/1199))
-and the integration uses it as soon as the server knows it, with nothing to
+commands. **Home Assistant's Matter server delivers them from matterjs-server
+1.5.4**, which knows them
+([matter-js/matterjs-server#1203](https://github.com/matter-js/matterjs-server/pull/1203)):
+the integration uses them as soon as the server knows them, with nothing to
 change on your side.
 
 Check the **Matter link** sensor: **Linked, settings available** means these
