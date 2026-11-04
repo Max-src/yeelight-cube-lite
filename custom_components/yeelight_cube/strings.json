@@ -409,6 +409,9 @@
         "no_speed": {
             "message": "{effect} does not support animation speed."
         },
+        "no_direction": {
+            "message": "{effect} cannot run {direction}."
+        },
         "no_custom_color": {
             "message": "{effect} does not support custom colors."
         },
@@ -581,7 +584,7 @@
         },
         "set_clock_style": {
             "name": "Set Clock Style",
-            "description": "Configure the firmware clock in one call: style, color override, content and time format. Any subset of fields may be provided. Drives the Clock card. By default the lamp switches to Clock mode so the change is visible.",
+            "description": "Configure the lamp's clock in one call: style, color override, content and time format. Any subset of fields may be provided. Drives the Clock card. By default the lamp switches to Clock mode so the change is visible.",
             "fields": {
                 "entity_id": {
                     "name": "Entity",
@@ -589,7 +592,7 @@
                 },
                 "style": {
                     "name": "Style",
-                    "description": "Clock style name (e.g. \"Yellow\", \"Blue White\") or numeric style id."
+                    "description": "Clock style name (e.g. \"Yellow\", \"Night-sky waves\") or numeric style id."
                 },
                 "color": {
                     "name": "Color",
@@ -609,7 +612,7 @@
                 },
                 "color_mode": {
                     "name": "Color mode",
-                    "description": "Firmware color palette preset for compatible effects/styles. \"normal\" keeps each effect's own colors; the others remap the palette."
+                    "description": "Built-in color palette preset for compatible effects/styles. \"normal\" keeps each effect's own colors; the others remap the palette."
                 },
                 "speed": {
                     "name": "Speed",
@@ -683,7 +686,7 @@
         },
         "send_fx_effect": {
             "name": "DEBUG: Send FX Effect (raw)",
-            "description": "LOCAL DEBUG ONLY. Sends a raw private LAN command (default set_fx_effect) to the lamp for reverse-engineering. Either provide params (raw JSON array, sent verbatim) or the structured fields (mode/style_id/apply/mixer/color/ data_bytes). Not a stable API.",
+            "description": "LOCAL DEBUG ONLY. Sends a raw private LAN command (default set_fx_effect) to the lamp. Either provide params (raw JSON array, sent verbatim) or the structured fields (mode/style_id/apply/mixer/color/ data_bytes). Not a stable API.",
             "fields": {
                 "entity_id": {
                     "name": "Entity",
@@ -711,7 +714,7 @@
                 },
                 "mixer": {
                     "name": "Mixer",
-                    "description": "Firmware mixer/animation preset ID."
+                    "description": "Built-in mixer/animation preset ID."
                 },
                 "color": {
                     "name": "Color",
@@ -737,7 +740,7 @@
         },
         "query_raw": {
             "name": "DEBUG: Query Raw (capture reply)",
-            "description": "LOCAL DEBUG ONLY. Sends a raw command to the lamp and returns the device's reply. Useful for probing (e.g. get_prop) and observing responses to experimental commands. Not a stable API.",
+            "description": "LOCAL DEBUG ONLY. Sends a raw command to the lamp and returns the device's reply, e.g. to get_prop or to an experimental command. Not a stable API.",
             "fields": {
                 "entity_id": {
                     "name": "Entity",
@@ -811,7 +814,7 @@
         },
         "set_native_effect": {
             "name": "Set Native Effect",
-            "description": "Select and apply a firmware animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.",
+            "description": "Select and apply a built-in animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.",
             "fields": {
                 "entity_id": {
                     "name": "Entity",
@@ -824,6 +827,10 @@
                 "speed": {
                     "name": "Speed",
                     "description": "Animation speed for effects that support it."
+                },
+                "direction": {
+                    "name": "Direction",
+                    "description": "The way the effect flows, as you see it however the lamp is mounted. Shared by all effects, for those that offer it."
                 },
                 "color": {
                     "name": "Color",

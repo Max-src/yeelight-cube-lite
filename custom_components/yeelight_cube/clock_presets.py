@@ -16,7 +16,10 @@ def save_clock_preset(presets, name, color, builtin_names, preset_id=None, kind=
         raise InputError("preset_name_length")
     if any(ord(char) < 32 or char in "<>" for char in name):
         raise InputError("preset_name_characters")
-    if kind == "style" and name.casefold() in {item.casefold() for item in builtin_names}:
+    # A preset keeps a name it already has: one a style took later (a style
+    # renamed) must not lock it.
+    kept = existing is not None and existing["name"].casefold() == name.casefold()
+    if kind == "style" and not kept and name.casefold() in {item.casefold() for item in builtin_names}:
         raise InputError("preset_name_builtin")
     if not isinstance(color, (list, tuple)) or len(color) != 3 or any(
         type(channel) is not int or not 0 <= channel <= 255 for channel in color

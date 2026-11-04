@@ -1,5 +1,5 @@
 """The lamp's optional Matter link (matter_link.py) and the reports the light
-follows (light_matter.py), with node data captured from a Cube Lite
+follows (light_matter.py), with node data from a Cube Lite
 commissioned in Home Assistant's Matter server (2026-10-22)."""
 
 from pathlib import Path
@@ -257,7 +257,7 @@ class FollowedReportTests(unittest.TestCase):
 
     def test_a_button_effect_is_followed(self):
         self.report("effect", 34)  # the playlist's Bonfire
-        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+        self.assertEqual(("Native Effect", "Fire"), (self.light._mode, self.light._native_effect))
         # The integration's own rotation gives way to the lamp.
         self.assertIn("stop_rotation", self.light.calls)
         self.assertTrue(self.light._in_native_fw_mode)
@@ -272,7 +272,7 @@ class FollowedReportTests(unittest.TestCase):
         self.report("effect", 34, initial=True)
         # The integration just started Rainbow (39) over Streamer (3): the
         # lamp reporting either is that command's echo.
-        self.light._mode, self.light._native_effect = "Native Effect", "Streamer"
+        self.light._mode, self.light._native_effect = "Native Effect", "Ribbon"
         self.light._note_lamp_command()
         self.light._native_effect = "Rainbow"
         self.report("effect", 39)
@@ -292,7 +292,7 @@ class FollowedReportTests(unittest.TestCase):
         self.report("effect", 50)
         self.assertTrue(self.light._fx_mode_is_direct)
         self.report("effect", 3)
-        self.assertEqual(("Native Effect", "Streamer"), (self.light._mode, self.light._native_effect))
+        self.assertEqual(("Native Effect", "Ribbon"), (self.light._mode, self.light._native_effect))
         self.assertFalse(self.light._fx_mode_is_direct)
         # An effect we do not follow still ends the drawing mode.
         self.light._fx_mode_is_direct = True
@@ -420,7 +420,7 @@ class FollowedReportTests(unittest.TestCase):
         self.report("on_off", False)  # the right button's long press
         self.assertEqual(
             [
-                ("effect_changed", {"effect": "Bonfire", "effect_id": 34}),
+                ("effect_changed", {"effect": "Fire", "effect_id": 34}),
                 ("music_mode_changed", {"mode": "Blossom"}),
                 ("music_off", {}),
                 ("turned_off", {}),
@@ -725,7 +725,7 @@ class FollowedReportTests(unittest.TestCase):
         entry.options["remote_saved_playlist"] = [[39, 39]]
         entry.options["remote_playlist_installed"] = True
         self.light._matter_commands.backend = "matter"
-        self.light._mode, self.light._native_effect = "Native Effect", "Bonfire"
+        self.light._mode, self.light._native_effect = "Native Effect", "Fire"
         events = self.lamp_events()
         self.report("mic_music_on", True)
         self.report("effect", 83)
@@ -735,7 +735,7 @@ class FollowedReportTests(unittest.TestCase):
         self.report("effect_sub", 1000)
         self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
         self.assertFalse(self.light._music_flow_enabled)
-        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+        self.assertEqual(("Native Effect", "Fire"), (self.light._mode, self.light._native_effect))
         # The black slot stopped the microphone, reported about 0.8 s later:
         # no music_off event for it.
         self.report("mic_music_on", False)
@@ -791,6 +791,30 @@ class FollowedReportTests(unittest.TestCase):
         self.report("mic_music_on", False)  # real long press, not our start
         self.assertEqual([("music_off", {})], events)
 
+    def test_a_music_effect_rotation_step_is_not_taken_for_the_lamp(self):
+        # A rotation step to a music effect: deactivate_fx_mode makes the lamp
+        # put back its saved Ribbon (3), then the effect starts the microphone,
+        # and the next step stops it. None of it is another app or a button.
+        self.light._mode, self.light._native_effect = "Native Effect", "Music Spectrum"
+        self.light._shows_lamp_music = lambda: True
+        events = self.lamp_events()
+        self.light._note_lamp_command()
+        self.light._note_fx_restore()
+        self.report("effect", 3)
+        self.report("mic_music_on", True)
+        self.light._shows_lamp_music = lambda: False
+        self.light._native_effect = "Rainbow"
+        self.report("mic_music_on", False)
+        self.assertEqual([], events)
+        self.assertEqual([], self.light.calls)
+        self.assertTrue(self.light._rotation_active)
+        self.assertFalse(self.light._external_display)
+        self.assertEqual("Rainbow", self.light._native_effect)
+        # Long after, the left button's microphone music is the lamp's again.
+        self.light._lamp_command_at = self.light._fx_restore_at = -1000.0
+        self.report("mic_music_on", True)
+        self.assertIn("stop_rotation", self.light.calls)
+
     def test_black_frame_power_echo_does_not_turn_logically_off_lamp_on(self):
         self.light._is_on = False
         self.light._expect_lamp_power(True)
@@ -811,10 +835,10 @@ class FollowedReportTests(unittest.TestCase):
         self.report("effect", 40)
         self.assertEqual([], self.light.calls)
         self.report("effect", 34)
-        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+        self.assertEqual(("Native Effect", "Fire"), (self.light._mode, self.light._native_effect))
         # A late clock report after leaving it is the previous command's echo.
         self.report("effect", 40)
-        self.assertEqual(("Native Effect", "Bonfire"), (self.light._mode, self.light._native_effect))
+        self.assertEqual(("Native Effect", "Fire"), (self.light._mode, self.light._native_effect))
 
     def test_each_black_slot_invalidates_drawing_mode_without_effect_report(self):
         entry, _ = self.remote_lamp([(39, 39), (42, 42)])
@@ -841,8 +865,8 @@ class FollowedReportTests(unittest.TestCase):
         self.light._matter = types.SimpleNamespace(linked=True, values={"lan_control": False})
         self.assertTrue(self.light.matter_lan_control_off)
 
-    def test_effect_ids_and_firmware_modes(self):
-        self.assertEqual("Streamer", MATTER.NATIVE_EFFECT_IDS[3])
+    def test_effect_ids_and_lamp_modes(self):
+        self.assertEqual("Ribbon", MATTER.NATIVE_EFFECT_IDS[3])
         self.assertEqual("Flower Sea", MATTER.NATIVE_EFFECT_IDS[91])
 
 
@@ -860,7 +884,7 @@ class ButtonCombinationTests(unittest.TestCase):
             entry.options.update(remote_saved_playlist=[[39, 39], [42, 42]], remote_playlist_installed=True)
         light = case.light
         light._remote_playlist_written_at = -100.0
-        light._mode, light._native_effect = "Native Effect", "Bonfire"
+        light._mode, light._native_effect = "Native Effect", "Fire"
         self.case, self.light = case, light
         return light
 
@@ -882,7 +906,7 @@ class ButtonCombinationTests(unittest.TestCase):
         self.case.report("mic_music_on", False)
         self.case.report("effect", back)
 
-    def shows_own_content(self, mode=("Native Effect", "Bonfire")):
+    def shows_own_content(self, mode=("Native Effect", "Fire")):
         light = self.light
         self.assertIn("redraw", light.calls)
         self.assertFalse(light._music_flow_enabled)
@@ -949,7 +973,7 @@ class ButtonCombinationTests(unittest.TestCase):
                     self.left_hold()  # the lamp shows Bonfire again, followed
                     self.light.calls.clear()
                     self.right()
-                    self.shows_followed_effect(34, "Bonfire")
+                    self.shows_followed_effect(34, "Fire")
                     self.right()  # and on every press after it
                     self.assertEqual(2, self.light.calls.count(("replay", [34, 0, 4])))
 
@@ -959,7 +983,7 @@ class ButtonCombinationTests(unittest.TestCase):
         self.left_hold(back=50)
         light.calls.clear()
         self.right()
-        self.shows_own_content(("Solid Color", "Bonfire"))
+        self.shows_own_content(("Solid Color", "Fire"))
 
     def test_right_press_after_another_apps_effect(self):
         self.lamp(True, False)
@@ -967,7 +991,7 @@ class ButtonCombinationTests(unittest.TestCase):
         self.assertTrue(self.light._external_display)
         self.light.calls.clear()
         self.right()
-        self.shows_followed_effect(42, "Ocean Waves")
+        self.shows_followed_effect(42, "Waves")
 
     def test_left_press_keeps_another_apps_display_external_until_a_press(self):
         light = self.lamp(True, False)
@@ -976,7 +1000,7 @@ class ButtonCombinationTests(unittest.TestCase):
         self.assertTrue(light._external_display)  # music doesn't end it
         light.calls.clear()
         self.right()
-        self.shows_followed_effect(42, "Ocean Waves")
+        self.shows_followed_effect(42, "Waves")
 
     def test_a_press_on_a_lamp_that_is_off(self):
         # Off in Home Assistant, the lamp powered and black (a drawing's off,
@@ -1050,7 +1074,7 @@ class AppContentTests(unittest.IsolatedAsyncioTestCase):
         )
         light = case.light
         light._remote_playlist_written_at = -100.0
-        light._mode, light._native_effect = "Native Effect", "Bonfire"
+        light._mode, light._native_effect = "Native Effect", "Fire"
         light._matter.values.update(rotation=2, effect=34, effect_sub=0, hue=150, saturation=254)
         self.sent, self.methods, self.tasks = [], [], []
 
@@ -1111,7 +1135,7 @@ class AppContentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([method], self.methods)
         self.assertNotIn("redraw", light.calls)
         self.assertTrue(light._external_display)  # still the app's
-        self.assertEqual(("Native Effect", "Bonfire"), (light._mode, light._native_effect))
+        self.assertEqual(("Native Effect", "Fire"), (light._mode, light._native_effect))
 
     def shows_own_content(self):
         self.assertEqual([], self.sent)

@@ -12,16 +12,20 @@ from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from .const import (
     ALL_NATIVE_EFFECTS,
     CLOCK_COLOR_MODES,
+    DEFAULT_NATIVE_EFFECT_DIRECTION,
     DEVICE_ORIENTATIONS,
     DEVICE_ORIENTATION_TO_FLIP,
-    FIRMWARE_MODES,
+    LAMP_MODES,
     MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECTS,
     NATIVE_EFFECT_DIRECTION_VALUES,
-    NATIVE_EFFECT_RENAMES,
+    BUTTON_CLOCK_PREFIX,
+    canonical_button_effect_name,
+    clock_style_name_saved_by_1_4,
+    canonical_effect_name,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
     LEGACY_POWER_ON_STATES,
@@ -71,19 +75,21 @@ def _rgb_list(value):
 
 
 def _native_effect_name(value):
-    # Migrate legacy names (e.g. "Ribbon") to current app names.
-    name = NATIVE_EFFECT_RENAMES.get(value, value)
+    # Any former name (e.g. "Streamer", "Ocean Waves") is today's.
+    name = canonical_effect_name(value)
     return name if name in ALL_NATIVE_EFFECTS else _INVALID
 
 
 def _button_effect_names(value):
     if not isinstance(value, list):
         return _INVALID
+    names = [
+        canonical_button_effect_name(name) for name in value if isinstance(name, str)
+    ]
     return [
-        NATIVE_EFFECT_RENAMES.get(name, name)
-        for name in value
-        if NATIVE_EFFECT_RENAMES.get(name, name) in NATIVE_EFFECTS
-        or name.startswith("Clock: ")
+        name
+        for name in names
+        if name in NATIVE_EFFECTS or name.startswith(BUTTON_CLOCK_PREFIX)
     ][:8]
 
 
@@ -153,7 +159,7 @@ class StateRestoreMixin:
         # The rotation running when it was saved (restarted by restore_state).
         self._saved_display_rotation = None
         # Between save_state and restore_state: what an automation shows is
-        # deliberate (a text is shown even over the firmware clock).
+        # deliberate (a text is shown even over the lamp's clock).
         self._display_overlay = False
 
     # -- The drawing shown in Custom Draw (pixel art, draw card) -------------
@@ -257,7 +263,7 @@ class StateRestoreMixin:
         else:
             self._custom_draw_active = attributes.get("mode") == "Custom Draw"
         restored_mode = attributes.get("mode")
-        if restored_mode in MATRIX_DISPLAY_MODES or restored_mode in FIRMWARE_MODES:
+        if restored_mode in MATRIX_DISPLAY_MODES or restored_mode in LAMP_MODES:
             self._mode = restored_mode
         matrix_mode = attributes.get("matrix_mode")
         if matrix_mode in MATRIX_DISPLAY_MODES:
@@ -277,9 +283,27 @@ class StateRestoreMixin:
             )
         self._native_clock_show_date = self._native_clock_content == "time_date"
 
+        # Saved when an effect's direction was the mount's: that is what the
+        # default now means, on every mount.
+        if not attributes.get("effect_direction_own"):
+            self._native_effect_direction = DEFAULT_NATIVE_EFFECT_DIRECTION
+            # Saved by 1.4.0 or earlier too: a button's clock style as it
+            # meant then (the lamp's own list still runs that one), from the
+            # names as saved.
+            saved = attributes.get("button_effects")
+            if isinstance(saved, list):
+                names = _button_effect_names([
+                    BUTTON_CLOCK_PREFIX + clock_style_name_saved_by_1_4(
+                        name.removeprefix(BUTTON_CLOCK_PREFIX)
+                    ) if isinstance(name, str) and name.startswith(BUTTON_CLOCK_PREFIX) else name
+                    for name in saved
+                ])
+                if names is not _INVALID:
+                    self._button_effects = names
+
         # The 4-way physical device orientation (right/down/left/up) is the
-        # source of truth for native-effect flow and matrix/pixel flip; keep
-        # the legacy normal/flipped flag consistent with it.
+        # source of truth for the matrix/pixel flip; keep the legacy
+        # normal/flipped flag consistent with it.
         device_orientation_val = attributes.get("device_orientation")
         if device_orientation_val in DEVICE_ORIENTATIONS:
             self._device_orientation = device_orientation_val
@@ -338,9 +362,9 @@ class StateRestoreMixin:
         Overwrites any previously saved snapshot -- only one is kept per
         entity."""
         self._saved_display_state = self._display_attributes()
-        # Over the firmware clock / native effect, the next text is a
+        # Over the lamp's clock / native effect, the next text is a
         # deliberate overlay (see _text_waits_for_matrix): shown once.
-        self._display_overlay = self._mode in FIRMWARE_MODES
+        self._display_overlay = self._mode in LAMP_MODES
         # The rotation running now: what is shown in between (a text, a
         # pixel art...) stops it, so restore_state starts it again.
         self._saved_display_rotation = self._running_rotation()
@@ -348,7 +372,7 @@ class StateRestoreMixin:
     def _restore_display_state(self):
         """Restore attributes from the saved snapshot and refresh linked
         helper entities.  Returns True if a snapshot existed, False otherwise.
-        The caller is responsible for triggering the hardware re-render."""
+        Triggering the hardware re-render is left to the code that calls it."""
         snapshot = self._saved_display_state
         self._display_overlay = False
         if not snapshot:
@@ -358,7 +382,7 @@ class StateRestoreMixin:
 
     def _apply_display_attributes(self, snapshot: dict) -> None:
         """Set the display state back (_display_attributes), its linked
-        helper entities too; the caller re-renders it."""
+        helper entities too; it is re-rendered afterwards."""
         for attr, value in snapshot.items():
             setattr(self, attr, copy.deepcopy(value))
         # Migration: pre-4-way states saved only _orientation. If the device
@@ -374,15 +398,15 @@ class StateRestoreMixin:
         self._refresh_linked_entities()
 
     def _text_waits_for_matrix(self) -> bool:
-        """A text sent while the lamp shows its firmware clock / native effect
+        """A text sent while the lamp shows its built-in clock / native effect
         is kept for when it shows text again, without leaving that mode (an
         automation pushing a sensor value must not take the clock over, stop
         its rotation, or report a mode the panel does not show). Between
         save_state and restore_state it is a deliberate overlay: shown, once
-        (the text leaves the firmware mode, so the automation's next texts
+        (the text leaves the built-in mode, so the automation's next texts
         show anyway; back on the clock without restore_state, sensor texts
         wait again)."""
-        return self._mode in FIRMWARE_MODES and not self._display_overlay
+        return self._mode in LAMP_MODES and not self._display_overlay
 
     async def _async_resume_display_rotation(self, saved: dict | None = None) -> bool:
         """After restore_state (or the orientation check, its own ``saved``):

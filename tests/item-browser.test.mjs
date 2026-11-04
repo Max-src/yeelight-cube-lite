@@ -80,9 +80,9 @@ test("clock responding-only filtering is always on", () => {
 
 test("custom color response covers solids and effects, excludes fixed presets", () => {
   assert.equal(clockStyleRespondsToCustomColor(style("Rainbow")), true);
-  assert.equal(clockStyleRespondsToCustomColor(style("Ocean Waves")), true);
+  assert.equal(clockStyleRespondsToCustomColor(style("Waves")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("White")), true);
-  assert.equal(clockStyleRespondsToCustomColor(style("Sunset")), false);
+  assert.equal(clockStyleRespondsToCustomColor(style("Rainbow noise")), false);
   // Saved presets are fixed-color styles (Normal/B&W only), not custom mode.
   assert.equal(clockStyleRespondsToCustomColor(style("Amber")), false);
   assert.equal(clockStyleRespondsToCustomColor({ name: "Unknown" }), false);
@@ -142,11 +142,11 @@ test("clock responses distinguish palettes, B&W, solids, presets and unknowns", 
     assert.equal(clockStyleColorModeState(style("Rainbow"), mode), "responds");
   }
   assert.equal(
-    clockStyleColorModeState(style("Ocean Waves"), "bw"),
+    clockStyleColorModeState(style("Waves"), "bw"),
     "responds",
   );
   assert.equal(
-    clockStyleColorModeState(style("Ocean Waves"), "red_blue"),
+    clockStyleColorModeState(style("Waves"), "red_blue"),
     "unchanged",
   );
   assert.equal(clockStyleColorModeState(style("Red"), "bw"), "responds");

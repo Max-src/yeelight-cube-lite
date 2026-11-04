@@ -69,7 +69,7 @@ fi
 npx playwright install chromium > /tmp/yc-playwright.log 2>&1 || { tail -5 /tmp/yc-playwright.log; exit 1; }
 
 status=0
-for suite in card-events-browser card-sync-browser card-ui-parity; do
+for suite in card-events-browser card-sync-browser card-ui-parity matrix-surface-browser; do
   if BROWSER_CHANNEL=chromium node "tests/$suite.cjs" > "/tmp/yc-$suite.log" 2>&1; then
     echo "PASS  $suite (Linux)"
   else

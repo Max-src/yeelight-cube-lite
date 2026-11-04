@@ -1,5 +1,6 @@
 import asyncio
 import time
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -39,7 +40,8 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.target = SimpleNamespace(
-            _native_effect="Streamer", _native_effect_speed=50,
+            _native_effect="Ribbon", _native_effect_speed=50,
+            _native_effect_direction="Right",
             _extended_effects_enabled=False, _is_on=True, _mode="Clock",
             _custom_draw_active=True, _native_effect_speed_entity=None,
             _should_auto_turn_on=lambda: False,
@@ -55,6 +57,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             SERVICES_SOURCE,
             {"handle_set_native_effect"},
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
+             "canonical_effect_name": CONSTANTS["canonical_effect_name"],
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
              "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
@@ -86,6 +89,24 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.target.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
         self.target._refresh_linked_entities.assert_called_once()
 
+    async def test_a_direction_is_set_on_its_own_and_checked_only_to_run_it(self):
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow", "direction": "Left"}))
+        self.assertEqual("Left", self.target._native_effect_direction)
+        with self.assertRaisesRegex(ValueError, "cannot run"):
+            await self.handle(SimpleNamespace(data={"effect": "Hacking", "direction": "Right"}))
+        self.assertEqual("Left", self.target._native_effect_direction)
+        # A choice shared by all effects: a lamp on one without it keeps it for the next.
+        self.target._native_effect = "Bouncing Ball"
+        await self.handle(SimpleNamespace(data={"direction": "Up", "activate": False}))
+        self.assertEqual("Up", self.target._native_effect_direction)
+        self.assertEqual("Bouncing Ball", self.target._native_effect)
+
+    async def test_a_direction_the_lamp_refused_rolls_back(self):
+        self.target._mode = "Native Effect"
+        self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow", "direction": "Left"}))
+        self.assertEqual("Right", self.target._native_effect_direction)
+
     async def test_native_palettes_are_validated_and_independent_of_clock(self):
         self.target._native_clock_color_mode = "bw"
         await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color_mode": "red_blue"}))
@@ -93,7 +114,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_clock_color_mode, "bw")
         for color_mode in ("missing", "purple_orange"):
             with self.assertRaisesRegex(ValueError, "color mode"):
-                await self.handle(SimpleNamespace(data={"effect": "Ocean Waves", "color_mode": color_mode}))
+                await self.handle(SimpleNamespace(data={"effect": "Waves", "color_mode": color_mode}))
         self.assertEqual(self.target._native_effect, "Rainbow")
         await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color_mode": "normal"}))
         self.assertEqual(self.target._native_effect_color_mode, "normal")
@@ -105,11 +126,10 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             "asyncio": SimpleNamespace(sleep=AsyncMock()),
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
-            "DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
         })
         activate = fns["_activate_native_effect"]
         target = SimpleNamespace(
-            _native_effect="Starry sky", _native_effect_speed=50,
+            _native_effect="Starry Sky", _native_effect_speed=50,
             _native_effect_direction="Right", _device_orientation="right",
             _native_effect_direction_select_entity=None,
             _native_effect_color_mode="bw", _native_effect_color=None, hass=None,
@@ -122,7 +142,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         )
         for name in NATIVE_ACTIVATION_METHODS - {"_activate_native_effect"}:
             setattr(target, name, fns[name].__get__(target))
-        for effect, mode in (("Starry sky", "bw"), ("Rainbow", "red_blue"), ("Ocean Waves", "red_blue"), ("Starry sky", "normal")):
+        for effect, mode in (("Starry Sky", "bw"), ("Rainbow", "red_blue"), ("Waves", "red_blue"), ("Starry Sky", "normal")):
             target._native_effect = effect
             target._native_effect_color_mode = mode
             await activate(target)
@@ -166,13 +186,13 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.target._native_effect_color)
 
     async def test_rejects_unknown_experimental_and_off_without_mutating(self):
-        for effect in ("missing", "Prism"):
+        for effect in ("missing", "Mirrored comets"):
             with self.subTest(effect=effect), self.assertRaises(ValueError):
                 await self.handle(SimpleNamespace(data={"effect": effect}))
         self.target._is_on = False
         with self.assertRaisesRegex(ValueError, "auto-turn-on"):
             await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
-        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._native_effect, "Ribbon")
         self.target.async_apply_display_mode.assert_not_awaited()
 
     async def test_speed_only_does_not_switch_modes_and_hardware_errors_are_logged(self):
@@ -187,7 +207,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         # The lamp did not take the change: the previous settings are
         # republished so cards show what the lamp actually runs, and the
         # cards name why (last_command_error).
-        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._native_effect, "Ribbon")
         self.assertEqual(self.target._mode, "Clock")
         self.target.async_write_ha_state.assert_called()
         self.assertEqual(self.target._last_command_error["message"], "Offline")
@@ -197,7 +217,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         # a refusal is named in last_command_error.
         self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
-        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._native_effect, "Ribbon")
         self.assertEqual(self.target._mode, "Clock")
         self.logger.warning.assert_called_once()
 
@@ -230,7 +250,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
         # The effect this call set is restored; the clock mode set by the other
         # path is kept rather than being replaced by this call's snapshot.
-        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._native_effect, "Ribbon")
         self.assertEqual(self.target._mode, "Clock")
 
     async def test_rollback_ignores_values_of_a_skipped_call(self):
@@ -238,10 +258,10 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         # still shows the original effect, never X's, so that is restored.
         self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
-        await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        await self.raw_handle(SimpleNamespace(data={"effect": "Waves"}))
         pending, self.scheduled[:] = list(self.scheduled), []
         await asyncio.gather(*pending)
-        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._native_effect, "Ribbon")
         self.assertEqual(self.target._mode, "Clock")
 
     async def test_rollback_restores_an_older_call_that_succeeded_meanwhile(self):
@@ -258,7 +278,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
         first = asyncio.ensure_future(self.scheduled.pop())
         await asyncio.sleep(0)  # Rainbow is now being sent to the lamp
-        await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        await self.raw_handle(SimpleNamespace(data={"effect": "Waves"}))
         release_first.set()
         await first  # the lamp accepted Rainbow
         await asyncio.gather(*self.scheduled)  # Ocean Waves is rejected
@@ -282,12 +302,12 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
         first = asyncio.ensure_future(self.scheduled.pop())
         await asyncio.sleep(0)  # Rainbow is now being sent to the lamp
-        await self.handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        await self.handle(SimpleNamespace(data={"effect": "Waves"}))
         release_first.set()
         await first
         self.assertIsNone(getattr(self.target, "_native_effect_baseline", None))
         await self.handle(SimpleNamespace(data={"effect": "Aurora"}))  # rejected
-        self.assertEqual(self.target._native_effect, "Ocean Waves")
+        self.assertEqual(self.target._native_effect, "Waves")
 
     async def test_nothing_to_send_leaves_no_stale_baseline(self):
         # A speed change while the clock runs sends nothing to the lamp...
@@ -297,16 +317,16 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
         self.assertEqual(self.target._native_effect_speed, 80)
-        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._native_effect, "Ribbon")
 
     async def test_older_background_apply_is_skipped_after_a_newer_call(self):
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
-        await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        await self.raw_handle(SimpleNamespace(data={"effect": "Waves"}))
         pending, self.scheduled[:] = list(self.scheduled), []
         await asyncio.gather(*pending)
         # Only the latest settings are sent to the lamp.
         self.target.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
-        self.assertEqual(self.target._native_effect, "Ocean Waves")
+        self.assertEqual(self.target._native_effect, "Waves")
 
     async def test_returns_before_the_lamp_round_trip_with_state_published(self):
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
@@ -322,10 +342,10 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
     async def test_unsupported_speed_and_multi_target_preflight(self):
         self.target._extended_effects_enabled = True
         with self.assertRaisesRegex(ValueError, "speed"):
-            await self.handle(SimpleNamespace(data={"effect": "Spectrum Bands", "speed": 80}))
+            await self.handle(SimpleNamespace(data={"effect": "Palette stripes", "speed": 80}))
         self.targets.append(SimpleNamespace(_extended_effects_enabled=False))
         with self.assertRaisesRegex(ValueError, "Experimental"):
-            await self.handle(SimpleNamespace(data={"effect": "Prism"}))
+            await self.handle(SimpleNamespace(data={"effect": "Mirrored comets"}))
         self.target.async_apply_display_mode.assert_not_awaited()
 
     async def test_freeze_display_sends_mode_64_to_every_target(self):
@@ -394,6 +414,9 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             (ROOT / "camera.py").read_text(encoding="utf-8"),
             {"_get_native_effect_preview"},
             {"_time": FakeTime,
+             "DEFAULT_NATIVE_EFFECT": CONSTANTS["DEFAULT_NATIVE_EFFECT"],
+             "DEFAULT_NATIVE_EFFECT_DIRECTION": CONSTANTS["DEFAULT_NATIVE_EFFECT_DIRECTION"],
+             "DEFAULT_DEVICE_ORIENTATION": CONSTANTS["DEFAULT_DEVICE_ORIENTATION"],
              "render_native_effect_oriented": NATIVE_PREVIEW["render_native_effect_oriented"]},
         )["_get_native_effect_preview"]
         camera = SimpleNamespace(
@@ -403,7 +426,8 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
                 _native_effect_color=None, _display_frozen=False,
             ),
             _native_preview_key=None, _native_preview_started_at=None,
-            _frozen_background_phase=None,
+            _frozen_background_seconds=None, _preview_lock=threading.Lock(),
+            _preview_speed=lambda: 50,
         )
         phases = []
         original = NATIVE_PREVIEW["render_native_effect_oriented"]

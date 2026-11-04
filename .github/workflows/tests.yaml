@@ -59,4 +59,5 @@ jobs:
         run: |
           node tests/card-events-browser.cjs
           node tests/card-sync-browser.cjs
+          node tests/matrix-surface-browser.cjs
           node tests/card-ui-parity.cjs

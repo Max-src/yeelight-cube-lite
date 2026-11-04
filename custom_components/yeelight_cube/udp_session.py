@@ -3,7 +3,7 @@
 The Cube Lite takes the same JSON commands as over TCP (port 55443) inside a
 UDP *command session*, without TCP's per-connection quota (30 commands per
 connection, 54 shared, per minute) and without opening a connection per
-command. Measured on the lamp (research notes, PROTOCOL.md §3-4, X13):
+command. How the lamp behaves:
 
 - ``udp_sess_new`` answers ``{"method": "udp_sess_token", "params":
   {"token": "<32 hex>"}}``; every later datagram carries that token, and the
@@ -19,9 +19,9 @@ One session per lamp carries everything (commands and frames): ``activate_fx_mod
 direct`` only applies to the session it was sent in, and mixing a command and a
 stream session on one lamp can freeze it. When the lamp drops a session and a
 new one is opened, what must hold in every session (``session_setup``: direct
-mode, while it is on) is sent in it first, so the caller never sees the change.
+mode, while it is on) is sent in it first, so the change never shows.
 
-No Home Assistant or yeelight import: the caller (cube_matrix.CubeMatrix) turns
+No Home Assistant or yeelight import: cube_matrix.CubeMatrix turns
 an error reply into its exception and falls back to TCP on UdpUnavailable.
 """
 
@@ -60,7 +60,7 @@ _UNANSWERED = frozenset({"update_leds"})
 
 class UdpUnavailable(Exception):
     """The session could not be opened, or the lamp stopped answering in it:
-    the command was not confirmed, and the caller should use TCP."""
+    the command was not confirmed, and TCP should be used."""
 
 
 class UdpTooLarge(UdpUnavailable):
@@ -107,7 +107,7 @@ class UdpSession:
         self.sessions_opened = 0
         # Commands (method, params) every new session is sent first, before
         # the command that needed it: what must hold in whichever session
-        # the lamp is in (set by the caller: direct mode, while it is on).
+        # the lamp is in (set by CubeMatrix: direct mode, while it is on).
         self.session_setup: list[tuple[str, list]] = []
 
     @property
@@ -207,7 +207,7 @@ class UdpSession:
 
     async def _set_up(self) -> None:
         """Send session_setup in the session just opened; a command it does
-        not take makes the session unusable (the caller falls back to TCP)."""
+        not take makes the session unusable (CubeMatrix falls back to TCP)."""
         for method, params in list(self.session_setup):
             answer = await self._answer(
                 {"id": next(self._ids), "method": method, "params": params, "token": self._token}

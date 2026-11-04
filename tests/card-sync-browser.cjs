@@ -47,7 +47,7 @@ withBrowser(async ({ browser, server }) => {
         native_effect_color_mode: "normal",
         native_effect_color: null,
         native_effect_speed: 50,
-        native_effect_catalog: ["Rainbow", "Tide", "Starry sky"].map((name) => ({
+        native_effect_catalog: ["Rainbow", "Tide", "Starry Sky"].map((name) => ({
           name,
           speed: true,
           directions: ["Up", "Down", "Left", "Right"],
@@ -492,9 +492,9 @@ withBrowser(async ({ browser, server }) => {
   });
   assert.ok(await headerAligned("#clockone"), "clock favourites buttons on the right");
   await page.locator('#clockone [aria-label="Add favourite"]').first().click();
-  await page.evaluate(() => pushLater((a) => (a.clock_style = "Ocean Waves", a.clock_style_id = 2), 0));
+  await page.evaluate(() => pushLater((a) => (a.clock_style = "Waves", a.clock_style_id = 2), 0));
   await waitFor(
-    () => document.querySelector("#clockone")._controls.adapter.current() === "Ocean Waves",
+    () => document.querySelector("#clockone")._controls.adapter.current() === "Waves",
     null,
     "clock style change",
   );
@@ -507,7 +507,7 @@ withBrowser(async ({ browser, server }) => {
   assert.match(
     await sectionText("#clocktwo"),
     // Intervals are per kind: none set for Clock yet, so the card default.
-    /Clock Mode Rotation.*2 clock modes · every 1min.*Rainbow \/ Ocean Waves/,
+    /Clock Mode Rotation.*2 clock modes · every 1min.*Rainbow \/ Waves/,
   );
   // A second target lamp unavailable: status unknown, favourites still listed.
   await page.evaluate(async () => {
@@ -521,7 +521,7 @@ withBrowser(async ({ browser, server }) => {
   await page.waitForTimeout(200);
   assert.match(
     await sectionText("#clocktwo"),
-    /Status unavailable.*2 clock modes.*Rainbow \/ Ocean Waves/,
+    /Status unavailable.*2 clock modes.*Rainbow \/ Waves/,
   );
 
   assert.deepEqual(errors, []);

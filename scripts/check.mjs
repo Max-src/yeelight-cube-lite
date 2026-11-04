@@ -63,6 +63,18 @@ const steps = [
     { env: browserEnv },
   ],
   [
+    "Browser: gallery canvas",
+    process.execPath,
+    ["tests/matrix-surface-browser.cjs"],
+    { env: browserEnv },
+  ],
+  [
+    "Browser: gallery performance",
+    process.execPath,
+    ["tests/gallery-perf-browser.cjs"],
+    { env: browserEnv },
+  ],
+  [
     "Documentation galleries",
     process.execPath,
     ["tests/card-docs-readme.cjs", "--check"],

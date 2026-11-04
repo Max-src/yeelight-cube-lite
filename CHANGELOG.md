@@ -3,6 +3,216 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The music effects hear the lamp's microphone again:** after a drawing, text
+  or picture (anything shown pixel by pixel), the lamp keeps a flag
+  that makes a music effect switch the microphone off instead of on, until it
+  is told to leave that mode, which Home Assistant never did. Music effects,
+  clocks over them and Music Flow did not react to sound. The integration now
+  clears that flag first, as the Yeelight app does. The lamp may show its last
+  app effect for a split second before the music effect starts. That brief
+  effect, and the microphone switching on and off, are no longer taken for a
+  button or another app: a rotation goes on past a music effect, and the Lamp
+  buttons event no longer reports `effect_changed` or `music_off` for them.
+- **Freeze works on Building Blocks:** a misspelled name left it disabled.
+- **Choosing an effect's direction no longer changes the lamp's orientation:**
+  the two were one setting, so a direction also turned your previews, drawings
+  and text, and the next effect put the direction back. A direction is now what
+  you see, on any mount, and stays until you change it. The Native Effects card
+  has its own arrows for it, and `set_native_effect` a `direction` field. An
+  existing lamp starts on Right, the direction it ran.
+- **Effects on a lamp standing on its end ran backwards:** Aurora, Flower Sea,
+  Palette, Tide and the effects that had only a number flowed the opposite way on a
+  Down or Up mount, unlike the others. They now flow the same for every mount.
+- **The physical button's list** now uses the direction shown, turned for the
+  mount, like an effect started from Home Assistant.
+- **The Palette sparks clock (formerly Ember) no longer goes almost black:**
+  after Palette sparks or a Palette sparks clock had run, including after
+  changing the clock's speed, the clock came back with a handful of sparks or
+  none, and stayed that way. The clock over Palette sparks, and over 66, 69 and
+  72, which stayed black, now starts its background properly. If your physical
+  button's list holds a Palette sparks clock, save the list again so the lamp
+  stores the new command.
+
+### Added
+- **Sort the effect and clock galleries:** a toggle beside the family filter
+  sorts them by default order, A → Z or by family. Each browser remembers its
+  choice, per card; the editor's Order applies until one is picked, and its new
+  Sort toggle option hides it.
+- **Both cards list effects in the same order:** unless the card editor sets
+  your own list, the clock card now lists its styles over an effect in the
+  effect card's order (the official effects as the Yeelight app lists them,
+  then the others), then the plain colours and your custom styles.
+  Kaleidoscope, for example, was last on the clock card; it is now 17th among
+  its effect styles, as on the effect card. The effect card without a lamp uses
+  that order too.
+- **The cards list every effect and clock style:** the 33 experimental effects
+  that had only a number up to 1.4.0 (Breathing, Dual scan, the music effects,
+  Stored GIF, ...) were only in the effect dropdown. The Native Effects and
+  Clock cards now list them and the clock styles over them, with a preview,
+  a category, favourites, rotation and custom colors, like the other
+  experimental effects: 70 effects and 72 clock styles in all with
+  Experimental Features on. Stored GIF, which plays the GIF kept in the lamp,
+  is not listed yet: nothing can read it back to preview, and the effect and
+  clock style dropdowns still offer it. Which of them take
+  a custom color, B&W or a palette was not checked
+  on a lamp yet. A clock over one of them now takes the clock's
+  palette like any other, except over the five that draw their own colors,
+  which keep them. Two-colour alternation, Rotating colour bands, Scrolling
+  bands and Rising wisps move, and are no longer filed under Still.
+- **Custom color on Meteor and Building Blocks**, as in the Yeelight app.
+- **Colors on the experimental effects that draw them:** Two-colour
+  alternation, Rotating colour bands, Scrolling bands, Rising wisps and Random
+  scatter showed plain white, because they draw the colors they are sent and
+  were sent none. They now get the lamp's default colors (orange-red
+  and blue, four bands, four scattered colors), and a custom color replaces
+  the first. The same goes for the experimental clock styles over them, in
+  Home Assistant, in the physical button's list and in every preview: their
+  digits showed white too. A custom clock color replaces the first color;
+  B&W still shows them white.
+- **The raw debug actions refuse every input known to hang or restart a lamp:**
+  besides slots and speeds, presets 41 and 43, low intensity on Aurora and Spectrum
+  Bands, drawings of the wrong size, and the limits of partial segments, for the
+  lamp's own mount profile, counting what the command takes from its preset. They
+  also check live updates and the button list, and refuse values that cannot be
+  judged. Anything else still goes through.
+- **Effect families:** the Native Effects and Clock cards can filter their
+  gallery by family (Waves, Glow, Sparkles, Motion, Music, Still), with a toggle
+  beside the search field. A clock style has the family of its effect; solid
+  colors and custom styles are under Still. A card offers the families it has,
+  next and previous follow the filter, and this browser remembers each kind of
+  card's choice. The editor can hide it.
+
+### Changed
+- **Every effect has the lamp's own name:** the effects, and the clock
+  styles named after them, now carry the names the lamp gives
+  them (an effect the Yeelight app sends as a preset takes its preset
+  name), and the 33 experimental effects that had only a number have a name too.
+  The renaming changes nothing else: clock style ids stay the same, and what
+  each effect sends and shows changes only as listed below (speed, direction
+  and colors). The renamed official effects: Streamer is now **Ribbon**, Starry
+  sky **Starry Sky**, Ocean Waves **Waves**, Bonfire **Fire**, Pinball
+  **Bouncing Ball**, Shooting Star **Meteor** and Building block **Building
+  Blocks**. The experimental ones: Rainbow Flow is **Moving palette**, Spectrum
+  Chase **Particle path**, Pastel Pulse **Triangular palette pulses**,
+  Monochrome Waves **Sine wave**, Pulse **Sunrise and sunset**, Solar Flare
+  **Heat fire**, Prism **Mirrored comets**, Ember **Palette sparks**, Color
+  Trails **Tide (slot 35)**, Sunset **Rainbow noise**, Carousel **Violet
+  interference**, Blue Yellow **Night-amber waves**, Ice Blue **Navy-white
+  noise**, Blue White **Night-sky waves**, Spectrum Crumble **Flicker sweep**,
+  Drift **Particle glows**, Spectrum Bands **Palette stripes** and Twinkle
+  **Violet twinkles**; the numbered ones are listed
+  under `set_native_effect` in SERVICES.md (e.g. 2 is **Breathing**, 73
+  **Music Note**, 71 **Stored GIF**). The clock styles Ocean Waves, Sunset,
+  Blue Yellow, Blue White, Ice Blue and Carousel are now Waves, Rainbow noise,
+  Night-amber waves, Night-sky waves, Navy-white noise and Violet interference.
+  **The old names keep working:** an action, an automation or a script that
+  names an effect or a clock style the old way (or a numbered effect by its
+  number), a dropdown choice, a lamp's saved state, favourites, rotation and
+  physical-button list, and a card's visible and hidden items and labels are
+  all read as today's names, and saved back under them. What the lamp reports
+  is in today's names: a trigger or condition that compares the effect or clock
+  style dropdown's state, or the light's `native_effect` attribute, with an old
+  name needs the new one. The Music Flow effects
+  keep their own names, a separate list (Breathing there is not the native
+  Breathing).
+- **No speed or direction where the lamp ignores it:** 17 more
+  experimental effects have no speed, because the lamp never reads
+  it for them: Palette sparks, Rainbow noise, Violet interference, Navy-white
+  noise, Night-sky waves, Rising wisps, Random scatter, Music Note, Music level
+  glow, Music bass-mid-treble colour, Sine plotter, Music Breathing, Solid red
+  and the four one-shot wipes. And 11 more have no direction, because the
+  lamp reads none for them, or only uses it on part of the panel, or only
+  to move where a random scatter falls: Night-amber waves, Night-sky waves,
+  Two-colour alternation, Breathing, Music level glow, Music bass-mid-treble
+  colour, Palette cross-fade, Music Breathing, Solid red, Centre bursts and
+  Random scatter. The lamp looks the same. A `set_native_effect` call giving
+  one of them a speed, or a direction, is now refused, as for Spectrum: remove
+  it from the automation.
+- **Default speed:** a lamp that has no saved speed now starts at 128, the speed
+  the Yeelight app's effects run at, not 50. A lamp that already has a saved
+  speed keeps it.
+- **Effects with no direction follow the lamp's saved orientation:** Starry Sky,
+  Bouncing Ball, Magic, Wonderland and Neon sine bands were drawn turned on a lamp saved at
+  another orientation in the Yeelight app, unlike their previews. They now match.
+- **Every effect's preview is now the lamp's own:** the 70 effects that can be
+  drawn, curated or named after a number until now, are drawn as the lamp draws
+  them, frame by frame, in the cameras, every card and the clock
+  backgrounds. They replace the approximations made by eye, so the previews
+  look different, are brighter, and match the lamp, in every direction, at
+  every speed, with the color or palette it was given. Random effects (Fireworks,
+  Starry Sky, ...) use stand-in random numbers: the same kind of picture, not
+  the same sparks at the same moment. The effects that react to sound run on a
+  fixed demo beat, since nothing can hear the lamp's microphone: they show how
+  the effect moves, not what the lamp shows now. Only effect 71, Stored GIF, the GIF stored
+  in the lamp, has no real preview: nothing can read that picture back.
+- **Previews never start blank:** an effect that starts dark on the lamp (Sunrise
+  and sunset, Mirrored comets, Building Blocks, Particle glows) is shown from its first lit moment, so a gallery
+  tile, a frozen card or a clock's digits are not empty.
+- **The estimated power follows the lamp too:** it now comes from the
+  lamp's own values for every named effect and animated clock, so the
+  reading may change. The screen's brighter colors are for display only.
+- **Previews move as on the lamp:** all named effects now show every render, 25 a
+  second instead of about 10, and a large gallery stays light on the browser.
+  A camera in a `camera_view: live` card streams them the same way (about 3
+  frames a second before), encoding only the frames that changed, as a smaller
+  409 x 124 image while the stream is open, and slows down rather than load a
+  slow host: about a third of a core per camera at most. With
+  `camera_view: auto`, Home Assistant still fetches one full-size picture every
+  10 seconds.
+- **Clocks and previews use the real speed:** an animated clock's background
+  now runs at the speed the lamp gets, not a fixed one, and the camera and the
+  Preview card follow speeds above 100 up to 255.
+- **Previews look like the LEDs:** the cards and the cameras show the
+  lamp's LED values as those LEDs look on a screen, instead of painting them as
+  they are, which looked much too dark.
+
+- **Magic and Neon sine bands:** Magic now plays Magic: it was sending the
+  slot of Neon sine bands, a hidden effect, now an experimental effect
+  of its own. The experimental clock style that was called Magic is that
+  same picture: it keeps its id and is now called Neon sine bands, and the
+  clock style Magic runs the real Magic. A clock style saved as "Magic" in
+  your favourites, a clock rotation or the physical button's list keeps the
+  picture it had, under its new name; one named in a card's settings, in an
+  automation, or in favourites kept by the browser, now means the real Magic.
+  The effect Magic on the physical button's list: the lamp keeps playing the
+  old picture until the list is saved again.
+- **Tide has directions:** all four, as in the Yeelight app. Right, the default,
+  keeps the picture Tide always showed here.
+- **Spectrum has no speed:** the lamp's Spectrum is a still picture that
+  never reads the speed, so the slider is gone.
+  A `set_native_effect` call giving Spectrum a speed is now refused, as for
+  other effects without one.
+
+### Removed
+- Experimental effects and clock styles above slot 81 (82 to 99), and
+  the experimental effects 12, 13, 29 and 78. The lamp has no slot above 81
+  and runs whatever comes next, which can crash the lamp from 90 up; the
+  four others are empty and draw nothing. A lamp left on one of them comes back
+  on the default effect or clock style.
+- Experimental effects 36, 50, 53, 64 and 67, and the experimental clock styles
+  12, 13, 29, 36, 50, 53, 64, 67 and 78. They showed nothing, or the last frame:
+  pictures with no data, the pixel stream and empty slots. Other clock styles
+  keep their ids, and a lamp left on one of these comes back on the default.
+- The raw debug action `send_fx_effect` refuses a slot past 81, and a speed above
+  a slot's limit, both of which crash the lamp.
+
+### Fixed
+- The physical button's playlist sends an effect's direction the way activating
+  it does: effects with their own direction mapping (Fire, Rainbow and
+  others) ran differently from the button than from Home Assistant.
+- Experimental effects 28 and 51 stay under the speed that would crash them
+  (254 and 239), as effects and as clock backgrounds.
+- The Lamp Preview card no longer fades Fireworks' pixels: the 0.2 s fade could
+  not keep up, so they showed old colors, partly see-through (pale on a white
+  background, dim on black). Other pictures and effects keep the fade.
+- After a power cut or a restart, a lamp Matter saw another app or a button
+  change (a color, an effect) keeps what it restored itself instead of being
+  redrawn with Home Assistant's content; the next command from Home Assistant
+  takes it back.
+
 ## [1.4.0] - 2026-10-30
 
 ### Added
@@ -25,7 +235,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   how it is mounted (the arrow saved in the app, never set, a check on the
   lamp, or read over Matter); a lamp whose orientation is still unknown gets
   a Repairs message pointing to **Configure**. **Changed default:** a lamp
-  whose orientation is not known now moves as for 270°, what the firmware
+  whose orientation is not known now moves as for 270°, what the lamp
   runs when it was never saved or after a reset (earlier versions assumed
   180°: set it in **Configure** if you saved 180° in the app).
 - **Matter link (optional):** a lamp also added to Home Assistant's Matter
@@ -89,7 +299,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   blocks UDP for over 15 minutes; each says what to check and goes away by
   itself.
 - **Download diagnostics** for each lamp (its integration entry or its device
-  page), to attach to a bug report: the lamp's model and firmware, its
+  page), to attach to a bug report: the lamp's model and software version, its
   connection (UDP or TCP, failures, the last errors), its settings and current
   state. Its IP address, identifier, Yeelight app name and displayed text are
   redacted.
@@ -260,7 +470,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   per-minute command quota (the rotation and quick picks no longer run into
   "client quota exceeded"), and every command confirmed by the lamp. TCP
   (port 55443) takes over
-  by itself when UDP does not answer (a network that blocks it, a firmware
+  by itself when UDP does not answer (a network that blocks it, a lamp
   without the session), and UDP is tried again after 5 minutes or once the
   lamp is back online. The light's new `connection` attribute shows `udp` or
   `tcp`. Frames are never answered, so the last frame of a change is sent
@@ -342,7 +552,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   commands avoids it.
 - **Power-on behavior** did the opposite of its labels: "Off" restored the
   previous state and "Toggle" kept the lamp off. Its options are now
-  **Restore**, **Always on** and **Always off** (as the lamp's firmware reads
+  **Restore**, **Always on** and **Always off** (as the lamp reads
   them); a choice saved before keeps what the lamp actually did ("Off" becomes
   Restore, "Toggle" becomes Always off, "On" stays Always on).
 - The lamp is no longer asked for its state every minute: it never answers
@@ -400,7 +610,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   clock rotation, in step with the lamps still running it.
 
 ### Changed
-- A text sent while the lamp shows its firmware clock or a native effect is
+- A text sent while the lamp shows its built-in clock or a native effect is
   kept for when it shows text again, instead of taking the clock over and
   stopping its rotation. Between `save_state` and `restore_state` it is
   shown as a one-time overlay (save_state, set_custom_text, restore_state).
@@ -510,8 +720,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - The `matrix_colors` attribute now correctly reports all-black while a lamp
-  is off, and no pixels while the firmware (Clock, Native Effect, Music Flow)
-  draws the matrix, instead of stale or incorrect content.
+  is off, and no pixels while the lamp draws its own content (Clock, Native
+  Effect, Music Flow), instead of stale or incorrect content.
 - Fixed a configuration bug where an emptied multi-lamp selector
   (`target_entities: []`) silently targeted no lamp instead of falling back
   to the single configured `entity`.
@@ -617,7 +827,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Native effect animation no longer restarts on a brightness-only change.
-- Removed clock styles that the firmware rejects.
+- Removed clock styles that the lamp rejects.
 - Fixed clock-mixer default color inheritance.
 - Fixed lamp IP rediscovery.
 - Enabled speed control for the Spectrum native effect.
@@ -628,9 +838,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [1.3.0] - 2026-08-28
 
 ### Added
-- **Experimental Features switch**: reveals firmware-native animation modes that
+- **Experimental Features switch**: reveals built-in animation modes that
   the official Yeelight app never exposed. Off by default.
-- **"Blue White" native effect** (firmware mode 59) as the first experimental
+- **"Blue White" native effect** (mode 59) as the first experimental
   effect, with a software preview: a white front is born at a slowly wandering
   source, travels the mirrored column path, and lights up fully white where it
   meets its reflection at the fold. It renders identically for every direction,
@@ -654,7 +864,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Corrected extended-effect lookups so selecting an experimental effect no longer
   raises a `KeyError`; activation, direction, and speed resolve through the merged
   effect registry.
-- Fixed the FX Explorer mode table and clock-mixer detection.
+- Fixed the debug mode table and clock-mixer detection.
 
 ### Performance
 - Camera preview rendering (PNG encode and image decode/resize) now runs in the

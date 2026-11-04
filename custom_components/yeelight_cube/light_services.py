@@ -9,7 +9,7 @@ The actions are registered by area, one module each:
 - ``light_services_pixel_art``   pixel arts (+ the pixel-art websocket command)
 - ``light_services_native``      native effects, clock styles, physical button,
                                  rotation and favourites
-- ``light_services_diagnostics`` raw firmware commands and calibration
+- ``light_services_diagnostics`` raw lamp commands and calibration
 - ``light_services_common``      shared helpers, limits and schemas
 
 Device discovery and management actions are in ``discovery_services``.

@@ -36,6 +36,7 @@ import {
   nativeEffectFrame,
   nativeEffectAction,
   nativeEffectPreviewConfig,
+  isEffectName,
 } from "./native-effect-card-utils.js";
 import {
   matrixPreviewCells,
@@ -68,10 +69,20 @@ import { createPendingValue } from "./pending-value.js";
 import {
   createRafLoop,
   createVisibilityTracker,
-  paintCellBackground,
+  matrixSurface,
 } from "./matrix-animator.js";
+import {
+  DEFAULT_EFFECT_SPEED,
+  RENDER_SECONDS,
+  isLampRendered,
+} from "./lamp-renderers.js";
+import { FamilyFilter, GallerySort } from "./effect-families.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
-import { itemLabel } from "./card-config.js";
+import { itemLabel, normalizeCardOptions } from "./card-config.js";
+
+const OFF_FRAME = Array.from({ length: 100 }, () => [0, 0, 0]);
+// A lit pixel's shadow, as on the cells of a repainted preview.
+const PIXEL_SHADOW = "0 0 2px #0008";
 
 /** Native host: catalogue/color policy and frame painting. Adapter mapping is
  * in native-card-adapter; shared controllers own commands and selection, and
@@ -102,18 +113,39 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     // The gallery shows the favourites' stars (it follows _controls).
     this._controls = new ModeControlsController(createNativeCardAdapter(this));
     this._loop = createRafLoop(
-      (now) => {
+      (now, due) => {
         const delta = this._lastFrame
           ? Math.min(200, now - this._lastFrame)
           : 0;
         this._lastFrame = now;
+        // A tile coming on screen shows what it is now, even with nothing
+        // moving: its grid may be another item's by now.
+        const shown = this._previewVisibility?.shown;
+        if (shown !== this._paintedShown) {
+          this._paintedShown = shown;
+          this._paint();
+        }
         // A frozen display holds its current frame, mirroring the lamp.
         if (!this._controls.frozen && this._visibility?.onScreen) {
           this._elapsed += delta / 1000;
-          this._paint();
+          // The display refreshes faster than the lamp renders: a frame
+          // already painted stays.
+          const render = Math.floor(this._elapsed / RENDER_SECONDS);
+          if (render !== this._paintedRender) {
+            this._paintedRender = render;
+            this._paint(due);
+          }
         }
       },
-      { minIntervalMs: 100 },
+      {
+        minIntervalMs: 100,
+        smoothWhen: () =>
+          this._frames.some(
+            (frame) =>
+              isLampRendered(frame.name) &&
+              this._previewVisibility?.visible.has(frame.node),
+          ),
+      },
     );
     // Dragged values survive until the lamp reports them back
     // (lamp-sliders.js); a slider change stops a running rotation first.
@@ -181,6 +213,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     // "Select an available Yeelight Cube lamp." placeholder instead and let it
     // self-heal once `hass` arrives.
     this._commands.reset();
+    if (config?.show_gallery === false) this._searchQuery = "";
     this._speedDraft = null;
     this._brightnessDraft = null;
     this.config = {
@@ -190,9 +223,12 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       show_animation_speed: true,
       show_actions: true,
       show_search: true,
+      show_family_filter: true,
+      show_sort: true,
       show_device_orientation: true,
+      show_effect_direction: true,
       favourites_show_stars: true,
-      ...resolvePreviewAppearance(config, "native"),
+      ...resolvePreviewAppearance(normalizeCardOptions(config, "native"), "native"),
     };
     this._selected = null;
     this._state = this._hass?.states?.[this._primaryEntity()];
@@ -313,6 +349,18 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     }).filter((item) => this._respondsToColor(item.name, mode, color));
   }
 
+  get _sort() {
+    return (this.__sort ||= new GallerySort(this, "yeelight_cube_effect_sort"));
+  }
+
+  get _families() {
+    return (this.__families ||= new FamilyFilter(
+      this,
+      "Effect family",
+      "yeelight_cube_effect_family",
+    ));
+  }
+
   _respondsToColor(name, mode, color) {
     return mode !== "normal"
       ? effectSupportsColorMode(name, mode)
@@ -364,6 +412,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     if (previewOnly(this) && service === "set_native_effect") {
       setPreviewAttributes(this, {
         ...(data.effect ? { native_effect: data.effect } : {}),
+        ...(data.direction ? { native_effect_direction: data.direction } : {}),
         ...(data.color_mode
           ? { native_effect_color_mode: data.color_mode }
           : {}),
@@ -435,7 +484,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   }
 
   async _apply(name = this._effect()?.name, managed = false) {
-    if (!name || /^\d+$/.test(name.trim())) return;
+    // Never a bare number: the card lists none.
+    if (!name || !isEffectName(name)) return;
     const context = this._context;
     this._nextSelection?.();
     this._selected = name;
@@ -552,7 +602,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         },
         value:
           this._speedDraft ??
-          speedRawToPct(attrs.native_effect_speed || 50),
+          speedRawToPct(attrs.native_effect_speed || DEFAULT_EFFECT_SPEED),
       });
     if (!controls.length) return "";
     // Usable while a command runs (like the Clock and Lamp Preview sliders:
@@ -823,6 +873,10 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ></yeelight-mode-controls>
         ${offline ? "" : this._sliders(effect)}
         <yeelight-mode-controls
+          area="direction"
+          .model=${this._controls}
+        ></yeelight-mode-controls>
+        <yeelight-mode-controls
           area="orientation"
           .model=${this._controls}
         ></yeelight-mode-controls>
@@ -878,6 +932,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       }))}
       .active=${this._controls.displayed("key", effect?.name)}
       .model=${this._controls}
+      .filter=${this._families.gallery(this._items())}
+      .sort=${this._sort.gallery()}
       searchLabel="Search native effects"
       actionLabel="Play on the lamp"
       .onSelect=${(name) => this._controls.choose(name)}
@@ -906,6 +962,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       appearance: node.classList.contains("current-matrix")
         ? this._matrixAppearance(true)
         : this._matrixAppearance(false),
+      grid: node.querySelector(".gallery-matrix-preview"),
       cells: matrixPreviewCells(node.querySelector(".gallery-matrix-preview")),
     }));
     // A render can land after the card left the page: never observe then
@@ -929,14 +986,16 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._paint();
   }
 
-  // The lamp's attributes the previews follow: the orientation being set
-  // (the lamp's until it confirms) and the speed being dragged.
+  // The lamp's attributes the previews follow: the orientation and direction
+  // being set (the lamp's until it confirms) and the speed being dragged.
   _previewAttrs() {
     const attrs = this._attrs();
     return {
       ...attrs,
       device_orientation:
         this._controls.pendingOrientation || deviceOrientation(attrs),
+      native_effect_direction:
+        this._controls.pendingDirection || attrs.native_effect_direction,
       native_effect_speed:
         this._speedDraft == null
           ? attrs.native_effect_speed
@@ -949,7 +1008,9 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     return isVerticalMount(this._previewAttrs().device_orientation);
   }
 
-  _paint() {
+  // all = false: only the previews the lamp's renderers draw, on the frames
+  // between the others' (createRafLoop's smoothWhen).
+  _paint(all = true) {
     const attrs = this._previewAttrs();
     const cache = new Map();
     // The same preview brightness as the other cards (LampSliders).
@@ -958,39 +1019,27 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ? this._lampSliders.previewScale(attrs)
         : 1;
     const off = this._state?.state === "off";
+    const catalogue = new Map(
+      attrs.native_effect_catalog?.map((item) => [item.name, item]),
+    );
     for (const frame of this._frames) {
-      if (!this._previewVisibility?.visible.has(frame.node)) continue;
+      if (!frame.grid || !this._previewVisibility?.visible.has(frame.node)) continue;
+      if (!all && !isLampRendered(frame.name)) continue;
       // A powered-off lamp shows a blank screen: black out the current preview.
       if (off && frame.node.classList.contains("current-matrix")) {
-        frame.cells.forEach((cell) => {
-          paintCellBackground(cell, "#000");
-          if (cell.style.boxShadow !== "") cell.style.boxShadow = "";
-        });
+        matrixSurface(frame.grid).paint(OFF_FRAME);
         continue;
       }
-      const effect = attrs.native_effect_catalog?.find(
-        (item) => item.name === frame.name,
-      );
+      const effect = catalogue.get(frame.name);
       if (!effect) continue;
       if (!cache.has(frame.name))
         cache.set(frame.name, nativeEffectFrame(effect, attrs, this._elapsed));
-      cache.get(frame.name).forEach((pixel, index) => {
-        if (frame.cells[index]) {
-          const hidden =
-            frame.appearance.ignoreBlackPixels &&
-            pixel.every((value) => value <= BLACK_THRESHOLD);
-          paintCellBackground(
-            frame.cells[index],
-            hidden
-              ? "transparent"
-              : `rgb(${pixel.map((value) => Math.round(value * brightness)).join(",")})`,
-          );
-          const shadow =
-            !hidden && frame.appearance.pixelBoxShadow ? "0 0 2px #0008" : "";
-          if (frame.cells[index].style.boxShadow !== shadow)
-            frame.cells[index].style.boxShadow = shadow;
-        }
-      });
+      matrixSurface(frame.grid).paint(
+        cache.get(frame.name),
+        brightness,
+        frame.appearance.ignoreBlackPixels ? BLACK_THRESHOLD : null,
+        frame.appearance.pixelBoxShadow ? PIXEL_SHADOW : "",
+      );
     }
   }
 

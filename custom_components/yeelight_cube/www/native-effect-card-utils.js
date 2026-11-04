@@ -1,4 +1,11 @@
-import { renderNativeEffectOriented } from "./native-effect-preview.js";
+import { renderNativeEffect } from "./native-effect-preview.js";
+import {
+  DEFAULT_EFFECT_SPEED,
+  LAMP_EFFECTS,
+  effectDisplayFrame,
+} from "./lamp-renderers.js";
+import { effectFamilyOfName } from "./effect-families.js";
+import { FORMERLY_NUMBERED_EFFECT_NAMES, effectSlotRank } from "./effect-names.js";
 import { VISIBILITY_KEYS, visibleItems } from "./visible-items.js";
 import {
   deviceOrientation,
@@ -32,8 +39,7 @@ export function nativeEffectPreviewConfig(config = {}) {
   };
 }
 
-/** Whether `name` names an effect the cards list: text, not a bare number
- * (the firmware's unnamed effect ids). */
+/** Whether `name` names an effect the cards list: text, not a bare number. */
 export function isEffectName(name) {
   return typeof name === "string" && name.trim() !== "" && !/^\d+$/.test(name.trim());
 }
@@ -59,20 +65,21 @@ export function nativeEffectItems(attrs = {}, config = {}) {
 }
 
 const previewDirections = ["Up", "Down", "Left", "Right"];
+// Without a lamp, in the lamp's order (effect-names.js effectSlotRank).
 export const nativePreviewCatalogue = [
   ...[
-    "Streamer",
-    "Starry sky",
+    "Ribbon",
+    "Starry Sky",
     "Spectrum",
-    "Ocean Waves",
+    "Waves",
     "Rainbow",
     "Waterfall",
     "Aurora",
-    "Bonfire",
-    "Pinball",
-    "Shooting Star",
+    "Fire",
+    "Bouncing Ball",
+    "Meteor",
     "Tide",
-    "Building block",
+    "Building Blocks",
     "Hacking",
     "Flower Sea",
     "Magic",
@@ -81,17 +88,17 @@ export const nativePreviewCatalogue = [
     "Palette",
   ].map((name) => ({
     name,
-    speed: true,
+    family: effectFamilyOfName(name),
+    speed: name !== "Spectrum",
     extended: false,
     preview: true,
     directions:
       name === "Hacking"
         ? ["Up", "Down"]
         : [
-              "Streamer",
-              "Starry sky",
-              "Pinball",
-              "Tide",
+              "Ribbon",
+              "Starry Sky",
+              "Bouncing Ball",
               "Magic",
               "Wonderland",
             ].includes(name)
@@ -99,61 +106,109 @@ export const nativePreviewCatalogue = [
           : previewDirections,
   })),
   ...[
-    "Rainbow Flow",
-    "Spectrum Chase",
-    "Pastel Pulse",
+    "Neon sine bands",
+    "Moving palette",
+    "Particle path",
+    "Triangular palette pulses",
     "Fireworks",
-    "Monochrome Waves",
-    "Pulse",
-    "Solar Flare",
-    "Prism",
-    "Ember",
-    "Color Trails",
-    "Sunset",
-    "Carousel",
-    "Blue Yellow",
-    "Ice Blue",
-    "Blue White",
-    "Spectrum Crumble",
-    "Drift",
-    "Spectrum Bands",
-    "Twinkle",
+    "Sine wave",
+    "Sunrise and sunset",
+    "Heat fire",
+    "Mirrored comets",
+    "Palette sparks",
+    "Tide (slot 35)",
+    "Rainbow noise",
+    "Violet interference",
+    "Night-amber waves",
+    "Navy-white noise",
+    "Night-sky waves",
+    "Flicker sweep",
+    "Particle glows",
+    "Palette stripes",
+    "Violet twinkles",
   ].map((name) => ({
     name,
-    speed: name !== "Spectrum Bands",
+    family: effectFamilyOfName(name),
+    // const.py _EXTENDED_EFFECT_NO_SPEED / _NO_DIRECTION: what the lamp ignores.
+    speed: ![
+      "Palette sparks",
+      "Rainbow noise",
+      "Violet interference",
+      "Navy-white noise",
+      "Night-sky waves",
+      "Palette stripes",
+    ].includes(name),
     extended: true,
     preview: true,
-    directions: previewDirections,
+    directions: ["Neon sine bands", "Night-amber waves", "Night-sky waves"].includes(name)
+      ? []
+      : previewDirections,
   })),
-];
+  // The slots named by number until 1.4.0, as the integration sends them. Not
+  // the stored GIF for now (light._native_effect_catalog): it has no row there.
+  ...Object.values(FORMERLY_NUMBERED_EFFECT_NAMES)
+    .filter((name) => LAMP_EFFECTS[name])
+    .map((name) => {
+      const spec = LAMP_EFFECTS[name];
+      return {
+        name,
+        family: effectFamilyOfName(name),
+        speed: !!spec.speed,
+        extended: true,
+        preview: true,
+        directions: spec.directions ? [...spec.directions] : [],
+      };
+    }),
+].sort(
+  (first, second) =>
+    effectSlotRank(LAMP_EFFECTS[first.name].mode) -
+    effectSlotRank(LAMP_EFFECTS[second.name].mode),
+);
 
+// The direction chosen, shared by all effects: one that does not offer it runs
+// its first (light_native.effect_direction_sent).
 export function nativeEffectDirection(effect, attrs = {}) {
   const directions = effect?.directions || [];
-  const mount = attrs.device_orientation || "right";
-  const desired = mount[0].toUpperCase() + mount.slice(1);
-  return directions.includes(desired)
-    ? desired
-    : directions.includes(attrs.native_effect_direction)
-      ? attrs.native_effect_direction
-      : directions[0] || "Up";
+  return directions.includes(attrs.native_effect_direction)
+    ? attrs.native_effect_direction
+    : directions[0] || "Up";
+}
+
+// A still picture's moment: some effects start dark.
+export const STILL_PREVIEW_SECONDS = 5;
+
+// One viewer's order per frame and orientation: a frame is the same array for
+// as long as its render lasts (lampEffectFrame), so a tile can tell.
+const viewed = new WeakMap();
+
+function viewedFrame(frame, orientation) {
+  let views = viewed.get(frame);
+  if (!views) viewed.set(frame, (views = new Map()));
+  if (!views.has(orientation)) views.set(orientation, viewerFrame(frame, orientation));
+  return views.get(orientation);
 }
 
 export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
   const speed = Math.max(
     1,
-    Math.min(255, Number(attrs.native_effect_speed) || 50),
+    Math.min(255, Number(attrs.native_effect_speed) || DEFAULT_EFFECT_SPEED),
   );
   // As the viewer sees the lamp (matrix-view.js): top row first, turned for
   // an upside-down mount like every preview. The lamp's own direction
   // setting does not turn it: the integration compensates the direction it
   // sends for it (light_native.lamp_direction).
-  return viewerFrame(
-    renderNativeEffectOriented(
+  return viewedFrame(
+    effectDisplayFrame(
       effect.name,
-      elapsed * (0.25 + speed / 55),
-      nativeEffectDirection(effect, attrs),
-      attrs.native_effect_color || null,
-      attrs.native_effect_color_mode || "normal",
+      renderNativeEffect(
+        effect.name,
+        elapsed * (0.25 + speed / 55),
+        nativeEffectDirection(effect, attrs),
+        attrs.native_effect_color || null,
+        attrs.native_effect_color_mode || "normal",
+        speed,
+        deviceOrientation(attrs),
+      ),
     ),
     deviceOrientation(attrs),
   );

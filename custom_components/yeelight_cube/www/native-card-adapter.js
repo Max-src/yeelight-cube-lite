@@ -1,9 +1,12 @@
 import {
   nativeEffectItems,
+  nativeEffectDirection,
   nativeEffectFrame,
   effectSupportsFreeze,
 } from "./native-effect-card-utils.js";
 import { everyAvailable, getTargetEntities } from "./service-call-utils.js";
+import { isLampRendered } from "./lamp-renderers.js";
+import { matchesEffectFamily } from "./effect-families.js";
 import { previewOnly } from "./offline-preview-state.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
 import {
@@ -32,25 +35,31 @@ export function createNativeCardAdapter(card) {
       })),
     // Previous / Next step through what the gallery shows (its search),
     // in the order shown (gallery_sort).
-    navigationItems: () =>
-      sortGalleryItems(
+    navigationItems: () => {
+      const items = card._items();
+      const family = card._families.value(items);
+      return sortGalleryItems(
         card.config,
-        card
-          ._items()
-          .filter((item) =>
-            itemMatchesQuery(
-              card.config,
-              item.name,
-              item.name,
-              card.config.show_search === false ? "" : card._searchQuery,
-            ),
+        items
+          .filter(
+            (item) =>
+              matchesEffectFamily(item, family) &&
+              itemMatchesQuery(
+                card.config,
+                item.name,
+                item.name,
+                card.config.show_search === false ? "" : card._searchQuery,
+              ),
           )
           .map((item) => ({
             key: item.name,
             title: itemLabel(card.config, item.name, item.name),
+            family: item.family,
           })),
         (item) => item.title,
-      ),
+        card._sort.value(),
+      );
+    },
     current: () => card._effect()?.name,
     available: (name) => card._effectAvailable(name),
     ready: () => card._rotationTargetsReady(),
@@ -62,6 +71,10 @@ export function createNativeCardAdapter(card) {
     disabled: () => card._disabled(),
     on: () => card._state?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
+    directions: () => card._effect()?.directions || [],
+    direction: () => nativeEffectDirection(card._effect(), card._attrs()),
+    setDirection: (direction) =>
+      card._command("set_native_effect", { direction, activate: false }, "yeelight_cube", true),
     apply: (name) => card._apply(name, true),
     applyFavourite: (favourite) => card._applyFavourite(favourite),
     currentColorMode: () => card._colorModeKey(),
@@ -128,6 +141,7 @@ export function createNativeCardAdapter(card) {
         card.config,
         (entity, state) => state.attributes?.effect_rotation !== undefined,
       ),
+    smooth: (name) => isLampRendered(name),
     frame: (name, elapsed, colorMode, color) => {
       const item = card
         ._attrs()

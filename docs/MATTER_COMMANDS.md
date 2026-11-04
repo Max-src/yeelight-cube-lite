@@ -92,16 +92,15 @@ tables; a 4-colour one-frame GIF showed as all red.
 
 **Safety:**
 - Send exactly 4 colours per effect, and at most 16 per music palette. The
-  firmware copies these lists into fixed buffers.
+  lamp keeps these lists in fixed-size buffers.
 - Never send effects 41 or 43: they hang the lamp.
 - Never use the update cluster (`0x1312FC11`).
 
-## Lamp buttons: firmware findings
+## Lamp buttons
 
-From reverse-engineering MCU v34 and Cube Lite firmware 1.12.32; other
-versions may differ.
+Other lamp versions may differ.
 
-- **No press events.** Listening found no button notifications on LAN, idle
+- **No press events.** The lamp sends no button notifications on LAN, idle
   TCP or SSDP. Matter mirrors what a press changed (effect and custom ids,
   microphone on/off and mode, power): the consequence of a press, reported
   after the lamp has already reacted, never the press itself.
@@ -109,13 +108,12 @@ versions may differ.
   be edited. *Buttons: Right as Remote* writes all-black drawings there with
   custom ids 1000-1007; the lamp reports the slot's custom id on every press,
   together with effect 36 (within a millisecond on a Cube Lite).
-- **Left button.** The key handler `0x01e31de0` calls `0x01e31c08`, which
-  starts microphone capture (`0x01e31b8a`) and then loads one of the fixed
-  presets at `0x01e3f6f4` (effects 83, 84, 85, 86, 88). Turning music off
-  beforehand does not disable it, no remapping or disable setting was found,
-  and a custom all-black music palette has not been shown to replace these
-  presets. Non-music renderers stop capture again (`0x01e3205a`), but the
-  next press starts it.
+- **Left button.** A press turns the microphone on and loads one of the
+  lamp's fixed music presets (effects 83, 84, 85, 86, 88). Turning music off
+  beforehand does not disable it, there is no remapping or disable setting,
+  and a custom all-black music palette does not replace these presets.
+  Non-music effects turn the microphone off again, but the next press turns
+  it on.
 - **Restoration timing.** The black (or music) interval after a press is the
   Matter report, the command queue and the LAN redraw, not a deliberate
   sleep. The clock and direct-mode settle delays stay: removing them lost

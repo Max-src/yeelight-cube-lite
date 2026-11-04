@@ -153,10 +153,10 @@ class YeelightCubeButtonsWakeLampSwitch(_YeelightCubeOptionSwitch):
 
 
 class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
-    """Reveal firmware native effects the official Yeelight app never exposed.
+    """Reveal built-in effects the official Yeelight app never exposed.
 
-    When on, the native effect and clock style dropdowns also offer discovered
-    firmware modes. Off by default.
+    When on, the native effect and clock style dropdowns also offer the hidden
+    built-in modes. Off by default.
     """
 
     _attr_should_poll = False

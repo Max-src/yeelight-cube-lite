@@ -2,7 +2,7 @@
 translated (strings.json "exceptions"), so each message exists once:
 
 - invalid(): the request cannot be done as asked (ServiceValidationError:
-  the caller changes the request: another value, turn the lamp on first...);
+  the request must change: another value, turn the lamp on first...);
 - failed(): the lamp or Home Assistant could not complete it
   (HomeAssistantError).
 

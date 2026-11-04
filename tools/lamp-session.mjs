@@ -5,11 +5,11 @@
 // end (save_state / restore_state).
 //
 //   node tools/lamp-session.mjs tcp              the TCP fallback: force_tcp 15 min, a sequence, UDP again
-//   node tools/lamp-session.mjs switch           firmware mode -> drawing switches (clock / effect -> pixel art)
+//   node tools/lamp-session.mjs switch           built-in mode -> drawing switches (clock / effect -> pixel art)
 //   node tools/lamp-session.mjs idle             a drawing left for 150 s, then a change (direct mode kept)
 //   node tools/lamp-session.mjs custom [rounds] [clock]
 //                                                effect -> drawing switches with drawings that exist
-//                                                nowhere else (a flash of a known one is the firmware's)
+//                                                nowhere else (a flash of a known one is the lamp's own)
 //
 // Settings (environment):
 //   CUBE_LAMPS     the lamps' light entities, comma separated (required)
@@ -119,8 +119,8 @@ if (mode === "tcp") {
       await all("set_clock_style", { style: "Mint" }); await sleep(4);
       say(`round ${round}: clock -> drawing ${second}`, `${second} at once: no ribbon / rainbow flash, no missing first picture`);
       await all("apply_pixel_art", { name: second }); await sleep(4);
-      say(`round ${round}: effect "Starry sky"`, "the effect");
-      await all("set_native_effect", { effect: "Starry sky" }); await sleep(4);
+      say(`round ${round}: effect "Starry Sky"`, "the effect");
+      await all("set_native_effect", { effect: "Starry Sky" }); await sleep(4);
       say(`round ${round}: effect -> drawing ${first}`, `${first} at once: no flash, no missing first picture`);
       await all("apply_pixel_art", { name: first }); await sleep(4);
     }
@@ -154,11 +154,11 @@ if (mode === "tcp") {
       }
       say(`round ${round}: yellow checkerboard`, "the yellow checkerboard");
       await all("apply_custom_pixels", { pixels: checker }); await sleep(4);
-      say(`round ${round}: effect "Starry sky"`, "the effect");
-      await all("set_native_effect", { effect: "Starry sky" }); await sleep(4);
+      say(`round ${round}: effect "Starry Sky"`, "the effect");
+      await all("set_native_effect", { effect: "Starry Sky" }); await sleep(4);
       say(
         `round ${round}: effect -> all magenta`,
-        "magenta at once; note any flash (checkerboard = our previous frame, a built-in drawing = the firmware)",
+        "magenta at once; note any flash (checkerboard = our previous frame, a built-in drawing = the lamp itself)",
       );
       await all("apply_custom_pixels", { pixels: magenta }); await sleep(4);
     }

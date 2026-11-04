@@ -62,7 +62,7 @@ The lamp saves an orientation (the Yeelight app's orientation page: 0°, 90°,
 180°, 270°, its arrows Left, Up, Right, Down) and turns every native effect's
 direction by it. The integration sends each effect's direction compensated for
 that orientation, so an effect moves the same way whichever is saved. The
-firmware clock is drawn upside down for 0° and 90°: the previews and cameras
+built-in clock is drawn upside down for 0° and 90°: the previews and cameras
 show it so. Only the app's **Save** or a Matter write sets it; nothing reads it
 over the local network.
 
@@ -266,8 +266,8 @@ is. A remote press then shows that content again, not yours:
   | Right | Black for a moment. Until the remote playlist is installed, the press's effect stays: it is followed, not undone | The button selects a playlist entry before restoration arrives. |
   | Left | A brief microphone-reactive animation (with **Buttons: Left as Remote**) | The button starts one of its fixed music presets. Nothing known turns this off, not even switching music off beforehand. |
 
-  The lamp reports what a press changed, never the press itself. Firmware
-  details: [Lamp buttons: firmware findings](MATTER_COMMANDS.md#lamp-buttons-firmware-findings).
+  The lamp reports what a press changed, never the press itself. More
+  details: [Lamp buttons](MATTER_COMMANDS.md#lamp-buttons).
 - **Not a universal source detector.** A tagged entry identifies the remote
   playlist, not a physical input: another app replaying the same tagged
   entry produces the same event. Ordinary playlist selections cannot be told

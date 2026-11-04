@@ -154,7 +154,7 @@ def _locate_item(items, idx, expected_name, kind):
 
     Collections are shared by every browser, so an index sent by a card may
     point at a different item once another client deleted or reordered
-    entries. When the caller passes ``expected_name`` (the name it saw at
+    entries. When ``expected_name`` is passed (the name it saw at
     that index), a mismatch is rejected instead of acting on the wrong item.
     ``kind``: "palette" or "pixel_art" (its messages).
     """
@@ -194,7 +194,7 @@ def make_admin_only(hass: HomeAssistant):
     def _admin_only(handler):
         """Restrict a raw/diagnostic service to Home Assistant administrators.
 
-        These services send arbitrary firmware commands or take exclusive
+        These services send arbitrary raw commands or take exclusive
         control of a lamp, so a non-admin user must not be able to call them.
         Calls without a user (automations, scripts, the system) are allowed,
         matching Home Assistant's own admin services.

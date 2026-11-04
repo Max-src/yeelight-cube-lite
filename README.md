@@ -310,7 +310,7 @@ Every card comes with a **visual configuration editor** - click the pencil icon 
 
 ### Clock Card (`custom:yeelight-cube-clock-card`)
 
-Browse firmware clock styles with live time/date previews, choose a color mode
+Browse built-in clock styles with live time/date previews, choose a color mode
 or custom RGB, and save your favourite style-and-color combinations. The card
 also provides content/format controls, brightness, animation speed, and a
 server-side favourites rotation that continues after you close the dashboard.
@@ -354,7 +354,7 @@ for layouts, offline editing and multi-lamp rotation.
 | Feature | Description |
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
-| **Style browser** | Search clock styles using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card (or show them A → Z). Your custom styles can be renamed and deleted (with confirmation) from the gallery |
+| **Style browser** | Search clock styles using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card (or show them A → Z). Your custom styles can be renamed and deleted (with confirmation) from the gallery. A **family filter** beside the search field (All, Waves, Glow, Sparkles, Motion, Still) shows one kind of style: solid colors and custom styles are under Still, and the rest follow their effect. It offers the families the card has, this browser remembers the choice, and the editor can hide it |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
@@ -422,7 +422,7 @@ See [configuration and storage details](SERVICES.md#clock-and-native-effects-car
 
 ### Native Effects Card (`custom:yeelight-cube-native-effects-card`)
 
-Browse the lamp's firmware animations with local animated previews. Choose
+Browse the lamp's built-in animations with local animated previews. Choose
 supported palette modes or custom RGB, manage favourites, and rotate through
 them. Brightness, speed, orientation, Freeze, Refresh, and power controls are
 available where supported. Experimental effects require the lamp's
@@ -452,8 +452,8 @@ available where supported. Experimental effects require the lamp's
 
 | Feature | Description |
 | :-- | :-- |
-| **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) |
+| **Live previews** | Preview built-in animations with configurable pixels, spacing, background, shadow and size |
+| **Effect browser** | Search effects using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) A **family filter** beside the search field (All, Waves, Glow, Sparkles, Motion, Music, Still) shows one kind of effect; it offers the families the card has, this browser remembers the choice, and the editor can hide it. |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -847,11 +847,19 @@ the same look as the other cards, use the [Preview Card](#preview-card).
   transparent background: the card's own background shows around it.
 - **When it renders:** only when an image is requested, from the lamp's
   latest frame: a camera nobody is watching costs nothing.
+- **How fast it moves:** set by the card's `camera_view`. With `live`, a stream
+  shows Fireworks at up to the lamp's 25 frames a second, as a smaller
+  409 × 124 px image (fewer frames on a slow Home Assistant host, which it never
+  loads with more than about half a core per camera), and the other effects at
+  about 3. With `auto`, Home Assistant's dashboard fetches one full-size picture
+  every 10 seconds, whatever the camera does. The stream runs while the card is
+  on the page, so prefer `auto` for a card that only needs to show what is on
+  the lamp. For sharp, smooth animation, use the [Preview Card](#preview-card).
 
 ```yaml
 type: picture-entity
 entity: camera.living_room_cube_matrix_preview_round
-camera_view: auto
+camera_view: live
 show_name: false
 show_state: false
 ```
@@ -996,21 +1004,21 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | :-- | :-- | :-- |
 | **Auto Turn On** | Switch | Automatically turn on the lamp when a mode, drawing, text or color change is applied while it is off. When disabled, the change is kept and shown when the lamp is turned on |
 | **(the lamp's name)** | Light | Main light entity, named after the lamp (on/off and brightness; RGB color in Matrix mode) |
-| **Content mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
+| **Content mode** | Select | Switch between Matrix, built-in Clock, Native Effect, and Music Flow |
 | **Matrix: Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
 | **Matrix: Display Text** | Text | Text shown by the Matrix text modes |
-| **Matrix: Font** | Select | Basic, Fat, Italic, or Native (Basic with the firmware clock's digit shapes) |
+| **Matrix: Font** | Select | Basic, Fat, Italic, or Native (Basic with the built-in clock's digit shapes) |
 | **Matrix: Text Alignment** | Select | Text alignment: left, center, right |
 | **Matrix: Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
 | **Matrix: Palette** | Select | Apply one of the saved color palettes |
 | **Matrix: Pixel Art** | Select | Personal drawings followed by the 68 locally bundled, read-only official presets |
 | **Clock: Style** | Select | One of the 10 native clock styles (more with Experimental Features) |
-| **Native effect** | Select | One of the 18 LAN-compatible firmware-native animations (more with Experimental Features) |
+| **Native effect** | Select | One of the 18 LAN-compatible built-in animations (more with Experimental Features) |
 | **Animation speed** | Number | Speed for the native clock and for effects that support it (1–255 device units; unavailable when the selected effect has no speed control) |
 | **Music Flow effect** | Select | Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Clock: Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date |
-| **Device Orientation** | Select | Physical mount orientation: Right / Down / Left / Up (applies to all modes) |
-| **Experimental Features** | Switch | Reveal firmware animation modes and clock styles the Yeelight app never exposed. Off by default |
+| **Device Orientation** | Select | How the lamp is mounted: Right / Down / Left / Up (applies to all modes). It never changes an effect's direction |
+| **Experimental Features** | Switch | Reveal built-in animation modes and clock styles the Yeelight app never exposed. Off by default |
 
 #### Sensors
 
@@ -1293,9 +1301,9 @@ The **Content mode** entity selects the active content source:
 | Content mode | Description |
 | :-- | :-- |
 | **Matrix** | Render text, gradients, palettes, or drawings through the integration |
-| **Clock** | Run the Cube Lite firmware's native clock effect |
-| **Native Effect** | Run one of 18 LAN-compatible firmware-native animations |
-| **Music Flow** | Run the firmware's microphone-reactive renderer (see [Music Flow](#music-flow)) |
+| **Clock** | Run the Cube Lite's built-in clock |
+| **Native Effect** | Run one of 18 LAN-compatible built-in animations |
+| **Music Flow** | Run the lamp's microphone-reactive renderer (see [Music Flow](#music-flow)) |
 
 When Matrix content is active, the **Matrix: Display Mode** entity or Gradient Card selects the renderer:
 
@@ -1344,18 +1352,18 @@ imported into, written to, or allowed to overwrite your own drawings.
 
 ### Native Clock
 
-Clock mode provides 10 firmware styles (with additional experimental styles
+Clock mode provides 10 built-in styles (with additional experimental styles
 unlocked by the Experimental Features switch) and separate options for date
 display, 12/24-hour time, and colon blinking. Brightness and orientation
 previews remain available while Clock mode is active.
 
-The clock command uses the Cube Lite's private LAN protocol. The firmware does
+The clock command uses the Cube Lite's private LAN protocol. The lamp does
 not report the active clock configuration back to Home Assistant, so entity
 states represent the last settings requested by this integration. Changes made
 from the Yeelight app or physical button may therefore not appear immediately in
 Home Assistant (without Matter; with it, a switch to another effect or a music
-mode is followed). Camera previews approximate the firmware palettes and may
-differ slightly from the physical LEDs.
+mode is followed). An animated clock's preview runs the lamp's own background
+at the speed the lamp gets; a solid style's color is an approximation.
 
 ### Native Effects
 
@@ -1363,18 +1371,40 @@ Native Effect mode exposes the 18 presets that the Cube Lite accepts directly
 through its private LAN protocol. Speed and direction entities are available
 only when the selected effect supports them. **Hacking** supports only **Up**
 and **Down**; other directional effects may also offer **Left** and **Right**.
+A direction is what you see, however the lamp is mounted: choose it with the
+arrows on the Native Effects card, the direction entity or `set_native_effect`.
+One direction is shared by all effects, like the speed; **Device Orientation**
+only says how the lamp is mounted, and effects are turned to match.
 Winter, Dream, Halloween, and Moonlight are not exposed because the Yeelight app
 uploads a GIF through a Matter-only vendor command before activation; the
-private LAN protocol cannot reproduce that transaction. Both Matrix Preview
-cameras render animated local approximations while a native effect is active
-because the firmware does not provide live frame readback.
+private LAN protocol cannot reproduce that transaction.
+
+The lamp does not provide live frame readback, so the Matrix Preview cameras
+and the cards compute the picture themselves, with the lamp's own renderers:
+every effect is drawn as the lamp draws it, frame by frame, for the speed,
+direction, color and palette it was given, and shown as those LEDs look on a
+screen. Random effects (Fireworks, Starry Sky, ...) use stand-in random numbers,
+so a preview shows the same kind of picture, not the same sparks at the same
+moment. Effects that react to sound run on a fixed demo beat, because nothing can
+hear the lamp's microphone: the preview shows how the effect moves, not what the
+lamp shows now. Effect 71, Stored GIF, plays the GIF stored in the lamp, which
+nothing can read back, so it has no preview and the cards do not list it yet: the
+effect and clock style dropdowns offer it.
+
+Effect names are the lamp's own. An effect's or clock style's name from
+1.4.0 or earlier (Streamer, Ocean Waves, Bonfire, Sunset, Blue White, a slot
+number, ...) still works in actions, automations, saved favourites, rotations,
+button lists and card configurations; see
+[`set_native_effect`](SERVICES.md#set_native_effect) for the full list. The
+lamp reports today's names: a trigger or condition comparing the effect or clock
+style dropdown's state with an old name needs the new one.
 
 The **Native Effects Card** shares its capsule sliders and Text / Live Preview
 selectors with the Clock Card. Text offers filled buttons or dropdowns; Live
 Preview offers lists, grids, strips, carousels, wheels and a 3D album. **Original** offers
 grid and list layouts with capability badges.
-Browsing offers text search and your order or A → Z (no filters); raw numeric
-experimental modes are hidden.
+Browsing offers text search and your order or A → Z (no filters); the
+experimental effects that had only a number are hidden.
 
 Set `target_entities` to control several lamps together (`entity` remains
 supported for a single lamp). The first target supplies the main preview and
@@ -1433,7 +1463,7 @@ toggle) to hide the badges.
 
 The **Clock Card** uses the same Actions, Favourites and Rotation components and
 editor settings. Actions are enabled by default; `show_actions` can hide them.
-Device Orientation is native-effect-only; the firmware clock cannot rotate. Enable
+Device Orientation is native-effect-only; the lamp's clock cannot rotate. Enable
 `show_favourites` and `show_rotation` for either card. Clock rotation is labelled
 **Clock Mode Rotation**. Clock
 favourites retain saved style IDs across renames and are stored separately from
@@ -1476,7 +1506,7 @@ action: yeelight_cube.set_button_effects
 data:
   entity_id: light.yeelight_cube_lite
   effects:
-    - Streamer
+    - Ribbon
     - Rainbow
     - "Clock: Yellow"
 ```
@@ -1503,7 +1533,7 @@ Assistant **Entities card**.
 <summary>Music Flow modes, restoration, previews and automation example</summary>
 
 Selecting **Music Flow** in the **Content mode** selector starts the Cube Lite
-firmware's microphone-reactive renderer locally on the device. **Music Flow
+the lamp's microphone-reactive renderer locally on the device. **Music Flow
 Effect** selects one of the six official modes: Gather, Breathing, Blossom,
 Spectrum, Music Note, or Impact.
 
@@ -1524,7 +1554,7 @@ The integration also preserves the lamp's previous power state:
   mode or use **Force Refresh** to retry the display render.
 
 The hourly clock check is skipped while Music Flow is active, because opening
-another control connection can interrupt the firmware renderer.
+another control connection can interrupt the lamp's renderer.
 Selecting Matrix, Clock, Native Effect, text, or pixel art is treated as an
 explicit content change and stops Music Flow first.
 
@@ -1546,7 +1576,7 @@ shape. Brightness and device orientation are applied locally. Generating or
 viewing a preview sends no command to the lamp.
 
 > [!NOTE]
-> The firmware does not expose live microphone-animation frames. Changes made
+> The lamp does not expose live microphone-animation frames. Changes made
 > from another app while Music Flow is active may not be reflected in Home
 > Assistant until Music Flow stops or another HA command runs. With the Matter
 > link, a music mode started or stopped on the lamp or in the app is followed.
@@ -1623,7 +1653,7 @@ switch: Music Flow starts and stops through Content mode.
 - **Clock:** its UTC offset is checked on the hour, so daylight saving changes
   reach the lamp's clock within seconds.
 - **Estimated power and energy** come from what is shown (frames sent, or the
-  simulated preview of the clock and effects), not from a lamp measurement.
+  the lamp's own values for the clock and effects), not from a lamp measurement.
 
 ---
 
@@ -1706,7 +1736,7 @@ drawn by the lamp itself, so lower their brightness instead.
 | **Music Flow turns off but the old display does not return** | The stop command has already been recorded. Press **Force Refresh** or reselect Matrix, Clock, or Native Effect to retry the display render |
 | **Music Flow preview is not animated** | This is expected. The camera shows a locally generated static identifier because the lamp does not expose live microphone-animation frames |
 | **A card says "the last change was not applied (…)"** | The lamp refused the change or failed while applying it (the message says why; it is also in the Home Assistant log, and in the lamp's `last_command_error` attribute). Pick it again, or press **Force Refresh**; the line goes once a change works. A lamp that is only out of reach shows as unavailable instead, and gets the change once it is back |
-| **The light's `connection` attribute shows `tcp`** | The lamp did not answer its UDP session (port 55444): the network blocks UDP between Home Assistant and the lamp, or its firmware has no session. Everything still works over TCP; UDP is tried again after 5 minutes, and whenever the lamp comes back online |
+| **The light's `connection` attribute shows `tcp`** | The lamp did not answer its UDP session (port 55444): the network blocks UDP between Home Assistant and the lamp, or it has no session. Everything still works over TCP; UDP is tried again after 5 minutes, and whenever the lamp comes back online |
 | **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, choose **Reconfigure** in its entry's ⋮ menu (Settings → Devices & services → Yeelight Cube Lite) and enter its new IP: it is checked before it is used |
 | **A Repair says a lamp is unreachable, or uses its slower connection** | Shown in **Settings → System → Repairs** after 30 minutes without an answer, or after 15 minutes with UDP blocked while TCP works; each says what to check, and goes away by itself once the problem is gone |
 
@@ -1714,7 +1744,7 @@ drawn by the lamp itself, so lower their brightness instead.
 [issue](https://github.com/Max-src/yeelight-cube-lite/issues). In
 **Settings → Devices & services → Yeelight Cube Lite**, open the lamp's ⋮ menu
 (or its device page) and choose **Download diagnostics**. The file holds the
-lamp's model and firmware, its connection (UDP or TCP, failures, the last
+lamp's model and software version, its connection (UDP or TCP, failures, the last
 errors) and its current state. The lamp's IP address, its identifier, its name
 in the Yeelight app and the text it shows are replaced by `**REDACTED**`.
 

@@ -28,8 +28,8 @@ def cube_device_info(light_entity) -> dict:
         "manufacturer": "Yeelight",
         "model": cube_matrix.device_model or "Cube Lite",
     }
-    if cube_matrix.firmware_version:
-        info["sw_version"] = cube_matrix.firmware_version
+    if cube_matrix.software_version:
+        info["sw_version"] = cube_matrix.software_version
     return info
 
 

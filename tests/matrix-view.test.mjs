@@ -23,6 +23,7 @@ const { drawingPixels, pixelArtColorData } = await import(
   `${www}pixel-art-utils.js`
 );
 const { nativeEffectFrame } = await import(`${www}native-effect-card-utils.js`);
+const { effectDisplayFrame } = await import(`${www}lamp-renderers.js`);
 const { renderNativeEffectOriented } = await import(
   `${www}native-effect-preview.js`
 );
@@ -134,11 +135,18 @@ test("native effect previews show an upside-down lamp turned", () => {
     name: "Rainbow",
     directions: ["Up", "Down", "Left", "Right"],
   };
-  const attrs = { device_orientation: "left", native_effect_speed: 50 };
+  const attrs = {
+    device_orientation: "left",
+    native_effect_direction: "Right",
+    native_effect_speed: 50,
+  };
   assert.deepEqual(
     nativeEffectFrame(effect, attrs, 2),
     viewerFrame(
-      renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left"),
+      effectDisplayFrame(
+        "Rainbow",
+        renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50),
+      ),
       "left",
     ),
   );
@@ -226,9 +234,9 @@ test("every preview's frame: a vertical one keeps the landscape look", async () 
   );
 });
 
-test("the firmware clock as the lamp draws it: turned by its mount profile", () => {
+test("the lamp's clock as it draws it: turned by its mount profile", () => {
   return import(`${www}matrix-view.js`).then(
-    ({ firmwareClockFrame, lampTurnsClock }) => {
+    ({ lampClockFrame, lampTurnsClock }) => {
       assert.equal(lampTurnsClock({}), false); // unknown: the default 270°, upright
       assert.equal(lampTurnsClock({ mount_profile: { profile: null, in_use: 3 } }), false);
       assert.equal(lampTurnsClock({ mount_profile: { profile: 0, in_use: 0 } }), true);
@@ -240,12 +248,12 @@ test("the firmware clock as the lamp draws it: turned by its mount profile", () 
       // The Matter value alone is not trusted (light_mount_profile).
       assert.equal(lampTurnsClock({ matter: { rotation: 0 } }), false);
       assert.deepEqual(
-        firmwareClockFrame([1, 2, 3], { mount_profile: { profile: 0 } }),
+        lampClockFrame([1, 2, 3], { mount_profile: { profile: 0 } }),
         [3, 2, 1],
       );
       const frame = [1, 2, 3];
       assert.equal(
-        firmwareClockFrame(frame, { mount_profile: { profile: 2 } }),
+        lampClockFrame(frame, { mount_profile: { profile: 2 } }),
         frame,
       );
     },

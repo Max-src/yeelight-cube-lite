@@ -286,6 +286,15 @@ module.exports = async (t) => {
         const preview = card.shadowRoot.querySelector(
           '[data-clock-preview][data-current="1"], .current-matrix',
         );
+        // An animated preview is on a canvas (matrixSurface).
+        const canvas = preview?.querySelector("canvas");
+        if (canvas) {
+          const { width, height } = canvas;
+          return canvas
+            .getContext("2d")
+            .getImageData(0, 0, width, height)
+            .data.reduce((sum, value, at) => (at % 4 === 3 ? sum : sum + value), 0);
+        }
         const cells = preview?._cells || Array.from(
           preview?.querySelectorAll("[style*='background']") || [],
         );
@@ -305,6 +314,7 @@ module.exports = async (t) => {
       const preview = card.shadowRoot.querySelector(
         '[data-clock-preview][data-current="1"], .current-matrix',
       );
+      if (preview?.querySelector("canvas")) return true;
       const cells = preview?._cells || Array.from(
         preview?.querySelectorAll("[style*='background']") || [],
       );

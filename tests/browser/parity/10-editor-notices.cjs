@@ -43,7 +43,7 @@ module.exports = async (t) => {
           "display:block;max-width:650px;margin:0 auto 16px;";
         editor.setConfig({
           target_entities: ["light.a", "light.b"],
-          visible_effects: ["Twinkle", "Rainbow"],
+          visible_effects: ["Violet twinkles", "Rainbow"],
           show_experimental: false,
         });
         editor.hass = editorHass;
@@ -82,7 +82,7 @@ module.exports = async (t) => {
       // Rows are rename fields: the built-in label is their placeholder.
       const unavailable = [
         ...editor.shadowRoot.querySelectorAll(".orderable-list-rename"),
-      ].some((field) => field.placeholder === "Twinkle (currently unavailable)");
+      ].some((field) => field.placeholder === "Violet twinkles (currently unavailable)");
       editor._change("show_experimental", true);
       editor.hass = {
         ...editor.hass,
@@ -106,7 +106,7 @@ module.exports = async (t) => {
       };
     });
     assert.equal(restored.unavailable, true);
-    assert.deepEqual(restored.config, ["Twinkle", "Rainbow"]);
+    assert.deepEqual(restored.config, ["Violet twinkles", "Rainbow"]);
     assert.match(restored.notice, /On for all selected lamps/);
     assert.doesNotMatch(restored.notice, /filter is Off/);
   }

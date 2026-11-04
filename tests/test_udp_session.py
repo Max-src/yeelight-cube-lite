@@ -1,5 +1,5 @@
 """The lamp's UDP command session (udp_session.UdpSession), against a fake
-lamp that answers like the Cube Lite does (research notes, PROTOCOL.md §3-4):
+lamp that answers like the Cube Lite does:
 a token from udp_sess_new, every command answered by its id except
 update_leds, -1 for a token it does not know."""
 import asyncio

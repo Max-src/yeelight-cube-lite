@@ -12,7 +12,7 @@
 // mounted: right lies flat (the default), left lies flat upside down, down
 // stands on its left end and up on its right end. Plugin content is already
 // turned a half turn for left / up before it is sent (light_render.py
-// _flip_position) and firmware content is not, so a frame of what the lamp
+// _flip_position) and the lamp's own content is not, so a frame of what the lamp
 // shows is turned a half turn for those mounts to read as the viewer sees it.
 //
 // A view is landscape (20 columns x 5 rows) or vertical (5 x 20): the
@@ -42,9 +42,9 @@ export const deviceOrientation = (attributes) =>
   attributes?.device_orientation || DEFAULT_ORIENTATION;
 
 /**
- * Whether the lamp's firmware draws its clock turned a half turn: the mount
+ * Whether the lamp draws its clock turned a half turn: the mount
  * profile it runs (the Yeelight app's orientation, the light's
- * `mount_profile.in_use`; the firmware default 3 when none is known) is 0
+ * `mount_profile.in_use`; the lamp's default 3 when none is known) is 0
  * or 1. Native effects never are (the integration compensates their
  * direction). Mirrors light_mount_profile.lamp_turns_clock.
  */
@@ -53,9 +53,9 @@ export const lampTurnsClock = (attributes) => {
   return [0, 1].includes(profile?.in_use ?? profile?.profile);
 };
 
-/** A frame of the firmware clock (renderClockFrame: lamp order) as the lamp
+/** A frame of the lamp's clock (renderClockFrame: lamp order) as the lamp
  * draws it, turned with its mount profile (lampTurnsClock). */
-export const firmwareClockFrame = (frame, attributes) =>
+export const lampClockFrame = (frame, attributes) =>
   lampTurnsClock(attributes) ? [...frame].reverse() : frame;
 
 /** Reverse the row order of a row-major frame (lamp order <-> top-first). */

@@ -1,3 +1,10 @@
+import {
+  effectDisplayFrame,
+  lampClockSettings,
+  lampEffectFrame,
+  hasRenderer,
+  timelineFor,
+} from "../custom_components/yeelight_cube/www/lamp-renderers.js";
 import { matchingColorOption } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 
 import assert from "node:assert/strict";
@@ -36,20 +43,14 @@ import {
   getClockStyles,
   CLOCK_COLOR_MODES,
   CLOCK_MIXER_EFFECTS,
+  clockPreviewEffect,
+  DEFAULT_CLOCK_SPEED,
+  clockPhase,
   flipMatrixVertical,
   renderClockFrame,
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
-import {
-  renderNativeEffect,
-  effectSupportsColorOverride,
-} from "../custom_components/yeelight_cube/www/native-effect-preview.js";
-import {
-  clockEffectDirection,
-  effectOrientation,
-  orientFrame,
-} from "../custom_components/yeelight_cube/www/effect-orientation.js";
 
-test("all clock styles display calibrated backgrounds independently of native direction", (context) => {
+test("all clock styles display the lamp's background whatever the native direction", (context) => {
   const RealDate = Date;
   context.mock.method(
     globalThis,
@@ -66,29 +67,24 @@ test("all clock styles display calibrated backgrounds independently of native di
   for (const style of getClockStyles(true)) {
     const effect = CLOCK_MIXER_EFFECTS[style.mixer];
     if (!effect) continue;
-    const { source, flipH, flipV } = effectOrientation(
-      effect,
-      clockEffectDirection(effect),
-    );
-    for (const phase of [0, 0.75, 2.5]) {
+    for (const seconds of [0, 0.75, 2.5]) {
       for (const [mode, override] of [
         ["normal", null],
         ["normal", [180, 20, 60]],
         ["bw", null],
         ["red_blue", null],
       ]) {
-        const background = orientFrame(
-          flipMatrixVertical(
-            renderNativeEffect(
-              effect,
-              phase,
-              source,
-              effectSupportsColorOverride(effect) ? override : null,
-              mode === "normal" ? null : mode,
-            ),
-          ),
-          flipH,
-          flipV,
+        // The lamp reports no speed here: the preview takes the default.
+        const settings = lampClockSettings(effect, DEFAULT_CLOCK_SPEED, override, mode);
+        // Computed ahead: a replay's time limit would show a frame earlier.
+        if (hasRenderer(settings.mode))
+          timelineFor(settings).frameAt(
+            timelineFor(settings).firstShown() + seconds / 0.04,
+            true,
+          );
+        // Shown as a card shows it: a built-in renderer's LEDs on a screen.
+        const background = flipMatrixVertical(
+          effectDisplayFrame(effect, lampEffectFrame(settings, seconds)),
         );
         const expected = mask.map((pixel, index) =>
           pixel.some((value) => value > 0) ? background[index] : [0, 0, 0],
@@ -101,9 +97,11 @@ test("all clock styles display calibrated backgrounds independently of native di
             native_effect_direction: direction,
           };
           assert.deepEqual(
-            flipMatrixVertical(renderClockFrame(attrs, null, null, phase)),
+            flipMatrixVertical(
+              renderClockFrame(attrs, null, null, clockPhase(seconds, DEFAULT_CLOCK_SPEED)),
+            ),
             expected,
-            `${style.name}, ${mode}, ${override}, ${direction}, phase=${phase}`,
+            `${style.name}, ${mode}, ${override}, ${direction}, seconds=${seconds}`,
           );
         }
       }
@@ -111,7 +109,7 @@ test("all clock styles display calibrated backgrounds independently of native di
   }
 });
 
-test("Rainbow clock uses calibrated Left regardless of the lamp direction", (context) => {
+test("A clock background runs at the speed the lamp gets", (context) => {
   const RealDate = Date;
   context.mock.method(
     globalThis,
@@ -123,23 +121,28 @@ test("Rainbow clock uses calibrated Left regardless of the lamp direction", (con
     },
   );
   const mask = renderClockFrame({ clock_style_id: 6 }, null, null);
-  for (const phase of [0, 0.75, 2.5]) {
-    const background = renderNativeEffect("Rainbow", phase, "Down");
+  for (const speed of [1, 50, 128, 255]) {
+    const background = effectDisplayFrame(
+      "Rainbow",
+      lampEffectFrame(lampClockSettings("Rainbow", speed), 2),
+    );
     const expected = mask.map((pixel, index) =>
       pixel.some((value) => value > 0) ? background[index] : [0, 0, 0],
     );
-    for (const direction of [undefined, "Up", "Down", "Left", "Right"]) {
-      assert.deepEqual(
-        renderClockFrame(
-          { clock_style_id: 1, native_effect_direction: direction },
-          null,
-          null,
-          phase,
-        ),
-        expected,
-        `direction=${direction}, phase=${phase}`,
-      );
-    }
+    // From the lamp's attributes, or given.
+    assert.deepEqual(
+      renderClockFrame(
+        { clock_style_id: 1, native_effect_speed: speed },
+        null,
+        null,
+        clockPhase(2, speed),
+      ),
+      expected,
+    );
+    assert.deepEqual(
+      renderClockFrame({ clock_style_id: 1 }, null, null, clockPhase(2, speed), speed),
+      expected,
+    );
   }
 });
 
@@ -614,6 +617,7 @@ test("Custom stays selectable and built-in selections respect the active color m
     _attrs: () => attrs,
     _styleList: () => styles,
     _controlStyles: () => styles,
+    _animationSpeed: () => 50,
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
@@ -1128,7 +1132,7 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
 });
 
 test("renderClockFrame decodes the lamp's clock_color so every card shares one override", () => {
-  // The lamp state exposes the custom color as a firmware ARGB integer
+  // The lamp state exposes the custom color as the lamp's ARGB integer
   // (clock_color); cards that forward raw attributes (lamp-preview card) must
   // render the same override as those that pass a decoded clock_color_rgb.
   const base = {
@@ -1209,4 +1213,18 @@ test("clock preset renames and deletes show at once on every card and are put ba
   } finally {
     off();
   }
+});
+
+test("the card offers a style over every slot, a formerly numbered one too, not the stored GIF yet", () => {
+  assert.equal(clockPreviewEffect(1), "Two-colour alternation");
+  assert.equal(clockPreviewEffect(39), "Rainbow");
+  assert.equal(CLOCK_MIXER_EFFECTS[1], "Two-colour alternation");
+  assert.equal(clockPreviewEffect(71), undefined); // the GIF stored in the lamp
+  assert.equal(clockPreviewEffect(0), undefined);
+  const styles = getClockStyles(true);
+  assert.equal(styles.length, 72);
+  assert.ok(!styles.some((style) => style.mixer === 71));
+  // The ids after it keep the backend's: Random scatter (72) is style 74.
+  assert.equal(styles.find((style) => style.mixer === 72)?.id, 74);
+  assert.equal(styles.find((style) => style.mixer === 41)?.family, "music");
 });

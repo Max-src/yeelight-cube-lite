@@ -35,8 +35,10 @@ while direct service calls use `entity_id`.
 | `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
 | `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-color selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
 | `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the color row |
-| `show_device_orientation` | Native Effects | Device orientation control (the firmware clock cannot rotate, so the Clock card has none) |
+| `show_device_orientation` | Native Effects | Device orientation control (the lamp's clock cannot rotate, so the Clock card has none) |
+| `show_effect_direction` | Native Effects | The arrows that choose the effect's direction, shown for an effect that has one |
 | `show_gallery`, `show_search` | Both | Show the style/effect browser and its text search |
+| `show_family_filter` | Both | The family filter beside the search field (on by default); it shows when the card has at least two families |
 | `style_selector_style` | Both | `filled`, `dropdown`, `preview-list`, `preview-grid`, `preview-strip`, `preview-carousel`, `preview-wheel`, or `original` |
 | `effect_view` | Both | `grid` or `list` for the Original browser |
 | `items_per_page` | Both | Pagination for Original and Live Preview list/grid browsers; editor range 0-16, with 0 meaning no pagination |
@@ -171,7 +173,7 @@ Control what text is displayed on the lamp and how it looks.
 
 Display text on the lamp.
 
-While the lamp shows its **clock or a native effect**, the text is kept for when it shows text again: the clock (and its rotation) goes on, so an automation pushing a sensor value never takes it over. To show a text **over** the clock for a moment, wrap it in [`save_state`](#save_state) / [`restore_state`](#restore_state): the text is shown, then the clock and its rotation come back (allow a few seconds between them: leaving the firmware clock and coming back to it each take about a second).
+While the lamp shows its **clock or a native effect**, the text is kept for when it shows text again: the clock (and its rotation) goes on, so an automation pushing a sensor value never takes it over. To show a text **over** the clock for a moment, wrap it in [`save_state`](#save_state) / [`restore_state`](#restore_state): the text is shown, then the clock and its rotation come back (allow a few seconds between them: leaving the lamp's clock and coming back to it each take about a second).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -224,7 +226,7 @@ Change the text font.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `font` | Yes | Font name: `basic`, `fat`, `italic`, or `native` (Basic with the firmware clock's digit shapes) |
+| `font` | Yes | Font name: `basic`, `fat`, `italic`, or `native` (Basic with the built-in clock's digit shapes) |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -657,8 +659,8 @@ Switch to the native Clock or Native Effect content, or change the Matrix displa
 
 | Mode | Description |
 | :-- | :-- |
-| **Clock** | Firmware-native clock using the configured clock style and options |
-| **Native Effect** | Firmware-native animation using the selected Native effect, speed and direction |
+| **Clock** | Built-in clock using the configured clock style and options |
+| **Native Effect** | Built-in animation using the selected Native effect, speed and direction |
 | **Solid Color** | Single color fill |
 | **Letter Gradient** | Gradient per letter |
 | **Column Gradient** | Vertical gradient across 20 columns |
@@ -910,19 +912,20 @@ data:
 
 ## 🎬 Clock, Native Effects and Rotation
 
-Firmware-native display features: the clock, built-in animations, saved solid
+Built-in display features: the clock, animations, saved solid
 colors, display freeze, physical orientation, and the server-side effect
 rotation that keeps cycling even after the dashboard is closed.
 
 ### `set_native_effect`
 
-Apply one of the lamp's firmware-native animations (the "Native Effect" content
+Apply one of the lamp's built-in animations (the "Native Effect" content
 mode).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `effect` | No | Effect name (e.g. `Rainbow`, `Ocean Waves`). Omit to keep the current effect. |
+| `effect` | No | Effect name (e.g. `Rainbow`, `Waves`). Omit to keep the current effect. A name an effect had in 1.4.0 or earlier (e.g. `Ocean Waves`) still works. |
 | `speed` | No | Animation speed 1–255 (only for effects that support it) |
+| `direction` | No | `Up`, `Down`, `Left` or `Right`: the way the effect flows as you see it, however the lamp is mounted. One setting shared by all effects (only for effects that offer that direction) |
 | `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it |
 | `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom color |
 | `activate` | No | Switch to Native Effect mode immediately (default `true`) |
@@ -940,20 +943,50 @@ data:
 <details>
 <summary><strong>Valid effect names</strong></summary>
 
+The names are the lamp's own.
+
 **Official (18, always available):**
-`Streamer`, `Starry sky`, `Spectrum`, `Ocean Waves`, `Rainbow`, `Waterfall`,
-`Aurora`, `Bonfire`, `Pinball`, `Shooting Star`, `Tide`, `Building block`,
+`Ribbon`, `Starry Sky`, `Spectrum`, `Waves`, `Rainbow`, `Waterfall`,
+`Aurora`, `Fire`, `Bouncing Ball`, `Meteor`, `Tide`, `Building Blocks`,
 `Hacking`, `Flower Sea`, `Magic`, `Wonderland`, `Kaleidoscope`, `Palette`
 
-**Experimental (19, require the Experimental Features switch):**
-`Rainbow Flow`, `Spectrum Chase`, `Pastel Pulse`, `Fireworks`,
-`Monochrome Waves`, `Pulse`, `Solar Flare`, `Prism`, `Ember`, `Color Trails`,
-`Sunset`, `Carousel`, `Blue Yellow`, `Ice Blue`, `Blue White`,
-`Spectrum Crumble`, `Drift`, `Spectrum Bands`, `Twinkle`
+**Experimental (20, require the Experimental Features switch):**
+`Moving palette`, `Particle path`, `Triangular palette pulses`, `Fireworks`,
+`Sine wave`, `Sunrise and sunset`, `Heat fire`, `Mirrored comets`,
+`Palette sparks`, `Tide (slot 35)`, `Rainbow noise`, `Violet interference`,
+`Night-amber waves`, `Navy-white noise`, `Night-sky waves`, `Flicker sweep`,
+`Particle glows`, `Palette stripes`, `Neon sine bands`, `Violet twinkles`
 
-Names are matched exactly. The 61 unnamed firmware modes are named by their
-mode number (for example `"2"`): they are experimental and can be selected by
-that name.
+**Other slots (33, experimental, require the Experimental Features switch):**
+`Two-colour alternation` (slot 1), `Breathing` (2), `Dual scan` (7),
+`Rotating colour bands` (8), `Palette trails` (14), `Drop and bounce` (16),
+`Music level glow` (20), `Stacking blocks` (21), `Aqua-lime trails` (23),
+`Music bars from both ends` (25), `Music bars from the centre` (26),
+`Music bass-mid-treble colour` (27), `Scrolling bands` (28),
+`Music bar from one end` (30), `Palette cross-fade` (31), `Rising wisps` (33),
+`Sine plotter` (38), `Music Spectrum` (41), `Music Gather` (43),
+`Music Breathing` (44), `Music Blossom` (45), `Music noise equalizer` (51),
+`Solid red` (52), `Dot with fading trail` (62), `Centre bursts` (63),
+`Rainbow fill-in (one-shot)` (65), `Rainbow wipe-out (one-shot)` (66),
+`White fill-in (one-shot)` (68), `White wipe-out (one-shot)` (69),
+`Stored GIF` (71), `Random scatter` (72), `Music Note` (73), `Music Impact` (74)
+
+Names are matched exactly. Up to 1.4.0 these slots were named by their number
+(for example `"2"`), and that number still selects them. Every name an effect
+had in 1.4.0 or earlier still works too: `Streamer` is `Ribbon`, `Starry sky` is
+`Starry Sky`, `Ocean Waves` is `Waves`, `Bonfire` is `Fire`, `Pinball` is
+`Bouncing Ball`, `Shooting Star` is `Meteor`, `Building block` is
+`Building Blocks`, `Rainbow Flow` is `Moving palette`, `Spectrum Chase` is
+`Particle path`, `Pastel Pulse` is `Triangular palette pulses`,
+`Monochrome Waves` is `Sine wave`, `Pulse` is `Sunrise and sunset`,
+`Solar Flare` is `Heat fire`, `Prism` is `Mirrored comets`, `Ember` is
+`Palette sparks`, `Color Trails` is `Tide (slot 35)`, `Sunset` is
+`Rainbow noise`, `Carousel` is `Violet interference`, `Blue Yellow` is
+`Night-amber waves`, `Ice Blue` is `Navy-white noise`, `Blue White` is
+`Night-sky waves`, `Spectrum Crumble` is `Flicker sweep`, `Drift` is
+`Particle glows`, `Spectrum Bands` is `Palette stripes` and `Twinkle` is
+`Violet twinkles`. The Music Flow effects
+(`Breathing`, `Music Note`, ...) are another list: these names never select one.
 
 </details>
 
@@ -973,12 +1006,12 @@ being returned to the caller.
 
 ### `set_clock_style`
 
-Configure the firmware clock (the "Clock" content mode). Any subset of fields may
+Configure the lamp's clock (the "Clock" content mode). Any subset of fields may
 be provided.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `style` | No | Clock style name or numeric id (e.g. `Rainbow`, `Ocean Waves`) |
+| `style` | No | Clock style name or numeric id (e.g. `Rainbow`, `Waves`); a name a style had in 1.4.0 or earlier still works |
 | `color` | No | Custom `[r, g, b]` (0–255), or `"clear"`/`null` to use the style's own color |
 | `content` | No | `time`, `time_date` (alternating) or `date` |
 | `twelve_hour` | No | `true` for 12-hour, `false` for 24-hour |
@@ -1001,20 +1034,27 @@ data:
 <summary><strong>Valid clock style names</strong></summary>
 
 **Standard (10, always available):**
-`Rainbow`, `Ocean Waves`, `Spectrum`, `White`, `Mint`, `Yellow`, `Pink`, `Red`,
+`Rainbow`, `Waves`, `Spectrum`, `White`, `Mint`, `Yellow`, `Pink`, `Red`,
 `Cyan`, `Purple`
 
-**Experimental (29, require the Experimental Features switch):**
-`Sunset`, `Blue Yellow`, `Blue White`, `Ice Blue`, `Carousel`, `Streamer`,
-`Rainbow Flow`, `Starry sky`, `Spectrum Chase`, `Pastel Pulse`, `Fireworks`,
-`Monochrome Waves`, `Aurora`, `Pulse`, `Solar Flare`, `Prism`, `Ember`,
-`Waterfall`, `Bonfire`, `Color Trails`, `Pinball`, `Tide`, `Flower Sea`,
-`Drift`, `Spectrum Bands`, `Magic`, `Wonderland`, `Twinkle`, `Kaleidoscope`
+**Experimental (30, require the Experimental Features switch):**
+`Rainbow noise`, `Night-amber waves`, `Night-sky waves`, `Navy-white noise`,
+`Violet interference`, `Ribbon`, `Moving palette`, `Starry Sky`,
+`Particle path`, `Triangular palette pulses`, `Fireworks`, `Sine wave`,
+`Aurora`, `Sunrise and sunset`, `Heat fire`, `Mirrored comets`,
+`Palette sparks`, `Waterfall`, `Fire`, `Tide (slot 35)`, `Bouncing Ball`,
+`Tide`, `Flower Sea`, `Particle glows`, `Palette stripes`, `Neon sine bands`,
+`Magic`, `Wonderland`, `Violet twinkles`, `Kaleidoscope`
+
+A clock style is named after the effect behind it, so a style renamed after 1.4.0
+(`Ocean Waves`, `Sunset`, `Blue Yellow`, `Blue White`, `Ice Blue`, `Carousel`
+and the experimental ones) still works under its former name.
 
 `style` also accepts the numeric clock style id (1–10 for the standard styles,
 11 and up for experimental ones, as exposed by the light's `clock_style_id`
-attribute). Unnamed experimental styles, whose name is just their firmware mode
-number, can only be selected by id. Selecting an experimental style switches
+attribute); a number is always an id, never a name. The styles over the 33
+other slots (named like those effects, e.g. `Dual scan`) are
+experimental and not offered by the cards: select them by name or id. Selecting an experimental style switches
 the lamp's Experimental Features on. Solid-color styles (`White`, `Mint`,
 `Yellow`, …) ignore `color_mode`; animated styles honour it.
 
@@ -1076,8 +1116,9 @@ data:
 
 ### `set_device_orientation`
 
-Set the physical mount orientation, which determines the direction native
-effects and text flow. It fails with `lamp_off` when a target is off and
+Set how the lamp is physically mounted. It turns drawings and text, and turns
+native effects so their direction stays what you see: it never changes the
+direction you chose. It fails with `lamp_off` when a target is off and
 auto-turn-on is disabled.
 
 | Field | Required | Description |
@@ -1174,8 +1215,8 @@ data:
   kind: native
   items:
     - Rainbow
-    - Ocean Waves
-    - Streamer
+    - Waves
+    - Ribbon
   interval: 30
   entity_id: light.cubelite_a904
 ```
@@ -1291,8 +1332,8 @@ execute selected production methods outside Home Assistant with a simulated
 transport. Browser tests use real card classes with simulated Home Assistant
 state and services. They cover failure propagation, loop replacement, protocol
 dispatch, and passive observers, but **not a live Home Assistant lifecycle or
-physical firmware output**. The raw send path does not read a device reply, so
-even a successful socket send is not a firmware acknowledgement.
+what a physical lamp shows**. The raw send path does not read a device reply, so
+even a successful socket send is not an acknowledgement from the lamp.
 
 ---
 
@@ -1509,13 +1550,13 @@ Cube Lite's physical button.
 action: yeelight_cube.set_button_effects
 data:
   effects:
-    - Streamer
+    - Ribbon
     - Rainbow
     - "Clock: Yellow"
   entity_id: light.cubelite_a904
 ```
 
-The firmware protocol updates slots individually and does not expose a
+The lamp updates slots individually and does not expose a
 documented truncate operation. A shorter call overwrites only the leading
 slots; it does not guarantee that older trailing slots are removed.
 
@@ -1688,8 +1729,8 @@ data:
 These services are registered (so they appear in Developer Tools) but are
 **not a stable API**. They can only be called by Home Assistant
 **administrators** (and by automations or scripts); calls from other users are
-rejected. `set_color_calibration` is admin-only for the same reason. They exist for the internal calibration and
-reverse-engineering cards, which are not shipped in the public repository.
+rejected. `set_color_calibration` is admin-only for the same reason. They exist for internal calibration and
+debugging cards, which are not shipped in the public repository.
 
 | Service | Purpose |
 | :-- | :-- |
@@ -1837,7 +1878,7 @@ result through an event on the HA event bus.
 | **Color Effects** | `set_preview_adjustments`, `set_color_accuracy` | Real-time color adjustments |
 | **State** | `save_state`, `restore_state` | Snapshot & restore what's displayed |
 | **Native presets** | `set_button_effects` | Configure physical-button effect slots |
-| **Clock / Native** | `set_native_effect`, `set_clock_style`, `freeze_display`, `set_device_orientation` | Firmware clock & animations |
+| **Clock / Native** | `set_native_effect`, `set_clock_style`, `freeze_display`, `set_device_orientation` | Built-in clock & animations |
 | **Clock presets** | `save_clock_preset`, `delete_clock_preset` | Shared solid-color library |
 | **Rotation** | `start_effect_rotation`, `stop_effect_rotation`, `skip_effect_rotation` | Server-side effect cycling |
 | **Recovery** | `force_refresh` | Reconnect & re-send display state |

@@ -19,6 +19,8 @@ def lamp_class():
         {
             "_normalize_rotation_items",
             "_normalize_favourites",
+            "canonical_item_name",
+            "_former_names",
             "_favourites_store",
             "_device_store",
             "_restore_favourites",
@@ -32,6 +34,11 @@ def lamp_class():
             "MAX_FAVOURITES": 100,
             "MAX_FAVOURITE_NAME": 100,
             "HomeAssistantError": ValueError,
+            "CLOCK_PRESET_PREFIX": "custom:",
+            **{name: CONSTANTS[name] for name in (
+                "canonical_clock_style_name",
+                "canonical_effect_name",
+            )},
         },
     )
 

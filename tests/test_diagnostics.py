@@ -49,7 +49,7 @@ DIAGNOSTICS = _load_diagnostics()
 
 def _lamp():
     cube_matrix = SimpleNamespace(
-        device_model="Cube Lite", firmware_version="17", device_id=DEVICE_ID,
+        device_model="Cube Lite", software_version="17", device_id=DEVICE_ID,
         capabilities={"id": DEVICE_ID, "model": "cubelite", "fw_ver": "17", "name": "Desk"},
         connection_state=lambda: {"transport": "udp", "consecutive_failures": 0},
     )
@@ -58,7 +58,7 @@ def _lamp():
         "ip_address": IP,
         "mode": "Custom Draw",
         "custom_text": "Happy birthday Alex",
-        "favourites": {"clock": [{"name": "Ocean Waves"}]},
+        "favourites": {"clock": [{"name": "Waves"}]},
         "last_command_error": {"message": f"Lamp {IP} refused it"},
         "matrix_colors": [(255, 0, 0), (0, 0, 0), (0, 9, 0)],
         "native_effect_catalog": [{"name": "Rainbow"}],
@@ -88,7 +88,7 @@ class DiagnosticsTests(unittest.TestCase):
     def test_a_lamp_s_diagnostics(self):
         result = _diagnostics(_lamp())
         lamp = result["lamp"]
-        self.assertEqual({"model": "Cube Lite", "firmware": "17", "capabilities": {
+        self.assertEqual({"model": "Cube Lite", "software_version": "17", "capabilities": {
             "id": REDACTED, "model": "cubelite", "fw_ver": "17", "name": REDACTED,
         }}, lamp["device"])
         self.assertEqual((True, True, 128), (lamp["available"], lamp["is_on"], lamp["brightness"]))
@@ -99,7 +99,7 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertNotIn("matrix_colors", lamp["state"])
         self.assertNotIn("native_effect_catalog", lamp["state"])
         # Style names are kept (only the lamp's own name is redacted).
-        self.assertEqual("Ocean Waves", lamp["state"]["favourites"]["clock"][0]["name"])
+        self.assertEqual("Waves", lamp["state"]["favourites"]["clock"][0]["name"])
         self.assertEqual({"palettes_v2": 1, "pixel_arts": 2, "clock_presets": 0},
                          result["collections"])
         self.assertEqual({"extended_effects_enabled": True}, result["entry"]["options"])

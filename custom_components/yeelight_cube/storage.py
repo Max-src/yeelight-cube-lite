@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.exceptions import ConfigEntryNotReady  # type: ignore
 from homeassistant.helpers.storage import Store  # type: ignore
 
-from .const import DOMAIN
+from .const import DOMAIN, clock_style_name_saved_by_1_4
 from .errors import failed
 from .name_utils import normalize_display_name
 from .pixel_art_storage import is_grouped, stored_pixel_art
@@ -25,6 +25,12 @@ _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.storage"
+# Saved with today's effect and clock style names. Data without it was saved
+# by 1.4.0 or earlier: its clock names are read once as they meant then
+# (migrate_clock_names).
+NAMES_VERSION = 2
+# The first version of the marker: data below it (or without it) is 1.4.0's.
+_NAMES_SINCE_1_4 = 2
 # The shared collections, and the event (yeelight_cube_<event>) their sensor
 # and selects follow (sensor.py, select.py).
 COLLECTION_EVENTS = {"palettes_v2": "palettes_updated", "pixel_arts": "pixel_arts_updated"}
@@ -57,7 +63,47 @@ def storage_data(hass: HomeAssistant) -> dict:
         "favourites": data.get("favourites", {}),
         "rotation": data.get("rotation", {}),
         "drawing": data.get("drawing", {}),
+        "names_version": NAMES_VERSION,
     }
+
+
+def _clock_entries(entries) -> bool:
+    """Rename, in place, the clock styles a list of favourites or rotation
+    entries named as in 1.4.0; whether one changed."""
+    changed = False
+    for index, entry in enumerate(entries if isinstance(entries, list) else ()):
+        name = entry.get("name") if isinstance(entry, dict) else entry
+        if not isinstance(name, str):
+            continue
+        today = clock_style_name_saved_by_1_4(name.strip())
+        if today == name.strip() or today == name:
+            continue
+        entries[index] = {**entry, "name": today} if isinstance(entry, dict) else today
+        changed = True
+    return changed
+
+
+def _saved_by_1_4(stored: dict) -> bool:
+    """Whether stored data is 1.4.0's (no names marker, or one below its first)."""
+    version = stored.get("names_version")
+    return not isinstance(version, int) or version < _NAMES_SINCE_1_4
+
+
+def migrate_clock_names(stored: dict) -> bool:
+    """Read the clock styles of favourites and rotations saved by 1.4.0 or
+    earlier as they meant then (const.CLOCK_STYLE_NAMES_IN_1_4), in place;
+    whether one changed. Data saved since (NAMES_VERSION) is today's."""
+    if not _saved_by_1_4(stored):
+        return False
+    changed = False
+    for lamp in (stored.get("favourites") or {}).values():
+        if isinstance(lamp, dict):
+            changed |= _clock_entries(lamp.get("clock"))
+    for lamp in (stored.get("rotation") or {}).values():
+        active = lamp.get("active") if isinstance(lamp, dict) else None
+        if isinstance(active, dict) and active.get("kind") == "clock":
+            changed |= _clock_entries(active.get("items"))
+    return changed
 
 
 def async_schedule_save(hass: HomeAssistant, delay: float = 1.0) -> None:
@@ -193,6 +239,12 @@ async def async_load_storage(hass: HomeAssistant) -> None:
         _migrated_pixel_arts, _needs_save = migrate_pixel_arts(
             stored_data.get("pixel_arts", [])
         )
+        # Saved by 1.4.0 or earlier: its clock names as they meant then, and
+        # saved with the marker so it happens once.
+        _names_saved = False
+        if stored_data and _saved_by_1_4(stored_data):
+            migrate_clock_names(stored_data)
+            _names_saved = _needs_save = True
 
         hass.data[DOMAIN].update({
             "clock_presets": stored_data.get("clock_presets", []),
@@ -209,7 +261,10 @@ async def async_load_storage(hass: HomeAssistant) -> None:
         # Persist migrated data immediately so the grouped format survives the next reboot
         # without needing to re-migrate from the flat on-disk format.
         if _needs_save:
-            _LOGGER.info("[pixelart-migration] Migrating %s pixel arts to grouped format — saving to disk.", len(_migrated_pixel_arts))
+            if _names_saved:
+                _LOGGER.info("[STORAGE-LOAD] Saved by 1.4.0 or earlier: clock style names read as then, saving to disk.")
+            else:
+                _LOGGER.info("[pixelart-migration] Migrating %s pixel arts to grouped format — saving to disk.", len(_migrated_pixel_arts))
             await async_save_data(hass)
         
         _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")

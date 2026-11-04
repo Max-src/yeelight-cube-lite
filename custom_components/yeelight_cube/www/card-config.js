@@ -20,6 +20,13 @@
  * migration (OPTION_MIGRATIONS) instead.
  */
 import { sliderKeys } from "./slider-control-utils.js";
+import { withCanonicalNames } from "./effect-names.js";
+import { EFFECT_FAMILIES } from "./effect-families.js";
+
+// The cards whose config names native effects or clock styles (visible and
+// hidden items, item labels): a former name is read as today's
+// (effect-names.js), and an editor saves today's.
+const NAMED_ITEMS = Object.freeze({ clock: "clock", native: "native" });
 
 export const OPTION_ALIASES = Object.freeze({
   clock: {
@@ -451,6 +458,7 @@ export const RETIRED_OPTIONS = Object.freeze({
 
 export function normalizeCardOptions(config, card) {
   if (!config || typeof config !== "object") return config;
+  if (NAMED_ITEMS[card]) config = withCanonicalNames(config, NAMED_ITEMS[card]);
   const aliases = OPTION_ALIASES[card] || {};
   const retired = RETIRED_OPTIONS[card] || [];
   const migrated = OPTION_MIGRATIONS[card]?.(config) || {};
@@ -483,15 +491,27 @@ export function itemLabel(config, key, name) {
   return typeof label === "string" && label.trim() ? label.trim() : name;
 }
 
+const FAMILY_RANK = new Map(EFFECT_FAMILIES.map((family, index) => [family.value, index]));
+
 /**
- * The order a gallery shows its items in (gallery_sort): the card's own
- * order (default), or "name": A → Z by the name shown (`nameOf(item)`: its
- * label on this card), numbers in order ("Art 2" before "Art 10"). Used by
- * the gallery and by the Previous / Next buttons, which step through the
- * items in the order shown. Keys are unchanged (favourites, rotations).
+ * The order a gallery shows its items in: `order`, or the card's gallery_sort
+ * when none is picked on the card (GallerySort). The card's own order
+ * (default: the editor's list or Arrange; else the same for the effect and
+ * clock cards, effect-names.js effectSlotRank), "name": A → Z by the name
+ * shown (`nameOf(item)`: its label on this card), numbers in order ("Art 2"
+ * before "Art 10"), or "family": grouped as the family filter lists them
+ * (items with a `family`), in the card's order within each. Used by the
+ * gallery and by the Previous / Next buttons, which step through the items in
+ * the order shown. Keys are unchanged (favourites, rotations).
  */
-export function sortGalleryItems(config, items, nameOf) {
-  if (config?.gallery_sort !== "name") return items;
+export function sortGalleryItems(config, items, nameOf, order = config?.gallery_sort) {
+  if (order === "family")
+    return [...items].sort(
+      (first, second) =>
+        (FAMILY_RANK.get(first.family) ?? FAMILY_RANK.size) -
+        (FAMILY_RANK.get(second.family) ?? FAMILY_RANK.size),
+    );
+  if (order !== "name") return items;
   return [...items].sort((first, second) =>
     String(nameOf(first) ?? "").localeCompare(String(nameOf(second) ?? ""), undefined, {
       numeric: true,

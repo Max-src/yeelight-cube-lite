@@ -487,6 +487,7 @@ module.exports = async (t) => {
         ...card.config,
         show_actions: false,
         show_device_orientation: false,
+        show_effect_direction: false,
         show_favourites: false,
         show_rotation: false,
       });

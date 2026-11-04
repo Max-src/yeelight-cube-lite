@@ -1,4 +1,4 @@
-"""Firmware-native actions: native effects, clock styles, the physical button
+"""Built-in actions: native effects, clock styles, the physical button
 presets, and the effect/clock rotation with its favourites and intervals.
 
 Registered by :func:`light_services.async_setup_light_services`.
@@ -25,7 +25,12 @@ from .const import (
     EXPERIMENTAL_CLOCK_STYLE_IDS,
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
+    NATIVE_EFFECT_DIRECTIONS,
     NATIVE_EFFECTS,
+    BUTTON_CLOCK_PREFIX,
+    canonical_button_effect_name,
+    canonical_clock_style_name,
+    canonical_effect_name,
 )
 from .light import _entity_id_or_list
 from .light_rotation import (
@@ -185,8 +190,10 @@ def async_register_native_services(hass: HomeAssistant) -> None:
 
     async def handle_set_native_effect(service_call):
         targets = _resolve_entities(service_call, "SET_NATIVE_EFFECT")
-        effect = service_call.data.get("effect")
+        # A former name (e.g. "Ocean Waves") is today's ("Waves").
+        effect = canonical_effect_name(service_call.data.get("effect"))
         speed = service_call.data.get("speed")
+        direction = service_call.data.get("direction")
         color_mode = service_call.data.get("color_mode")
         has_color = "color" in service_call.data
         color = service_call.data.get("color")
@@ -206,6 +213,9 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 raise invalid("experimental_required", name=name)
             if speed is not None and not spec.get("speed"):
                 raise invalid("no_speed", effect=name)
+            # Not to run now, it is a choice shared by all effects, like the speed.
+            if activate and direction is not None and direction not in spec.get("directions", ()):
+                raise invalid("no_direction", effect=name, direction=direction)
             if has_color and not clear_color and not effect_supports_color_override(name):
                 raise invalid("no_custom_color", effect=name)
             if color_mode is not None and (
@@ -231,6 +241,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 for attr in (
                     "_native_effect",
                     "_native_effect_speed",
+                    "_native_effect_direction",
                     "_native_effect_color_mode",
                     "_native_effect_color",
                     "_mode",
@@ -244,6 +255,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 target._native_effect = effect
             if speed is not None:
                 target._native_effect_speed = speed
+            if direction is not None:
+                target._native_effect_direction = direction
             if color_mode is not None:
                 target._native_effect_color_mode = color_mode
             if has_color:
@@ -334,7 +347,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         # new settings are published at once and the lamp is updated in the
         # background, so cards are not held up by the hardware round trip.
         # A change the lamp refused is logged and the previous settings
-        # republished, rather than returned to the caller; a lamp not reached
+        # republished, rather than returned to the service call; a lamp not reached
         # keeps them, like every other service.
         undo = {id(target): update_one(target) for target in targets}
         run_on_lamps(
@@ -349,6 +362,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("effect"): cv.string,
             vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+            vol.Optional("direction"): vol.In(list(NATIVE_EFFECT_DIRECTIONS)),
             vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
             vol.Optional("color"): vol.Any(None, "clear", vol.All(
                 [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
@@ -359,7 +373,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
     )
 
     async def handle_set_clock_style(service_call):
-        """Configure the firmware clock (style, color, content, format).
+        """Configure the lamp's clock (style, color, content, format).
 
         A single clean action the Clock card drives: any subset of the fields
         may be provided. ``style`` accepts a style name or numeric id; ``color``
@@ -389,18 +403,21 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 if sid in NATIVE_CLOCK_STYLES:
                     style_id = sid
             else:
+                # By name: a former one (e.g. "Blue White") is today's. A
+                # number was read as a style id above, never as a name.
+                name = canonical_clock_style_name(style)
                 style_id = next(
                     (
                         sid
                         for sid, spec in NATIVE_CLOCK_STYLES.items()
-                        if spec["name"] == style
+                        if spec["name"] == name
                     ),
                     None,
                 )
             if style_id is None:
                 raise invalid("unknown_clock_style", style=style)
 
-        # Encode an [r, g, b] override into the firmware's 0x01RRGGBB clock
+        # Encode an [r, g, b] override into the lamp's 0x01RRGGBB clock
         # color integer (high byte 0x01 = custom color, matching the built-in
         # style presets like Yellow = 0x01FFFE00).
         clock_color = None
@@ -496,7 +513,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             raise failed("button_effects_refused")
 
     button_effect_options = list(NATIVE_EFFECTS) + [
-        f"Clock: {style['name']}" for style in NATIVE_CLOCK_STYLES.values()
+        f"{BUTTON_CLOCK_PREFIX}{style['name']}" for style in NATIVE_CLOCK_STYLES.values()
     ]
 
     hass.services.async_register(
@@ -505,7 +522,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         handle_set_button_effects,
         schema=vol.Schema({
             vol.Required("effects"): vol.All(
-                [vol.In(button_effect_options)],
+                # Former names are read as today's.
+                [vol.All(cv.string, canonical_button_effect_name, vol.In(button_effect_options))],
                 vol.Length(min=1, max=8),
             ),
             vol.Required("entity_id"): _entity_id_or_list,

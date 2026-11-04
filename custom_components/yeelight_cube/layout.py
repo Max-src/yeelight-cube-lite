@@ -305,16 +305,16 @@ FONT_MAPS: Dict[str, Dict[str, List[int]]] = {
 }
 
 # ── "native" font ────────────────────────────────────────────────────────
-# Mirrors the Cube Lite firmware's built-in clock font.  It is SEEDED from the
+# Mirrors the Cube Lite's built-in clock font.  It is SEEDED from the
 # "basic" font (a straight copy) and then corrected glyph-by-glyph via the Font
 # Editor card until it matches the hardware.  Only the digits/colon are used by
 # the clock, but the whole set is present so "Native" is usable for matrix text
 # too.  Editing these arrays is the ONLY place the bundled glyphs live -- users
 # never have to edit fonts by hand.
 #
-# Corrected glyphs (differ from "basic" to match the firmware clock face):
+# Corrected glyphs (differ from "basic" to match the lamp's clock face):
 _NATIVE_FONT_OVERRIDES: Dict[str, List[int]] = {
-    # <char>: [positions]  -- confirmed via the Font Editor card (row*20+col,
+    # <char>: [positions]  -- set with the Font Editor card (row*20+col,
     # row 0 = bottom).  Anything not listed falls back to the basic glyph.
     "0": [0, 1, 2, 20, 22, 40, 42, 60, 62, 80, 81, 82],
     "1": [2, 22, 42, 62, 82],

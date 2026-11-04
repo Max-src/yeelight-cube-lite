@@ -81,10 +81,10 @@ async def _restart_scroll(light) -> None:
 
 async def _redraw_with_power_limit(light) -> None:
     """Redraw so the new limit shows at once. Only frames the integration
-    draws are limited: firmware modes (clock, native effects, Music Flow)
+    draws are limited: built-in modes (clock, native effects, Music Flow)
     are left running. A user change, unlike a background "display_update":
     never suppressed, and not animated."""
-    if light._is_on and not light.firmware_draws_matrix:
+    if light._is_on and not light.lamp_draws_matrix:
         await light.async_apply_display_mode(update_type="power_limit")
 
 
@@ -257,7 +257,7 @@ class YeelightCubeGradientAngleNumber(CubeNumber):
 
 
 class YeelightCubeNativeEffectSpeedNumber(CubeNumber):
-    """Control the rate used by firmware-native animations."""
+    """Control the rate used by built-in animations."""
 
     _attr_translation_key = "native_effect_speed"
     _slot = "_native_effect_speed_entity"
@@ -270,7 +270,7 @@ class YeelightCubeNativeEffectSpeedNumber(CubeNumber):
         light = self._light_entity
         if not light.available:
             return False
-        # The firmware clock accepts the same rate byte, so the slider applies
+        # The lamp's clock accepts the same rate byte, so the slider applies
         # to clock mode too; otherwise it depends on the selected effect.
         if light._mode == MODE_CLOCK:
             return True

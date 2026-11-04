@@ -41,8 +41,8 @@ def _path(endpoint: int, cluster: int, attribute: int) -> str:
     return f"{endpoint}/{cluster}/{attribute}"
 
 
-# The Cube's vendor endpoint and what it reports (verified on a Cube Lite,
-# firmware 1.12.32 / LED chip 34).
+# The Cube's vendor endpoint and what it reports (verified on a Cube
+# Lite).
 VENDOR_ENDPOINT = 2
 PRODUCT = _path(VENDOR_ENDPOINT, _vendor(0xFC00), _vendor(0))
 LAN_CONTROL = _path(VENDOR_ENDPOINT, _vendor(0xFC01), _vendor(1))

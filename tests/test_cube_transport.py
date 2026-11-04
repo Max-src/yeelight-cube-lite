@@ -7,6 +7,7 @@ import importlib
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 from tests.test_native_features import ROOT
 from tests.test_udp_session import FakeLamp
@@ -146,6 +147,61 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
         await self.cube.send_command_fast("set_bright", [80])
         self.assertEqual(1, self.udp_methods().count("activate_fx_mode"))
         self.assertTrue(self.cube.consume_reconnected_flag())
+
+    async def test_the_fx_mode_flag_is_cleared_over_tcp_unanswered(self):
+        # deactivate_fx_mode (cube_matrix.clear_fx_mode_flag): over TCP, not
+        # waited for -- with the flag already clear the lamp does not answer,
+        # which the session would take for a lost lamp. Only while the flag
+        # may be set: unknown at first, set by every activate_fx_mode.
+        received = []
+
+        class SilentLampSocket:
+            """A TCP connection to a lamp that never answers: what was sent
+            is recorded (a listener would lose it to the reset close)."""
+
+            def __init__(self, *args):
+                pass
+
+            def settimeout(self, timeout):
+                pass
+
+            def connect(self, address):
+                pass
+
+            def sendall(self, data):
+                received.append(data)
+
+            def recv(self, size):
+                raise TimeoutError
+
+            def setsockopt(self, *args):
+                pass
+
+            def close(self):
+                pass
+
+        # Only the TCP command's socket: the session's are real.
+        tcp = lambda: patch.object(cube_matrix.socket, "socket", SilentLampSocket)
+        settle = cube_matrix.FX_MODE_RESTORE_SETTLE
+        cube_matrix.FX_MODE_RESTORE_SETTLE = 0.0
+        self.addCleanup(setattr, cube_matrix, "FX_MODE_RESTORE_SETTLE", settle)
+        await self.cube.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
+        self.assertTrue(self.cube.fx_mode_flag_maybe_set)
+        with tcp():
+            self.assertTrue(await self.cube.clear_fx_mode_flag())
+        self.assertEqual([b'{"id":1,"method":"deactivate_fx_mode","params":[]}\r\n'], received)
+        self.assertNotIn("deactivate_fx_mode", self.udp_methods())
+        self.assertEqual("udp", self.cube.transport)  # the session is still fine
+        # Direct mode ended: a new session is not put back in it.
+        self.assertEqual([], self.cube._udp.session_setup)
+        self.assertIsNone(self.cube.running_effect)
+        # Clear: not sent again, until direct mode sets it again.
+        with tcp():
+            self.assertFalse(await self.cube.clear_fx_mode_flag())
+        await self.cube.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
+        with tcp():
+            self.assertTrue(await self.cube.clear_fx_mode_flag())
+        self.assertEqual(2, len(received))
 
     async def test_the_running_effect_is_forgotten_by_any_other_command(self):
         effect = [39, 0, 4, {"mode": 39, "onoff": 1, "rate": 50}]

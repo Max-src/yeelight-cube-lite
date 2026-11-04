@@ -57,7 +57,7 @@ module.exports = async (t) => {
       clock_style: "Rainbow",
       clock_style_id: 1,
       clock_color_mode: "normal",
-      native_effect_catalog: ["Rainbow", "Tide", "Starry sky"].map(
+      native_effect_catalog: ["Rainbow", "Tide", "Starry Sky"].map(
         (name) => ({
           name,
           speed: true,

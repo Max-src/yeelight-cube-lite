@@ -373,7 +373,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     if (!stateObj) return;
     const freshDots = this._paintedGeneration !== this._dotGeneration;
     this._paintedGeneration = this._dotGeneration;
-    // Firmware Native Effect and Clock modes run animations the plugin can't
+    // Built-in Native Effect and Clock modes run animations the plugin can't
     // read back (their matrix_colors are stale): client-side loops draw them.
     const preview = this.config.show_lamp_preview !== false;
     const on = stateObj.state === "on";
@@ -395,7 +395,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const mode = stateObj.attributes.content_mode;
     if (stateObj.state === "on" && (mode === "Native Effect" || mode === "Clock"))
       return;
-    // Blank matrix: no data yet, or the firmware draws the matrix (Music
+    // Blank matrix: no data yet, or the lamp draws the matrix (Music
     // Flow), whose frames the backend can't read back.
     const matrixColors = stateObj.attributes.matrix_colors?.length
       ? stateObj.attributes.matrix_colors

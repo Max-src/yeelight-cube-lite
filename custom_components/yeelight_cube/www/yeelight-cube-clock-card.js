@@ -12,7 +12,7 @@ import {
 //  Yeelight Cube Lite — Clock Card
 // ============================================================================
 //
-// Select, configure and visualise the firmware clock: pick a clock style from
+// Select, configure and visualise the lamp's clock: pick a clock style from
 // an animated live-preview gallery, set the content (Time / Time & Date /
 // Date), 12/24-hour and colon-blink format, and an optional color override.
 //
@@ -81,7 +81,7 @@ import {
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import {
-  firmwareClockFrame,
+  lampClockFrame,
   deviceOrientation,
   isVerticalMount,
   viewerFrame,
@@ -89,6 +89,8 @@ import {
 import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
+import { DEFAULT_EFFECT_SPEED } from "./lamp-renderers.js";
+import { FamilyFilter, GallerySort, matchesEffectFamily } from "./effect-families.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
 import { rgbToHex } from "./color-utils.js";
 import { itemLabel, itemMatchesQuery, normalizeCardOptions } from "./card-config.js";
@@ -119,7 +121,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       onExpire: () => this.isConnected && this.requestUpdate(),
       yieldToLamp: true,
     });
-    this._phaseAccum = 0;
+    this._elapsed = 0;
     this._lastPhaseTs = null;
     this._animLoop = null;
     this._visible = new Set();
@@ -179,7 +181,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       buttons_style: DEFAULT_BUTTON_STYLE,
       buttons_content_mode: DEFAULT_BUTTON_CONTENT_MODE,
     });
-    if (cfg.show_search === false) this._searchQuery = "";
+    if (cfg.show_search === false || cfg.show_gallery === false) this._searchQuery = "";
     this.config = {
       show_card_background: true,
       buttons_style: DEFAULT_BUTTON_STYLE,
@@ -191,6 +193,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       //   Original: grid | list badge gallery (shared with the native card)
       style_selector_style: "preview-grid",
       show_gallery: true,
+      show_family_filter: true,
+      show_sort: true,
       selector_shape: "rounded", // square | rounded | round
       preview_size: 55, // % -> px (same size axis as the gradient card)
       preview_show_titles: true,
@@ -460,7 +464,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return Math.round((pct / 100) * 450);
   }
 
-  // Locate the "Font Characters" sensor and return the firmware "native" clock
+  // Locate the "Font Characters" sensor and return the lamp's "native" clock
   // font + its monospace metrics, so previews render with the SAME font the
   // lamp uses for the clock (not the matrix-mode font). Mirrors the lamp
   // preview card. The sensor's entity id is remembered once found and the
@@ -508,14 +512,31 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return visible;
   }
 
-  // The styles the gallery's search shows (its labels or built-in names).
+  get _sort() {
+    return (this.__sort ||= new GallerySort(this, "yeelight_cube_clock_sort"));
+  }
+
+  get _families() {
+    return (this.__families ||= new FamilyFilter(
+      this,
+      "Style family",
+      "yeelight_cube_clock_family",
+    ));
+  }
+
+  // The styles the gallery's search and family filter show (the search reads
+  // their labels or built-in names).
   _shownStyles() {
     const query =
       this.config.show_search === false
         ? ""
         : (this._searchQuery || "").trim().toLowerCase();
-    return this._availableStyles().filter((style) =>
-      itemMatchesQuery(this.config, clockPresetKey(style), style.name, query),
+    const styles = this._availableStyles();
+    const family = this._families.value(styles);
+    return styles.filter(
+      (style) =>
+        matchesEffectFamily(style, family) &&
+        itemMatchesQuery(this.config, clockPresetKey(style), style.name, query),
     );
   }
 
@@ -532,7 +553,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     );
   }
 
-  // The color-mode selector value: a firmware palette when one is active,
+  // The color-mode selector value: a built-in palette when one is active,
   // otherwise "custom" when a free custom RGB override is set, else "normal".
   // A clicked color mode or saved color (pending-value.js): highlighted at
   // once, kept until the lamp reports it (or another: another dashboard
@@ -607,7 +628,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   }
 
   // The orientation the previews follow: the one being set (the lamp's until
-  // it confirms). The firmware clock never turns, so an upside-down or
+  // it confirms). The lamp's clock never turns, so an upside-down or
   // standing lamp shows it so (matrix-view.js viewerFrame).
   _previewOrientation() {
     return this._controls?.pendingOrientation || deviceOrientation(this._attrs());
@@ -627,6 +648,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       clock_colon_blink: a.clock_colon_blink,
       clock_color_mode: a.clock_color_mode,
       native_effect_direction: a.native_effect_direction,
+      native_effect_speed: this._animationSpeed(),
     };
     if (style.presetId) {
       // A preset previews its OWN saved color, not the active override.
@@ -660,6 +682,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       clock_color_mode:
         colorMode === "custom" ? "normal" : colorMode || "normal",
       native_effect_direction: a.native_effect_direction,
+      native_effect_speed: this._animationSpeed(),
     };
     if (style.presetId) {
       attrs.clock_style = "White";
@@ -1048,6 +1071,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         ? null
         : this._controls.displayed("key", this._pendingStyle.value ?? live)}
       .model=${this._controls}
+      .filter=${this._families.gallery(this._availableStyles())}
+      .sort=${this._sort.gallery()}
       .revealKey=${revealKey}
       heading="Clock style"
       searchLabel="Search clock modes"
@@ -1055,6 +1080,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       .onSelect=${(name) => this._controls.choose(name)}
       .onQuery=${(query) => {
         this._searchQuery = query;
+        this._controls?.notify();
       }}
       .onRename=${(key, name) => this._renamePreset(key, name)}
       .onDelete=${(key) => this._deletePreset(key)}
@@ -1134,8 +1160,9 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return this._availableStyles().map((s) => ({
       title: s.name,
       name: s.name,
+      family: s.family,
       colorData: viewerFrame(
-        firmwareClockFrame(
+        lampClockFrame(
           renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
           this._attrs(),
         ),
@@ -1311,7 +1338,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     if (showSpeed) {
       const raw = Math.max(
         1,
-        Math.min(255, Number(a.native_effect_speed) || 50),
+        Math.min(255, Number(a.native_effect_speed) || DEFAULT_EFFECT_SPEED),
       );
       controls.push({
         label: "Animation speed",
@@ -1375,7 +1402,7 @@ registerCustomCard({
   type: "yeelight-cube-clock-card",
   name: "Yeelight Cube Clock Card",
   description:
-    "Select, configure and visualise the Cube Lite firmware clock: styles, content, format and color.",
+    "Select, configure and visualise the Cube Lite's built-in clock: styles, content, format and color.",
   preview: true,
   documentationURL: "https://github.com/Max-src/yeelight-cube-lite",
 });

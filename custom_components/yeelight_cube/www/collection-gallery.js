@@ -28,6 +28,8 @@
  *     .onQuery=${(query) => …}          // the search text (optional)
  *     .filter=${filter}                 // an item filter beside the search
  *                                       //   (optional, see below)
+ *     .sort=${sort}                     // a sort toggle beside it (optional,
+ *                                       //   see below)
  *     .onRename=${(key, name) => …}     // user-owned items (optional)
  *     .onDelete=${(key) => …}           // user-owned items (optional)
  *     @gallery-updated=${() => paint()} // the items' DOM changed: repaint
@@ -39,6 +41,10 @@
  * hidden }. The card keeps its value (the same on every section's gallery)
  * and passes the same object while it does not change; `hidden` applies it
  * without the toggle.
+ *
+ * A sort orders the items (card-config.js sortGalleryItems) with a toggle of
+ * the same kind: { label, value, choices, onChange(value), hidden }; without
+ * one, the card's gallery_sort.
  *
  * The layouts are Lit templates (gallery-layouts.js): every item binds its
  * click, keyboard role and name, outline, pulse and star.
@@ -285,8 +291,10 @@ export const collectionGalleryStyles = `
      each as tall as the search field. */
   .yc-gallery-tools > .shared-button-group {
     width: auto;
-    flex: 0 0 auto;
-    flex-wrap: nowrap;
+    max-width: 100%;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 4px;
   }
   .yc-gallery-tools > .shared-button-group .shared-action-button {
@@ -368,6 +376,7 @@ class YcCollectionGallery extends LitElement {
     onRename: { attribute: false, hasChanged: () => false },
     onDelete: { attribute: false, hasChanged: () => false },
     filter: { attribute: false },
+    sort: { attribute: false },
     query: { state: true },
     _manage: { state: true },
     page: { state: true },
@@ -437,7 +446,7 @@ class YcCollectionGallery extends LitElement {
             query,
           ),
       );
-    return sortGalleryItems(this.config, shown, (item) => item.name);
+    return sortGalleryItems(this.config, shown, (item) => item.name, this.sort?.value);
   }
 
   get activeKey() {
@@ -447,7 +456,16 @@ class YcCollectionGallery extends LitElement {
   /** Show `key` (its page, carousel slot or album card), once. */
   reveal(key) {
     const index = this.visibleItems.findIndex((item) => item.dataMode === key);
-    if (index < 0) return;
+    if (index < 0) {
+      // Hidden by the filter (a custom style just saved, of another family):
+      // leave the filter, then show it.
+      const item = this.items.find((item) => item.dataMode === key);
+      if (item && this.filter && !this.filter.match(item, this.filter.value)) {
+        this._revealAfterFilter = key;
+        this.filter.onChange?.("all");
+      }
+      return;
+    }
     this.index = index;
     this.page = this._pageOf(index);
     this.requestUpdate();
@@ -456,6 +474,11 @@ class YcCollectionGallery extends LitElement {
   willUpdate(changed) {
     if (changed.has("revealKey") && this.revealKey != null)
       this.updateComplete.then(() => this.reveal(this.revealKey));
+    if (changed.has("filter") && this._revealAfterFilter != null) {
+      const key = this._revealAfterFilter;
+      this._revealAfterFilter = null;
+      this.updateComplete.then(() => this.reveal(key));
+    }
   }
 
   // The page showing item `index` in the current layout.
@@ -536,8 +559,9 @@ class YcCollectionGallery extends LitElement {
     this.page = pagination.currentPage;
     const label = this.searchLabel || "Search";
     const filter = this.filter && !this.filter.hidden ? this.filter : null;
+    const sort = this.sort && !this.sort.hidden ? this.sort : null;
     const search = this.config.show_search !== false;
-    return html`${search || filter
+    return html`${search || filter || sort
         ? html`<div class="yc-gallery-tools">${search
             ? html`<input
             class="yc-gallery-search"
@@ -566,7 +590,25 @@ class YcCollectionGallery extends LitElement {
                 (value) => {
                   this.page = 0;
                   this.index = null;
+                  // Turn to the active item again, if this family has it.
+                  this._lastActive = undefined;
                   filter.onChange?.(value);
+                },
+              )
+            : ""}${sort
+            ? renderActionButtonGroup(
+                {
+                  label: sort.label,
+                  items: sort.choices,
+                  value: sort.value,
+                  buttonStyle: this.config.buttons_style || "modern",
+                  contentMode: "icon",
+                },
+                (value) => {
+                  this.page = 0;
+                  this.index = null;
+                  this._lastActive = undefined;
+                  sort.onChange?.(value);
                 },
               )
             : ""}</div>`

@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .clock_presets import delete_clock_preset, save_clock_preset
-from .const import DOMAIN, NATIVE_CLOCK_STYLES
+from .const import CLOCK_STYLE_ALIASES, DOMAIN, NATIVE_CLOCK_STYLES
 from .errors import failed, invalid_input
 from .input_error import InputError
 from .storage import async_save_data
@@ -34,7 +34,9 @@ def async_register_clock_preset_services(hass: HomeAssistant) -> None:
                 else:
                     updated = save_clock_preset(
                         previous, call.data["name"], call.data["color"],
-                        [style["name"] for style in NATIVE_CLOCK_STYLES.values()],
+                        # A style's former names too: still read as it.
+                        [style["name"] for style in NATIVE_CLOCK_STYLES.values()]
+                        + list(CLOCK_STYLE_ALIASES),
                         call.data.get("preset_id"),
                         kind=call.data.get("kind"),
                     )

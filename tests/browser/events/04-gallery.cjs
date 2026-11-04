@@ -30,7 +30,7 @@ module.exports = async (t) => {
             ? (card._frames || []).some((frame) => frame.node === chip)
             : null;
       return {
-        cells: matrix?.children.length ?? 0,
+        cells: matrix?.querySelectorAll(":scope > div").length ?? 0,
         swatch:
           chip?.querySelector(".mode-chip-swatch")?.style.background || "",
         animated,
@@ -629,6 +629,143 @@ module.exports = async (t) => {
     [0, 0],
   );
   await page.evaluate(() => {
+    hass.states = { ...hass.states, "sensor.presets": window.savedPresets };
+  });
+
+  // --- The clock's family filter ------------------------------------------
+  await page.evaluate(() => {
+    localStorage.removeItem("yeelight_cube_clock_family");
+    localStorage.removeItem("yeelight_cube_effect_family");
+    hass.states = {
+      ...hass.states,
+      "sensor.presets": {
+        state: "1",
+        attributes: {
+          clock_presets: [
+            { id: "mine", name: "Mine", kind: "style", color: [10, 200, 30] },
+          ],
+        },
+      },
+    };
+  });
+  const familyState = () =>
+    page.evaluate(() => {
+      const root = card.shadowRoot.querySelector("yc-collection-gallery").shadowRoot ??
+        card.shadowRoot;
+      return {
+        // The family filter's toggle (not the sort's beside it).
+        toggles: [
+          ...root.querySelectorAll('.yc-gallery-tools > .shared-button-group:not([aria-label="Sort"]) [data-value]'),
+        ].map(
+          (node) => node.dataset.value,
+        ),
+        shown: [...root.querySelectorAll(".gallery-item[data-mode]")].map(
+          (node) => node.dataset.mode,
+        ),
+        next: card._controls.adapter.navigationItems().map((item) => item.key),
+      };
+    });
+  const pick = async (value) => {
+    await page.locator(`yeelight-cube-clock-card .yc-gallery-tools [data-value="${value}"]`).click();
+    await page.waitForTimeout(100);
+  };
+  await clockGrid({ items_per_page: 0 });
+  const all = await familyState();
+  assert.deepEqual(all.toggles, ["all", "waves", "still"], "the families this card has");
+  assert.ok(all.shown.includes("custom:mine"));
+  await pick("waves");
+  let state = await familyState();
+  // In the effect card's order (Waves before Rainbow).
+  assert.deepEqual(state.shown, ["Waves", "Rainbow"], "only that family");
+  assert.deepEqual(state.next, state.shown, "next and previous follow the filter");
+  // The sort toggle beside it: A → Z, then back, remembered per kind of card.
+  await pick("name");
+  state = await familyState();
+  assert.deepEqual(state.shown, ["Rainbow", "Waves"], "A → Z");
+  assert.deepEqual(state.next, state.shown, "next and previous follow the sort");
+  await pick("manual");
+  assert.deepEqual((await familyState()).shown, ["Waves", "Rainbow"], "the default order again");
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("yeelight_cube_clock_sort")),
+    "manual",
+  );
+  await pick("still");
+  state = await familyState();
+  assert.ok(state.shown.includes("White") && state.shown.includes("custom:mine"));
+  assert.ok(!state.shown.includes("Rainbow"));
+  // Remembered per kind of card, in this browser.
+  await clockGrid({ items_per_page: 0 });
+  assert.ok(!(await familyState()).shown.includes("Rainbow"), "the pick is remembered");
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("yeelight_cube_effect_family")),
+    null,
+    "the Native Effects card keeps its own",
+  );
+  // A custom style just saved, of another family: the filter gives way to it.
+  await pick("waves");
+  await page.evaluate(async () => {
+    const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+    gallery.reveal("custom:mine");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+  state = await familyState();
+  assert.ok(state.shown.includes("custom:mine"), "the saved style shows");
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("yeelight_cube_clock_family")),
+    "all",
+  );
+  // Leaving a family turns to the page of the active style.
+  await clockGrid({ items_per_page: 2 });
+  await pick("waves");
+  await pick("all");
+  const activeShown = await page.evaluate(() => {
+    const active = card._controls.adapter.current();
+    return {
+      active,
+      page: !!card.shadowRoot.querySelector(`.gallery-item[data-mode="${active}"]`),
+    };
+  });
+  assert.ok(activeShown.page, `${activeShown.active} is on the page shown`);
+  // Next and previous follow the search at once.
+  await page.evaluate(() =>
+    mount("yeelight-cube-clock-card", {
+      entity: "light.a",
+      show_gallery: true,
+      show_search: true,
+      style_selector_style: "preview-grid",
+    }),
+  );
+  await page.evaluate(() => {
+    window.notified = 0;
+    const notify = card._controls.notify.bind(card._controls);
+    card._controls.notify = () => {
+      window.notified += 1;
+      notify();
+    };
+  });
+  await page.locator("yeelight-cube-clock-card .yc-gallery-search").fill("rain");
+  assert.ok(await page.evaluate(() => window.notified > 0), "the search tells the buttons");
+  // A hidden gallery drops its search too.
+  await page.evaluate(() =>
+    card.setConfig({ ...card.config, show_gallery: false }),
+  );
+  assert.equal(await page.evaluate(() => card._searchQuery), "");
+  // Off, or with no gallery to show it: every style, whatever was picked.
+  await page.evaluate(() => localStorage.setItem("yeelight_cube_clock_family", "still"));
+  await clockGrid({ items_per_page: 0, show_family_filter: false });
+  state = await familyState();
+  assert.deepEqual(state.toggles, []);
+  assert.deepEqual(state.shown, all.shown);
+  await page.evaluate(() => {
+    card.setConfig({ ...card.config, show_family_filter: true, show_gallery: false });
+  });
+  assert.equal(
+    await page.evaluate(() => card._controls.adapter.navigationItems().length),
+    all.next.length,
+    "a hidden gallery cannot narrow next and previous",
+  );
+  await page.evaluate(() => {
+    localStorage.removeItem("yeelight_cube_clock_family");
     hass.states = { ...hass.states, "sensor.presets": window.savedPresets };
   });
 };

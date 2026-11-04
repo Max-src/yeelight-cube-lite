@@ -236,12 +236,12 @@ module.exports = async (t) => {
           ? [
               { key: "Rainbow", colorMode: "normal" },
               { key: "Kaleidoscope", colorMode: "white_orange" },
-              { key: "Color Trails", colorMode: "blue_yellow" },
-              { key: "Rainbow Flow", colorMode: "purple_orange" },
+              { key: "Tide (slot 35)", colorMode: "blue_yellow" },
+              { key: "Moving palette", colorMode: "purple_orange" },
               { key: "Tide", colorMode: "white_orange" },
-              { key: "Rainbow Flow", colorMode: "white_orange" },
+              { key: "Moving palette", colorMode: "white_orange" },
             ]
-          : ["Ocean Waves", "Bonfire", "Aurora", "Rainbow", "Streamer"].map(
+          : ["Waves", "Fire", "Aurora", "Rainbow", "Ribbon"].map(
               (key) => ({ key, colorMode: "normal" }),
             );
       cold._controls.save(screenshotFavourites);

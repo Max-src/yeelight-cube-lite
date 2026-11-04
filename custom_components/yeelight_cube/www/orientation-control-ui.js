@@ -9,16 +9,14 @@ import {
   ORIENTATION_CHOICES,
   ORIENTATION_ORDER,
   orientationOptions,
+  effectDirectionControlModel,
   orientationControlModel,
 } from "./orientation-control-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
 
-/**
- * The device-orientation row as a Lit template ("" when hidden). `onClick`
- * receives every click on the row; buttons carry their value in data-value.
- */
-export function renderOrientationControls(config, current, unavailable, onClick) {
-  const model = orientationControlModel(config, current, unavailable);
+// A row of arrows ("" without a model). `onClick` receives every click on the
+// row; buttons carry their value in data-value.
+function renderArrowRow(model, label, onClick, caption = "") {
   if (!model) return "";
   const button = (item) =>
     model.style === "original"
@@ -48,11 +46,32 @@ export function renderOrientationControls(config, current, unavailable, onClick)
   return html`<div
     class="device-orientation-row"
     role="group"
-    aria-label="Device orientation"
+    aria-label=${label}
     @click=${onClick}
   >
+    ${caption ? html`<span class="orientation-caption">${caption}</span>` : ""}
     <div class="orientation-buttons">${model.buttons.map(button)}</div>
   </div>`;
+}
+
+/** The device-orientation row as a Lit template ("" when hidden). */
+export function renderOrientationControls(config, current, unavailable, onClick, caption = "") {
+  return renderArrowRow(
+    orientationControlModel(config, current, unavailable),
+    "Device orientation",
+    onClick,
+    caption,
+  );
+}
+
+/** The arrows that choose an effect's direction ("" when it has none). */
+export function renderEffectDirectionControls(config, directions, current, unavailable, onClick) {
+  return renderArrowRow(
+    effectDirectionControlModel(config, directions, current, unavailable),
+    "Effect direction",
+    onClick,
+    "Effect direction",
+  );
 }
 import { renderSettingsBox } from "./editor_ui_utils.js";
 

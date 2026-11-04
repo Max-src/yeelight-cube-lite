@@ -2,26 +2,40 @@
 //  Shared clock-face software preview
 // ============================================================================
 //
-// Client-side reproduction of the Cube Lite firmware clock renderer, shared by
+// Client-side reproduction of the Cube Lite's built-in clock, shared by
 // the lamp-preview card and the dedicated clock card so there is a SINGLE
 // source of truth for the clock previews (no duplication).
 //
 // Mirrors Python `camera.py:_get_clock_preview()` / `const.py`. The clock draws
-// digit/colon glyphs; styles whose firmware `mixer` is a native effect render
+// digit/colon glyphs; styles whose `mixer` is a native effect render
 // that effect across the whole panel and let it through only on the lit glyph
 // pixels (a mask), so the characters animate with the effect.
 //
 // Keep the mixer tables and glyph handling in sync with const.py.
 
 import {
-  renderNativeEffectOriented,
   effectSupportsColorOverride,
   effectSupportsColorMode,
 } from "./native-effect-preview.js";
-import { clockEffectDirection } from "./effect-orientation.js";
+import {
+  DEFAULT_EFFECT_SPEED,
+  effectDisplayFrame,
+  lampClockSettings,
+  lampEffectFrame,
+  isLampRendered,
+} from "./lamp-renderers.js";
 import { flipMatrixVertical } from "./matrix-view.js";
+import { effectFamilyOfName } from "./effect-families.js";
+import {
+  FORMERLY_NUMBERED_EFFECT_NAMES,
+  canonicalClockStyleName,
+  canonicalEffectName,
+  effectSlotRank,
+} from "./effect-names.js";
 
-// Firmware color-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
+export { canonicalClockStyleName };
+
+// The lamp's color-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
 // Selecting one forces the outer command id so compatible effects re-map their
 // palette; "normal" keeps each effect's own colors. Which effects respond is
 // verified on hardware (previews are adjusted per effect separately).
@@ -114,47 +128,61 @@ export { flipMatrixVertical };
 // Clock styles whose mixer is a native effect: the effect is rendered across
 // the whole panel and masked to the lit glyph pixels (mirrors const.py).
 export const CLOCK_MIXER_EFFECTS = {
-  4: "Rainbow Flow",
-  6: "Spectrum Chase",
-  9: "Pastel Pulse",
+  4: "Moving palette",
+  6: "Particle path",
+  9: "Triangular palette pulses",
   10: "Fireworks",
-  11: "Monochrome Waves",
-  18: "Pulse",
-  19: "Solar Flare",
-  22: "Prism",
-  24: "Ember",
-  35: "Color Trails",
-  79: "Twinkle",
+  11: "Sine wave",
+  18: "Sunrise and sunset",
+  19: "Heat fire",
+  22: "Mirrored comets",
+  24: "Palette sparks",
+  35: "Tide (slot 35)",
+  79: "Violet twinkles",
   39: "Rainbow",
-  42: "Ocean Waves",
+  42: "Waves",
   17: "Spectrum",
-  54: "Sunset",
-  56: "Carousel",
-  57: "Blue Yellow",
-  58: "Ice Blue",
-  59: "Blue White",
-  61: "Drift",
-  70: "Spectrum Bands",
+  54: "Rainbow noise",
+  56: "Violet interference",
+  57: "Night-amber waves",
+  58: "Navy-white noise",
+  59: "Night-sky waves",
+  61: "Particle glows",
+  70: "Palette stripes",
   // Official effects that also support all four directions (mirrors const.py).
   32: "Waterfall",
   15: "Aurora",
-  34: "Bonfire",
+  34: "Fire",
   55: "Flower Sea",
   80: "Kaleidoscope",
   // Named effects with no direction control still back the clock (no sweep).
-  3: "Streamer",
-  5: "Starry sky",
-  37: "Pinball",
+  3: "Ribbon",
+  5: "Starry Sky",
+  37: "Bouncing Ball",
   48: "Tide",
-  75: "Magic",
+  75: "Neon sine bands",
+  76: "Magic",
   77: "Wonderland",
-  // Hacking, Shooting Star, Building block, and Palette are deliberately
-  // omitted: the firmware rejects these mixer/clock combinations.
+  // The slots named by number until 1.4.0, but the stored GIF (no preview can
+  // draw it: a clock over it is sent no palette, as a solid style).
+  ...Object.fromEntries(
+    Object.entries(FORMERLY_NUMBERED_EFFECT_NAMES).filter(([mode]) => mode !== "71"),
+  ),
+  // Hacking, Meteor, Building Blocks, and Palette are deliberately
+  // omitted: the lamp rejects these mixer/clock combinations.
 };
 
-export const CLOCK_MIXER_EFFECT_SPEED = 50;
+// The speed when a lamp reports none (const.py's default).
+export const DEFAULT_CLOCK_SPEED = DEFAULT_EFFECT_SPEED;
 
-// Built-in clock style id -> firmware mixer (mirrors NATIVE_CLOCK_STYLES 1-15).
+/** The rate the lamp's clock background runs at: previews take it as it is. */
+export const clockSpeed = (attrs) =>
+  Math.max(1, Math.min(255, Number(attrs?.native_effect_speed) || DEFAULT_CLOCK_SPEED));
+
+/** The phase of `seconds` of animation at a speed (renderClockFrame's). */
+export const clockPhase = (seconds, speed) => seconds * (0.25 + speed / 55);
+
+// Built-in clock style id -> the lamp's mixer (mirrors NATIVE_CLOCK_STYLES 1-15).
 export const CLOCK_STYLE_MIXER = {
   1: 39,
   2: 42,
@@ -180,7 +208,7 @@ export const CLOCK_STYLE_MIXER = {
 // fixed color; effect styles render their mixer effect masked to the glyphs.
 const _BASE_CLOCK_STYLES = [
   { id: 1, name: "Rainbow", mixer: 39 },
-  { id: 2, name: "Ocean Waves", mixer: 42 },
+  { id: 2, name: "Waves", mixer: 42 },
   { id: 3, name: "Spectrum", mixer: 17 },
   { id: 4, name: "White", mixer: 0 },
   { id: 5, name: "Mint", mixer: 0 },
@@ -189,68 +217,78 @@ const _BASE_CLOCK_STYLES = [
   { id: 8, name: "Red", mixer: 0 },
   { id: 9, name: "Cyan", mixer: 0 },
   { id: 10, name: "Purple", mixer: 0 },
-  { id: 11, name: "Sunset", mixer: 54 },
-  { id: 12, name: "Blue Yellow", mixer: 57 },
-  { id: 13, name: "Blue White", mixer: 59 },
-  { id: 14, name: "Ice Blue", mixer: 58 },
-  { id: 15, name: "Carousel", mixer: 56 },
+  { id: 11, name: "Rainbow noise", mixer: 54 },
+  { id: 12, name: "Night-amber waves", mixer: 57 },
+  { id: 13, name: "Night-sky waves", mixer: 59 },
+  { id: 14, name: "Navy-white noise", mixer: 58 },
+  { id: 15, name: "Violet interference", mixer: 56 },
 ];
 
-// firmware mode -> effect name (official + extended), used to name generated
+// lamp mode -> effect name (official + extended), used to name generated
 // experimental clock styles exactly like the backend does.
 const _MODE_TO_EFFECT_NAME = {
-  3: "Streamer",
-  5: "Starry sky",
+  3: "Ribbon",
+  5: "Starry Sky",
   17: "Spectrum",
-  42: "Ocean Waves",
+  42: "Waves",
   39: "Rainbow",
   32: "Waterfall",
   15: "Aurora",
-  34: "Bonfire",
-  37: "Pinball",
-  47: "Shooting Star",
+  34: "Fire",
+  37: "Bouncing Ball",
+  47: "Meteor",
   48: "Tide",
-  49: "Building block",
+  49: "Building Blocks",
   46: "Hacking",
   55: "Flower Sea",
-  75: "Magic",
+  75: "Neon sine bands",
+  76: "Magic",
   77: "Wonderland",
   80: "Kaleidoscope",
   81: "Palette",
-  4: "Rainbow Flow",
-  6: "Spectrum Chase",
-  9: "Pastel Pulse",
+  4: "Moving palette",
+  6: "Particle path",
+  9: "Triangular palette pulses",
   10: "Fireworks",
-  11: "Monochrome Waves",
-  18: "Pulse",
-  19: "Solar Flare",
-  22: "Prism",
-  24: "Ember",
-  35: "Color Trails",
-  54: "Sunset",
-  56: "Carousel",
-  57: "Blue Yellow",
-  58: "Ice Blue",
-  59: "Blue White",
-  60: "Spectrum Crumble",
-  61: "Drift",
-  70: "Spectrum Bands",
-  79: "Twinkle",
+  11: "Sine wave",
+  18: "Sunrise and sunset",
+  19: "Heat fire",
+  22: "Mirrored comets",
+  24: "Palette sparks",
+  35: "Tide (slot 35)",
+  54: "Rainbow noise",
+  56: "Violet interference",
+  57: "Night-amber waves",
+  58: "Navy-white noise",
+  59: "Night-sky waves",
+  60: "Flicker sweep",
+  61: "Particle glows",
+  70: "Palette stripes",
+  79: "Violet twinkles",
+  // The slots named by number until 1.4.0, but the stored GIF for now: the card
+  // does not offer a style over it (the clock style selector does).
+  ...Object.fromEntries(
+    Object.entries(FORMERLY_NUMBERED_EFFECT_NAMES).filter(([mode]) => mode !== "71"),
+  ),
 };
 
 const _BASE_CLOCK_MIXERS = new Set(_BASE_CLOCK_STYLES.map((s) => s.mixer));
-// Modes the firmware rejects as a clock mixer (mirrors _NON_CLOCK_EFFECT_MODES).
+// A style shows its effect through the digits, so it has that effect's family;
+// a solid style is a fixed color.
+const _clockFamily = (name, mixer) => (mixer ? effectFamilyOfName(name) : "still");
+// Modes the lamp rejects as a clock mixer (mirrors _NON_CLOCK_EFFECT_MODES).
 const _NON_CLOCK_EFFECT_MODES = new Set([60, 46, 47, 49, 81]);
 const _NATIVE_CLOCK_EFFECT_ID = 40;
 
 function _buildClockStyles() {
   const styles = _BASE_CLOCK_STYLES.map((s) => ({
     ...s,
+    family: _clockFamily(s.name, s.mixer),
     solid: s.mixer === 0,
     experimental: s.id > 10,
   }));
   let nextId = 16;
-  for (let mode = 1; mode < 100; mode++) {
+  for (let mode = 1; mode < 82; mode++) {
     if (
       _BASE_CLOCK_MIXERS.has(mode) ||
       mode === _NATIVE_CLOCK_EFFECT_ID ||
@@ -259,9 +297,9 @@ function _buildClockStyles() {
       continue;
     }
     const name = _MODE_TO_EFFECT_NAME[mode];
-    // Skip unnamed experimental modes (placeholder = the bare mode number): the
-    // card only offers styles that were actually named. nextId still advances so
-    // the ids of named styles stay aligned with the backend's style_id sequence.
+    // A dead end (or the stored GIF, not offered for now) has no style here,
+    // but takes its id all the same, so the ids of the others stay aligned
+    // with the backend's style_id sequence.
     if (!name) {
       nextId += 1;
       continue;
@@ -270,6 +308,7 @@ function _buildClockStyles() {
       id: nextId,
       name,
       mixer: mode,
+      family: _clockFamily(name, mode),
       solid: false,
       experimental: true,
     });
@@ -285,14 +324,24 @@ const _CLOCK_STYLE_BY_ID = new Map(CLOCK_STYLES.map((s) => [s.id, s]));
 const _CLOCK_STYLE_BY_NAME = new Map(CLOCK_STYLES.map((s) => [s.name, s]));
 
 export function clockStyleByName(name) {
-  return _CLOCK_STYLE_BY_NAME.get(name) || null;
+  return _CLOCK_STYLE_BY_NAME.get(canonicalClockStyleName(name)) || null;
 }
 
-/** Return the base (non-experimental) clock styles, or all of them. */
+// The order the cards list the styles in (when the card editor sets none):
+// the styles over an effect in the effect card's order (effect-names.js
+// effectSlotRank), so both cards list an effect at the same place, then the
+// plain colours (then the custom styles, clockStylesWithPresets).
+const _cardRank = (style) => (style.solid ? Infinity : effectSlotRank(style.mixer));
+const _CARD_ORDER = [...CLOCK_STYLES].sort(
+  (first, second) =>
+    _cardRank(first) - _cardRank(second) || first.id - second.id,
+);
+const _BASE_CARD_ORDER = _CARD_ORDER.filter((s) => !s.experimental);
+
+/** Return the base (non-experimental) clock styles, or all of them, in the
+ * cards' order. */
 export function getClockStyles(includeExperimental) {
-  return includeExperimental
-    ? CLOCK_STYLES
-    : CLOCK_STYLES.filter((s) => !s.experimental);
+  return includeExperimental ? _CARD_ORDER : _BASE_CARD_ORDER;
 }
 
 export function clockStyleColorModeState(style, mode, override = null) {
@@ -334,7 +383,14 @@ export function clockStyleRespondsToCustomColor(style) {
   return effect ? effectSupportsColorOverride(effect) : false;
 }
 
-// Resolve the firmware mixer for a set of light attributes (or a style object).
+// What a preview draws behind the clock: CLOCK_MIXER_EFFECTS's effect.
+export const clockPreviewEffect = (mixer) => CLOCK_MIXER_EFFECTS[mixer];
+
+// Resolve the lamp's mixer for a set of light attributes (or a style object).
+// Whether a clock style's background is an effect the lamp draws itself.
+export const clockUsesLampRenderer = (attrs) =>
+  isLampRendered(clockPreviewEffect(clockStyleMixer(attrs)));
+
 export function clockStyleMixer(attrs) {
   const id = attrs.clock_style_id;
   if (typeof id === "number" && id in CLOCK_STYLE_MIXER)
@@ -346,10 +402,11 @@ export function clockStyleMixer(attrs) {
   const nested = attrs.clock_style;
   if (nested && typeof nested.mixer === "number") return nested.mixer;
   if (typeof nested === "string") {
-    const byName = _CLOCK_STYLE_BY_NAME.get(nested);
+    const byName = _CLOCK_STYLE_BY_NAME.get(canonicalClockStyleName(nested));
     if (byName) return byName.mixer;
+    const effect = canonicalEffectName(nested);
     const match = Object.entries(CLOCK_MIXER_EFFECTS).find(
-      ([, effectName]) => effectName === nested,
+      ([, effectName]) => effectName === effect,
     );
     if (match) return Number(match[0]);
   }
@@ -378,7 +435,7 @@ function _clockGlyphWidth(glyph) {
 }
 
 // Columns the cursor advances after a character.  Mirrors layout.char_advance:
-// monospace fonts (the firmware "native" clock font) use a fixed advance with
+// monospace fonts (the lamp's own "native" clock font) use a fixed advance with
 // per-char overrides; otherwise proportional (glyph width + 1 gap).
 function _clockCharAdvance(letter, glyph, metrics) {
   if (metrics && metrics.monospace) {
@@ -463,13 +520,15 @@ function _clockPixelColor(styleId, charIndex, col) {
  * `attrs` fields used: clock_style_id, clock_style (name), clock_content,
  * clock_show_date, clock_12_hour, clock_colon_blink,
  * clock_color_mode, and a custom color override supplied either as a decoded
- * clock_color_rgb -> [r,g,b] or the raw firmware clock_color ARGB integer the
+ * clock_color_rgb -> [r,g,b] or the raw clock_color ARGB integer the
  * lamp exposes (decoded here like camera.py). The override recolors every lit
  * glyph pixel of compatible styles.
  * `fontMap`/`metrics` come from the Font Characters sensor ("native" font).
  * When absent, falls back to the embedded Basic-style glyphs (proportional).
+ * `phase` is clockPhase's, at the lamp's speed (attrs.native_effect_speed), or
+ * at `speed` when given.
  */
-export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
+export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = null) {
   const COLS = 20;
   const now = new Date();
   const tsSec = now.getTime() / 1000;
@@ -510,10 +569,9 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   // Styles whose mixer is a native effect show that effect through the lit
   // glyph pixels; render it once and mask it below.
   const mixer = clockStyleMixer(attrs);
-  const effectName = CLOCK_MIXER_EFFECTS[mixer];
-  const direction = clockEffectDirection(effectName);
+  const effectName = clockPreviewEffect(mixer);
   // Preview callers may supply either a decoded [r,g,b] (clock_color_rgb) or the
-  // raw firmware ARGB integer the lamp exposes as clock_color; decode the
+  // raw ARGB integer the lamp exposes as clock_color; decode the
   // latter exactly like camera.py so every card renders the same override.
   const override = Array.isArray(attrs.clock_color_rgb)
     ? attrs.clock_color_rgb
@@ -524,31 +582,26 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
           attrs.clock_color & 0xff,
         ]
       : null;
-  // A palette color mode (e.g. B&W) takes precedence over the custom override
-  // and is applied inside renderNativeEffect for compatible effects.
+  // A palette color mode (e.g. B&W) takes precedence over the custom override.
   const colorMode = attrs.clock_color_mode || "normal";
   const modeActive = colorMode !== "normal";
-  // Compatible mixer effects are recolored toward the override (dark stays
-  // dark); incompatible effects render normally (ignore the override, matching
-  // the lamp); styles with no effect fall back to the flat override color.
-  const overrideCompatible =
-    !modeActive &&
-    !!override &&
-    !!effectName &&
-    effectSupportsColorOverride(effectName);
+  // The mixer's renderer behind the clock overlay, on the command the lamp gets
+  // (light_native): it takes the color or not as on the lamp. Styles with no
+  // effect fall back to the flat override color.
+  const rate = speed ?? clockSpeed(attrs);
   const effectFrame = effectName
-    ? renderNativeEffectOriented(
+    ? effectDisplayFrame(
         effectName,
-        phase,
-        direction,
-        overrideCompatible ? override : null,
-        modeActive ? colorMode : null,
+        lampEffectFrame(
+          lampClockSettings(effectName, rate, override, colorMode),
+          phase / (0.25 + rate / 55),
+        ),
       )
     : null;
   // A palette mode overrides the custom color, so don't flat-fill with it.
   const flatOverride = modeActive ? null : override;
   // Solid styles (no mixer effect) have no animated renderer to remap for B&W;
-  // the backend achieves it by omitting their color, which the firmware
+  // the backend achieves it by omitting their color, which the lamp
   // renders as plain white.
   const soloBwFallback = !effectFrame && colorMode === "bw";
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);

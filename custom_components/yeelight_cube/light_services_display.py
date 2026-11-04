@@ -17,7 +17,7 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from .color_utils import hex_to_rgb
 from .const import (
     DEVICE_ORIENTATIONS,
-    FIRMWARE_MODES,
+    LAMP_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     DOMAIN,
@@ -158,7 +158,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             _LOGGER.debug("[SET_BRIGHTNESS] Successfully set brightness to %s%%", brightness_pct)
         except HomeAssistantError:
             raise
-        except Exception as err:  # noqa: BLE001 -- the lamp's own errors, told to the caller
+        except Exception as err:  # noqa: BLE001 -- the lamp's own errors, told to the service call
             raise failed("command_failed", error=err) from err
 
     hass.services.async_register(
@@ -248,7 +248,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     async def handle_set_custom_text(service_call):
         # Supports multi-entity parallel dispatch
         text = service_call.data.get("text")
-        # Prevent empty text -- the Yeelight firmware misbehaves when given
+        # Prevent empty text -- the lamp misbehaves when given
         # an empty string.  Use a single space instead (renders as blank).
         if text == "":
             text = " "
@@ -262,7 +262,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             target_entity._custom_draw_active = False
             target_entity._active_pixel_art_name = None
             if target_entity._text_waits_for_matrix():
-                # The lamp shows its firmware clock / native effect: the text
+                # The lamp shows its built-in clock / native effect: the text
                 # is kept for when it shows text again (call save_state first
                 # to show it over the clock, restore_state to come back).
                 if target_entity._text_input_entity and getattr(target_entity._text_input_entity, 'hass', None) is not None:
@@ -406,7 +406,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 for pos, color in enumerate(flipped_matrix)
             ]
         except InputError as err:
-            # Too large, not base64 or not an image: tell the caller.
+            # Too large, not base64 or not an image: say so in the service call.
             raise invalid_input(err) from err
         except Exception as err:  # noqa: BLE001 -- unexpected decoder failure
             _LOGGER.exception("Error processing image")
@@ -454,7 +454,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 target_entity._mode = mode
             if mode == "Custom Draw":
                 target_entity._custom_draw_active = True
-            elif mode in FIRMWARE_MODES:
+            elif mode in LAMP_MODES:
                 target_entity._mode = mode
                 target_entity._custom_draw_active = False
             else:
@@ -660,7 +660,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         """Freeze the panel on its current frame so it holds what is shown.
 
         Native effects freeze via the renderer's freeze-frame command
-        ([64, 0, 4, {mode: 64}]). The firmware clock instead re-sends its
+        ([64, 0, 4, {mode: 64}]). The lamp's clock instead re-sends its
         current command with the freeze mixer (64) -- sending mode 64 to the
         clock shows a full-panel effect, not the frozen clock face. Resume is
         client-driven: the cards re-apply the current effect / clock mode (i.e.

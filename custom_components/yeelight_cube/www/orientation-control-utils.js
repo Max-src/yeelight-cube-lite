@@ -15,6 +15,9 @@ export const orientationControlStyles = `
   .orientation-buttons .shared-action-button {
     min-height: 40px; max-width: 100%; white-space: normal;
   }
+  .orientation-caption {
+    color: var(--secondary-text-color, #727272); font-size: 0.85rem;
+  }
   .orientation-error {
     color: var(--error-color, #db4437); text-align: center;
     font-size: 0.85rem; padding: 0 10px 8px;
@@ -110,6 +113,34 @@ export function nextOrientation(current, step, directions = ORIENTATION_ORDER) {
 
 // Arrow glyphs of the "original" button style.
 const ORIENTATION_GLYPHS = { right: "\u2192", down: "\u2193", left: "\u2190", up: "\u2191" };
+
+/**
+ * What an effect's direction row shows: null when hidden or the effect has
+ * none, else the orientation row's button style and one arrow per direction it
+ * offers. `current` is a direction label (const.py NATIVE_EFFECT_DIRECTIONS).
+ */
+export function effectDirectionControlModel(config, directions, current, unavailable = false) {
+  const offered = ORIENTATION_ORDER.filter((value) =>
+    directions.includes(value[0].toUpperCase() + value.slice(1)),
+  );
+  if (config.show_effect_direction === false || !offered.length) return null;
+  const { style, contentMode } = orientationOptions(config);
+  return {
+    style,
+    contentMode,
+    buttons: offered.map((value) => {
+      const { label, icon } = ORIENTATION_CHOICES.find((choice) => choice.value === value);
+      return {
+        value,
+        label,
+        icon,
+        glyph: ORIENTATION_GLYPHS[value],
+        selected: label === current,
+        disabled: !!unavailable,
+      };
+    }),
+  };
+}
 
 /**
  * What the orientation row shows (rendered by renderOrientationControls in

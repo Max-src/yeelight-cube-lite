@@ -31,7 +31,7 @@ from .const import (
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_APPLY,
     NATIVE_EFFECTS,
-    clock_style_default_color,
+    clock_style_colors,
 )
 from .builtin_pixel_art import app_pixel_art_argb
 from .matter_commands import (
@@ -53,12 +53,12 @@ _LOGGER = logging.getLogger(__name__)
 # command's echo.
 MATTER_ECHO_WINDOW = 5.0
 # The effect the lamp reports while this integration draws on it (its direct
-# mode: text, gradients, drawings), seen on a Cube Lite (firmware 1.12.32).
+# mode: text, gradients, drawings), seen on a Cube Lite.
 DRAWING_EFFECT = 50
 
 # The effect the lamp reports (the Yeelight app's effect id: its button
 # playlist and effect list) -> the official native effect it is. The
-# experimental effects are firmware modes started under a generic id, and
+# experimental effects are the lamp's modes started under a generic id, and
 # ids such as the GIF player's (71) are no native effect: not followed.
 NATIVE_EFFECT_IDS: dict[int, str] = {
     spec["effect_id"]: name for name, spec in NATIVE_EFFECTS.items()
@@ -67,8 +67,8 @@ NATIVE_EFFECT_IDS: dict[int, str] = {
 # Right as Remote, with Matter settings: every slot of the lamp's playlist
 # (the right button steps through it) is an all-black drawing, custom ids
 # REMOTE_SLOT_BASE + slot, so a press shows black, not an effect, and is told
-# apart from the Yeelight app by its custom id (verified on a Cube Lite,
-# firmware 1.12.32: the lamp reports the slot's custom id on every press).
+# apart from the Yeelight app by its custom id (verified on a Cube Lite:
+# the lamp reports the slot's custom id on every press).
 REMOTE_DRAWING_EFFECT = 36
 REMOTE_SLOT_BASE = 1000
 REMOTE_SLOTS = range(REMOTE_SLOT_BASE, REMOTE_SLOT_BASE + 8)
@@ -82,8 +82,8 @@ REMOTE_WRITE_SETTLE = 5.0
 # order) before it is read.
 EXTERNAL_DRAWING_WAIT = 0.25
 # The Yeelight app's content a remote press can show again
-# (_app_content_command), told by its custom id (read in the app's
-# decompile) or its colour: its clock (the style, the integration's styles
+# (_app_content_command), told by its custom id or its
+# colour: its clock (the style, the integration's styles
 # 1-14), its animations (the app's tile; the lamp plays the GIF it stores),
 # its built-in pixel art, and its plain colour (effect 0, live test
 # 2026-10-27: the colour is Color Control's hue and saturation). Its own
@@ -170,6 +170,9 @@ class MatterMixin:
         self._lamp_power_command_at = -MATTER_ECHO_WINDOW
         self._expected_lamp_music: bool | None = None
         self._lamp_music_command_at = -MATTER_ECHO_WINDOW
+        # When deactivate_fx_mode last made the lamp put back its saved effect
+        # (_note_fx_restore).
+        self._fx_restore_at = -MATTER_ECHO_WINDOW
         # The lamp's rotationAngle as last seen (read when linked, reported,
         # or written here): a report of the same value is no change.
         self._lamp_rotation_seen = None
@@ -388,12 +391,33 @@ class MatterMixin:
         self._expected_lamp_music = None
         return False
 
+    def _note_fx_restore(self) -> None:
+        """deactivate_fx_mode was sent (light_native._clear_fx_mode_flag):
+        the lamp briefly puts back its saved effect, whatever it is, before
+        the next command replaces it."""
+        self._fx_restore_at = time.monotonic()
+
     def _effect_echo(self, effect_id: int) -> bool:
         """Whether a reported effect is a recent command's echo: what it
-        shows, or what the lamp showed before it (a late report)."""
+        shows, what the lamp showed before it (a late report), or anything
+        just after deactivate_fx_mode (the lamp's saved effect)."""
+        if time.monotonic() - self._fx_restore_at < MATTER_ECHO_WINDOW:
+            return True
         return self._matter_echo() and effect_id in (
             self._expected_effect(), self._effect_before_command,
         )
+
+    def _lamp_music_echo(self, on: bool) -> bool:
+        """Whether a microphone report comes from the integration's music
+        effect (or clock over one), not from Music Flow or the left button:
+        the lamp reports the microphone on while it shows one, and off when
+        the next command replaces it."""
+        if self._music_flow_enabled:
+            return False
+        if on:
+            shows_music = getattr(self, "_shows_lamp_music", None)  # light_native
+            return bool(shows_music and shows_music())
+        return self._matter_echo()
 
     # ── Reports ─────────────────────────────────────────────────────────
     @callback
@@ -458,7 +482,7 @@ class MatterMixin:
                 # The left button started a microphone music mode: with Left
                 # as Remote, put back at once (its mode, the event, may be
                 # reported a moment later).
-                if not self._music_echo(True):
+                if not self._music_echo(True) and not self._lamp_music_echo(True):
                     if self.restore_after_music_changes:
                         self._take_back_from_music()
                     else:
@@ -468,7 +492,7 @@ class MatterMixin:
                     # The black slot stopped it; the press's restore shows
                     # the content (the music too, when it was the integration's).
                     pass
-                elif not self._music_echo(False):
+                elif not self._music_echo(False) and not self._lamp_music_echo(False):
                     self._lamp_event("music_off", {})
                     if not self.restore_after_music_changes:
                         self._lamp_stopped_music_flow()
@@ -591,9 +615,11 @@ class MatterMixin:
                 "mixer": style["mixer"],
                 "data": base64.b64encode(self._native_clock_data_bytes()).decode("ascii"),
             }
-            color = clock_style_default_color(style)
-            if color is not None:
-                config["color"] = [int(color)]
+            # The app's styles 1-14 send one color or none; the same helper
+            # as every clock command (clock_style_colors).
+            colors = clock_style_colors(style)
+            if colors:
+                config["color"] = colors
             return "set_fx_effect", [NATIVE_CLOCK_EFFECT_ID, sub, NATIVE_CLOCK_APPLY, config]
         if (
             effect_id == REMOTE_DRAWING_EFFECT
@@ -886,7 +912,7 @@ class MatterMixin:
         """set_button_effects over Matter: the lamp refuses this write over
         LAN (`invalid params`, not on its LAN allow-list). ``items`` are
         light._effect_persist_item's. True when written; False when no
-        server delivers Yeelight's commands (the caller tries LAN)."""
+        server delivers Yeelight's commands (LAN is tried then)."""
         channel = self._matter_commands
         if channel is None:
             return False
@@ -923,7 +949,7 @@ class MatterMixin:
 
     def _request_lamp_restore(self, music: bool) -> bool:
         """Ask for a restore pass; True when none is scheduled or running, so
-        the caller starts _run_lamp_restore (one at a time). None while
+        _run_lamp_restore is started (one at a time). None while
         another app shows content that cannot be shown again: the
         integration's would be stale."""
         if self._restore_blocked():
@@ -979,7 +1005,7 @@ class MatterMixin:
                     await self._replay_app_content(self._app_content)
                     continue
                 self._cube_matrix.forget_running_effect()
-                # Not suppressed while the lamp runs a firmware renderer (the
+                # Not suppressed while the lamp runs its own renderer (the
                 # black slot, an app's drawing): putting it back is the point.
                 await self.async_apply_display_mode(update_type="remote_restore")
         except Exception as err:  # noqa: BLE001 -- the lamp keeps what it shows
@@ -1044,7 +1070,7 @@ class MatterMixin:
         self._stop_own_animations()
         self._mode = MODE_NATIVE_EFFECT
         self._native_effect = name
-        self._mark_firmware_drawing()
+        self._mark_lamp_drawing()
         self._followed_lamp()
 
     def _follow_music_flow(self, effect: str) -> None:
@@ -1061,7 +1087,7 @@ class MatterMixin:
             self._own_music_effect = self._music_flow_effect
         self._music_flow_enabled = True
         self._music_flow_effect = effect
-        self._mark_firmware_drawing()
+        self._mark_lamp_drawing()
         self._create_tracked_task(
             self._persist_music_flow_runtime_state(),
             name=f"yeelight_cube_music_flow_persist_{self._ip}",
@@ -1110,7 +1136,7 @@ class MatterMixin:
         """Set the lamp's own direction setting (its mount profile,
         mount_profile.py) to the Device Orientation over Matter
         (matter_commands.py), as the Yeelight app's orientation page does:
-        its firmware turns the clock for the mount (native effects are
+        the lamp turns the clock for the mount (native effects are
         compensated for any profile, light_native). True when it was written
         now (the lamp applies it to the next clock or effect it starts);
         False when it already matched (unless ``force``: a value read on a
@@ -1242,8 +1268,8 @@ class MatterMixin:
             name=f"yeelight_cube_music_flow_persist_{self._ip}",
         )
 
-    def _mark_firmware_drawing(self) -> None:
-        """The lamp's firmware draws (as after this integration starts an
+    def _mark_lamp_drawing(self) -> None:
+        """The lamp draws itself (as after this integration starts an
         effect, light_native._activate_native_effect)."""
         self._is_on = True
         self._fx_mode_is_direct = False

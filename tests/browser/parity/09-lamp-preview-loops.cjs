@@ -30,10 +30,10 @@ module.exports = async (t) => {
       _matrixColorsToGridColors: (x) => x,
       _getNativeClockFont: () => ({ fontMap: null, metrics: null }),
       _clockAnimStartedAt: null,
-      _frozenBackgroundPhase: null,
+      _frozenBackgroundSeconds: null,
       _nativeAnimKey: null,
       _nativeAnimStartedAt: null,
-      _nativeFrozenPhase: null,
+      _nativeFrozenSeconds: null,
     }, proto);
 
     // Native effect loop: phase advances, then holds once frozen.
@@ -47,14 +47,14 @@ module.exports = async (t) => {
     proto._nativeAnimFrame.call(card);
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
-    const animatedPhase = card._nativeFrozenPhase;
+    const animatedPhase = card._nativeFrozenSeconds;
     card._hass.states["light.a"].attributes.display_frozen = true;
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
-    const frozenPhase = card._nativeFrozenPhase;
+    const frozenPhase = card._nativeFrozenSeconds;
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
-    const heldPhase = card._nativeFrozenPhase;
+    const heldPhase = card._nativeFrozenSeconds;
     card._hass.states["light.a"].attributes.display_frozen = false;
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
@@ -65,7 +65,7 @@ module.exports = async (t) => {
       animated: animatedPhase === null, // not frozen yet -> no held phase
       frozen: typeof frozenPhase === "number",
       held: heldPhase === frozenPhase,
-      resumed: card._nativeFrozenPhase === null,
+      resumed: card._nativeFrozenSeconds === null,
     };
   });
   assert.ok(lampResult.animated, "lamp native loop animates when not frozen");

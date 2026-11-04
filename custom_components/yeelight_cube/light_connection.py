@@ -16,7 +16,7 @@ from homeassistant.core import callback  # type: ignore
 from yeelight import BulbException  # type: ignore
 
 from .command_errors import note_command_result
-from .const import FIRMWARE_MODES
+from .const import LAMP_MODES
 from .cube_matrix import (
     CubeConnectionError,
     RECONNECT_COOLDOWN_INITIAL,
@@ -506,15 +506,15 @@ class ConnectionMixin:
                     self._cube_matrix.consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
-                # "Silent" firmware modes (Clock / Native Effect / Music Flow)
+                # "Silent" built-in modes (Clock / Native Effect / Music Flow)
                 # pause get_prop polling and push no frames, so a mains power cut
-                # is never noticed: the lamp reboots to a firmware default while
+                # is never noticed: the lamp reboots to its default while
                 # HA still believes the mode is active. Probe these on a SHORT
                 # fixed cadence so we reliably catch the brief unreachable window
                 # and re-assert the mode on return -- exactly the re-apply that a
                 # Home Assistant restart performs (which the user confirmed works).
                 silent_mode = self._is_on and (
-                    self._mode in FIRMWARE_MODES
+                    self._mode in LAMP_MODES
                     or self._music_flow_enabled
                 )
                 last_success = self._cube_matrix.last_success_time
@@ -662,6 +662,16 @@ class ConnectionMixin:
                     # Publishes the light and its controls as available again.
                     self.async_write_ha_state()
 
+                if getattr(self, "_external_display", False):
+                    # Matter saw a button or another app change the lamp
+                    # (light_matter): after a power cut the lamp restores
+                    # that itself (its saved colour or effect). Home
+                    # Assistant's content comes back with its next command.
+                    _LOGGER.info(
+                        "[HEALTH] [%s] Not redrawn: the lamp shows another app's "
+                        "or a button's content", self._ip,
+                    )
+                    continue
                 if self._resume_rotation_after_reconnect():
                     continue
                 if self._rotation_active:

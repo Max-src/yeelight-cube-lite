@@ -114,7 +114,7 @@ set_button_effects:
     effects:
       description: Ordered native effect or clock style names. The first item is button slot 1.
       required: true
-      example: '["Streamer", "Rainbow", "Clock: Yellow"]'
+      example: '["Ribbon", "Rainbow", "Clock: Yellow"]'
       selector:
         object:
     entity_id:
@@ -163,7 +163,7 @@ delete_clock_preset:
 set_clock_style:
   name: Set Clock Style
   description: >-
-    Configure the firmware clock in one call: style, color override, content
+    Configure the lamp's clock in one call: style, color override, content
     and time format. Any subset of fields may be provided. Drives the Clock
     card. By default the lamp switches to Clock mode so the change is visible.
   fields:
@@ -175,9 +175,9 @@ set_clock_style:
         entity:
           domain: light
     style:
-      description: Clock style name (e.g. "Yellow", "Blue White") or numeric style id.
+      description: Clock style name (e.g. "Yellow", "Night-sky waves") or numeric style id.
       required: false
-      example: "Blue White"
+      example: "Night-sky waves"
       selector:
         text:
     color:
@@ -212,7 +212,7 @@ set_clock_style:
         boolean:
     color_mode:
       description: >-
-        Firmware color palette preset for compatible effects/styles. "normal"
+        Built-in color palette preset for compatible effects/styles. "normal"
         keeps each effect's own colors; the others remap the palette.
       required: false
       example: red_blue
@@ -327,9 +327,8 @@ send_fx_effect:
   name: "DEBUG: Send FX Effect (raw)"
   description: >-
     LOCAL DEBUG ONLY. Sends a raw private LAN command (default set_fx_effect)
-    to the lamp for reverse-engineering. Either provide params (raw JSON array,
-    sent verbatim) or the structured fields (mode/style_id/apply/mixer/color/
-    data_bytes). Not a stable API.
+    to the lamp. Either provide params (raw JSON array, sent verbatim) or the
+    structured fields (mode/style_id/apply/mixer/color/data_bytes). Not a stable API.
   fields:
     entity_id:
       description: Target lamp entity ID.
@@ -379,7 +378,7 @@ send_fx_effect:
           max: 255
           mode: box
     mixer:
-      description: Firmware mixer/animation preset ID.
+      description: Built-in mixer/animation preset ID.
       example: 39
       required: false
       selector:
@@ -426,8 +425,7 @@ query_raw:
   name: "DEBUG: Query Raw (capture reply)"
   description: >-
     LOCAL DEBUG ONLY. Sends a raw command to the lamp and returns the device's
-    reply. Useful for probing (e.g. get_prop) and observing responses to
-    experimental commands. Not a stable API.
+    reply, e.g. to get_prop or to an experimental command. Not a stable API.
   fields:
     entity_id:
       description: Target lamp entity ID.
@@ -573,7 +571,7 @@ set_default:
 
 set_native_effect:
   name: Set Native Effect
-  description: Select and apply a firmware animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.
+  description: Select and apply a built-in animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.
   fields:
     entity_id:
       required: true
@@ -593,6 +591,17 @@ set_native_effect:
           min: 1
           max: 255
           mode: slider
+    direction:
+      description: >-
+        The way the effect flows, as you see it however the lamp is mounted.
+        Shared by all effects, for those that offer it.
+      selector:
+        select:
+          options:
+            - Up
+            - Down
+            - Left
+            - Right
     color:
       description: >-
         Custom RGB color [r, g, b] for effects that support a color override,
@@ -1076,8 +1085,8 @@ set_device_orientation:
   description: >-
     Set the physical device orientation (which way the cube is mounted).
     Applies immediately to the current mode: matrix/text/pixel art flip
-    (right/up upright, left/down 180 deg), and native effects follow the
-    matching flow direction. The 90 deg visual rotation for up/down is shown
+    (right/up upright, left/down 180 deg), and native effects are turned so
+    their direction stays what you see. The 90 deg visual rotation for up/down is shown
     in the lamp preview card.
   fields:
     orientation:
@@ -1349,7 +1358,7 @@ start_effect_rotation:
         preset ID) or an object with name, color_mode and color (an RGB list)
         that reapplies the color mode recorded with the favourite.
       required: true
-      example: '["Rainbow", "Ocean Waves", "Streamer"]'
+      example: '["Rainbow", "Waves", "Ribbon"]'
       selector:
         object:
     interval:

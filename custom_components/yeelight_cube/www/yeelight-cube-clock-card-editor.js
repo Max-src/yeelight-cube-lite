@@ -278,6 +278,31 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                           { size: false },
                         ),
                     })}
+                    ${createToggleRow(
+                      "Family filter",
+                      "show_family_filter",
+                      config.show_family_filter !== false,
+                      (event) => change("show_family_filter", event.target.checked),
+                    )}
+                    <div class="hint">
+                      The filter (All, Waves, Glow, Sparkles, Motion, Still)
+                      beside the search field shows one family of styles, among
+                      those this card has; this browser remembers its choice.
+                      Solid colors and your custom styles are under Still.
+                    </div>
+                    ${createToggleRow(
+                      "Sort toggle",
+                      "show_sort",
+                      config.show_sort !== false,
+                      (event) => change("show_sort", event.target.checked),
+                    )}
+                    <div class="hint">
+                      Default, A → Z or By family, beside the filter; this
+                      browser remembers its choice. Until one is picked, the
+                      Order above. Default is your list, else the effect
+                      card's order: the styles in the order of their effect,
+                      then solid colors and your custom styles.
+                    </div>
                   `,
                 )
               : ""}

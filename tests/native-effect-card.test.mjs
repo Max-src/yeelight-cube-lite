@@ -5,6 +5,7 @@ import {
   previewAttributes,
 } from "../custom_components/yeelight_cube/www/offline-preview-state.js";
 import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
+import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
 import { CARD_NAMES } from "../custom_components/yeelight_cube/www/card-list.js";
 import {
   CardCommandController,
@@ -48,6 +49,7 @@ import {
   effectSupportsColorMode,
   effectSupportsColorOverride,
 } from "../custom_components/yeelight_cube/www/native-effect-preview.js";
+import { effectDisplayFrame } from "../custom_components/yeelight_cube/www/lamp-renderers.js";
 import { CLOCK_COLOR_MODES } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import {
   clockPresetLibrary,
@@ -127,7 +129,7 @@ test("experimental editor status distinguishes device gates, missing states and 
 test("native color choices retain configured order while effects respond to the color", async () => {
   const attrs = {
     native_effect_color_mode: "normal",
-    native_effect_catalog: ["Starry sky", "Tide", "Rainbow"].map((name) => ({
+    native_effect_catalog: ["Starry Sky", "Tide", "Rainbow"].map((name) => ({
       name,
     })),
   };
@@ -137,7 +139,7 @@ test("native color choices retain configured order while effects respond to the 
       hidden_color_modes: ["bw", "red_blue", "blue_yellow", "purple_orange"],
     },
     _attrs: () => attrs,
-    _effect: () => ({ name: "Starry sky" }),
+    _effect: () => ({ name: "Starry Sky" }),
     _supportsCustomColor: () => true,
     _effectAvailable: () => true,
     _command: async (service, data) => {
@@ -393,16 +395,74 @@ test("the removed saved looks left nothing in the card or its editor", () => {
     );
 });
 
+test("the family filter offers the families the card has", async () => {
+  const { FamilyFilter, effectFamilyChoices, matchesEffectFamily } = await import(
+    "../custom_components/yeelight_cube/www/effect-families.js"
+  );
+  const items = [{ family: "waves" }, { family: "glow" }, { family: "waves" }];
+  assert.deepEqual(
+    effectFamilyChoices(items).map((choice) => choice.value),
+    ["all", "waves", "glow"],
+  );
+  assert.equal(matchesEffectFamily(items[0], "all"), true);
+  assert.equal(matchesEffectFamily(items[0], "waves"), true);
+  assert.equal(matchesEffectFamily(items[0], "glow"), false);
+  // No browser storage here: nothing remembered, nothing thrown.
+  const updates = [];
+  const host = { config: {}, requestUpdate: () => updates.push("card") };
+  const families = new FamilyFilter(host, "Family", "test_key");
+  assert.equal(families.value(items), "all");
+  const filter = families.gallery(items);
+  assert.equal(families.gallery(items), filter, "kept while nothing changes");
+  filter.onChange("glow");
+  assert.deepEqual(updates, ["card"]);
+  assert.equal(families.value(items), "glow");
+  assert.notEqual(families.gallery(items), filter);
+  // A family the card no longer has, or a filter that cannot be seen, shows all.
+  assert.equal(families.value([{ family: "waves" }]), "all");
+  host.config = { show_family_filter: false };
+  assert.equal(families.value(items), "all");
+  assert.equal(families.gallery(items).hidden, true);
+  host.config = { show_gallery: false };
+  assert.equal(families.value(items), "all");
+  // Nothing to tell apart: a single family has no filter.
+  host.config = {};
+  assert.equal(families.gallery([{ family: "waves" }]).hidden, true);
+});
+
+test("every clock style has a family", async () => {
+  const { CLOCK_STYLES } = await import(
+    "../custom_components/yeelight_cube/www/clock-preview-utils.js"
+  );
+  const { clockStylesWithPresets } = await import(
+    "../custom_components/yeelight_cube/www/clock-preset-utils.js"
+  );
+  const { EFFECT_FAMILIES } = await import(
+    "../custom_components/yeelight_cube/www/effect-families.js"
+  );
+  const families = new Set(EFFECT_FAMILIES.map((choice) => choice.value));
+  const byName = Object.fromEntries(CLOCK_STYLES.map((style) => [style.name, style.family]));
+  for (const style of CLOCK_STYLES) assert.ok(families.has(style.family), style.name);
+  assert.equal(byName.White, "still");
+  assert.equal(byName.Rainbow, "waves");
+  assert.equal(byName.Fireworks, "sparkles");
+  // A custom style is a fixed color, whatever it is called.
+  const [custom] = clockStylesWithPresets([], [
+    { id: "mine", name: "Rainbow", kind: "style", color: [1, 2, 3] },
+  ]);
+  assert.equal(custom.family, "still");
+});
+
 test("rotation retains only effects available on every target", () => {
   const card = asCard({
     config: { target_entities: ["light.first", "light.second"] },
-    _collections: { favourites: ["Rainbow", "Streamer"] },
+    _collections: { favourites: ["Rainbow", "Ribbon"] },
     _hass: {
       states: {
         "light.first": {
           state: "on",
           attributes: {
-            native_effect_catalog: [rainbow, { name: "Streamer" }],
+            native_effect_catalog: [rainbow, { name: "Ribbon" }],
           },
         },
         "light.second": {
@@ -430,16 +490,16 @@ test("rotation retains only effects available on every target", () => {
   controls.favourites = card._collections.favourites;
   assert.deepEqual(controls.names(), ["Rainbow"]);
   card._hass.states["light.second"].state = "unavailable";
-  assert.deepEqual(controls.names(), ["Rainbow", "Streamer"]);
+  assert.deepEqual(controls.names(), ["Rainbow", "Ribbon"]);
 });
 
 test("rotation order and interval are bounded", () => {
   assert.equal(
-    nextRotationEffect(["Rainbow", "Streamer", "63", "Rainbow"], "Rainbow"),
-    "Streamer",
+    nextRotationEffect(["Rainbow", "Ribbon", "63", "Rainbow"], "Rainbow"),
+    "Ribbon",
   );
   assert.equal(
-    nextRotationEffect(["Rainbow", "Streamer"], "Streamer"),
+    nextRotationEffect(["Rainbow", "Ribbon"], "Ribbon"),
     "Rainbow",
   );
   assert.equal(nextRotationEffect([], "Rainbow"), undefined);
@@ -461,7 +521,7 @@ test("rotation only schedules after success and stops for hidden, off or changed
   };
   const controls = new ModeControlsController(adapter);
   controls.configure({}, ["light.a"]);
-  controls.favourites = ["Rainbow", "Streamer"];
+  controls.favourites = ["Rainbow", "Ribbon"];
   controls.active = true;
   await controls.tick(controls.token);
   assert.ok(controls.timer);
@@ -478,8 +538,8 @@ test("rotation only schedules after success and stops for hidden, off or changed
 
 test("favourites allow direct removal without changing selection", () => {
   const controls = new ModeControlsController({ current: () => "Rainbow" });
-  controls.save(["Rainbow", "Streamer"]);
-  controls.save(controls.favourites.filter((f) => f.key !== "Streamer"));
+  controls.save(["Rainbow", "Ribbon"]);
+  controls.save(controls.favourites.filter((f) => f.key !== "Ribbon"));
   assert.deepEqual(controls.favourites, [
     { key: "Rainbow", colorMode: "normal" },
   ]);
@@ -543,21 +603,21 @@ test("named effects exclude raw experimental mode numbers even when explicitly v
       { name: "63", extended: true },
       { name: " 64 " },
       { name: "", extended: true },
-      { name: "Prism", extended: true },
+      { name: "Mirrored comets", extended: true },
     ],
   };
   assert.deepEqual(
     nativeEffectItems(attrs, { show_experimental: true }).map(
       (item) => item.name,
     ),
-    ["Rainbow", "Prism"],
+    ["Rainbow", "Mirrored comets"],
   );
   assert.deepEqual(
     nativeEffectItems(attrs, {
       show_experimental: true,
-      visible_effects: ["63", "Prism"],
+      visible_effects: ["63", "Mirrored comets"],
     }).map((item) => item.name),
-    ["Prism"],
+    ["Mirrored comets"],
   );
 });
 
@@ -814,6 +874,7 @@ test("multi-target configuration reads the first light and accepts legacy entity
     "window",
     "closeColorPicker",
     "resolvePreviewAppearance",
+    "normalizeCardOptions",
     `return function(config) {${body}}`,
   )(
     getTargetEntities,
@@ -823,9 +884,10 @@ test("multi-target configuration reads the first light and accepts legacy entity
     },
     () => {},
     resolvePreviewAppearance,
+    normalizeCardOptions,
   );
   const first = { attributes: { native_effect: "Rainbow" } };
-  const second = { attributes: { native_effect: "Ocean Waves" } };
+  const second = { attributes: { native_effect: "Waves" } };
   const card = asCard({
     _context: 0,
     _commands: new CardCommandController(),
@@ -959,10 +1021,11 @@ test("preview selection applies immediately and includes a supported speed draft
     "nativeEffectAction",
     "SUPERSEDED",
     "speedPctToRaw",
+    "isEffectName",
     `return async function(name, managed = false) {${applyBody}}`,
   )(nativeEffectAction, SUPERSEDED, (value) =>
     Math.round(1 + ((value - 1) * 254) / 99),
-  );
+  isEffectName);
   new Function("name", selectBody).call(card, "Rainbow");
   assert.equal(card._selected, "Rainbow");
   await new Promise((resolve) => setTimeout(resolve));
@@ -975,11 +1038,11 @@ test("preview selection applies immediately and includes a supported speed draft
   assert.equal(card._speedDraft, null);
   card._speedDraft = 45;
   card._command = async () => false;
-  await card._apply("Streamer");
+  await card._apply("Ribbon");
   assert.equal(card._speedDraft, 45);
   // A pick replaced by a newer one before it was sent keeps the speed draft.
   card._command = async () => SUPERSEDED;
-  assert.equal(await card._apply("Streamer"), SUPERSEDED);
+  assert.equal(await card._apply("Ribbon"), SUPERSEDED);
   assert.equal(card._speedDraft, 45);
   card._context = 1;
   let finish;
@@ -987,7 +1050,7 @@ test("preview selection applies immediately and includes a supported speed draft
     new Promise((resolve) => {
       finish = resolve;
     });
-  const pending = card._apply("Streamer");
+  const pending = card._apply("Ribbon");
   card._context++;
   card._collections = { favourites: [] };
   card._speedDraft = 30;
@@ -1088,43 +1151,60 @@ test("native effect catalogue respects availability, visibility and order", () =
   const attrs = {
     native_effect_catalog: [
       rainbow,
-      { name: "Prism", extended: true },
-      { name: "Streamer" },
+      { name: "Mirrored comets", extended: true },
+      { name: "Ribbon" },
     ],
   };
   assert.deepEqual(
     nativeEffectItems(attrs).map((item) => item.name),
-    ["Rainbow", "Streamer"],
+    ["Rainbow", "Ribbon"],
   );
   assert.deepEqual(
     nativeEffectItems(attrs, {
-      visible_effects: ["Streamer", "missing", "Rainbow", "Streamer"],
+      visible_effects: ["Ribbon", "missing", "Rainbow", "Ribbon"],
     }).map((item) => item.name),
-    ["Streamer", "Rainbow"],
+    ["Ribbon", "Rainbow"],
   );
   assert.equal(nativeEffectItems(attrs, { show_experimental: true }).length, 3);
   assert.equal(
-    nativeEffectItems({ ...attrs, native_effect: "Prism" }).length,
+    nativeEffectItems({ ...attrs, native_effect: "Mirrored comets" }).length,
     3,
   );
   assert.deepEqual(nativeEffectItems(attrs, { visible_effects: [] }), []);
 });
 
-test("native effect previews match the calibrated renderer at the applied mount and speed", () => {
+test("native effect previews draw the direction chosen, turned for the mount", () => {
   const attrs = {
     device_orientation: "right",
     native_effect_direction: "Left",
     native_effect_speed: 50,
   };
-  assert.equal(nativeEffectDirection(rainbow, attrs), "Right");
+  assert.equal(nativeEffectDirection(rainbow, attrs), "Left");
+  // The mount chooses nothing, and an effect without it runs its first.
+  assert.equal(
+    nativeEffectDirection(rainbow, { ...attrs, device_orientation: "down" }),
+    "Left",
+  );
   assert.equal(
     nativeEffectDirection({ directions: ["Up", "Down"] }, attrs),
     "Up",
   );
   assert.deepEqual(
+    nativeEffectFrame(rainbow, { ...attrs, device_orientation: "down" }, 2),
+    flipMatrixVertical(
+      effectDisplayFrame(
+        "Rainbow",
+        renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50, "down"),
+      ),
+    ),
+  );
+  assert.deepEqual(
     nativeEffectFrame(rainbow, attrs, 2),
     flipMatrixVertical(
-      renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Right"),
+      effectDisplayFrame(
+        "Rainbow",
+        renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50),
+      ),
     ),
   );
   assert.deepEqual(nativeEffectAction("Rainbow"), {
@@ -1132,4 +1212,25 @@ test("native effect previews match the calibrated renderer at the applied mount 
     activate: true,
   });
   assert.throws(() => nativeEffectAction(""));
+});
+
+test("a tile at the same render is the same frame: nothing to do", () => {
+  const attrs = { device_orientation: "right", native_effect_speed: 50 };
+  const first = nativeEffectFrame(rainbow, attrs, 2.001);
+  assert.equal(nativeEffectFrame(rainbow, attrs, 2.03), first); // render 50 still
+  assert.notEqual(nativeEffectFrame(rainbow, attrs, 2.04), first);
+  const left = { ...attrs, device_orientation: "left" };
+  const turned = nativeEffectFrame(rainbow, left, 2.041);
+  assert.equal(nativeEffectFrame(rainbow, left, 2.05), turned);
+});
+
+test("a tile is not blank for having just started, frozen at the first moment", () => {
+  const attrs = { device_orientation: "right", native_effect_speed: 50 };
+  for (const name of ["Building Blocks", "Particle glows", "Mirrored comets", "Sunrise and sunset"]) {
+    const frame = nativeEffectFrame({ name, directions: [] }, attrs, 0);
+    assert.ok(
+      frame.filter((pixel) => pixel.some(Boolean)).length >= 20,
+      `${name} at its first moment`,
+    );
+  }
 });

@@ -99,7 +99,7 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             {**CONSTANTS, "_resolve_entities": lambda *args: [light],
              "HomeAssistantError": ValueError, "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *tasks: pending.extend(tasks)): _schedule(*(apply(lamp) for lamp in lamps))},
         )["handle_set_clock_style"]
-        await handler(SimpleNamespace(data={"style": "Twinkle"}))
+        await handler(SimpleNamespace(data={"style": "Violet twinkles"}))
         for task in pending:
             await task
         self.assertIs(light._config_entry.options["extended_effects_enabled"], True)

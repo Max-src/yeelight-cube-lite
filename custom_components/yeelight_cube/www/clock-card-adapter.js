@@ -14,8 +14,12 @@ import {
   sharedRotationInterval,
   saveSharedRotationInterval,
 } from "./shared-lamp-settings.js";
-import { renderClockFrame } from "./clock-preview-utils.js";
-import { firmwareClockFrame, viewerFrame } from "./matrix-view.js";
+import {
+  clockPhase,
+  clockUsesLampRenderer,
+  renderClockFrame,
+} from "./clock-preview-utils.js";
+import { lampClockFrame, viewerFrame } from "./matrix-view.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
 import { itemLabel, sortGalleryItems } from "./card-config.js";
 
@@ -40,8 +44,10 @@ export function createClockCardAdapter(card) {
         card._shownStyles().map((style) => ({
           key: clockPresetKey(style),
           title: itemLabel(card.config, clockPresetKey(style), style.name),
+          family: style.family,
         })),
         (item) => item.title,
+        card._sort.value(),
       ),
     current: () => clockPresetKey(card._currentStyle()),
     available: (name) =>
@@ -133,7 +139,13 @@ export function createClockCardAdapter(card) {
         card.config,
         (entity, state) => state.attributes?.effect_rotation !== undefined,
       ),
-    frame: (name, phase, colorMode, color) => {
+    smooth: (name) => {
+      const style = card
+        ._controlStyles()
+        .find((style) => clockPresetKey(style) === name);
+      return !!style && clockUsesLampRenderer(card._previewAttrs(style));
+    },
+    frame: (name, elapsed, colorMode, color) => {
       const style = card
         ._controlStyles()
         .find((style) => clockPresetKey(style) === name);
@@ -143,8 +155,9 @@ export function createClockCardAdapter(card) {
         colorMode != null
           ? card._previewAttrsFor(style, colorMode, color)
           : card._previewAttrs(style);
+      const phase = clockPhase(elapsed, card._animationSpeed());
       return viewerFrame(
-        firmwareClockFrame(renderClockFrame(attrs, fontMap, metrics, phase), card._attrs()),
+        lampClockFrame(renderClockFrame(attrs, fontMap, metrics, phase), card._attrs()),
         card._previewOrientation(),
       );
     },

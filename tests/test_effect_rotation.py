@@ -45,6 +45,8 @@ def _rotation_helpers():
             "stop_effect_rotation",
             "skip_effect_rotation",
             "_normalize_rotation_items",
+            "canonical_item_name",
+            "_former_names",
             "_rotation_loop",
             "_rotation_scheduled_index",
             "_resume_rotation_after_reconnect",
@@ -89,6 +91,11 @@ def _rotation_helpers():
             "DOMAIN": DOMAIN,
             "NATIVE_CLOCK_STYLES": NATIVE_CLOCK_STYLES,
             "ALL_NATIVE_EFFECTS": ALL_NATIVE_EFFECTS,
+            **{name: CONSTANTS[name] for name in (
+                "canonical_clock_style_name",
+                "canonical_effect_name",
+            )},
+            "CLOCK_PRESET_PREFIX": "custom:",
             "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
             "_LOGGER": Mock(),
             "APPLY_HARD_TIMEOUT": 8,
@@ -285,7 +292,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_health_reconnect_resumes_exact_item_and_keeps_other_lamp_running(self):
         healthy = make_light(self.helpers)
-        await healthy.start_effect_rotation(["Rainbow", "Streamer"], 60)
+        await healthy.start_effect_rotation(["Rainbow", "Ribbon"], 60)
         healthy_task = healthy._rotation_task
         for kind, mode in (("clock", "Clock"), ("native", "Native Effect")):
             light = make_light(self.helpers, kind=kind)
@@ -319,7 +326,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light = make_light(self.helpers)
         light._rotation_resume_pending = True
         light._rotation_error = "Device timeout"
-        light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
+        light._rotation_items = [{"name": "Rainbow"}, {"name": "Ribbon"}]
         light._rotation_index = 0
         await self.health_cycle(light)
         self.assertFalse(light._rotation_active)
@@ -331,13 +338,27 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await light._rotation_started)
         light.stop_effect_rotation()
 
+    async def test_another_apps_content_is_not_redrawn_after_an_outage(self):
+        # A power cut: the lamp restores what it showed itself. Home
+        # Assistant's content comes back, unless Matter saw a button or
+        # another app change the lamp before (its colour, kept by the lamp).
+        for external in (False, True):
+            light = make_light(self.helpers)
+            light._external_display = external
+            light._rotation_waiting_for_reconnect = True  # it was unreachable
+            await self.health_cycle(light)
+            if external:
+                light.async_apply_display_mode.assert_not_awaited()
+            else:
+                light.async_apply_display_mode.assert_awaited_once_with(update_type="turn_on")
+
     async def test_an_outage_is_logged_once_when_it_starts_and_once_when_it_ends(self):
         # A lamp switched off for hours: one warning, not one per probe.
         namespace = self.helpers["_periodic_health_check"].__globals__
         logger, namespace["_LOGGER"] = namespace["_LOGGER"], Mock()
         try:
             light = make_light(self.helpers, kind="clock")
-            light._mode = "Clock"  # a firmware mode: probed even when healthy
+            light._mode = "Clock"  # a built-in mode: probed even when healthy
             for _ in range(3):
                 await self.health_cycle(light, reachable=False)
             light._rotation_waiting_for_reconnect = True  # it was unreachable
@@ -358,7 +379,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             light = make_light(self.helpers)
             light._rotation_resume_pending = True
             light._rotation_waiting_for_reconnect = True
-            light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
+            light._rotation_items = [{"name": "Rainbow"}, {"name": "Ribbon"}]
             if action == "stop":
                 light.stop_effect_rotation()
             elif action == "off":
@@ -381,7 +402,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         # rotation: it waits a growing back-off (never hammered by every
         # health cycle), then resumes on the group's schedule.
         light = make_light(self.helpers)
-        light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
+        light._rotation_items = [{"name": "Rainbow"}, {"name": "Ribbon"}]
         light._rotation_index = 0
         light._rotation_resume_pending = True
         light._rotation_waiting_for_reconnect = True
@@ -475,10 +496,10 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 return True
 
             light._apply_rotation_item = apply
-            await light.start_effect_rotation(["Rainbow", "Streamer"], 10)
+            await light.start_effect_rotation(["Rainbow", "Ribbon"], 10)
             for _ in range(20):
                 await asyncio.sleep(0)
-            self.assertEqual(shown, ["Streamer", "Rainbow"])
+            self.assertEqual(shown, ["Ribbon", "Rainbow"])
         finally:
             light.stop_effect_rotation()
             loop.time = real_time
@@ -551,8 +572,8 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             await light._async_resume_display_rotation()
         light.start_effect_rotation.assert_not_awaited()
 
-    async def test_a_text_over_the_firmware_clock_is_shown_only_as_an_overlay(self):
-        # A text pushed to a lamp showing its firmware clock (a sensor value)
+    async def test_a_text_over_the_lamp_clock_is_shown_only_as_an_overlay(self):
+        # A text pushed to a lamp showing its own clock (a sensor value)
         # waits for the matrix; between save_state and restore_state (the
         # phone-battery automation) it is shown.
         light = make_light(self.helpers, kind="clock")
@@ -562,12 +583,12 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(light._text_waits_for_matrix())
         light._mode = "Solid Color"  # set_custom_text switched to text
         self.assertFalse(light._text_waits_for_matrix())
-        # Saved while a text shows: no firmware display to protect, no overlay
+        # Saved while a text shows: no built-in display to protect, no overlay
         # (a later clock keeps its protection without restore_state).
         light._save_display_state()
         self.assertFalse(light._display_overlay)
 
-    async def test_the_firmware_guard_lets_an_overlay_text_through(self):
+    async def test_the_lamp_guard_lets_an_overlay_text_through(self):
         for overlay in (False, True):
             with self.subTest(overlay=overlay):
                 light = make_light(self.helpers)
@@ -669,7 +690,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_during_backoff_does_not_touch_healthy_rotation(self):
         failed = make_light(self.helpers, kind="clock")
         healthy = make_light(self.helpers)
-        await healthy.start_effect_rotation(["Rainbow", "Streamer"], 60)
+        await healthy.start_effect_rotation(["Rainbow", "Ribbon"], 60)
         entered = asyncio.Event()
         async def fail(item):
             raise TimeoutError("connection timeout")
@@ -700,8 +721,8 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await light._apply_rotation_step({"name": "Rainbow"}))
             light._wait_rotation_retry.assert_not_awaited()
 
-    async def test_a_remote_press_draws_over_a_firmware_renderer(self):
-        # Another app's drawing (a firmware renderer) is on the lamp and the
+    async def test_a_remote_press_draws_over_a_lamp_renderer(self):
+        # Another app's drawing (a built-in renderer) is on the lamp and the
         # integration's content is a drawing: background text is suppressed,
         # a remote button's restore is not (it was left black, live test).
         for update_type, drawn in (("text_change", False), ("remote_restore", True)):
@@ -853,8 +874,8 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             timeline = {}
             first = make_light(self.helpers, kind=kind)
             second = make_light(self.helpers, kind=kind)
-            second._native_effect = "Streamer"
-            items = ["Rainbow", "Streamer", "Tide"]
+            second._native_effect = "Ribbon"
+            items = ["Rainbow", "Ribbon", "Tide"]
             await first.start_effect_rotation(items, 60, kind, timeline=timeline)
             await second.start_effect_rotation(items, 60, kind, timeline=timeline)
             self.assertEqual(first._rotation_index, second._rotation_index)
@@ -883,7 +904,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         await light.start_effect_rotation(
             [
                 {"name": "Rainbow", "color_mode": "normal", "color": None},
-                "Streamer",
+                "Ribbon",
             ],
             30,
         )
@@ -892,7 +913,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             light._rotation_items,
             [
                 {"name": "Rainbow", "color_mode": "normal", "color": None},
-                {"name": "Streamer", "color_mode": "normal", "color": None},
+                {"name": "Ribbon", "color_mode": "normal", "color": None},
             ],
         )
         self.assertEqual(light._rotation_interval, 30)
@@ -904,13 +925,13 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_running_rotation_is_saved_and_only_a_real_stop_forgets_it(self):
         light = make_light(self.helpers, kind="native")
-        items = [{"name": "Rainbow"}, "Streamer"]
+        items = [{"name": "Rainbow"}, "Ribbon"]
         await light.start_effect_rotation(items, 30)
         saved = light.hass.data[DOMAIN]["rotation"]["entry-1"]
         self.assertEqual(saved["intervals"], {"native": 30})
         self.assertEqual(saved["active"]["kind"], "native")
         self.assertEqual(saved["active"]["interval"], 30)
-        self.assertEqual([item["name"] for item in saved["active"]["items"]], ["Rainbow", "Streamer"])
+        self.assertEqual([item["name"] for item in saved["active"]["items"]], ["Rainbow", "Ribbon"])
         # A shutdown / reload (entity removal) stops the loop but keeps it saved.
         light.stop_effect_rotation(persist=False)
         self.assertIsNotNone(light.hass.data[DOMAIN]["rotation"]["entry-1"]["active"])
@@ -924,7 +945,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_saved_rotation_resumes_after_restart_only_in_its_mode(self):
         light = make_light(self.helpers, kind="native")
-        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 45)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Ribbon"], 45)
         light.stop_effect_rotation(persist=False)  # Home Assistant stops
         # A new entity after the restart, same stored data.
         restarted = make_light(self.helpers, kind="native")
@@ -948,7 +969,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_interval_change_applies_live_without_skipping_the_current_item(self):
         light = make_light(self.helpers, kind="native")
-        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], STEADY_INTERVAL)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Ribbon"], STEADY_INTERVAL)
         index = light._rotation_index
         light.set_rotation_interval("native", STEADY_INTERVAL // 2)
         await asyncio.sleep(0.05)  # the loop wakes and re-times
@@ -971,7 +992,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light.stop_effect_rotation()  # e.g. turning the lamp off, nothing running
         light.stop_effect_rotation()
         self.assertEqual(light._schedule_integration_save.call_count, 1)
-        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 30)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Ribbon"], 30)
         self.assertEqual(light._schedule_integration_save.call_count, 2)
         light.stop_effect_rotation()
         light.stop_effect_rotation()
@@ -979,7 +1000,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_interval_change_while_reconnecting_does_not_skip_a_step(self):
         light = make_light(self.helpers, kind="native")
-        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 60)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Ribbon"], 60)
         light.stop_effect_rotation(persist=False)
         # Waiting for the lamp: no loop runs, so nothing may be flagged.
         light._rotation_resume_pending = True
@@ -995,12 +1016,12 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             lamp.hass.data[DOMAIN]["rotation"] = {"entry-1": {
                 "intervals": {"native": STEADY_INTERVAL},
                 "active": {"kind": "native", "interval": STEADY_INTERVAL, "group": group,
-                           "items": [{"name": "Rainbow"}, {"name": "Streamer"}]},
+                           "items": [{"name": "Rainbow"}, {"name": "Ribbon"}]},
             }}
             lamp._restore_rotation_settings()
             lamps.append(lamp)
         # The second lamp comes back showing another item, and later.
-        lamps[1]._native_effect = "Streamer"
+        lamps[1]._native_effect = "Ribbon"
         await lamps[0]._async_resume_saved_rotation()
         await asyncio.sleep(0.02)
         await lamps[1]._async_resume_saved_rotation()
@@ -1015,7 +1036,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light = make_light(self.helpers, kind="native")
         light.set_rotation_interval("native", 1)
         self.assertEqual(light._rotation_intervals, {"native": 1})
-        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 2)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Ribbon"], 2)
         self.assertEqual(light._rotation_interval, 2)
         light.set_rotation_interval("native", 0)  # below the minimum
         self.assertEqual(light._rotation_interval, 1)
@@ -1026,7 +1047,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         normalized = light._normalize_rotation_items(
             [
                 "Rainbow",
-                {"name": " Streamer ", "color_mode": "custom", "color": [1, 2, 3]},
+                {"name": " Ribbon ", "color_mode": "custom", "color": [1, 2, 3]},
                 {"name": "White", "color_mode": "bw"},
                 {"name": "White", "color_mode": "red_blue"},  # same name, new mode
                 {"name": "Rainbow", "color_mode": "normal"},  # duplicate
@@ -1040,7 +1061,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             normalized,
             [
                 {"name": "Rainbow", "color_mode": "normal", "color": None},
-                {"name": "Streamer", "color_mode": "custom", "color": [1, 2, 3]},
+                {"name": "Ribbon", "color_mode": "custom", "color": [1, 2, 3]},
                 {"name": "White", "color_mode": "bw", "color": None},
                 {"name": "White", "color_mode": "red_blue", "color": None},
                 {"name": "Bad", "color_mode": "normal", "color": None},
@@ -1054,15 +1075,15 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light._execute_hardware_op.return_value = False
         light._last_connection_error = "Device timeout"
         with self.assertRaisesRegex(ValueError, "Device timeout"):
-            await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL)
+            await light.start_effect_rotation(["Rainbow", "Ribbon"], STEADY_INTERVAL)
         self.assertFalse(light._rotation_active)
         self.assertIn("Device timeout", light._rotation_error)
 
     async def test_restart_cancels_old_loop_without_stopping_new_loop(self):
         light = make_light(self.helpers)
-        await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL)
+        await light.start_effect_rotation(["Rainbow", "Ribbon"], STEADY_INTERVAL)
         previous = light._rotation_task
-        await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL // 2)
+        await light.start_effect_rotation(["Rainbow", "Ribbon"], STEADY_INTERVAL // 2)
         self.assertTrue(previous.done())
         self.assertTrue(light._rotation_active)
         self.assertIsNot(previous, light._rotation_task)
@@ -1407,10 +1428,10 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_native_start_reaches_protocol_transport(self):
         light = self.make_transport_light()
-        await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL, "native")
+        await light.start_effect_rotation(["Rainbow", "Ribbon"], STEADY_INTERVAL, "native")
         commands = light._cube_matrix.send_raw_command.await_args_list
         self.assertEqual([call.args[0] for call in commands], ["set_bright", "set_fx_effect"])
-        self.assertEqual(commands[-1].args[1][0], ALL_NATIVE_EFFECTS["Streamer"]["effect_id"])
+        self.assertEqual(commands[-1].args[1][0], ALL_NATIVE_EFFECTS["Ribbon"]["effect_id"])
         self.assertTrue(light._rotation_active)
         light.stop_effect_rotation()
 

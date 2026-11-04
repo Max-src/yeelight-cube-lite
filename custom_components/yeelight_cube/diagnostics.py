@@ -1,7 +1,7 @@
 """Diagnostics: the "Download diagnostics" file of a lamp (its integration
 entry or its device page), what a bug report needs about it.
 
-Its configuration, the lamp's model and firmware, the connection (transport,
+Its configuration, the lamp's model and software version, the connection (transport,
 failures, the last errors) and the entity's state (its attributes, as the
 cards read them). The lamp's address and identifiers are redacted everywhere,
 also inside texts (the entry title, entity ids, error messages); so is the
@@ -72,7 +72,7 @@ def lamp_diagnostics(light) -> dict[str, Any]:
     return {
         "device": {
             "model": cube_matrix.device_model,
-            "firmware": cube_matrix.firmware_version,
+            "software_version": cube_matrix.software_version,
             "capabilities": async_redact_data(
                 dict(cube_matrix.capabilities), CAPABILITIES_TO_REDACT
             ),

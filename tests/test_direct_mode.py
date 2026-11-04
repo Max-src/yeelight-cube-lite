@@ -144,7 +144,7 @@ class TurnOffTests(unittest.IsolatedAsyncioTestCase):
         fns = _load_standalone_functions(
             (ROOT / "light.py").read_text(encoding="utf-8"),
             {"_internal_turn_off"},
-            {"_LOGGER": logging.getLogger("t"), "FIRMWARE_MODES": ("Clock", "Native Effect")},
+            {"_LOGGER": logging.getLogger("t"), "LAMP_MODES": ("Clock", "Native Effect")},
         )
         self.calls = []
 
@@ -206,7 +206,7 @@ class BrightnessRetryTests(unittest.IsolatedAsyncioTestCase):
             self.sent.append((method, params))
 
         lamp = types.SimpleNamespace(
-            _ip="t", _is_on=True, _brightness=255, firmware_draws_matrix=False,
+            _ip="t", _is_on=True, _brightness=255, lamp_draws_matrix=False,
             _last_hardware_brightness=100, _has_color_effects=False, hass=None,
             _pending_brightness=None, _last_successful_brightness=None,
             _start_brightness_retry_task=Mock(), _apply_brightness_only=AsyncMock(),

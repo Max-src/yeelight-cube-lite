@@ -30,7 +30,6 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
                 "asyncio": SimpleNamespace(sleep=AsyncMock()),
                 "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
                 "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
-                "DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
                 "ACTIVATION_TIMING": activation_timing(),
             },
         )
@@ -74,7 +73,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["update_leds", "update_leds", "close", "set_fx_effect"], names)
         self.assertEqual(self.calls[0], self.calls[1])
 
-    async def test_switching_between_firmware_modes_sends_nothing_extra(self):
+    async def test_switching_between_lamp_modes_sends_nothing_extra(self):
         self.light._fx_mode_is_direct = False
         await self.light._activate_native_effect()
         self.assertEqual(["close", "set_fx_effect"], [name for name, _ in self.calls])

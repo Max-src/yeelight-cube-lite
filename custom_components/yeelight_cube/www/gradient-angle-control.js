@@ -701,7 +701,7 @@ export const AngleControlMixin = (Base) => class extends AngleStylesMixin(Base) 
    * lamp, top row first (matrix-view.js), or null without data. The lamp's
    * own matrix_colors while it shows them (the same source as the Lamp
    * Preview card: instant updates), turned for its mount; else (off, a
-   * firmware mode, no data yet) the current mode's preview_gradient_modes
+   * built-in mode, no data yet) the current mode's preview_gradient_modes
    * preview, upright already.
    */
   _matrixTextPreviewColors() {

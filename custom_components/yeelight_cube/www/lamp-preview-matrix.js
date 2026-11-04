@@ -5,16 +5,24 @@ import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { rgbToCss } from "./color-utils.js";
 import { createVisibilityTracker, createRafLoop } from "./matrix-animator.js";
 import {
+  RENDER_SECONDS,
+  effectDisplayFrame,
+  isLampRendered,
+  DEFAULT_EFFECT_SPEED,
+} from "./lamp-renderers.js";
+import {
   clockStyleMixer,
-  CLOCK_MIXER_EFFECTS,
-  CLOCK_MIXER_EFFECT_SPEED,
+  clockPreviewEffect,
+  clockPhase,
+  clockSpeed,
+  clockUsesLampRenderer,
   renderClockFrame,
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import { matrixFrame } from "./matrix-frame.js";
 import {
-  firmwareClockFrame,
+  lampClockFrame,
   deviceOrientation,
   isVerticalMount,
   matrixView,
@@ -86,12 +94,17 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     this._visTracker.connect();
   }
 
-  // Begin the client-side approximation animation for Native Effect mode.
+  // Begin the client-side animation for Native Effect mode.
   _startNativeAnimation() {
     this._ensureVisibilityTracker();
     if (!this._nativeLoop) {
-      this._nativeLoop = createRafLoop(() => this._nativeAnimFrame(), {
+      this._nativeLoop = createRafLoop((now, due) => this._nativeAnimFrame(due), {
         minIntervalMs: 100, // ~10 fps
+        smoothWhen: () =>
+          isLampRendered(
+            this._hass?.states?.[this._primaryEntity()]?.attributes
+              ?.native_effect,
+          ),
       });
     }
     if (this._nativeLoop.running) return;
@@ -99,11 +112,23 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     this._nativeLoop.start();
   }
 
+  // The dots fade to a new color over 0.2 s, which suits a picture changing.
+  // An effect the lamp draws changes every 40 ms: a fading dot would never
+  // reach its color and would show partly see-through, so it paints at once.
+  _setInstantDots(instant) {
+    this._getLampDots()[0]?.parentElement?.classList.toggle(
+      "lamp-dots-instant",
+      instant,
+    );
+  }
+
   _stopNativeAnimation() {
     if (this._nativeLoop) this._nativeLoop.stop();
+    this._setInstantDots(false);
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
-    this._nativeFrozenPhase = null;
+    this._nativeFrozenSeconds = null;
+    this._paintedRender = null;
   }
 
   // Begin the client-side clock animation. Solid/gradient styles only need a
@@ -113,8 +138,12 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   _startClockAnimation() {
     this._ensureVisibilityTracker();
     if (!this._clockLoop) {
-      this._clockLoop = createRafLoop(() => this._clockAnimFrame(), {
+      this._clockLoop = createRafLoop((now, due) => this._clockAnimFrame(due), {
         minIntervalMs: () => this._clockAnimInterval(),
+        smoothWhen: () => {
+          const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
+          return !!attrs && clockUsesLampRenderer(attrs);
+        },
       });
     }
     if (this._clockLoop.running) return;
@@ -125,16 +154,28 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   _clockAnimInterval() {
     const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
     const mixer = attrs ? clockStyleMixer(attrs) : 0;
-    return CLOCK_MIXER_EFFECTS[mixer] ? 100 : 500;
+    return clockPreviewEffect(mixer) ? 100 : 500;
   }
 
   _stopClockAnimation() {
     if (this._clockLoop) this._clockLoop.stop();
+    this._setInstantDots(false);
     this._clockAnimStartedAt = null;
-    this._frozenBackgroundPhase = null;
+    this._frozenBackgroundSeconds = null;
+    this._paintedRender = null;
   }
 
-  _clockAnimFrame() {
+  // due = false: a tick between the interval's. A preview's clock crosses a
+  // render every 40 ms and the display refreshes more often: the frame already
+  // painted stays.
+  _sameRender(seconds, due) {
+    const render = Math.floor(seconds / RENDER_SECONDS);
+    if (!due && render === this._paintedRender) return true;
+    this._paintedRender = render;
+    return false;
+  }
+
+  _clockAnimFrame(due = true) {
     if (!this._onScreen) return;
     const st = this._hass?.states?.[this._primaryEntity()];
     if (!st || st.state !== "on" || st.attributes.content_mode !== "Clock") {
@@ -143,30 +184,31 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     }
     const dots = this._getLampDots();
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
+    this._setInstantDots(clockUsesLampRenderer(st.attributes));
 
     const now = performance.now();
     if (this._clockAnimStartedAt == null) this._clockAnimStartedAt = now;
-    const rate = 0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0;
     // While frozen, hold the background effect on the frame the lamp holds;
     // the digits/colon (rendered from real time in renderClockFrame) still
-    // advance. Resume seamlessly from the held phase.
+    // advance. Resume seamlessly from the held frame.
     const frozen = st.attributes.display_frozen === true;
     if (frozen) {
-      if (this._frozenBackgroundPhase == null)
-        this._frozenBackgroundPhase =
-          ((now - this._clockAnimStartedAt) / 1000) * rate;
-    } else if (this._frozenBackgroundPhase != null) {
-      this._clockAnimStartedAt =
-        now - (this._frozenBackgroundPhase / rate) * 1000;
-      this._frozenBackgroundPhase = null;
+      if (this._frozenBackgroundSeconds == null)
+        this._frozenBackgroundSeconds = (now - this._clockAnimStartedAt) / 1000;
+    } else if (this._frozenBackgroundSeconds != null) {
+      this._clockAnimStartedAt = now - this._frozenBackgroundSeconds * 1000;
+      this._frozenBackgroundSeconds = null;
     }
-    const phase =
-      this._frozenBackgroundPhase ??
-      ((now - this._clockAnimStartedAt) / 1000) * rate;
+    const seconds =
+      this._frozenBackgroundSeconds ?? (now - this._clockAnimStartedAt) / 1000;
+    if (this._sameRender(seconds, due)) return;
+    const speed = clockSpeed(st.attributes);
     const { fontMap, metrics } = this._getNativeClockFont();
-    // As the lamp draws it: its mount profile may turn it (firmwareClockFrame).
-    const pix = firmwareClockFrame(
-      renderClockFrame(st.attributes, fontMap, metrics, phase),
+    // As the lamp draws it: its mount profile may turn it (lampClockFrame).
+    const pix = lampClockFrame(
+      renderClockFrame(
+        st.attributes, fontMap, metrics, clockPhase(seconds, speed), speed,
+      ),
       st.attributes,
     );
     const grid = this._matrixColorsToGridColors(pix, st);
@@ -183,7 +225,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     return this._nativeFontCache.font;
   }
 
-  _nativeAnimFrame() {
+  _nativeAnimFrame(due = true) {
     if (!this._onScreen) return;
     const st = this._hass?.states?.[this._primaryEntity()];
     if (
@@ -197,43 +239,49 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const dots = this._getLampDots();
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
-    const effect = st.attributes.native_effect || "Streamer";
-    const dir = st.attributes.native_effect_direction || "Up";
+    const effect = st.attributes.native_effect || "Ribbon";
+    this._setInstantDots(isLampRendered(effect));
+    const dir = st.attributes.native_effect_direction || "Right";
+    const orientation = deviceOrientation(st.attributes);
     const speed = Math.max(
       1,
-      Math.min(100, Number(st.attributes.native_effect_speed ?? 50)),
+      Math.min(255, Number(st.attributes.native_effect_speed ?? DEFAULT_EFFECT_SPEED)),
     );
     const now = performance.now();
-    const animationKey = `${effect}\u0000${dir}`;
+    const animationKey = `${effect}\u0000${dir}\u0000${orientation}`;
     if (animationKey !== this._nativeAnimKey) {
       this._nativeAnimKey = animationKey;
       this._nativeAnimStartedAt = now;
-      this._nativeFrozenPhase = null;
+      this._nativeFrozenSeconds = null;
     }
-    // Match the camera's phase mapping (native_effect_preview usage).
-    const rate = 0.25 + speed / 55.0;
     // While frozen, hold the frame the lamp is holding; resume seamlessly.
     const frozen = st.attributes.display_frozen === true;
     if (frozen) {
-      if (this._nativeFrozenPhase == null)
-        this._nativeFrozenPhase =
-          ((now - this._nativeAnimStartedAt) / 1000) * rate;
-    } else if (this._nativeFrozenPhase != null) {
-      this._nativeAnimStartedAt = now - (this._nativeFrozenPhase / rate) * 1000;
-      this._nativeFrozenPhase = null;
+      if (this._nativeFrozenSeconds == null)
+        this._nativeFrozenSeconds = (now - this._nativeAnimStartedAt) / 1000;
+    } else if (this._nativeFrozenSeconds != null) {
+      this._nativeAnimStartedAt = now - this._nativeFrozenSeconds * 1000;
+      this._nativeFrozenSeconds = null;
     }
-    const phase =
-      this._nativeFrozenPhase ??
-      ((now - this._nativeAnimStartedAt) / 1000) * rate;
+    const seconds =
+      this._nativeFrozenSeconds ?? (now - this._nativeAnimStartedAt) / 1000;
+    if (this._sameRender(seconds, due)) return;
+    // Match the camera's phase mapping (native_effect_preview usage).
+    const phase = seconds * (0.25 + speed / 55.0);
     // Lamp order (row 0 = physical bottom), like every frame painted here:
     // _paintDots turns it the way the viewer sees it, once. The lamp's
     // mount profile does not turn it (the sent direction is compensated).
-    const raw = renderNativeEffectOriented(
+    const raw = effectDisplayFrame(
       effect,
-      phase,
-      dir,
-      st.attributes.native_effect_color || null,
-      st.attributes.native_effect_color_mode || "normal",
+      renderNativeEffectOriented(
+        effect,
+        phase,
+        dir,
+        st.attributes.native_effect_color || null,
+        st.attributes.native_effect_color_mode || "normal",
+        speed,
+        orientation,
+      ),
     );
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);

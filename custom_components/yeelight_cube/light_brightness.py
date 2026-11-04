@@ -100,7 +100,7 @@ class BrightnessMixin:
             self._brightness = max(1, min(255, brightness))  # Clamp to 1-255 for ON state
             _LOGGER.debug("[BRIGHTNESS #%s] Brightness changed: %s -> %s", call_id, old_brightness, self._brightness)
 
-            if self.firmware_draws_matrix:
+            if self.lamp_draws_matrix:
                 await self._set_native_mode_brightness()
                 if self.hass is not None:
                     self.async_schedule_update_ha_state()

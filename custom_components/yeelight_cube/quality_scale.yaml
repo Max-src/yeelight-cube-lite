@@ -128,7 +128,7 @@ rules:
   # Gold
   devices:
     status: done
-    comment: One device per lamp, with its model and firmware (entity.cube_device_info).
+    comment: One device per lamp, with its model and software version (entity.cube_device_info).
   diagnostics: done
   discovery:
     status: done

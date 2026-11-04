@@ -11,7 +11,7 @@ this order:
    server changes;
 2. a local development server, only on a development install (its module,
    matter_dev_server.py, is not committed);
-3. none: MatterCommandsUnavailable, which callers catch to fall back to LAN
+3. none: MatterCommandsUnavailable, caught to fall back to LAN
    or to hide what needs it. Lamps without Matter, or with the official
    server only, stay as they are.
 """

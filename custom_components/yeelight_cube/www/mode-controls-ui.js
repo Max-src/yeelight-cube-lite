@@ -1,5 +1,6 @@
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { cardLayoutStyles, cardSpacing } from "./card-layout-utils.js";
+import { RENDER_SECONDS } from "./lamp-renderers.js";
 import { renderActionButton, renderActionRow } from "./action-button-ui.js";
 import {
   actionButtonStyles,
@@ -14,7 +15,10 @@ import {
   orientationOptions,
   nextOrientation,
 } from "./orientation-control-utils.js";
-import { renderOrientationControls } from "./orientation-control-ui.js";
+import {
+  renderEffectDirectionControls,
+  renderOrientationControls,
+} from "./orientation-control-ui.js";
 import {
   renderOrderableList,
   orderableListStyles,
@@ -118,9 +122,14 @@ class YeelightModeControls extends LitElement {
       this._visibility = null;
       return;
     }
-    this._previewLoop ||= createRafLoop((now) => this._paintPreviews(now), {
-      minIntervalMs: 100,
-    });
+    this._previewLoop ||= createRafLoop(
+      (now, due) => this._paintPreviews(now, due),
+      {
+        minIntervalMs: 100,
+        smoothWhen: () =>
+          !!this._previewTargets?.some((target) => target.smooth),
+      },
+    );
     if (!this._visibility) {
       this._visibility = createVisibilityTracker(this, {
         onChange: () => this._syncPreviewLoop(),
@@ -136,6 +145,7 @@ class YeelightModeControls extends LitElement {
     return [...this.shadowRoot.querySelectorAll("[data-preview]")].map(
       (node) => ({
         key: node.dataset.preview,
+        smooth: !!this.model.adapter.smooth?.(node.dataset.preview),
         colorMode: node.dataset.colorMode || undefined,
         color: node.dataset.color ? JSON.parse(node.dataset.color) : undefined,
         cells: matrixPreviewCells(node.querySelector(".gallery-matrix-preview")),
@@ -143,14 +153,22 @@ class YeelightModeControls extends LitElement {
     );
   }
 
-  _paintPreviews(now) {
+  _paintPreviews(now, due = true) {
     const model = this.model;
     if (!model?.adapter || !this.shadowRoot) return;
     this._previewTargets ||= this._collectPreviewTargets();
+    // The display refreshes faster than the lamp renders: a frame already
+    // painted stays (a new target list is painted at once).
+    const render = Math.floor(now / 1000 / RENDER_SECONDS);
+    if (render === this._paintedRender && this._paintedTargets === this._previewTargets)
+      return;
+    this._paintedRender = render;
+    this._paintedTargets = this._previewTargets;
     const transparentOff =
       model.config.effect_ignore_black_pixels &&
       model.config.effect_matrix_background !== "black";
     for (const target of this._previewTargets) {
+      if (!due && !target.smooth) continue;
       const pixels = model.adapter.frame(
         target.key,
         now / 1000,
@@ -211,6 +229,12 @@ class YeelightModeControls extends LitElement {
         )
       : button.dataset.value;
     model.orient(target);
+  }
+
+  handleDirectionControl(event) {
+    const button = event.target.closest("button[data-value]");
+    if (button && !button.disabled)
+      this.model.setDirection(button.dataset.value[0].toUpperCase() + button.dataset.value.slice(1));
   }
 
   _preview(favourite) {
@@ -391,12 +415,21 @@ class YeelightModeControls extends LitElement {
         ? html`<div class="error" role="alert">${model.error}</div>`
         : ""}`;
     }
+    if (this.area === "direction")
+      return renderEffectDirectionControls(
+        config,
+        adapter.directions(),
+        model.pendingDirection || adapter.direction(),
+        model.busy || adapter.disabled(),
+        (event) => this.handleDirectionControl(event),
+      );
     if (this.area === "orientation")
       return renderOrientationControls(
         config,
         model.pendingOrientation || adapter.orientation(),
         model.busy || adapter.disabled(),
         (event) => this.handleOrientationControl(event),
+        "Lamp mounted",
       );
     const playable = model.favourites.filter((f) => adapter.available(f.key));
     const names = model.names();

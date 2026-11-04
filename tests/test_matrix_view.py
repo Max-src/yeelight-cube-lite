@@ -2,13 +2,18 @@
 www/matrix-view.js): the viewer's frame, the vertical view, the cameras'
 option and the pixel arts' orientation."""
 
+import io
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import types
 import unittest
+from unittest.mock import patch
+
+from PIL import Image
 
 
 ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
@@ -94,22 +99,12 @@ class CameraOrientationTests(unittest.TestCase):
     def test_the_camera_clock_turns_with_the_lamps_mount_profile(self):
         source = (ROOT / "camera.py").read_text(encoding="utf-8")
         colors = function_source(source, "_get_matrix_colors")
-        self.assertIn("self._firmware_clock_frame(self._get_clock_preview())", colors)
+        self.assertIn("self._lamp_clock_frame(self._get_clock_preview())", colors)
         # Native effects are compensated on the lamp: never turned here.
         self.assertIn("base = self._get_native_effect_preview()", colors)
-        turn = function_source(source, "_firmware_clock_frame")
+        turn = function_source(source, "_lamp_clock_frame")
         self.assertIn('getattr(self._light_entity, "lamp_turns_clock", False)', turn)
         self.assertIn("return frame[::-1]", turn)
-
-    def test_effects_flow_with_the_mount_whatever_the_lamps_profile(self):
-        source = (ROOT / "light_native.py").read_text(encoding="utf-8")
-        namespace = {"DEVICE_ORIENTATION_TO_EFFECT_DIR": {"left": "Left", "up": "Up", "right": "Right"}}
-        exec(compile(function_source(source, "mount_effect_direction"), "light_native", "exec"), namespace)
-        direction = namespace["mount_effect_direction"]
-        self.assertEqual("Left", direction("left"))
-        self.assertEqual("Up", direction("up"))
-        self.assertEqual("Right", direction("right"))
-        self.assertIsNone(direction("sideways"))
 
     def test_the_clock_restarts_only_when_the_lamps_direction_was_set(self):
         source = (ROOT / "light.py").read_text(encoding="utf-8")
@@ -169,23 +164,33 @@ class CameraRenderOnDemandTests(unittest.TestCase):
         import asyncio
 
         camera_module = load_camera_module()
+        self.module = camera_module
         self.renders = 0
+        self.in_executor = [False]
         test = self
 
         class Hass:
             async def async_add_executor_job(self, function, *args):
                 test.renders += 1
-                return function(*args)
+                test.in_executor[0] = True
+                try:
+                    return function(*args)
+                finally:
+                    test.in_executor[0] = False
 
         camera = object.__new__(camera_module.YeelightCubeMatrixCameraRound)
         camera.hass = Hass()
         camera._cached_image = None
+        camera._cached_frame = None
+        camera._next_frame_at = 0.0
+        camera._live_streams = 0
         camera._image_generation = 0
         camera._TRANSLATION_KEY = "matrix_preview_round"
         camera._light_entity = types.SimpleNamespace(_mode="matrix", _device_orientation="right")
         camera._config_entry = types.SimpleNamespace(options={})
         camera._get_matrix_colors = lambda: [(255, 255, 255)] * 100
         camera._is_native_preview_mode = lambda: False
+        camera._shows_lamp_renderer = lambda: False
         camera.async_update_token = lambda: None
         camera.async_write_ha_state = lambda: None
         self.camera = camera
@@ -203,6 +208,200 @@ class CameraRenderOnDemandTests(unittest.TestCase):
         camera.async_refresh_preview()
         self.run(camera.async_camera_image())
         self.assertEqual(self.renders, 2)
+
+    def test_the_screen_shows_the_leds_and_the_power_keeps_their_drive(self):
+        camera = self.camera
+        del camera._get_matrix_colors
+        del camera._shows_lamp_renderer
+        camera._native_preview_key = None
+        camera._native_preview_started_at = None
+        camera._frozen_background_seconds = None
+        camera._preview_lock = threading.Lock()
+        light = camera._light_entity
+        light._mode, light._native_effect = "Native Effect", "Fireworks"
+        light._is_on, light._brightness = True, 255
+        light._native_effect_speed = 50
+        light._native_effect_direction = "Up"
+        now = [100.0]
+        with patch.object(self.module._time, "monotonic", lambda: now[0]):
+            camera._get_native_effect_preview()
+            now[0] += 4.36  # the shot's burst
+            drive = camera.simulated_lamp_frame()
+            shown = camera._get_matrix_colors()
+        self.assertTrue(any(any(pixel) for pixel in drive))
+        self.assertEqual([self.module.led_appearance(pixel) for pixel in drive], shown)
+        self.assertNotEqual(drive, shown)
+        # Every named effect is LED drive, a bare number has none to convert.
+        light._native_effect = "Ribbon"
+        with patch.object(self.module._time, "monotonic", lambda: now[0]):
+            drive = camera.simulated_lamp_frame()
+            self.assertEqual(
+                [self.module.led_appearance(pixel) for pixel in drive],
+                camera._get_matrix_colors(),
+            )
+        light._native_effect = "77"
+        with patch.object(self.module._time, "monotonic", lambda: now[0]):
+            self.assertEqual(camera.simulated_lamp_frame(), camera._get_matrix_colors())
+
+    def test_only_a_live_stream_of_a_lamp_renderer_is_small(self):
+        camera = self.camera
+        camera._is_native_preview_mode = lambda: True
+        camera._shows_lamp_renderer = lambda: True
+        size = lambda data: Image.open(io.BytesIO(data)).size
+        self.assertEqual((1227, 372), size(self.run(camera.async_camera_image())))
+        seen = []
+
+        async def stream(_camera, request):
+            camera._next_frame_at = 0.0
+            seen.append(size(await camera.async_camera_image()))
+            return "response"
+
+        with patch.object(self.module.Camera, "handle_async_mjpeg_stream", stream, create=True):
+            self.assertEqual("response", self.run(camera.handle_async_mjpeg_stream(None)))
+        self.assertEqual([(409, 124)], seen)
+        self.assertEqual(0, camera._live_streams)
+        camera._next_frame_at = 0.0
+        self.assertEqual((1227, 372), size(self.run(camera.async_camera_image())))
+        # A stream of anything else stays full size, and a stream that fails
+        # is no longer counted.
+        camera._shows_lamp_renderer = lambda: False
+
+        async def broken(_camera, request):
+            camera._next_frame_at = 0.0
+            seen.append(size(await camera.async_camera_image()))
+            raise ConnectionResetError
+
+        with patch.object(self.module.Camera, "handle_async_mjpeg_stream", broken, create=True):
+            with self.assertRaises(ConnectionResetError):
+                self.run(camera.handle_async_mjpeg_stream(None))
+        self.assertEqual((1227, 372), seen[-1])
+        self.assertEqual(0, camera._live_streams)
+
+    def test_the_small_view_is_the_full_one_reduced(self):
+        for vertical in (False, True):
+            base, rects = self.module._VIEWS[vertical]
+            small, small_rects = self.module._LIVE_VIEWS[vertical]
+            self.assertEqual((base.width // 3, base.height // 3), small.size)
+            for rect, small_rect in zip(rects, small_rects):
+                self.assertEqual(rect, tuple(edge * 3 for edge in small_rect))
+        self.assertEqual((409, 124), self.module._LIVE_VIEWS[False][0].size)
+        round_camera = self.camera
+        image = round_camera._render_matrix([(255, 0, 0)] * 100, False, True)
+        self.assertEqual((409, 124), Image.open(io.BytesIO(image)).size)
+
+    def test_a_live_view_polls_at_the_lamps_render(self):
+        self.assertEqual(0.04, self.module.RENDER_SECONDS)
+
+    def test_a_lamp_rendered_effect_encodes_only_what_changed(self):
+        camera = self.camera
+        camera._is_native_preview_mode = lambda: True
+        camera._shows_lamp_renderer = lambda: True
+        encoded = []
+        render = camera._render_matrix
+        camera._render_matrix = lambda *args: (encoded.append(args), render(*args))[1]
+        first = self.run(camera.async_camera_image())
+        camera._next_frame_at = 0.0
+        self.assertIs(self.run(camera.async_camera_image()), first)
+        self.assertEqual(1, len(encoded))  # the same pixels: the stream skips it
+        camera._get_matrix_colors = lambda: [(255, 0, 0)] * 100
+        camera._next_frame_at = 0.0
+        self.assertNotEqual(self.run(camera.async_camera_image()), first)
+        self.assertEqual(2, len(encoded))  # the next render, at once
+
+    def test_a_frame_is_computed_off_the_event_loop(self):
+        camera = self.camera
+        camera._is_native_preview_mode = lambda: True
+        computed = []
+        colors = camera._get_matrix_colors
+        camera._get_matrix_colors = lambda: (computed.append(self.in_executor[0]), colors())[1]
+        self.run(camera.async_camera_image())
+        self.assertEqual([True], computed)
+
+    def test_a_slow_host_gets_fewer_frames_not_a_busy_core(self):
+        camera = self.camera
+        camera._is_native_preview_mode = lambda: True
+        camera._shows_lamp_renderer = lambda: True
+        now = [100.0]
+        frame = [0]
+        render = camera._render_matrix
+
+        def colors():
+            frame[0] += 1
+            return [(frame[0], 0, 0)] * 100
+
+        def slow_render(*args):
+            now[0] += 0.1  # 100 ms to encode
+            return render(*args)
+
+        camera._get_matrix_colors = colors
+        camera._render_matrix = slow_render
+        with patch.object(self.module._time, "monotonic", lambda: now[0]):
+            first = self.run(camera.async_camera_image())
+            for _ in range(2):  # polled every 40 ms, 0.18 s after it started
+                now[0] += 0.04
+                self.assertIs(self.run(camera.async_camera_image()), first)
+            now[0] += 0.04
+            self.assertNotEqual(self.run(camera.async_camera_image()), first)
+        self.assertEqual(self.renders, 2)
+
+    def test_what_no_renderer_draws_is_paced_the_same(self):
+        # Music Flow, a bare number, a solid clock: only the images that changed
+        # are encoded, within the same share of a core.
+        camera = self.camera
+        camera._is_native_preview_mode = lambda: True
+        camera._shows_lamp_renderer = lambda: False
+        now = [100.0]
+        render = camera._render_matrix
+
+        def slow_render(*args):
+            now[0] += 0.1
+            return render(*args)
+
+        camera._render_matrix = slow_render
+        with patch.object(self.module._time, "monotonic", lambda: now[0]):
+            first = self.run(camera.async_camera_image())
+            self.assertEqual(100.2, round(camera._next_frame_at, 6))
+            self.assertIs(self.run(camera.async_camera_image()), first)
+
+    def test_only_lamp_rendered_effects_are_followed(self):
+        camera = self.camera
+        del camera._shows_lamp_renderer
+        light = camera._light_entity
+        light._mode, light._native_effect = "Native Effect", "Fireworks"
+        self.assertTrue(camera._shows_lamp_renderer())
+        light._native_effect = "Ribbon"
+        self.assertTrue(camera._shows_lamp_renderer())
+        light._native_effect = "77"  # no renderer draws it
+        self.assertFalse(camera._shows_lamp_renderer())
+        light._mode = "matrix"
+        self.assertFalse(camera._shows_lamp_renderer())
+        light._mode = "Clock"
+        for style_id, style in self.module.NATIVE_CLOCK_STYLES.items():
+            light._native_clock_style = style_id
+            effect = self.module.CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+            self.assertEqual(effect is not None, camera._shows_lamp_renderer())
+        light._mode, light._native_effect = "Native Effect", "Fireworks"
+        light._music_flow_enabled = True
+        self.assertFalse(camera._shows_lamp_renderer())
+
+    def test_a_new_frame_during_an_unchanged_job_is_drawn(self):
+        camera = self.camera
+        camera._is_native_preview_mode = lambda: True
+        first = self.run(camera.async_camera_image())
+        camera._next_frame_at = 0.0
+        job = camera._render_job
+
+        def refreshed_meanwhile():
+            result = job()
+            camera._get_matrix_colors = lambda: [(9, 9, 9)] * 100
+            camera._render_job = job
+            camera.async_refresh_preview()
+            return result
+
+        camera._render_job = refreshed_meanwhile
+        image = self.run(camera.async_camera_image())
+        self.assertTrue(image.startswith(b"\x89PNG"))
+        self.assertNotEqual(first, image)
 
     def test_a_render_overtaken_by_a_new_frame_is_not_kept(self):
         camera = self.camera

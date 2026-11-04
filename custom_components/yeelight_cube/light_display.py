@@ -2,7 +2,7 @@
 
 Extracted from light.py as a mixin: the display queue
 (async_apply_display_mode and its central rules: the off-lamp rule, the
-firmware-mode guard and the phone overlay), the frame sender (apply()) and
+built-in-mode guard and the phone overlay), the frame sender (apply()) and
 the text scroll timer. Reads/writes state via ``self`` (the concrete
 :class:`YeelightCubeLight`); used only as a mixin.
 """
@@ -13,7 +13,7 @@ import time
 from yeelight import BulbException  # type: ignore
 
 from .color_utils import rgb_to_hex
-from .const import FIRMWARE_MODES, MODE_NATIVE_EFFECT, ROTATION_KIND_MODES
+from .const import LAMP_MODES, MODE_NATIVE_EFFECT, ROTATION_KIND_MODES
 from .cube_matrix import (
     trace_frame,
     CubeConnectionError,
@@ -28,21 +28,21 @@ _LOGGER = logging.getLogger(__name__)
 
 # The waits around direct mode, in seconds, by the connection in use
 # (cube_matrix.transport), read where each one happens:
-# - native_exit_settle: leaving a firmware mode (clock, effect), before
+# - native_exit_settle: leaving a built-in mode (clock, effect), before
 #   activate_fx_mode, so the native renderer settles (light.ensure_fx_ready);
 # - direct_mode_settle: after activate_fx_mode, before the first frame;
-# - native_exit_resend: leaving a firmware mode, before the first frame is
-#   sent once more (it can be dropped while the firmware switches; apply());
+# - native_exit_resend: leaving a built-in mode, before the first frame is
+#   sent once more (it can be dropped while the lamp switches; apply());
 # - staleness: direct mode is activated again before a frame when none was
 #   drawn for this long (an idle Cube could leave it silently, ignoring
 #   update_leds without an error); None: never;
-# - blank_repeat: leaving a drawing for a firmware mode, the black frame is
+# - blank_repeat: leaving a drawing for a built-in mode, the black frame is
 #   sent again this long after the first (None: once). Over UDP a frame is
 #   not acknowledged: a dropped one left the drawing in the lamp, shown again
 #   for a moment when the drawing came back (seen twice in 22 effect exits,
 #   18 Oct 2026). Over TCP it arrives (and a second one would wait ~1 s).
 # UDP: tested on both lamps with them watched (18 Oct 2026): clock and effect
-# to a drawing at these waits, 3 rounds, no flash and no lost first frame
+# to a drawing at these waits, 3 rounds, no flicker and no lost first frame
 # (0.3 / 0.15 / 0.12 too); a drawing shown after 150 s without a frame, at
 # once (a session the lamp dropped while idle is put in direct mode again
 # when it opens: cube_matrix _udp_request). TCP: the waits tuned in the TCP
@@ -85,7 +85,7 @@ class DisplayMixin:
         if not isinstance(text_chars, str):
             _LOGGER.error("set_custom_text received non-string character: %s", text_chars)
             return
-        # Prevent empty text -- the Yeelight firmware misbehaves when given
+        # Prevent empty text -- the lamp misbehaves when given
         # an empty string.  Use a single space instead (renders as blank).
         if text_chars == "":
             text_chars = " "
@@ -148,8 +148,8 @@ class DisplayMixin:
                 return
             await self.async_set_music_flow(False, restore_display=False)
 
-        # FIRMWARE-NATIVE MODE OWNERSHIP: while the lamp is physically showing a
-        # firmware clock / native animation / color flow, suppress *incidental*
+        # LAMP-NATIVE MODE OWNERSHIP: while the lamp is physically showing a
+        # built-in clock / native animation / color flow, suppress *incidental*
         # matrix re-renders that would clobber it -- e.g. a sensor/template-driven
         # set_custom_text (text_change), a periodic refresh (display_update), or a
         # stale retry (display_retry).  This is the common "one lamp shows a clock,
@@ -171,7 +171,7 @@ class DisplayMixin:
         if (
             self._in_native_fw_mode
             and not getattr(self, "_external_display", False)
-            and self._mode not in FIRMWARE_MODES
+            and self._mode not in LAMP_MODES
             and update_type in _NATIVE_COMPETING_UPDATE_TYPES
             and not bypass_lock
         ):
@@ -180,7 +180,7 @@ class DisplayMixin:
                 self._display_overlay = False
             else:
                 _LOGGER.debug(
-                    "[DISPLAY] [%s] Update '%s' suppressed -- lamp is in a firmware-native "
+                    "[DISPLAY] [%s] Update '%s' suppressed -- lamp is in a built-in "
                     "mode. Switch the content mode or apply a drawing to leave it.",
                     self._ip, update_type,
                 )
@@ -194,7 +194,7 @@ class DisplayMixin:
         is_retry = update_type == 'display_retry'
         
         # Only reset the retry counter when it has actually HIT the limit
-        # AND the caller is a genuine user action (not a periodic display_update).
+        # AND the update is a genuine user action (not a periodic display_update).
         #
         # User actions: turn_on, brightness_change, text_change, color_change,
         #               pixel_art (used by service calls)
@@ -288,9 +288,9 @@ class DisplayMixin:
             # connection -- the Cube sometimes ignores activate_fx_mode on a
             # reused persistent TCP socket).
             hardware_brightness = hardware_brightness_for(self._brightness)
-            # Capture whether this apply is LEAVING a firmware-native renderer
+            # Capture whether this apply is LEAVING a built-in renderer
             # (clock / native animation / color flow) BEFORE ensure_fx_ready()
-            # clears the flag.  The firmware needs time to tear down the native
+            # clears the flag.  The lamp needs time to tear down the native
             # renderer after activate_fx_mode, and the FIRST update_leds can be
             # silently dropped during that window (accepted at TCP level, zero
             # visual effect) -- which is why a single send left the panel stuck
@@ -382,8 +382,8 @@ class DisplayMixin:
             _LOGGER.debug(
                 "[TIMING] [%s] draw_matrices_fast: %.1fms", self._ip, (_t_after_send - _t_before_send)*1000)
 
-            # NATIVE-EXIT RE-SEND: When leaving a firmware-native renderer, the
-            # first update_leds above can be dropped while the firmware finishes
+            # NATIVE-EXIT RE-SEND: When leaving a built-in renderer, the
+            # first update_leds above can be dropped while the lamp finishes
             # switching into direct mode.  The lamp is now in direct mode
             # (_draw_direct made sure of it), so re-send the same frame once --
             # this is the deterministic equivalent of the manual second send
@@ -392,7 +392,7 @@ class DisplayMixin:
                 await asyncio.sleep(ACTIVATION_TIMING[self._cube_matrix.transport]["native_exit_resend"])
                 _LOGGER.debug(
                     "[APPLY] [%s] Native-exit re-send of first frame "
-                    "(firmware just left clock/native mode)",
+                    "(lamp just left clock/native mode)",
                     self._ip
                 )
                 trace_frame(self._ip, "native-exit re-send: frame", raw_rgb_data)

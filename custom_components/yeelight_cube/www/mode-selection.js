@@ -1,5 +1,6 @@
+
 /** Canonical selections are {key, colorMode, color?}; RGB is copied and identity
- * includes it. Domain adapters resolve editing drafts and firmware encodings.
+ * includes it. Domain adapters resolve editing drafts and the lamp's encodings.
  * Observed state and a successfully dispatched pending selection stay separate.
  */
 export class ModeSelectionState {
@@ -34,16 +35,19 @@ export class ModeSelectionState {
   }
 }
 
+// A key the cards never list: a bare number.
+const unlisted = (key) => !key || /^\d+$/.test(key);
+
 export function normalizeFavourite(item) {
   if (typeof item === "string") {
     const key = item.trim();
-    if (!key || /^\d+$/.test(key)) return null;
+    if (unlisted(key)) return null;
     return { key, colorMode: "normal" };
   }
   if (!item || typeof item !== "object" || typeof item.key !== "string")
     return null;
   const key = item.key.trim();
-  if (!key || /^\d+$/.test(key)) return null;
+  if (unlisted(key)) return null;
   const colorMode =
     typeof item.colorMode === "string" && item.colorMode
       ? item.colorMode

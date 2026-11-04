@@ -3,16 +3,20 @@
 // YeelightCubeClockCard.
 import {
   createRafLoop,
+  matrixSurface,
   paintCellBackground,
   paintCellBoxShadow,
 } from "./matrix-animator.js";
 import {
-  CLOCK_MIXER_EFFECT_SPEED,
+  clockPhase,
+  clockSpeed,
   renderClockFrame,
+  clockUsesLampRenderer,
 } from "./clock-preview-utils.js";
+import { RENDER_SECONDS } from "./lamp-renderers.js";
 import {
   MATRIX_SIZE,
-  firmwareClockFrame,
+  lampClockFrame,
   isVerticalMount,
   viewerFrame,
 } from "./matrix-view.js";
@@ -35,8 +39,9 @@ export const ClockPreviewMixin = (Base) => class extends Base {
   // gallery of animated previews smooth instead of full-innerHTML rebuilds.
   _startAnimation() {
     if (!this._animLoop) {
-      this._animLoop = createRafLoop(() => this._paintVisible(), {
+      this._animLoop = createRafLoop((now, due) => this._paintVisible(due, false), {
         minIntervalMs: 90, // ~11 fps
+        smoothWhen: () => this._smoothTiles,
       });
     }
     this._animLoop.start();
@@ -52,23 +57,21 @@ export const ClockPreviewMixin = (Base) => class extends Base {
   // matches the rate the slider applies. While dragging, the live slider value
   // takes over so the preview responds immediately.
   _animationSpeed() {
-    if (this._speedPreview != null) return this._speedPreview;
-    const v = Number(this._attrs().native_effect_speed);
-    return Math.max(1, Math.min(255, v || CLOCK_MIXER_EFFECT_SPEED));
+    return this._speedPreview ?? clockSpeed(this._attrs());
   }
 
-  // Accumulated phase (peek). Advanced once per paint tick by _advancePhase so
-  // changing the speed re-scales future motion without a visual jump.
+  // The animation's phase at the current speed (peek). The seconds advance
+  // once per paint tick (_advanceElapsed), so changing the speed changes the
+  // motion from here on, without a jump.
   _phase() {
-    return this._phaseAccum;
+    return clockPhase(this._elapsed, this._animationSpeed());
   }
 
-  _advancePhase() {
+  _advanceElapsed() {
     const now = Date.now();
     if (this._lastPhaseTs == null) this._lastPhaseTs = now;
-    const dt = (now - this._lastPhaseTs) / 1000;
+    this._elapsed += (now - this._lastPhaseTs) / 1000;
     this._lastPhaseTs = now;
-    this._phaseAccum += dt * (0.25 + this._animationSpeed() / 55.0);
   }
 
   // Track which preview tiles are actually on screen so the loop never wastes
@@ -134,15 +137,29 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     });
   }
 
-  _paintVisible() {
+  // all = false: only the tiles with a background the lamp draws, on the
+  // frames between the others' (createRafLoop's smoothWhen). The loop passes
+  // fresh = false: a tile showing this render at this second stays as it is (the
+  // display refreshes faster than the lamp renders, and the digits change on
+  // the second).
+  _paintVisible(all = true, fresh = true) {
     if (!this._hass) return;
     // Freezing holds the background animation on its current frame, but the
     // clock digits/colon keep evolving -- so skip advancing the phase yet keep
     // repainting, exactly like the frozen lamp.
-    if (!this._controls?.frozen) this._advancePhase();
+    if (!this._controls?.frozen) this._advanceElapsed();
     else this._lastPhaseTs = Date.now();
     const phase = this._phase();
-    this._visible.forEach((el) => this._paintPreview(el, phase));
+    const moment = `${Math.floor(this._elapsed / RENDER_SECONDS)}:${Math.floor(Date.now() / 1000)}`;
+    this._visible.forEach((el) => {
+      if (!all && !el._smooth) return;
+      if (!fresh && el._smooth) {
+        if (el._paintedMoment === moment) return;
+        el._paintedMoment = moment;
+      }
+      this._paintPreview(el, phase);
+    });
+    if (all) this._smoothTiles = [...this._visible].some((el) => el._smooth);
   }
 
   // Build a tile's dot grid exactly once, caching the cell nodes on the element.
@@ -175,8 +192,9 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       matrixBoxShadow: this.config.lamp_matrix_box_shadow === true,
       ignoreBlackPixels: this._lampIgnoreBlack(),
     };
-    // The shared preview markup (blank), its cells painted in place by
-    // _paintPreview, which keeps the shadow in sync as pixels turn on/off.
+    // The shared preview markup (blank), painted in place by _paintPreview:
+    // its cells, which keep the shadow in sync as pixels turn on/off, or for
+    // an animated background its matrixSurface, which does the same.
     el._ignoreBlack = options.ignoreBlackPixels;
     el._pixelShadow = matrixPixelShadow(options);
     el.innerHTML = renderMatrixPreview(BLANK_FRAME, options);
@@ -202,20 +220,21 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       let matrix = el._cellsGrid;
       if (!matrix?.isConnected || !el.contains(matrix))
         matrix = el.querySelector(".gallery-matrix-preview");
-      if (!matrix || matrix.children.length !== 100) return;
+      if (!matrix || matrixPreviewCells(matrix).length !== 100) return;
       const vertical = matrix.dataset.vertical === "true";
       if (el._cellsGrid !== matrix || el._cellsVertical !== vertical) {
         el._cellsGrid = matrix;
         el._cellsVertical = vertical;
         el._cells = matrixPreviewCells(matrix);
-        el._ignoreBlack = this._galleryIgnoreBlack();
-        el._pixelShadow = matrixPixelShadow({
-          vertical,
-          pixelBoxShadow: this._spacingShadow(
-            this.config.gallery_spacing_mode || "normal",
-          ),
-        });
       }
+      // Each time: the card's settings change on the same grid.
+      el._ignoreBlack = this._galleryIgnoreBlack();
+      el._pixelShadow = matrixPixelShadow({
+        vertical,
+        pixelBoxShadow: this._spacingShadow(
+          this.config.gallery_spacing_mode || "normal",
+        ),
+      });
       cells = el._cells;
     }
     const style =
@@ -223,7 +242,10 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       this._currentStyle();
     if (!style) return;
     // A powered-off lamp shows a blank screen: black out the current preview.
+    const grid = el._cellsGrid || el.querySelector(".gallery-matrix-preview");
     if (isCurrent && this._stateObj()?.state === "off") {
+      if (grid?.classList.contains("matrix-surface"))
+        matrixSurface(grid).paint(BLANK_FRAME);
       for (let i = 0; i < cells.length; i++) {
         paintCellBackground(cells[i], "#000");
         paintCellBoxShadow(cells[i], "");
@@ -232,17 +254,32 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     }
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
     const attrs = this._previewAttrs(style);
+    el._smooth = clockUsesLampRenderer(attrs);
     const { fontMap, metrics } = this._getNativeClockFont();
     // renderClockFrame is bottom-origin (row 0 = physical bottom): shown as
     // the viewer sees the lamp, top row first (matrix-view.js).
     const frame = viewerFrame(
       // As the lamp draws it: its direction setting may turn it (Matter).
-      firmwareClockFrame(renderClockFrame(attrs, fontMap, metrics, phase), this._attrs()),
+      lampClockFrame(
+        renderClockFrame(attrs, fontMap, metrics, phase),
+        this._attrs(),
+      ),
       this._previewOrientation(),
     );
     const brightnessScale = isCurrent
       ? this._lampSliders.previewScale(this._attrs())
       : 1;
+    // A background the lamp draws changes 25 times a second: on a canvas,
+    // which stays when the same preview goes on to a solid style.
+    if (grid && (el._smooth || grid.classList.contains("matrix-surface"))) {
+      matrixSurface(grid).paint(
+        frame,
+        brightnessScale,
+        el._ignoreBlack ? 0 : null,
+        el._pixelShadow,
+      );
+      return;
+    }
     for (let i = 0; i < cells.length; i++) {
       const source = frame[i] || [0, 0, 0];
       const p =

@@ -385,7 +385,7 @@ window.cardDocs = {
       // A camera's picture card: nothing more to check (cameraReady).
       if (this.kind === "camera" && !this.options.section) return;
     } else if (card._paintPreview) {
-      card._phaseAccum = 1.2;
+      card._elapsed = 1;
       card._lastPhaseTs = Date.now();
       for (const tile of card.shadowRoot.querySelectorAll(
         "[data-clock-preview], .original-gallery .original-item",

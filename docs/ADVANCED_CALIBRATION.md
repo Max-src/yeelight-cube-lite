@@ -29,7 +29,7 @@ The Cube Lite's LEDs do not behave like an sRGB computer monitor:
   duty), the LEDs become non-linear and hues drift — dim colors lose saturation
   or shift toward a different hue.
 Brightness itself is the lamp's hardware brightness (`set_bright`, 1–100 %,
-proportional to the slider), as in the firmware's own modes (clock, native
+proportional to the slider), as in the lamp's own modes (clock, native
 effects): pixels are never darkened for brightness, so a picture and a native
 effect at the same setting are equally bright. The pipeline corrects colors with
 two independent stages, applied in this order after color effects:

@@ -53,12 +53,12 @@ class MountProfileMixin:
     @property
     def effect_profile(self) -> int:
         """The profile native effect directions are compensated for (an
-        unknown one is the firmware's default, 3: a lamp never saved)."""
+        unknown one is the lamp's default, 3: a lamp never saved)."""
         return effective_profile(self.mount_profile[0])
 
     @property
     def lamp_turns_clock(self) -> bool:
-        """Whether the lamp's firmware draws its clock a half turn from the
+        """Whether the lamp draws its clock a half turn from the
         calibration's (profiles 0 and 1): the previews turn it too. Native
         effects are compensated (light_native), so they never are."""
         return clock_turned(self.effect_profile)
@@ -169,7 +169,7 @@ class MountProfileMixin:
         ):
             return
         # A deliberate redraw, as restore_state's: the stars left the lamp in
-        # a firmware mode, where a text_change over a drawing is dropped.
+        # a built-in mode, where a text_change over a drawing is dropped.
         await self.async_apply_display_mode(update_type="color_change")
 
     async def _async_reapply_for_mount_profile(self, *, lamp_changed: bool) -> None:

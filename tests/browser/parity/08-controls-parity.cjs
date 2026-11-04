@@ -297,7 +297,7 @@ module.exports = async (t) => {
     assert.deepEqual(custom, ["Turn off", "Freeze effect", "Random"]);
     commonComparisons++;
   }
-  // Native Freeze is greyed out for effects the firmware can't freeze, and
+  // Native Freeze is greyed out for effects the lamp can't freeze, and
   // freezing then switching effects resets the button to its idle state.
   const freezeGating = await page.evaluate(async () => {
     const setEffect = async (name) => {
@@ -326,8 +326,8 @@ module.exports = async (t) => {
       );
     };
     await configure({ show_actions: true }, 358, null);
-    // "Starry sky" is not freeze-compatible -> disabled.
-    const incompatible = (await setEffect("Starry sky")).disabled;
+    // "Starry Sky" is not freeze-compatible -> disabled.
+    const incompatible = (await setEffect("Starry Sky")).disabled;
     // "Rainbow" is compatible -> enabled and freezable.
     const compatible = (await setEffect("Rainbow")).disabled;
     await native._controls.freeze();
@@ -399,7 +399,7 @@ module.exports = async (t) => {
     await configure({ show_actions: true }, 358, null);
     // Clock: frozen holds the animation phase across repaints, then resumes.
     clock._controls.frozen = true;
-    const phase0 = clock._phaseAccum;
+    const phase0 = clock._elapsed;
     let paints = 0;
     const originalPaint = clock._paintPreview.bind(clock);
     clock._visible = new Set(["a", "b"]);
@@ -408,13 +408,13 @@ module.exports = async (t) => {
     };
     clock._paintVisible();
     clock._paintVisible();
-    const frozenHeld = clock._phaseAccum === phase0 && paints > 0;
+    const frozenHeld = clock._elapsed === phase0 && paints > 0;
     clock._paintPreview = originalPaint;
     clock._visible = new Set();
     clock._controls.frozen = false;
     clock._lastPhaseTs = Date.now() - 1000;
-    clock._advancePhase();
-    const clockResumes = clock._phaseAccum > phase0;
+    clock._advanceElapsed();
+    const clockResumes = clock._elapsed > phase0;
 
     // Native: elapsed holds while frozen, advances once resumed.
     const wait = () => new Promise((r) => setTimeout(r, 160));

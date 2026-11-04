@@ -12,6 +12,13 @@ several brightness levels. The model matches them to about 0.2 W:
 A lit pixel costs about the same whatever its color (50 red = 50 blue), each
 extra channel adds less, and the draw levels off near 6 W: a full-white panel
 reads 6.1 W. See "Power Supply" in the README.
+
+The frames given here are never a display's. For an effect or an animated clock
+they are the lamp's LED drive, on the demo beat for a music slot, so rougher;
+for Music Flow, the stored GIF or a solid clock, an illustration or approximation
+in screen colors, so rougher too; for a drawing, the colors sent
+(lamp_renderers.py, camera.simulated_lamp_frame). The readings above are
+of sent colors, so even the lamp's exact values give an estimate.
 """
 
 import math

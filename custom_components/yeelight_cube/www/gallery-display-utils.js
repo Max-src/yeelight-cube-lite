@@ -117,7 +117,8 @@ export function matrixPreviewLayout(colorData, options = {}) {
  */
 export function matrixPreviewCells(grid) {
   if (!grid) return [];
-  const cells = [...grid.children];
+  // Not the holder of a matrixSurface.
+  const cells = [...grid.children].filter((child) => child.tagName !== "SPAN");
   return grid.dataset?.vertical === "true"
     ? fromDisplayOrder(cells, true)
     : cells;
@@ -172,6 +173,16 @@ export const matrixPreviewStyles = `
   .gallery-matrix-preview > div {
     aspect-ratio: 1 / 1;
     border-radius: var(--yc-px-radius, 0);
+  }
+  /* The picture is on a canvas (matrix-animator.js matrixSurface). */
+  .gallery-matrix-preview.matrix-surface {
+    position: relative;
+  }
+  .gallery-matrix-preview.matrix-surface > div {
+    background: transparent !important;
+  }
+  .gallery-matrix-preview.matrix-surface-holes > div {
+    box-shadow: none !important;
   }
 `;
 

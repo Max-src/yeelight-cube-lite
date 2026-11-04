@@ -17,24 +17,30 @@ from .const import (
     DEFAULT_DEVICE_ORIENTATION,
     DEVICE_ORIENTATIONS,
     DEVICE_ORIENTATION_TO_FLIP,
-    FIRMWARE_MODES,
+    LAMP_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     CONF_DEVICE_ID,
     CONF_IP,
     LAN_PORT,
-    clock_style_default_color,
+    clock_style_colors,
     DEFAULT_MATRIX_DISPLAY_MODE,
     DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
+    DEFAULT_NATIVE_EFFECT_DIRECTION,
     DOMAIN,
     ALL_NATIVE_EFFECTS,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
-    NATIVE_EFFECT_DIRECTION_VALUES,
+    clock_segment_modes,
+    DEFAULT_NATIVE_EFFECT_SPEED,
+    EFFECT_FAMILY_OF_SLOT,
     NATIVE_EFFECTS,
+    BUTTON_CLOCK_PREFIX,
+    LAMP_STORED_GIF_SLOT,
+    canonical_button_effect_name,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
     DEFAULT_POWER_ON_STATE,
@@ -53,7 +59,7 @@ from .pixel_art_storage import expand_pixels
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin, hardware_brightness_for
 from .issues import lamp_problems, report_problems
-from .light_native import NativeModesMixin, lamp_direction, mount_effect_direction
+from .light_native import NativeModesMixin, effect_direction_sent
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
@@ -71,11 +77,11 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
-# Estimated power in firmware modes (clock, native effects, Music Flow): the
-# simulated frame is sampled every FIRMWARE_POWER_INTERVAL seconds and the
-# sensor shows the average of the last FIRMWARE_POWER_SAMPLES (30 s).
-FIRMWARE_POWER_INTERVAL = 5
-FIRMWARE_POWER_SAMPLES = 6
+# Estimated power in the lamp's own modes (clock, native effects, Music Flow): the
+# simulated frame is sampled every LAMP_POWER_INTERVAL seconds and the
+# sensor shows the average of the last LAMP_POWER_SAMPLES (30 s).
+LAMP_POWER_INTERVAL = 5
+LAMP_POWER_SAMPLES = 6
 
 # NOTE: Per-entity and global pixel art throttle REMOVED.
 # The gradient card sends identical update_leds commands rapidly without
@@ -101,9 +107,13 @@ def _native_effect_catalog(extended_enabled: bool, playing_extended: str | None)
         {"name": name, "speed": bool(spec.get("speed")),
          "directions": list(spec.get("directions", ())),
          "extended": bool(spec.get("extended")),
-         "preview": not name.isdecimal()}
+         "family": EFFECT_FAMILY_OF_SLOT[spec["mode"]],
+         "preview": True}
         for name, spec in ALL_NATIVE_EFFECTS.items()
-        if not spec.get("extended") or extended_enabled or name == playing_extended
+        # Not the stored GIF for now: nothing can read it back to preview (the
+        # effect selector still offers it).
+        if spec["mode"] != LAMP_STORED_GIF_SLOT
+        and (not spec.get("extended") or extended_enabled or name == playing_extended)
     ]
 
 
@@ -153,7 +163,7 @@ def cleanup_module_state(ip: str) -> None:
 #                        hardware brightness) and the brightness fast path.
 #   light_color.py      (ColorPipelineMixin)  — color adjustment/correction/
 #                        accuracy maths + the brightness mapping.
-#   light_native.py     (NativeModesMixin)    — firmware Clock + native-effect
+#   light_native.py     (NativeModesMixin)    — built-in Clock + native-effect
 #                        activation (set_fx_effect payloads), Music Flow.
 #   light_render.py     (MatrixRenderMixin)   — mode router
 #                        (_apply_display_mode_internal), letter/pixel placement,
@@ -206,6 +216,7 @@ class YeelightCubeLight(
         "rotation_intervals",
         "effect_rotation",
         "matter",
+        "external_display",
         "mount_profile",
         "button_effects",
         "last_hardware_brightness",
@@ -286,11 +297,11 @@ class YeelightCubeLight(
         self._native_clock_color = None  # ARGB int override, None = use style color
         self._native_clock_color_mode = "normal"  # palette preset (CLOCK_COLOR_MODES key)
         self._native_effect = DEFAULT_NATIVE_EFFECT
-        self._native_effect_speed = 50
+        self._native_effect_speed = DEFAULT_NATIVE_EFFECT_SPEED
         self._native_effect_color_mode = "normal"
         self._native_effect_color = None
-        self._native_effect_direction = "Up"
-        # Reveal firmware effects that the official app never exposed.
+        self._native_effect_direction = DEFAULT_NATIVE_EFFECT_DIRECTION
+        # Reveal built-in effects that the official app never exposed.
         self._extended_effects_enabled = bool(config_entry.options.get("extended_effects_enabled", False))
         self._music_flow_enabled = False
         self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
@@ -311,7 +322,7 @@ class YeelightCubeLight(
         # FX mode tracking to avoid redundant mode changes
         self._fx_mode_is_direct = False  # Track if we're already in direct/music mode
         self._last_fx_mode_time = 0.0    # When activate_fx_mode last succeeded
-        # True when the lamp is physically in a firmware-native mode (clock,
+        # True when the lamp is physically in a built-in mode (clock,
         # native animation, or start_cf color flow). When True, ensure_fx_ready()
         # must use a longer settle + graceful FIN to avoid the lamp resetting to
         # the ribbon (default loading state) during the mode transition.
@@ -382,15 +393,16 @@ class YeelightCubeLight(
         # Estimated energy (kWh): told every power change (_publish_power).
         self._energy_sensor = None
         self._published_power = None
-        # Firmware modes (clock, native effect, Music Flow): estimates of the
-        # simulated preview frame, sampled every FIRMWARE_POWER_INTERVAL and
-        # averaged; cleared when what the firmware draws changes.
-        self._firmware_power_samples = deque(maxlen=FIRMWARE_POWER_SAMPLES)
-        self._firmware_power_key = None
-        self._firmware_power_unsub = None
+        # The lamp's own modes (clock, native effect, Music Flow): estimates of the
+        # simulated preview frame, sampled every LAMP_POWER_INTERVAL and
+        # averaged; cleared when what the lamp draws changes.
+        self._lamp_power_samples = deque(maxlen=LAMP_POWER_SAMPLES)
+        self._lamp_power_pending = False
+        self._lamp_power_key = None
+        self._lamp_power_unsub = None
 
 
-        # Entity references for native firmware controls.
+        # Entity references for the built-in mode controls.
         self._native_effect_select_entity = None
         self._native_effect_direction_select_entity = None
         self._native_effect_speed_entity = None
@@ -424,25 +436,25 @@ class YeelightCubeLight(
                 if entity.hass is not None:
                     entity.async_write_ha_state()
         if (
-            self.firmware_draws_matrix
-            and self._firmware_power_state() != self._firmware_power_key
+            self.lamp_draws_matrix
+            and self._lamp_power_state() != self._lamp_power_key
         ):
-            self._sample_firmware_power()  # what the firmware draws changed
+            self._sample_lamp_power()  # what the lamp draws changed
         self._publish_power()
 
     @property
     def estimated_power(self) -> float | None:
         """Estimated draw in W (lamp_power.py): 0 while the lamp is not
         reachable (most often unplugged); the electronics alone while off;
-        while the firmware draws the matrix (clock, native effect, Music
+        while the lamp draws the matrix itself (clock, native effect, Music
         Flow), whose frames Home Assistant cannot see, the simulated
         preview's average (unknown until it has samples)."""
         if not self.available:
             return 0.0
         if not self._is_on:
             return BASE_W
-        if self.firmware_draws_matrix:
-            samples = self._firmware_power_samples
+        if self.lamp_draws_matrix:
+            samples = self._lamp_power_samples
             return round(sum(samples) / len(samples), 1) if samples else None
         if self._last_frame_power is None:
             return None
@@ -455,12 +467,12 @@ class YeelightCubeLight(
             return "unreachable"
         if not self._is_on:
             return "off"
-        if self.firmware_draws_matrix:
+        if self.lamp_draws_matrix:
             return "simulated preview"
         return "frames sent"
 
-    def _firmware_power_state(self) -> tuple:
-        """What the firmware draws: a change starts a new average."""
+    def _lamp_power_state(self) -> tuple:
+        """What the lamp draws: a change starts a new average."""
         return (
             self._mode, self._music_flow_enabled, self._music_flow_effect,
             self._native_effect, self._native_effect_color_mode,
@@ -470,28 +482,49 @@ class YeelightCubeLight(
         )
 
     @callback
-    def _sample_firmware_power(self, _now=None) -> None:
-        """While the firmware draws the matrix, estimate the draw of the
-        simulated frame its camera preview shows (lamp_power.py), averaged
-        over the last samples. Runs every FIRMWARE_POWER_INTERVAL, and at
-        once when what the firmware draws changes."""
-        if not (self.available and self._is_on and self.firmware_draws_matrix):
-            self._firmware_power_samples.clear()
-            self._firmware_power_key = None
+    def _sample_lamp_power(self, _now=None) -> None:
+        """While the lamp draws the matrix itself, estimate the draw of the
+        simulated frame behind its camera preview (lamp_power.py), averaged
+        over the last samples. Runs every LAMP_POWER_INTERVAL, and at
+        once when what the lamp draws changes."""
+        if not (self.available and self._is_on and self.lamp_draws_matrix):
+            self._lamp_power_samples.clear()
+            self._lamp_power_key = None
             return
-        state = self._firmware_power_state()
-        if state != self._firmware_power_key:
-            self._firmware_power_samples.clear()
-            self._firmware_power_key = state
+        state = self._lamp_power_state()
+        if state != self._lamp_power_key:
+            self._lamp_power_samples.clear()
+            self._lamp_power_key = state
         camera = next(
             (cam for cam in self._camera_entities if getattr(cam, "hass", None)), None
         )
-        frame = camera.simulated_firmware_frame() if camera is not None else None
+        if camera is None or self._lamp_power_pending:
+            return
+        # Not what the camera displays: the lamp's own LED drive for every
+        # named effect, an illustration for Music Flow
+        # (camera.simulated_lamp_frame). In an executor: this runs every
+        # few seconds and a renderer may replay what it missed.
+        self._lamp_power_pending = True
+        self.hass.async_add_executor_job(camera.simulated_lamp_frame).add_done_callback(
+            lambda job: self._lamp_power_sampled(state, job)
+        )
+
+    @callback
+    def _lamp_power_sampled(self, state: tuple, job) -> None:
+        """A sampled frame (_sample_lamp_power) joins the average, unless
+        what the lamp draws changed meanwhile: then sample again."""
+        self._lamp_power_pending = False
+        if not (self.available and self._is_on and self.lamp_draws_matrix):
+            return
+        if state != self._lamp_power_state():
+            self._sample_lamp_power()
+            return
+        frame = None if job.cancelled() or job.exception() else job.result()
         if not frame:
             return
-        # The firmware modes' brightness (_set_native_mode_brightness).
+        # The built-in modes' brightness (_set_native_mode_brightness).
         hardware = hardware_brightness_for(self._brightness)
-        self._firmware_power_samples.append(estimated_power(frame, hardware))
+        self._lamp_power_samples.append(estimated_power(frame, hardware))
         self._publish_power()
 
     @callback
@@ -599,13 +632,14 @@ class YeelightCubeLight(
     async def set_device_orientation(self, orientation: str):
         """Set the 4-way physical device orientation (right/down/left/up).
 
-        There is no single firmware command for this, so we translate it to the
+        There is no single lamp command for this, so we translate it to the
         mechanisms that actually work and apply immediately for the current mode:
           - matrix / text / pixel art: normal vs flipped (180 deg) pixel flip
-          - native effects: the effect's own `direction` field (if supported),
+          - native effects: the effect's own `direction` field (if supported)
+            is turned so the direction chosen stays what the viewer sees, and
             compensated for the lamp's saved mount profile (light_native)
           - the clock, over Matter: the lamp's own direction setting, which
-            its firmware applies when the clock starts
+            the lamp applies when the clock starts
             (light_matter._sync_lamp_rotation); without Matter the clock
             stays as it is
         The 90 deg visual rotation for up/down is handled by the preview card.
@@ -616,7 +650,7 @@ class YeelightCubeLight(
         self._device_orientation = orientation
         # Drive the matrix/text/pixel flip (normal vs 180 deg).
         self._orientation = DEVICE_ORIENTATION_TO_FLIP[orientation]
-        # Over Matter, the lamp's own direction setting turns its firmware's
+        # Over Matter, the lamp's own direction setting turns its own
         # content (clock, native effects) for the mount; it applies when that
         # content starts again (light_matter._sync_lamp_rotation).
         lamp_direction_set = await self._sync_lamp_rotation(orientation)
@@ -626,17 +660,7 @@ class YeelightCubeLight(
         # Whether we need to re-render/re-send to the lamp for this mode.
         reapply = True
 
-        # For native effects, steer the effect's flow to match the mounting,
-        # but only if the current effect supports that direction.
-        if self._mode == MODE_NATIVE_EFFECT:
-            spec = ALL_NATIVE_EFFECTS.get(self._native_effect, {})
-            directions = spec.get("directions")
-            desired = mount_effect_direction(orientation)
-            if directions and desired in directions:
-                self._native_effect_direction = desired
-                if self._native_effect_direction_select_entity:
-                    self._native_effect_direction_select_entity.async_update_from_light()
-        elif self._mode == MODE_CLOCK:
+        if self._mode == MODE_CLOCK:
             # Re-activating the clock briefly drops it: only when the lamp's
             # own direction was just set over Matter (it turns the clock when
             # the clock starts). Otherwise the clock stays as it is and the
@@ -671,14 +695,14 @@ class YeelightCubeLight(
 
     @property
     def supported_color_modes(self):
-        if self.firmware_draws_matrix:
+        if self.lamp_draws_matrix:
             return {ColorMode.BRIGHTNESS}
         return {ColorMode.RGB}
 
     @property
     def color_mode(self):
         # Current active color mode
-        if self.firmware_draws_matrix:
+        if self.lamp_draws_matrix:
             return ColorMode.BRIGHTNESS
         return ColorMode.RGB
 
@@ -709,7 +733,7 @@ class YeelightCubeLight(
     def content_mode(self):
         if self._music_flow_enabled:
             return "Music Flow"
-        return self._mode if self._mode in FIRMWARE_MODES else "Matrix"
+        return self._mode if self._mode in LAMP_MODES else "Matrix"
     
     def _should_auto_turn_on(self) -> bool:
         """Check if lamp should auto-turn-on when receiving commands while off."""
@@ -788,6 +812,7 @@ class YeelightCubeLight(
             "native_effect_color_mode": self._native_effect_color_mode,
             "native_effect_color": self._native_effect_color,
             "native_effect_direction": self._native_effect_direction,
+            "effect_direction_own": True,
             "native_effect_catalog": _native_effect_catalog(
                 self._extended_effects_enabled,
                 # An experimental effect still listed while it plays.
@@ -812,6 +837,9 @@ class YeelightCubeLight(
             # The lamp's Matter node and what it reports (light_matter.py);
             # None without one.
             "matter": self._matter_summary(),
+            # The lamp shows a button's or another app's content (Matter,
+            # light_matter._accept_external_display): kept across a restart.
+            "external_display": self._external_display,
             # The lamp's saved mount profile (light_mount_profile.py): 0-3 or
             # None, and its source ("matter", "user", "unknown").
             "mount_profile": self._mount_profile_summary(),
@@ -852,7 +880,7 @@ class YeelightCubeLight(
 
         Not simply the last frame the plugin drew: _base_matrix_colors is only
         refreshed when the plugin draws, so it still holds old content (e.g.
-        the last pixel art) while the lamp is off or the firmware draws the
+        the last pixel art) while the lamp is off or draws the
         matrix. The colors are not scaled by the brightness: the lamp dims in
         hardware, and the cards scale them by the published brightness
         themselves (set_brightness() writes the state first, so they preview
@@ -865,8 +893,8 @@ class YeelightCubeLight(
             if not self._is_on:
                 # Off: the matrix is dark, whatever content is kept for turn-on.
                 return [(0, 0, 0)] * count
-            if self.firmware_draws_matrix:
-                # Frames drawn by the firmware cannot be read back: no pixels.
+            if self.lamp_draws_matrix:
+                # Frames the lamp draws itself cannot be read back: no pixels.
                 # Cards and the preview camera render these modes themselves.
                 return []
             base_colors = self._base_matrix_colors
@@ -878,10 +906,10 @@ class YeelightCubeLight(
             return []
 
     @property
-    def firmware_draws_matrix(self) -> bool:
-        """Whether the lamp's firmware draws the matrix (clock, native effect,
+    def lamp_draws_matrix(self) -> bool:
+        """Whether the lamp draws the matrix itself (clock, native effect,
         music flow) rather than the plugin, so its frames cannot be read back."""
-        return bool(self._music_flow_enabled) or self._mode in FIRMWARE_MODES
+        return bool(self._music_flow_enabled) or self._mode in LAMP_MODES
 
     @property
     def _has_color_effects(self) -> bool:
@@ -940,11 +968,11 @@ class YeelightCubeLight(
         self._health_check_task = self._create_tracked_task(
             self._periodic_health_check(), name=f"yeelight_cube_health_check_{self._ip}"
         )
-        # Estimated power in firmware modes: a cheap periodic sample of the
+        # Estimated power in the lamp's own modes: a cheap periodic sample of the
         # simulated preview frame (one 100-pixel estimate per interval).
-        self._firmware_power_unsub = async_track_time_interval(
-            self.hass, self._sample_firmware_power,
-            timedelta(seconds=FIRMWARE_POWER_INTERVAL),
+        self._lamp_power_unsub = async_track_time_interval(
+            self.hass, self._sample_lamp_power,
+            timedelta(seconds=LAMP_POWER_INTERVAL),
         )
         
         _LOGGER.debug("[INIT] Initial state - custom_text: '%s', mode: '%s', is_on: %s, brightness: %s", self._custom_text, self._mode, self._is_on, self._brightness)
@@ -953,6 +981,9 @@ class YeelightCubeLight(
         _LOGGER.debug("[RESTORE] old_state exists: %s", old_state is not None)
         if old_state:
             self._restore_state(old_state)
+            # A button's or another app's content when Home Assistant stopped:
+            # the lamp keeps it, not redrawn below.
+            self._external_display = bool(old_state.attributes.get("external_display"))
         self._restore_music_flow_runtime_state()
         self._restore_favourites()
         self._restore_rotation_settings()
@@ -978,6 +1009,8 @@ class YeelightCubeLight(
             _LOGGER.debug(
                 "[INIT] Music flow was active before restart; preserving renderer"
             )
+        elif self._external_display:
+            _LOGGER.debug("[INIT] The lamp shows another app's content: not redrawn")
         elif self._is_on:
             await self.async_apply_display_mode(update_type='turn_on')
         else:
@@ -991,9 +1024,9 @@ class YeelightCubeLight(
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
         self.stop_scroll_timer()
-        if self._firmware_power_unsub is not None:
-            self._firmware_power_unsub()
-            self._firmware_power_unsub = None
+        if self._lamp_power_unsub is not None:
+            self._lamp_power_unsub()
+            self._lamp_power_unsub = None
 
         # Stop any server-side rotation loop owned by this entity. Its saved
         # state is kept: a restart or reload resumes it.
@@ -1046,9 +1079,9 @@ class YeelightCubeLight(
 
         Steps:
           1. Close any existing persistent TCP socket (clean slate)
-          2. Optional 300ms settle when leaving a firmware-native mode
+          2. Optional 300ms settle when leaving a built-in mode
           3. Send activate_fx_mode (UDP session, else a fresh TCP connection, RST-closed)
-          4. Sleep 150ms -- firmware settle time before opening the persistent socket
+          4. Sleep 150ms -- the lamp's settle time before opening the persistent socket
           5. Update state flags
 
         The lamp's hardware brightness is left as it is (and as known):
@@ -1057,12 +1090,12 @@ class YeelightCubeLight(
         lamp show an older picture again (see cube_matrix.FRAME_SETTLE_DELAY),
         so activating direct mode again never forces one. Over TCP, apply()
         sends it on the persistent socket, with the frames: an extra RST
-        connection made the firmware exit direct mode before update_leds
+        connection made the lamp exit direct mode before update_leds
         arrived ("illegal request" errors).
 
         Why no TCP probe:
         A probe RST before activate_fx_mode was a third rapid RST connection
-        that could confuse the Cube firmware. Dead devices are handled by the
+        that could confuse the Cube. Dead devices are handled by the
         APPLY_HARD_TIMEOUT / circuit-breaker mechanism instead.
         """
         cm = self._cube_matrix
@@ -1076,12 +1109,12 @@ class YeelightCubeLight(
         # Step 1: Kill persistent socket
         cm.close_fast_socket()
 
-        # Step 2 (optional): When leaving a firmware-native mode (clock, native
-        # animation, color flow), give the renderer + TCP stack time to settle
-        # before we open a new connection.  This shortens the ribbon flash.
+        # Step 2 (optional): When leaving a built-in mode (clock, native
+        # animation, color flow), give the lamp time to settle
+        # before we open a new connection.  This shortens the Ribbon flicker.
         #
         # activate_fx_mode is always RST-closed (abortive_close=True, the
-        # default).  A graceful FIN here caused the firmware to silently ignore
+        # default).  A graceful FIN here caused the lamp to silently ignore
         # the mode change, leaving the lamp stuck on the ribbon indefinitely.
         coming_from_native = self._in_native_fw_mode
         if coming_from_native:
@@ -1095,7 +1128,7 @@ class YeelightCubeLight(
         # Step 3: activate_fx_mode on a SINGLE fresh TCP (RST close)
         await cm.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
 
-        # Step 4: Let the firmware fully enter direct mode before the first
+        # Step 4: Let the lamp fully enter direct mode before the first
         # frame (ACTIVATION_TIMING, by connection: 50ms was too tight over TCP,
         # where the lamp left direct mode before update_leds arrived).
         await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["direct_mode_settle"])
@@ -1126,7 +1159,7 @@ class YeelightCubeLight(
         """
         if not self._is_on or self._music_flow_enabled:
             return
-        if self._mode in FIRMWARE_MODES:
+        if self._mode in LAMP_MODES:
             self._cube_matrix.close_fast_socket()
         else:
             # Its brightness is confirmed too (sent right after direct mode,
@@ -1184,7 +1217,7 @@ class YeelightCubeLight(
             self.stop_effect_rotation()
 
         # Brightness remains adjustable while Music Flow owns the display.
-        # Explicit color content must first release the firmware renderer so
+        # Explicit color content must first release the lamp's own renderer so
         # the requested RGB/text colors are not silently ignored.
         if self._music_flow_enabled and any(
             key in kwargs for key in ("rgb_color", "text_colors")
@@ -1326,7 +1359,7 @@ class YeelightCubeLight(
         # reaches the integration (a powered-down lamp's click only powers
         # it on).
         keep_powered = getattr(self, "remote_keeps_lamp_powered", False)
-        if (was_music_flow_enabled or self._mode in FIRMWARE_MODES) and not keep_powered:
+        if (was_music_flow_enabled or self._mode in LAMP_MODES) and not keep_powered:
             self._cube_matrix.close_fast_socket()
             if note_power := getattr(self, "_expect_lamp_power", None):
                 note_power(False)
@@ -1443,14 +1476,17 @@ class YeelightCubeLight(
 
     def _effect_persist_item(self, name: str) -> dict:
         """Build one official-app compatible physical-button effect entry."""
-        if name.startswith("Clock: "):
-            style_name = name.removeprefix("Clock: ")
+        name = canonical_button_effect_name(name)
+        if name.startswith(BUTTON_CLOCK_PREFIX):
+            style_name = name.removeprefix(BUTTON_CLOCK_PREFIX)
             for style_id, style in NATIVE_CLOCK_STYLES.items():
                 if style["name"] == style_name:
-                    config = {"mode": NATIVE_CLOCK_EFFECT_ID, "mixer": style["mixer"]}
-                    color = clock_style_default_color(style)
-                    if color is not None:
-                        config["color"] = [int(color)]
+                    config = clock_segment_modes(style["mixer"])
+                    # The style's default color (clock_style_default_color),
+                    # or every colour its background draws.
+                    colors = clock_style_colors(style)
+                    if colors:
+                        config["color"] = colors
                     config["data"] = base64.b64encode(
                         self._native_clock_data_bytes()
                     ).decode("ascii")
@@ -1464,14 +1500,7 @@ class YeelightCubeLight(
             config = {"mode": spec["mode"], "onoff": 1}
             if spec.get("speed"):
                 config["rate"] = self._native_effect_speed
-            directions = spec.get("directions")
-            if directions:
-                direction = self._native_effect_direction
-                if direction not in directions:
-                    direction = directions[0]
-                config["direction"] = lamp_direction(
-                    self, NATIVE_EFFECT_DIRECTION_VALUES[direction]
-                )
+            config["direction"] = effect_direction_sent(self, spec)
             return {
                 "effect_id": spec["effect_id"],
                 "custom_id": 0,
@@ -1485,6 +1514,7 @@ class YeelightCubeLight(
         refuses this write over LAN), else over LAN (light_matter)."""
         if not 1 <= len(effect_names) <= 8:
             raise ValueError("The physical button list must contain 1 to 8 effects")
+        effect_names = [canonical_button_effect_name(name) for name in effect_names]
         items = [self._effect_persist_item(name) for name in effect_names]
         write_over_matter = getattr(self, "_write_button_playlist", None)
         if write_over_matter is None or not await write_over_matter(items):

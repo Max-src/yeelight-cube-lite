@@ -53,7 +53,7 @@ RECOVERY_CONNECT_TIMEOUT = 1.5  # Longer timeout when recovering — LAN still c
 
 _RST_LINGER = struct.pack("ii", 1, 0)  # SO_LINGER value for an abortive close (RST)
 
-# A lamp whose UDP session failed (none on that firmware or network, or it
+# A lamp whose UDP session failed (none on that lamp or network, or it
 # stopped answering) is sent TCP; UDP is tried again after this long, or as
 # soon as the lamp is back online.
 UDP_RETRY_AFTER = 300.0
@@ -72,6 +72,10 @@ _USE_TCP = object()
 # picture again (watched tests, 6 times out of 13; frames alone never did, 0
 # of 6), so it must never be used as a no-op there.
 FRAME_SETTLE_DELAY = 0.3
+# About 10 ms after deactivate_fx_mode, the lamp puts back its last app
+# effect. An effect sent before it fires would be taken
+# down by it, so it is sent after this pause.
+FX_MODE_RESTORE_SETTLE = 0.15
 # Commands that leave the picture as it is (the re-send still applies) and
 # direct mode on: any other may end it, so a new UDP session is no longer
 # put in direct mode (UdpSession.session_setup).
@@ -248,7 +252,7 @@ class CubeMatrix:
         self.device_name = "Yeelight Cube Lite"
         self.capabilities = {}
         self.device_model = "Cube Lite"
-        self.firmware_version = None
+        self.software_version = None
         self.device._timeout = CONNECT_TIMEOUT  # Keep low — LAN connects take <10ms, 0.5s is plenty
         self._last_command_time = 0
         # The TCP gate (_tcp_turn): when the next TCP command may go
@@ -280,13 +284,18 @@ class CubeMatrix:
         self._fast_socket_time = 0.0  # When the socket was opened (for diagnostics)
         self._last_fast_command = None  # Last command sent via send_command_fast
         self._fx_activated_on_socket = False  # True if activate_fx_mode was sent on current socket
+        # Whether the lamp's fx-mode flag may be set: every activate_fx_mode
+        # (direct mode) sets it, only deactivate_fx_mode clears it, and while it
+        # is set a music effect's first frame stops the microphone instead of
+        # starting it (clear_fx_mode_flag). Unknown after a start: it may be.
+        self.fx_mode_flag_maybe_set = True
         
         # Flag set by _graceful_reconnect when socket was reset.
         # Checked by light.py after commands to trigger FX mode / brightness restore.
         self._just_reconnected = False
         
         # Total commands successfully sent — diagnostic counter for tracking
-        # command volume that may overwhelm the Cube firmware.
+        # command volume that may overwhelm the Cube.
         self._total_commands_sent = 0
 
         self.device_id = None  # Yeelight device ID (hex) — used for discovery suppression
@@ -339,7 +348,7 @@ class CubeMatrix:
                 self.device_model = properties.get(
                     "model", properties.get("md", self.device_model)
                 )
-                self.firmware_version = properties.get(
+                self.software_version = properties.get(
                     "fw_ver", properties.get("fw_version")
                 )
             else:
@@ -617,7 +626,7 @@ class CubeMatrix:
         return self._last_command_time
 
     def record_failure(self) -> None:
-        """Count a failed operation (e.g. a hard timeout detected by the caller)."""
+        """Count a failed operation (e.g. a hard timeout detected elsewhere)."""
         self._consecutive_failures += 1
 
     def record_success(self) -> None:
@@ -839,7 +848,7 @@ class CubeMatrix:
             # NOTE: Do NOT invoke reconnection callback here!
             # We are called from send_command_with_recovery which holds _command_lock.
             # The callback would call send_command_with_recovery again → deadlock.
-            # Instead, we set a flag and let the caller (light.py) handle it
+            # Instead, we set a flag and let light.py handle it
             # after the lock is released.
             self._just_reconnected = True
             
@@ -921,6 +930,7 @@ class CubeMatrix:
         timeout: float = 1.5,
         abortive_close: bool = True,
         check_reply: bool = False,
+        udp: bool = True,
     ):
         """Send a single command on a FRESH TCP connection (bypasses send_command_fast).
 
@@ -937,16 +947,20 @@ class CubeMatrix:
         ``check_reply`` waits briefly (RAW_REPLY_TIMEOUT) for the lamp's answer
         on the same connection and raises BulbException when the lamp refused
         the command (e.g. its rate limit: "client quota exceeded"). Without
-        it a refused command looks sent and the caller believes the lamp
+        it a refused command looks sent and the lamp is believed to have
         changed. No answer or a closed connection still counts as sent: the
         Cube often closes without replying.
 
         Over the UDP session every command is answered, so ``check_reply``
-        always has the lamp's answer there.
+        always has the lamp's answer there. ``udp=False`` sends over TCP
+        whatever the session: for a command the lamp may leave unanswered,
+        which the session would take for a lost lamp.
         """
         if params is None:
             params = []
-        answer = await self._udp_request(command, params)
+        if command == "activate_fx_mode":
+            self.fx_mode_flag_maybe_set = True
+        answer = await self._udp_request(command, params) if udp else _USE_TCP
         if answer is not _USE_TCP:
             error = answer.get("error") if answer else None
             if error is not None:
@@ -989,17 +1003,40 @@ class CubeMatrix:
 
         await asyncio.to_thread(_send)
 
+    async def clear_fx_mode_flag(self) -> bool:
+        """Clear the lamp's fx-mode flag before a music effect, when it may
+        be set (fx_mode_flag_maybe_set). While it is set (any activate_fx_mode
+        sets it: direct mode for drawings, text and pictures), a music
+        effect's first frame stops the lamp's microphone instead of starting
+        it, so the effect does not react to sound. deactivate_fx_mode clears it, as the
+        Yeelight app sends before its microphone music. With the flag already
+        clear the lamp does not answer it: sent over TCP, not waited for. The
+        lamp then puts back the lamp's last app effect; the pause
+        lets that happen before the next effect. Returns whether it was
+        sent (the running effect is then no longer known)."""
+        if not self.fx_mode_flag_maybe_set:
+            return False
+        # Direct mode ends: a new UDP session must not be put back in it, and
+        # the restore replaces whatever ran.
+        self._settle_frame("deactivate_fx_mode", [])
+        self._udp.session_setup = []
+        self._running_effect = None
+        await self.send_raw_command("deactivate_fx_mode", [], udp=False)
+        self.fx_mode_flag_maybe_set = False
+        await asyncio.sleep(FX_MODE_RESTORE_SETTLE)
+        return True
+
     async def query_raw_command(
         self, command: str, params: list = None, timeout: float = 2.0
     ) -> str:
         """DEBUG: send a command on a fresh TCP connection and RETURN the reply.
 
         Unlike send_raw_command (send-only), this reads whatever the lamp
-        sends back and returns it as a decoded string. Used by the FX
-        decoder/capture card to probe responses (e.g. get_prop) and to see
+        sends back and returns it as a decoded string. Used by the raw
+        query debug action to read replies (e.g. get_prop) and to see
         how the device replies to experimental commands. Not for hot paths.
 
-        IMPORTANT: While a firmware-native renderer (clock/effect) is active,
+        IMPORTANT: While a built-in renderer (clock/effect) is active,
         the Cube can reset its mode when a SECOND TCP connection is opened.
         We therefore close the persistent fast socket before probing so the
         lamp only sees one connection at a time.
@@ -1012,7 +1049,7 @@ class CubeMatrix:
         ).encode("utf8")
 
         await self._tcp_turn(command)
-        # Close the persistent fast socket first. The Cube's firmware is
+        # Close the persistent fast socket first. The Cube is
         # sensitive to concurrent TCP connections while native renderers are
         # running; leaving it open causes the lamp to drop the active effect
         # when the probe connection arrives.
@@ -1124,7 +1161,7 @@ class CubeMatrix:
                 responses accumulate in the recv buffer.  If the Cube sent error
                 responses (e.g., error 6 = 'not in FX mode'), we need to:
                   1. Drain them so the buffer doesn't fill up (causing RST)
-                  2. Detect errors so callers know FX mode was lost
+                  2. Detect errors so FX mode loss is known
                 
                 IMPORTANT: Drains ALL available data in a loop (not just one recv).
                 Previously a single recv(4096) could return buffered "ok" responses
@@ -1213,7 +1250,7 @@ class CubeMatrix:
                 # activate_fx_mode REQUIRES a fresh TCP connection IF the
                 # socket is already in FX data mode — the Cube silently
                 # ignores FX activation on such a socket (JSON accepted at
-                # TCP level but zero effect on firmware state).
+                # TCP level but zero effect on the lamp's state).
                 #
                 # However, if the socket was just opened (reconnect / initial
                 # connect) and has NOT had FX activated on it yet, we can
@@ -1269,7 +1306,7 @@ class CubeMatrix:
                         # Signal that a new TCP connection was opened — but ONLY
                         # if the close was unexpected.  activate_fx_mode ALWAYS
                         # causes the Cube to close TCP; that's normal and the
-                        # caller (apply) already knows it just sent FX mode.
+                        # sender (apply) already knows it just sent FX mode.
                         # Setting the flag after an expected close would make
                         # the next apply() re-send activate_fx_mode in a loop.
                         if self._last_fast_command != 'activate_fx_mode':
@@ -1552,7 +1589,7 @@ class CubeMatrix:
                     # failed. The command was NOT sent. The library already set
                     # __socket = None, so the next command will retry with a fresh socket.
                     # The library only reports this as message text; it becomes a
-                    # CubeConnectionError here so callers can handle it by type.
+                    # CubeConnectionError here so it can be handled by type.
                     if not isinstance(e, CubeConnectionError):
                         e = CubeConnectionError(error_message)
                     failures = self._consecutive_failures + 1

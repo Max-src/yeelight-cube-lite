@@ -1,6 +1,6 @@
-"""Firmware-native mode activation for the Yeelight Cube Lite light entity.
+"""Built-in mode activation for the Yeelight Cube Lite light entity.
 
-Extracted from light.py as a mixin.  Covers the two firmware-rendered modes the
+Extracted from light.py as a mixin.  Covers the two built-in modes the
 plugin cannot draw pixel-by-pixel: the built-in Clock and the built-in native
 animations.  These build the ``set_fx_effect`` payloads and hand them to the
 device.  Reads/writes state via ``self``; used only as a mixin.
@@ -22,14 +22,17 @@ from .errors import failed
 from .storage import async_save_data
 from .const import (
     MODE_CLOCK,
+    MODE_NATIVE_EFFECT,
     ALL_NATIVE_EFFECTS,
     CLOCK_COLOR_MODES,
     CLOCK_MIXER_COMMAND_IDS,
     CLOCK_MIXER_EFFECTS,
+    LAMP_MUSIC_SLOTS,
+    clock_segment_modes,
+    clock_style_colors,
     clock_style_default_color,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
-    DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     MUSIC_FLOW_DEFAULT_PALETTE,
     MUSIC_FLOW_EFFECTS,
@@ -41,29 +44,36 @@ from .const import (
     NATIVE_EFFECT_APPLY,
     LIVE_EFFECT_KEYS,
     effect_direction_value,
+    UNDIRECTED_EFFECT_DIRECTION,
+    lamp_rate,
     resolve_clock_mixer_direction,
 )
 
 _LOGGER = logging.getLogger(__name__)
 MUSIC_FLOW_HARD_TIMEOUT = 12.0
 
-# Physical device orientation -> native effect flow direction. Imported lazily
-# from light.py at call time to avoid a circular import at module load.
-
-
-def mount_effect_direction(orientation: str) -> str | None:
-    """The native effect direction that flows the same way for the viewer
-    of a lamp mounted this way (DEVICE_ORIENTATION_TO_EFFECT_DIR). Whatever
-    the lamp's own direction setting turns is undone on the value sent
-    (lamp_direction), so it is the same for every mount profile."""
-    return DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
-
 
 def lamp_direction(light, value: int) -> int:
-    """A firmware direction value, as calibrated (on a lamp at mount profile
+    """A lamp direction value, as calibrated (on a lamp at mount profile
     2), for this lamp: compensated for the profile it saved (mount_profile.py;
     unchanged when unknown)."""
     return compensate_direction(value, getattr(light, "effect_profile", None))
+
+
+def effect_direction_sent(light, spec: dict) -> int:
+    """The lamp direction of an effect: the direction chosen, as the viewer
+    sees it, turned for how the lamp is mounted and compensated for the profile
+    it saved. One an effect does not offer stays chosen for the next effect:
+    this one runs its first."""
+    directions = spec.get("directions")
+    if not directions:
+        return lamp_direction(light, UNDIRECTED_EFFECT_DIRECTION)
+    direction = light._native_effect_direction
+    return lamp_direction(light, effect_direction_value(
+        spec,
+        direction if direction in directions else directions[0],
+        light._device_orientation,
+    ))
 
 
 def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
@@ -76,6 +86,13 @@ def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
         # The misspelling is part of the device's private protocol.
         payload["palatte"] = list(MUSIC_FLOW_DEFAULT_PALETTE)
     return json.dumps(payload, separators=(",", ":"))
+
+
+def runs_lamp_music(params: list) -> bool:
+    """Whether set_fx_effect ``params`` run a music slot (the effect, or the
+    mixer under a clock): it listens to the lamp's microphone."""
+    config = params[3] if len(params) > 3 and isinstance(params[3], dict) else {}
+    return bool({config.get("mode"), config.get("mixer")} & LAMP_MUSIC_SLOTS)
 
 
 def live_effect_changes(running: list | None, params: list) -> dict | None:
@@ -101,10 +118,10 @@ def live_effect_changes(running: list | None, params: list) -> dict | None:
 
 
 class NativeModesMixin:
-    """Activate and configure the firmware Clock and native animations."""
+    """Activate and configure the built-in Clock and native animations."""
 
     async def _leave_direct_mode(self) -> None:
-        """Prepare to hand the panel to the firmware (clock, native effect,
+        """Prepare to hand the panel to the lamp (clock, native effect,
         Music Flow): blank the direct-mode frame and close the drawing socket.
 
         The lamp keeps the last direct-mode frame and shows it again the
@@ -135,7 +152,7 @@ class NativeModesMixin:
         return hardware_brightness_for(self._brightness) != self._last_hardware_brightness
 
     async def _set_native_mode_brightness(self) -> bool:
-        """Send the brightness while a firmware mode is active, when it is
+        """Send the brightness while a built-in mode is active, when it is
         due (_native_brightness_due). Returns whether it was sent."""
         if not self._native_brightness_due():
             return False
@@ -164,7 +181,7 @@ class NativeModesMixin:
                 NATIVE_CLOCK_CONTENT_BYTE.get(self._native_clock_content, 1),
                 timezone_hours & 0xFF,
                 1 if self._native_clock_12_hour else 0,
-                # Firmware flag is inverted: 0 blinks, 1 keeps the colon steady.
+                # The lamp's flag is inverted: 0 blinks, 1 keeps the colon steady.
                 0 if self._native_clock_colon_blink else 1,
             )
         )
@@ -202,7 +219,7 @@ class NativeModesMixin:
         return clock_style_default_color(style)
 
     async def _activate_native_clock(self) -> None:
-        """Activate the Cube Lite firmware clock through Yeelight LAN control,
+        """Activate the Cube Lite clock through Yeelight LAN control,
         always in full (no live update: it left the clock dark)."""
         timezone_hours = self._native_clock_timezone_hours()
         await self._send_native(self._native_clock_params(), clock=True)
@@ -224,36 +241,45 @@ class NativeModesMixin:
         )
         clock_data = self._native_clock_data_bytes()
         effect_config = {
-            "mode": NATIVE_CLOCK_EFFECT_ID,
-            "mixer": style["mixer"],
-            "rate": self._native_effect_speed,
+            **clock_segment_modes(style["mixer"]),
+            "rate": lamp_rate(style["mixer"], self._native_effect_speed),
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
-        clock_color = self._resolve_native_clock_color(style)
+        # The clock's color, and for a background that draws its own colours
+        # (1, 8, 28, 33, 72) all of them, the clock's color first
+        # (clock_style_colors).
+        clock_colors = clock_style_colors(
+            style, self._resolve_native_clock_color(style)
+        )
         # A palette color mode (B&W, Vivid, Retro Orange, ...) remaps an
         # animated effect's colors via the outer command id below; an
         # additionally injected color would conflict with that remap, so
-        # clear it for any active mode - mirrors camera.py's preview and the
-        # card's renderClockFrame(), which both drop the override whenever a
-        # mode is active. Solid styles (no mixer effect) have no remap to
-        # protect except B&W, which the firmware renders as plain white when
-        # no color is sent.
+        # clear it for any active mode on a mixer that takes the palette -
+        # mirrors camera.py's preview and the card's renderClockFrame()
+        # (lamp_clock_settings). Solid styles (no mixer effect) and the
+        # own-colour backgrounds have no remap to protect except B&W, which
+        # the lamp renders as plain white when no color is sent.
         effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
         clock_color_mode = self._native_clock_color_mode
+        # A background that draws its own colours takes no palette: it would
+        # only drop them (lamp_renderers.lamp_clock_settings).
+        takes_palette = effect_name is not None and not ALL_NATIVE_EFFECTS[
+            effect_name
+        ].get("colors")
         if clock_color_mode == "bw" or (
-            clock_color_mode != "normal" and effect_name is not None
+            clock_color_mode != "normal" and takes_palette
         ):
-            clock_color = None
-        if clock_color is not None:
-            effect_config["color"] = [int(clock_color)]
+            clock_colors = []
+        if clock_colors:
+            effect_config["color"] = clock_colors
 
-        # When the style's mixer is a direction-capable native effect, flow it
-        # in the selected native-effect direction just like a native effect
-        # (some firmware honours a direction byte on the clock payload).
+        # A direction-capable mixer is sent the selected direction, as the app
+        # does. The lamp ignores it: a mode 40 record keeps the direction that
+        # maps to 0 (lamp_renderers.lamp_clock_settings).
         direction = resolve_clock_mixer_direction(
             self._native_effect_direction, effect_name
         )
-        if direction is not None:
+        if direction is not None and effect_config["mode"] == NATIVE_CLOCK_EFFECT_ID:
             effect_config["direction"] = lamp_direction(self, effect_direction_value(
                 ALL_NATIVE_EFFECTS[effect_name], direction
             ))
@@ -268,7 +294,7 @@ class NativeModesMixin:
         # have no animated renderer to remap - they already go B&W from the
         # color skip above, so leave their command id untouched.
         mode_override = CLOCK_COLOR_MODES.get(clock_color_mode)
-        if mode_override is not None and effect_name is not None:
+        if mode_override is not None and takes_palette:
             command_id = mode_override
         return [
             command_id,
@@ -278,12 +304,12 @@ class NativeModesMixin:
         ]
 
     async def _activate_native_effect(self) -> None:
-        """Activate one of the Cube Lite firmware's built-in animations (live
+        """Activate one of the Cube Lite's built-in animations (live
         when only its speed or direction changed: _send_native)."""
         await self._send_native(self._native_effect_params())
 
     async def _send_native(self, params: list, *, clock: bool = False) -> None:
-        """Show a firmware renderer: a native effect, or the clock.
+        """Show the lamp's own renderer: a native effect, or the clock.
 
         When the lamp still runs the same effect and only its speed or
         direction changed, those are updated live (update_fx_effect,
@@ -295,7 +321,12 @@ class NativeModesMixin:
         set_bright resets a socket just before it; it takes the brightness
         once the clock runs). Each brightness has its pause (0.1 s) between
         it and set_fx_effect, and the clock its pause before it."""
-        if not clock and await self._update_running_effect(params):
+        # A music effect (or a clock over one) listens only once the fx-mode
+        # flag is clear; clearing it replaces what ran, so it is then set in
+        # full.
+        if runs_lamp_music(params) and await self._clear_fx_mode_flag():
+            _LOGGER.debug("[NATIVE] [%s] fx-mode flag cleared: the microphone can start", self._ip)
+        elif not clock and await self._update_running_effect(params):
             return
         if claim := getattr(self, "_claim_display", None):
             claim()
@@ -319,6 +350,26 @@ class NativeModesMixin:
             await self._set_native_mode_brightness()
         self._native_renderer_shown()
 
+    async def _clear_fx_mode_flag(self) -> bool:
+        """cube_matrix.clear_fx_mode_flag; the saved effect the lamp then
+        puts back, and reports, is not someone else's (_note_fx_restore)."""
+        if not await self._cube_matrix.clear_fx_mode_flag():
+            return False
+        if note_restore := getattr(self, "_note_fx_restore", None):
+            note_restore()
+        return True
+
+    def _shows_lamp_music(self) -> bool:
+        """Whether the lamp shows a music effect, or a clock over one, of
+        this integration (it reports the microphone on)."""
+        if not self._is_on or getattr(self, "_external_display", False):
+            return False
+        if self._mode == MODE_NATIVE_EFFECT:
+            return runs_lamp_music(self._native_effect_params())
+        if self._mode == MODE_CLOCK:
+            return runs_lamp_music(self._native_clock_params())
+        return False
+
     async def _update_running_effect(self, params: list) -> bool:
         """Change the running effect live (live_effect_changes); False when
         that does not apply or the lamp refused it (then it is set in full)."""
@@ -341,7 +392,7 @@ class NativeModesMixin:
         return True
 
     def _native_renderer_shown(self) -> None:
-        """The lamp shows a firmware renderer (effect or clock): state and
+        """The lamp shows its own renderer (effect or clock): state and
         previews follow."""
         if claim := getattr(self, "_claim_display", None):
             claim()
@@ -355,44 +406,30 @@ class NativeModesMixin:
 
     def _native_effect_params(self) -> list:
         """The set_fx_effect params of the selected native effect (speed,
-        direction from the mount, palette, color)."""
+        direction, palette, color)."""
         spec = ALL_NATIVE_EFFECTS.get(
             self._native_effect, ALL_NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
         )
         effect_config = {"mode": spec["mode"], "onoff": 1}
         if spec.get("speed"):
-            effect_config["rate"] = self._native_effect_speed
+            effect_config["rate"] = lamp_rate(spec["mode"], self._native_effect_speed)
         elif spec.get("rate") is not None:
             effect_config["rate"] = spec["rate"]
-        directions = spec.get("directions")
-        if directions:
-            # The persistent device orientation is the source of truth for an
-            # effect's flow direction. Derive the direction from the physical
-            # mount at activation time so applying/selecting an effect (or a
-            # reboot/restore) always honors the orientation arrows -- instead of
-            # using a stale _native_effect_direction that only got synced when
-            # the orientation was changed while already in Native Effect mode.
-            desired = mount_effect_direction(self._device_orientation)
-            if desired in directions and desired != self._native_effect_direction:
-                self._native_effect_direction = desired
-                if self._native_effect_direction_select_entity:
-                    self._native_effect_direction_select_entity.async_update_from_light()
-            if self._native_effect_direction not in directions:
-                self._native_effect_direction = directions[0]
-            effect_config["direction"] = lamp_direction(self, effect_direction_value(
-                spec, self._native_effect_direction
-            ))
-        elif spec.get("direction_fixed") is not None:
-            effect_config["direction"] = lamp_direction(self, spec["direction_fixed"])
+        effect_config["direction"] = effect_direction_sent(self, spec)
         color_mode = self._native_effect_color_mode
         palette_id = CLOCK_COLOR_MODES.get(color_mode)
         if not effect_supports_color_mode(self._native_effect, color_mode):
             palette_id = None
-        if spec.get("color") is not None and palette_id is None:
-            effect_config["color"] = [int(spec["color"])]
+        # Every colour the effect draws (const._EXTENDED_EFFECT_COLORS):
+        # one left out is black, and no color key at all white.
+        colors = [int(word) for word in spec.get("colors", ())]
+        if spec.get("color") is not None:
+            colors = [int(spec["color"])]
+        if colors and palette_id is None:
+            effect_config["color"] = colors
         color = self._native_effect_color
         if color is not None and color_mode == "normal" and effect_supports_color_override(self._native_effect):
-            effect_config["color"] = [rgb_to_argb(color)]
+            effect_config["color"] = [rgb_to_argb(color), *colors[1:]]
 
         return [
             spec["effect_id"] if palette_id is None else palette_id,
@@ -428,6 +465,11 @@ class NativeModesMixin:
             payload = _build_music_flow_payload(enabled, self._music_flow_effect)
 
             await self._leave_direct_mode()
+            # Music Flow runs music slots: the microphone starts only once the
+            # fx-mode flag is clear (the Yeelight app sends deactivate_fx_mode
+            # first too).
+            if enabled:
+                await self._clear_fx_mode_flag()
             try:
                 if note_music := getattr(self, "_expect_lamp_music", None):
                     note_music(enabled)

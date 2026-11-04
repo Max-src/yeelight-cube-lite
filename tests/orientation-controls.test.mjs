@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   orientationOptions,
   nextOrientation,
+  effectDirectionControlModel,
   orientationControlModel,
   ORIENTATION_ORDER,
 } from "../custom_components/yeelight_cube/www/orientation-control-utils.js";
@@ -156,6 +157,28 @@ test("orientation defaults preserve the original arrows and order", () => {
     ["\u2192", "\u2193", "\u2190", "\u2191"],
   );
   assert.ok(!model.buttons.some((button) => button.label === "Rotate +"));
+});
+
+test("an effect's arrows are the directions it offers, in the orientation row's style", () => {
+  const model = effectDirectionControlModel(
+    { orientation_button_style: "modern" },
+    ["Up", "Down", "Left", "Right"],
+    "Left",
+  );
+  assert.deepEqual(model.buttons.map((button) => button.value), ORIENTATION_ORDER);
+  assert.deepEqual(
+    model.buttons.filter((button) => button.selected).map((button) => button.value),
+    ["left"],
+  );
+  assert.equal(model.style, orientationOptions({ orientation_button_style: "modern" }).style);
+  const axis = effectDirectionControlModel({}, ["Up", "Down"], "Up", true);
+  assert.deepEqual(axis.buttons.map((button) => button.value), ["down", "up"]);
+  assert.ok(axis.buttons.every((button) => button.disabled));
+  assert.equal(effectDirectionControlModel({}, [], "Up"), null);
+  assert.equal(
+    effectDirectionControlModel({ show_effect_direction: false }, ["Up"], "Up"),
+    null,
+  );
 });
 
 test("orientation choices are sanitized, reorderable and can all be hidden", () => {

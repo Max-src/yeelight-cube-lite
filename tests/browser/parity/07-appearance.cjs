@@ -473,9 +473,13 @@ module.exports = async (t) => {
             matrices: [
               measure(tile.querySelector(".gallery-matrix-preview"), "lamp"),
               measure(
+                // The wheel's centred item: the others are tilted.
                 card.shadowRoot.querySelector(
-                  ".gc-preview-shell .gallery-matrix-preview, .original-gallery .gallery-matrix-preview",
-                ),
+                  '[data-wheel-centered="true"] .gallery-matrix-preview',
+                ) ??
+                  card.shadowRoot.querySelector(
+                    ".gc-preview-shell .gallery-matrix-preview, .original-gallery .gallery-matrix-preview",
+                  ),
                 "browser",
               ),
               measure(
@@ -855,7 +859,7 @@ module.exports = async (t) => {
               "yc-collection-gallery .gallery-matrix-preview",
             );
             check(
-              matrix?.children.length === 100,
+              matrix?.querySelectorAll(":scope > div").length === 100,
               `Draw ${style}: shared matrix`,
             );
             check(

@@ -53,8 +53,6 @@ yeelight-cube-angle-gradient-card.js
 # your Home Assistant); the names guard older checkouts.
 dev-cards/
 yeelight-cube-calibration-card.js
-yeelight-cube-fx-explorer-card.js
-yeelight-cube-fx-decoder-card.js
 yeelight-cube-font-editor-card.js
 yeelight-cube-effect-orientation-card.js
 yeelight-cube-control-card-poc.js

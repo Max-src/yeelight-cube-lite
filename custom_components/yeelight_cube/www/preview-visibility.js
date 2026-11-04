@@ -18,6 +18,8 @@ export class PreviewVisibility {
     this.rootMargin = rootMargin;
     this.Observer = Observer;
     this.visible = new Set();
+    // Counts the tiles the observer reported coming on screen.
+    this.shown = 0;
     this._observed = new Set();
     this._observer = null;
   }
@@ -42,8 +44,10 @@ export class PreviewVisibility {
     this._observer ||= new this.Observer(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) this.visible.add(entry.target);
-          else this.visible.delete(entry.target);
+          if (entry.isIntersecting) {
+            if (!this.visible.has(entry.target)) this.shown += 1;
+            this.visible.add(entry.target);
+          } else this.visible.delete(entry.target);
         }
       },
       { root: null, rootMargin: this.rootMargin, threshold: 0 },

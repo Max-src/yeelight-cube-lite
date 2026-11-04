@@ -43,6 +43,9 @@ export const LAMP_PREVIEW_CSS = `
         box-sizing: border-box;
         display: block;
       }
+      .lamp-dots-instant .lamp-dot {
+        transition: none;
+      }
       .lamp-dot.lamp-dot-empty {
         border: none;
         box-shadow: none;

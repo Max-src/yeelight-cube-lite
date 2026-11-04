@@ -1,4 +1,4 @@
-"""Diagnostic and calibration actions (mostly admin-only): raw firmware
+"""Diagnostic and calibration actions (mostly admin-only): raw lamp
 commands, capabilities, python-yeelight calls, color calibration and the
 test display.
 
@@ -20,10 +20,12 @@ from .const import (
     NATIVE_CLOCK_APPLY,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
-    NATIVE_EFFECT_DIRECTION_VALUES,
     NATIVE_EFFECTS,
+    effect_direction_value,
 )
+from .fx_guard import command_refusal, running_after
 from .light import _entity_id_or_list
+from .light_native import lamp_direction
 from .light_services_common import (
     _resolve_entity,
     _resolve_entities,
@@ -52,7 +54,7 @@ def _fx_params(data, target) -> list:
         config["data"] = base64.b64encode(
             bytes(int(b) & 0xFF for b in data_bytes)
         ).decode("ascii")
-    # The firmware clock effect (mode 40) REQUIRES a data payload
+    # The lamp's clock effect (mode 40) REQUIRES a data payload
     # (date/timezone/12h/colon). If none was supplied explicitly, build it
     # from the lamp's current clock settings -- exactly like
     # _activate_native_clock -- otherwise the clock renders blank.
@@ -63,7 +65,7 @@ def _fx_params(data, target) -> list:
     color = data.get("color")
     if color is not None:
         config["color"] = color if isinstance(color, list) else [int(color)]
-    # Optional animation speed. The firmware clock effect (mode 40) accepts a
+    # Optional animation speed. The lamp's clock effect (mode 40) accepts a
     # `rate` field just like native effects.
     rate = data.get("rate")
     if rate is not None:
@@ -95,16 +97,8 @@ def _fx_effect_parts(params):
     return effect_mode, effect_style, effect_config
 
 
-def _direction_name(value):
-    """The native-effect direction name of a firmware direction number."""
-    for name, number in NATIVE_EFFECT_DIRECTION_VALUES.items():
-        if number == value:
-            return name
-    return None
-
-
 def _apply_clock_data(target, encoded) -> None:
-    """The clock options of a firmware clock data payload (base64 of
+    """The clock options of a built-in clock data payload (base64 of
     [content, tz_offset, 12h, colon_steady]; the colon byte is inverted:
     0 blinks, 1 is steady)."""
     try:
@@ -124,9 +118,9 @@ def _apply_clock_data(target, encoded) -> None:
 
 
 def _reflect_fx_effect(target, is_clock, style, config, native_effect_name) -> None:
-    """The lamp's state for a raw firmware command, as selecting the same
-    clock style (style, color, options, direction) or native effect (speed,
-    direction) from the device page would set it: the cards and the camera
+    """The lamp's state for a raw lamp command, as selecting the same
+    clock style (style, color, options) or native effect (speed, direction)
+    from the device page would set it: the cards and the camera
     preview then show what the lamp shows."""
     config = config if isinstance(config, dict) else None
     if is_clock:
@@ -154,13 +148,14 @@ def _reflect_fx_effect(target, is_clock, style, config, native_effect_name) -> N
                 target._native_effect_speed = max(1, min(255, int(config["rate"])))
             except (TypeError, ValueError):
                 pass
-    else:
-        return
-    # The mixer flow direction (clock and native effects alike).
-    if config is not None and "direction" in config:
-        name = _direction_name(config["direction"])
-        if name is not None:
-            target._native_effect_direction = name
+        if "direction" in config:
+            spec = NATIVE_EFFECTS[native_effect_name]
+            for name in spec.get("directions", ()):
+                if config["direction"] == lamp_direction(target, effect_direction_value(
+                    spec, name, target._device_orientation
+                )):
+                    target._native_effect_direction = name
+                    break
 
 
 def async_register_diagnostics_services(hass: HomeAssistant) -> None:
@@ -171,8 +166,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
     async def handle_send_fx_effect(service_call):
         """DEBUG: send a raw LAN command (default ``set_fx_effect``).
 
-        Local exploration/reverse-engineering tool used by the FX Explorer
-        card. NOT part of the stable API -- do not rely on it in automations.
+        Local debug tool for sending raw commands to the lamp. NOT part of
+        the stable API -- do not rely on it in automations.
 
         Either supply ``params`` directly (a raw JSON array sent verbatim), or
         supply the structured fields (mode/style_id/apply/mixer/color/data*)
@@ -187,6 +182,13 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
 
         params = _fx_params(service_call.data, target)
         effect_mode, effect_style, effect_config = _fx_effect_parts(params)
+        # The guard's own record of raw effects: one never reaches
+        # _cube_matrix.running_effect, whose live updates need the lamp's
+        # answer, which a raw send does not read.
+        running = getattr(target, "_raw_fx_effect", None)
+        if refusal := command_refusal(method, params, running, target.effect_profile):
+            _LOGGER.warning("[RAW-SEND] refused: %s", refusal)
+            return {"ok": False, "error": refusal, "method": method, "params": params}
 
         # Treat as a clock command when the effect CONFIG selects the clock
         # renderer (mode 40), even if the outer command id was overridden (e.g.
@@ -199,7 +201,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             or effect_mode == NATIVE_CLOCK_EFFECT_ID
         )
 
-        # Is this a firmware fx command (clock or native effect)? Both need the
+        # Is this a built-in fx command (clock or native effect)? Both need the
         # set_bright prelude + settle, otherwise the raw command often doesn't
         # render until a Force Refresh replays it.
         is_fx = method == "set_fx_effect"
@@ -214,7 +216,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             async def _do_send():
                 if close_socket:
                     await target._leave_direct_mode()
-                # The firmware clock (mode 40) is order-sensitive: sending
+                # The lamp's clock (mode 40) is order-sensitive: sending
                 # set_bright BEFORE set_fx_effect can CANCEL the clock
                 # activation (see _activate_native_clock). So for clock we send
                 # the fx command first, then brightness. Native effects are the
@@ -234,7 +236,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     await target._set_native_mode_brightness()
                     await asyncio.sleep(0.1)
                 # Color flow (start_cf) renders only while the panel is powered
-                # on, and runs entirely in firmware afterwards. Power on first so
+                # on, and runs entirely on the lamp afterwards. Power on first so
                 # the flow is visible even if the panel was off/idle.
                 if method == "start_cf":
                     await target._cube_matrix.send_raw_command("set_power", ["on"])
@@ -244,9 +246,13 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             # Run under the device hardware lock so the send is serialized with
             # the persistent socket / background loop (prevents the command from
             # being clobbered mid-flight).
-            await target._execute_hardware_op(_do_send, "fx_explorer_send")
+            sent = await target._execute_hardware_op(_do_send, "raw_send")
+            if method in ("set_fx_effect", "update_fx_effect"):
+                target._raw_fx_effect = (
+                    None if sent is False else running_after(method, params, running)
+                )
             _LOGGER.info(
-                "[FX-EXPLORER] %s -> %s params=%s", target.entity_id, method, params
+                "[RAW-SEND] %s -> %s params=%s", target.entity_id, method, params
             )
 
             # Keep entity bookkeeping consistent with a native activation so the
@@ -254,7 +260,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             if is_fx:
                 target._is_on = True
                 target._fx_mode_is_direct = False
-                target._in_native_fw_mode = True   # Lamp in firmware-native mode (FX Explorer)
+                target._in_native_fw_mode = True   # Lamp in a built-in mode (raw send)
                 # A raw command may have set its brightness: sent again with
                 # direct mode, before any frame.
                 target._last_hardware_brightness = None
@@ -262,7 +268,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 notify = getattr(target, "_notify_camera_preview", None)
                 if notify:
                     notify()
-                # Always reflect the current firmware command in the entity
+                # Always reflect the current lamp command in the entity
                 # state so the lamp-preview card matches exactly what selecting
                 # the same clock style / effect from the device settings page
                 # would show (also when persist is unchecked).
@@ -282,7 +288,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 # It is live-only (not persistable through the state model).
                 target._is_on = True
                 target._fx_mode_is_direct = False
-                target._in_native_fw_mode = True   # Lamp in color-flow mode (FX Explorer)
+                target._in_native_fw_mode = True   # Lamp in color-flow mode (raw send)
                 target._last_hardware_brightness = None
                 target._last_fx_mode_time = 0.0
 
@@ -313,7 +319,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     target._refresh_linked_entities()
                 persisted = True
                 _LOGGER.info(
-                    "[FX-EXPLORER] persisted %s on %s",
+                    "[RAW-SEND] persisted %s on %s",
                     f"clock style={effect_style}"
                     if persist_clock
                     else f"native effect={native_effect_name}",
@@ -326,14 +332,14 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 "persisted": persisted,
             }
         except Exception as e:  # noqa: BLE001 -- debug tool, surface any error
-            _LOGGER.error("[FX-EXPLORER] send failed: %s", e, exc_info=True)
+            _LOGGER.error("[RAW-SEND] send failed: %s", e, exc_info=True)
             return {"ok": False, "error": str(e), "method": method, "params": params}
 
     async def handle_query_raw(service_call):
         """DEBUG: send a raw command and RETURN the lamp's reply.
 
-        Companion to send_fx_effect for the decoder/capture card. Lets you
-        probe the device (e.g. get_prop) and observe how it responds to
+        Companion to send_fx_effect: a local debug tool that reads the
+        device's replies (e.g. get_prop) and how it responds to
         experimental commands. Not a stable API.
         """
         method = service_call.data.get("method") or "get_prop"
@@ -341,8 +347,14 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         if params is None:
             params = []
         target = _resolve_entity(service_call, "QUERY_RAW")
+        running = getattr(target, "_raw_fx_effect", None)
+        if refusal := command_refusal(method, params, running, target.effect_profile):
+            _LOGGER.warning("[FX-QUERY] refused: %s", refusal)
+            return {"ok": False, "error": refusal, "method": method, "params": params}
         try:
             reply = await target._cube_matrix.query_raw_command(method, params)
+            if method in ("set_fx_effect", "update_fx_effect"):
+                target._raw_fx_effect = running_after(method, params, running)
             _LOGGER.info(
                 "[FX-QUERY] %s -> %s params=%s reply=%r",
                 target.entity_id,
@@ -394,8 +406,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             _LOGGER.error("[FX-CAPS] get_capabilities failed: %s", e, exc_info=True)
             return {"ok": False, "error": str(e)}
 
-    # Read-only yeelight Bulb members exposed to the FX Explorer introspection
-    # buttons. Methods are invoked with no args; properties are read. Members
+    # Read-only yeelight Bulb members exposed to the debug introspection
+    # action. Methods are invoked with no args; properties are read. Members
     # that change device state (turn_*/set_*/start_flow/...) are excluded.
     _BULB_INFO_MEMBERS = (
         "get_capabilities",
@@ -573,8 +585,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.OPTIONAL,
     )
 
-    # DEBUG: raw firmware command explorer (used by the FX Explorer card).
-    # Local reverse-engineering tool -- not a stable API.
+    # DEBUG: send a raw command to the lamp.
+    # Local debug tool -- not a stable API.
     hass.services.async_register(
         DOMAIN,
         "send_fx_effect",
@@ -597,7 +609,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         }, extra=vol.ALLOW_EXTRA),        supports_response=SupportsResponse.OPTIONAL,
     )
 
-    # DEBUG: raw query (send + capture the lamp's reply) for the decoder card.
+    # DEBUG: raw query (send + read the lamp's reply).
     hass.services.async_register(
         DOMAIN,
         "query_raw",

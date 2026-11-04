@@ -12,6 +12,10 @@ import { SUPERSEDED } from "./card-command-controller.js";
 import { CollectionState } from "./collection-state.js";
 import { createPendingValue } from "./pending-value.js";
 import { favouriteToItem } from "./shared-lamp-settings.js";
+import {
+  canonicalClockStyleName,
+  canonicalEffectName,
+} from "./effect-names.js";
 export {
   normalizeFavourite,
   favouriteId,
@@ -167,15 +171,41 @@ export function lampActionConfig(config = {}) {
   return result;
 }
 
+// Names the cards never list: a bare number.
+const isUnlisted = (name) => /^\d+$/.test(name);
+
 export function sanitizeModeNames(names, limit = 100) {
   return [
     ...new Set(
       (Array.isArray(names) ? names : [])
         .filter((name) => typeof name === "string")
         .map((name) => name.trim())
-        .filter((name) => name && !/^\d+$/.test(name)),
+        .filter((name) => name && !isUnlisted(name)),
     ),
   ].slice(0, limit);
+}
+
+/** Favourites of `kind` ("native" or "clock") in today's names, without the
+ * names the cards never list. A browser kept them from older versions, under
+ * the names of then; the lamp's are already in today's. */
+export function canonicalFavourites(items, kind) {
+  if (!Array.isArray(items)) return items;
+  const canonical = kind === "clock" ? canonicalClockStyleName : canonicalEffectName;
+  const out = [];
+  for (const item of items) {
+    const key = typeof item === "string" ? item : item?.key;
+    if (typeof key !== "string") {
+      out.push(item);
+      continue;
+    }
+    const name = canonical(key.trim());
+    out.push(
+      name === key.trim()
+        ? item
+        : typeof item === "string" ? name : { ...item, key: name },
+    );
+  }
+  return out;
 }
 
 // Advance to the next mode in list order (wrapping). Rotation is always
@@ -237,6 +267,7 @@ export class ModeControlsController {
     this.context++;
     this.busy = false;
     this.pendingOrientation = null;
+    this.pendingDirection = null;
     this._rotationPending = false;
     this.selectedFavourite = null;
     this.error = "";
@@ -377,7 +408,7 @@ export class ModeControlsController {
   }
 
   sanitize(names) {
-    return sanitizeFavourites(names);
+    return sanitizeFavourites(canonicalFavourites(names, this.adapter?.kind));
   }
 
   favouriteKeys() {
@@ -443,6 +474,7 @@ export class ModeControlsController {
         this.interval,
         this.error,
         this.pendingOrientation,
+        this.pendingDirection,
         this._rotationPending,
         this.favourites,
         this.favourites.length,
@@ -453,6 +485,7 @@ export class ModeControlsController {
         adapter.disabled?.(),
         adapter.on?.(),
         adapter.orientation?.(),
+        adapter.direction?.(),
         this.ready(),
         adapter.previewOnly?.(),
         adapter.freezable?.(),
@@ -789,6 +822,18 @@ export class ModeControlsController {
     );
     this.notify();
     return true;
+  }
+
+  // An effect's direction, for the viewer: it does not stop a rotation, which
+  // takes it to the next effect like the speed.
+  async setDirection(target) {
+    if (!target || this.busy) return;
+    const context = this.context;
+    this.pendingDirection = target;
+    await this.command(() => this.adapter.setDirection(target), true);
+    if (context !== this.context) return;
+    this.pendingDirection = null;
+    this.notify();
   }
 
   async orient(target) {

@@ -31,6 +31,7 @@
  * means updating those tests too -- otherwise the screenshot CI breaks with
  * "Missing slider: <card>/<ns>".
  */
+import { DEFAULT_EFFECT_SPEED } from "./lamp-renderers.js";
 import { previewBrightnessScale } from "./matrix-const.js";
 import {
   brightnessPctToRaw,
@@ -44,7 +45,7 @@ import {
 // brightness 3-255 and native effect speed 1-255, with their defaults).
 const STATE_PERCENT = {
   brightness: (attrs) => brightnessRawToPct(Number(attrs.brightness) || 3),
-  speed: (attrs) => speedRawToPct(Number(attrs.native_effect_speed) || 50),
+  speed: (attrs) => speedRawToPct(Number(attrs.native_effect_speed) || DEFAULT_EFFECT_SPEED),
 };
 
 export class LampSliders {

@@ -1,4 +1,5 @@
 import runpy
+import threading
 import unittest
 import asyncio
 import json
@@ -8,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 from datetime import datetime
 from tests.test_native_features import _load_standalone_functions, ROOT, CONSTANTS, NATIVE_PREVIEW, import_pure_module
 
+LAMP = runpy.run_path(str(ROOT / "lamp_renderers.py"))
 MODULE = vars(import_pure_module("clock_presets"))
 save = MODULE["save_clock_preset"]
 delete = MODULE["delete_clock_preset"]
@@ -15,36 +17,39 @@ delete = MODULE["delete_clock_preset"]
 
 class ClockPreviewTests(unittest.TestCase):
     def setUp(self):
-        self.orientation = runpy.run_path(str(ROOT / "effect_orientation.py"))
         self.font = {char: [0, 1, 20, 41, 60, 81] for char in "0123456789"}
         self.font.update({":": [20, 60], ".": [0]})
-        self.clock = SimpleNamespace(_native_clock_style=6, _device_orientation="right")
-        self.camera = SimpleNamespace(
-            _light_entity=self.clock,
-            _clock_pixel_color=lambda *args: (255, 255, 255),
-            # freeze_display state, as set by the camera's constructor
-            _frozen_background_phase=None,
-            _clock_phase_offset=0.0,
+        self.clock = SimpleNamespace(
+            _native_clock_style=6, _device_orientation="right", _native_effect_speed=50,
         )
         self.timer = SimpleNamespace(monotonic=lambda: 0.75)
         namespace = {
-            **CONSTANTS, **NATIVE_PREVIEW,
-            "clock_effect_direction": self.orientation["clock_effect_direction"],
+            **CONSTANTS, **NATIVE_PREVIEW, **LAMP,
             "dt_util": SimpleNamespace(now=lambda: datetime(2026, 9, 17, 21, 53)),
             "_time": self.timer, "COLS": 20, "ROWS": 5,
             "FONT_MAPS": {"native": self.font},
             "char_advance": lambda font, char, glyph: 2 if char in ":." else 4,
         }
-        self.render = _load_standalone_functions(
+        methods = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
-            {"_get_clock_preview"}, namespace,
-        )["_get_clock_preview"]
+            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed"}, namespace,
+        )
+        self.render = methods["_get_clock_preview"]
+        self.camera = SimpleNamespace(
+            _light_entity=self.clock,
+            _clock_pixel_color=lambda *args: (255, 255, 255),
+            # freeze_display state, as set by the camera's constructor
+            _frozen_background_seconds=None,
+            _clock_preview_started_at=0.0,
+            _preview_lock=threading.Lock(),
+        )
+        self.camera._clock_background_seconds = lambda: methods["_clock_background_seconds"](self.camera)
+        self.camera._preview_speed = lambda: methods["_preview_speed"](self.camera)
 
-    def test_all_clock_backgrounds_use_calibration_independent_of_native_direction(self):
+    def test_all_clock_backgrounds_are_the_lamps_whatever_the_native_direction(self):
         mask = self.render(self.camera)
         for elapsed in (0, 0.75, 2.5):
             self.timer.monotonic = lambda: elapsed
-            phase = elapsed * (0.25 + CONSTANTS["CLOCK_MIXER_EFFECT_SPEED"] / 55.0)
             for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
                 effect = CONSTANTS["CLOCK_MIXER_EFFECTS"].get(style["mixer"])
                 if effect is None:
@@ -53,28 +58,62 @@ class ClockPreviewTests(unittest.TestCase):
                 for mode, override in (("normal", None), ("normal", 0x01B4143C), ("bw", None), ("red_blue", None)):
                     self.clock._native_clock_color_mode = mode
                     self.clock._native_clock_color = override
-                    compatible = NATIVE_PREVIEW["effect_supports_color_override"](effect)
-                    background = NATIVE_PREVIEW["render_native_effect_oriented"](
-                        effect, phase, self.orientation["clock_effect_direction"](effect),
-                        (180, 20, 60) if override and compatible else None,
-                        None if mode == "normal" else mode,
+                    settings = LAMP["lamp_clock_settings"](
+                        effect, 50, (180, 20, 60) if override else None, mode,
                     )
+                    # Computed ahead: a replay's time limit would show a frame earlier.
+                    if LAMP["has_renderer"](settings["mode"]):
+                        timeline = LAMP["timeline_for"](settings)
+                        timeline.frame_at(timeline.first_shown() + int(elapsed / 0.04), True)
+                    background = LAMP["lamp_effect_frame"](settings, elapsed)
                     expected = [background[index] if any(pixel) else (0, 0, 0) for index, pixel in enumerate(mask)]
                     for direction in (None, "Up", "Down", "Left", "Right"):
                         self.clock._native_effect_direction = direction
                         with self.subTest(style=style_id, mode=mode, override=override, direction=direction, elapsed=elapsed):
                             self.assertEqual(self.render(self.camera), expected)
 
-    def test_rainbow_clock_matches_literal_down_without_transforming_digits(self):
-        mask = self.render(self.camera)
+    def test_a_clock_background_runs_at_the_lamps_speed(self):
         self.clock._native_clock_style = 1
-        phase = 0.75 * (0.25 + CONSTANTS["CLOCK_MIXER_EFFECT_SPEED"] / 55.0)
-        background = NATIVE_PREVIEW["render_native_effect"]("Rainbow", phase, "Down")
-        expected = [background[index] if any(pixel) else (0, 0, 0) for index, pixel in enumerate(mask)]
-        for direction in ("Up", "Down", "Left", "Right"):
-            self.clock._native_effect_direction = direction
-            with self.subTest(direction=direction):
-                self.assertEqual(self.render(self.camera), expected)
+        self.clock._native_clock_color_mode, self.clock._native_clock_color = "normal", None
+        mask = self.render(self.camera)
+        self.timer.monotonic = lambda: 2.0
+        for speed in (1, 50, 255):
+            self.clock._native_effect_speed = speed
+            with self.subTest(speed=speed):
+                self.assertEqual(speed, LAMP["lamp_clock_settings"]("Rainbow", speed)["rate"])
+                background = LAMP["lamp_effect_frame"](
+                    LAMP["lamp_clock_settings"]("Rainbow", speed), 2.0
+                )
+                frame = self.render(self.camera)
+                self.assertEqual(
+                    [background[index] if any(pixel) else (0, 0, 0) for index, pixel in enumerate(mask)],
+                    frame,
+                )
+
+    def test_a_clock_is_not_empty_for_having_just_started(self):
+        # A frozen lamp at a restart: its background stays on the first moment.
+        self.clock._native_clock_color_mode, self.clock._native_clock_color = "normal", None
+        self.clock._display_frozen = True
+        self.timer.time = lambda: 100.0
+        for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
+            if CONSTANTS["CLOCK_MIXER_EFFECTS"].get(style["mixer"]) in ("Particle glows", "Mirrored comets", "Sunrise and sunset"):
+                self.clock._native_clock_style = style_id
+                self.camera._frozen_background_seconds = None
+                self.assertGreater(sum(map(any, self.render(self.camera))), 5, style["name"])
+
+    def test_a_frozen_clock_holds_its_background_and_resumes_there(self):
+        seconds = lambda: self.camera._clock_background_seconds()
+        self.timer.time = lambda: 100.0
+        self.timer.monotonic = lambda: 10.0
+        self.assertEqual(10.0, seconds())
+        self.clock._display_frozen, self.clock._display_frozen_at = True, 99.0  # a second ago
+        self.assertEqual(9.0, seconds())
+        self.timer.monotonic = lambda: 50.0
+        self.assertEqual(9.0, seconds())
+        self.clock._display_frozen = False
+        self.assertEqual(9.0, seconds())
+        self.timer.monotonic = lambda: 51.0
+        self.assertEqual(10.0, seconds())
 
 
 class ClockPresetTests(unittest.TestCase):
@@ -120,6 +159,17 @@ class ClockPresetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             delete(presets, "missing")
 
+    def test_a_name_a_style_took_later_stays_editable(self):
+        # Saved before a style was renamed to it ("Fire"): recolouring keeps it.
+        presets = save([], "Fire", [255, 60, 0], ["White"])
+        edited = save(presets, "fire", [200, 40, 0], ["White", "Fire"], presets[0]["id"])
+        self.assertEqual([200, 40, 0], edited[0]["color"])
+        # Still not a new one, nor another preset renamed to it.
+        other = save(presets, "Amber", [255, 120, 0], ["White"])
+        for preset_id in (None, other[1]["id"]):
+            with self.subTest(preset_id=preset_id), self.assertRaises(ValueError):
+                save(other, "Fire", [1, 2, 3], ["White", "Fire"], preset_id)
+
 
     def test_repeated_colors_can_be_saved_and_edited(self):
         for kind in ["style", "color_mode"]:
@@ -146,13 +196,14 @@ class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.store = SimpleNamespace(async_save=AsyncMock())
         self.data = {"storage": self.store, "clock_presets": [], "palettes_v2": [{"name": "Existing"}]}
         self.hass = SimpleNamespace(data={"yeelight_cube": self.data}, bus=SimpleNamespace(async_fire=Mock()))
-        namespace = {"DOMAIN": "yeelight_cube", "_LOGGER": logging.getLogger(__name__)}
+        namespace = {"DOMAIN": "yeelight_cube", "_LOGGER": logging.getLogger(__name__), "NAMES_VERSION": 2}
         save_data = _load_standalone_functions((ROOT / "storage.py").read_text(encoding="utf-8"), {"async_save_data", "storage_data"}, namespace)["async_save_data"]
         namespace.update({
             "async_save_data": save_data, "hass": self.hass,
             "preset_lock": asyncio.Lock(), "HomeAssistantError": ValueError,
             "save_clock_preset": save, "delete_clock_preset": delete,
             "NATIVE_CLOCK_STYLES": CONSTANTS["NATIVE_CLOCK_STYLES"],
+            "CLOCK_STYLE_ALIASES": CONSTANTS["CLOCK_STYLE_ALIASES"],
         })
         self.update = _load_standalone_functions((ROOT / "light_services_clock_presets.py").read_text(encoding="utf-8"), {"update_clock_presets"}, namespace)["update_clock_presets"]
 

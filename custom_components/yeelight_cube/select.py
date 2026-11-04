@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ig
 
 from .errors import invalid
 from .const import (
-    FIRMWARE_MODES,
+    LAMP_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     ALL_NATIVE_EFFECTS,
@@ -27,6 +27,8 @@ from .const import (
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
     EXTENDED_NATIVE_EFFECTS,
+    canonical_clock_style_name,
+    canonical_effect_name,
     MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_LABELS,
@@ -452,7 +454,7 @@ class YeelightCubeContentModeSelect(CubeSelect):
         if getattr(self._light_entity, "_music_flow_enabled", False):
             return "Music Flow"
         mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
-        return mode if mode in FIRMWARE_MODES else "Matrix"
+        return mode if mode in LAMP_MODES else "Matrix"
 
     async def async_select_option(self, option: str) -> None:
         if option not in CONTENT_MODES:
@@ -468,7 +470,7 @@ class YeelightCubeContentModeSelect(CubeSelect):
             # Music Flow is the device's built-in microphone renderer, not a
             # matrix mode. Turning it on suppresses matrix content until another
             # content mode is selected (which exits it via async_apply_display_mode).
-            # It is sent to the firmware directly, outside the display queue's
+            # It is sent to the lamp directly, outside the display queue's
             # off-lamp rule: refused like the native-effect action.
             if (
                 not self._light_entity._is_on
@@ -598,7 +600,7 @@ _CLOCK_STYLE_TO_ID = {
 
 
 class YeelightCubeClockStyleSelect(CubeSelect):
-    """Select a native firmware clock face."""
+    """Select a built-in clock face."""
 
     _attr_translation_key = "clock_style"
     _slot = "_clock_style_select_entity"
@@ -609,7 +611,7 @@ class YeelightCubeClockStyleSelect(CubeSelect):
     @property
     def options(self) -> list[str]:
         if getattr(self._light_entity, "_extended_effects_enabled", False):
-            # Show every style sorted by firmware mixer (the background mode).
+            # Show every style sorted by mixer (the background mode).
             style_ids = sorted(
                 NATIVE_CLOCK_STYLES,
                 key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"],
@@ -635,7 +637,16 @@ class YeelightCubeClockStyleSelect(CubeSelect):
             getattr(self._light_entity, "_native_clock_style", DEFAULT_NATIVE_CLOCK_STYLE)
         )
 
+    def _valid_option_or_raise(self, option: str) -> None:
+        # Home Assistant checks the option against the list before
+        # async_select_option: a former name is checked as today's.
+        check = getattr(super(), "_valid_option_or_raise", None)
+        if check is not None:
+            check(canonical_clock_style_name(option))
+
     async def async_select_option(self, option: str) -> None:
+        # A former name (e.g. "Blue White") is today's.
+        option = canonical_clock_style_name(option)
         style_id = _CLOCK_STYLE_TO_ID.get(option)
         if style_id is None:
             _LOGGER.error("[CLOCK STYLE] Unknown option: '%s'", option)
@@ -657,7 +668,7 @@ class YeelightCubeClockStyleSelect(CubeSelect):
 
 
 class YeelightCubeNativeEffectSelect(CubeSelect):
-    """Select one of the firmware-native Cube Lite animations."""
+    """Select one of the built-in Cube Lite animations."""
 
     _attr_translation_key = "native_effect"
     _slot = "_native_effect_select_entity"
@@ -667,11 +678,11 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
 
     @property
     def options(self) -> list:
-        # Extended ("discovered") effects only appear when the switch is on; the
+        # Extended (hidden) effects only appear when the switch is on; the
         # currently-selected effect is always kept so HA never warns about an
         # out-of-list value if the switch is toggled off while one is active.
         if getattr(self._light_entity, "_extended_effects_enabled", False):
-            # Show the full catalogue sorted by firmware mode number.
+            # Show the full catalogue sorted by built-in mode number.
             names = sorted(
                 ALL_NATIVE_EFFECTS,
                 key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"],
@@ -687,7 +698,16 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
     def current_option(self) -> str:
         return getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
 
+    def _valid_option_or_raise(self, option: str) -> None:
+        # Home Assistant checks the option against the list before
+        # async_select_option: a former name is checked as today's.
+        check = getattr(super(), "_valid_option_or_raise", None)
+        if check is not None:
+            check(canonical_effect_name(option))
+
     async def async_select_option(self, option: str) -> None:
+        # A former name (e.g. "Ocean Waves") is today's.
+        option = canonical_effect_name(option)
         if option not in ALL_NATIVE_EFFECTS:
             raise ValueError(f"Unknown native effect: {option}")
         if (
@@ -735,17 +755,6 @@ class YeelightCubeNativeEffectDirectionSelect(CubeSelect):
         if option not in NATIVE_EFFECT_DIRECTIONS:
             raise ValueError(f"Unknown native effect direction: {option}")
         self._light_entity._native_effect_direction = option
-        # Device orientation is the persistent source of truth that the effect
-        # activation reads back. Mirror this choice into it so the direction
-        # survives reboots and is re-applied on the next activation instead of
-        # being overridden by a diverged orientation value.
-        key = option.lower()
-        self._light_entity._device_orientation = key
-        self._light_entity._orientation = (
-            "flipped" if key in ("left", "up") else "normal"
-        )
-        if self._light_entity._device_orientation_select_entity:
-            self._light_entity._device_orientation_select_entity.async_update_from_light()
         spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
         if (
             spec.get("directions")
@@ -763,7 +772,5 @@ class YeelightCubeNativeEffectDirectionSelect(CubeSelect):
             "directions", NATIVE_EFFECT_DIRECTIONS
         )
         self._attr_options = list(directions)
-        if self._light_entity._native_effect_direction not in directions:
-            self._light_entity._native_effect_direction = directions[0]
         if self.hass is not None:
             self.async_write_ha_state()

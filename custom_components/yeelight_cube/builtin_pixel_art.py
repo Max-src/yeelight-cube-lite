@@ -1,4 +1,4 @@
-"""Built-in Cube Lite pixel art extracted from the official Yeelight app."""
+"""Built-in Cube Lite pixel art, as the official Yeelight app offers it."""
 
 from __future__ import annotations
 
@@ -51,8 +51,7 @@ def _official_pos_to_lamp_pos(position: int) -> int:
 # The Yeelight app's custom id for a built-in pixel art it shows on the lamp:
 # APP_PIXEL_ART_BASE + (group + 1) * 100 + item, the group and item keys of
 # its gallery file (the horizontal one for a lamp set Left or Right in the
-# app, else the vertical one). Read in the app's decompile
-# (pixel_art_preset_model.dart).
+# app, else the vertical one).
 APP_PIXEL_ART_BASE = 0x40000000
 
 

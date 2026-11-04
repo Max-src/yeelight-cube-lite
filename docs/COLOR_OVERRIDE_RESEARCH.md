@@ -1,7 +1,7 @@
 # Native Effect Color Override Research
 
 > [!NOTE]
-> This document records experimental Cube Lite firmware behavior observed on
+> This document records experimental Cube Lite behavior observed on
 > real lamps. The names used for command IDs 15 and 64-67 are descriptive and
 > are not official Yeelight names.
 
@@ -9,8 +9,8 @@
 
 These results apply to **Rainbow clocks only**. The upper lamp uses the selected
 mode; the lower lamp remains on normal Rainbow. This is the reverse of the
-older Spectrum photographs described below. No firmware palette constants have
-been extracted: the implementation is a camera-grounded visual approximation.
+older Spectrum photographs described below. The implementation is a
+camera-grounded visual approximation.
 
 ### Recordings and coverage
 
@@ -33,7 +33,7 @@ The reproducible probe is [tools/debug_rainbow_palettes.py](../tools/debug_rainb
 It requires OpenCV and NumPy in the interpreter used to run it:
 
 ```powershell
-python tools/debug_rainbow_palettes.py C:\Users\Maxime\Downloads C:\Users\Maxime\Downloads\rainbow-analysis
+python tools/debug_rainbow_palettes.py <recordings folder> <output folder>
 ```
 
 It writes per-frame positions and centre/edge RGB samples to `samples.json`,
@@ -102,7 +102,7 @@ is sparsely sampled and threshold-biased. Its reset is about 0.025 cycle from
 the lower lamp's reset. The preview aligns its own reset to phase zero, uses a
 neutral minimum of 24, then levels 126/174/203/214/228/252/255 at phases
 0.02/0.05/0.10/0.20/0.40/0.60/0.65. This removes the camera's cool/green tint;
-the exact minimum and sub-frame transition are estimates, not firmware facts.
+the exact minimum and sub-frame transition are estimates, not exact values.
 
 Mean absolute channel differences against samples, excluding lower-lamp phases
 outside 0.08-0.94, are 3.22 (B&W), 10.13 (64), 9.38 (65), 7.77 (66), and 5.54 (67),
@@ -120,21 +120,22 @@ its direction mapping and timing, and transport IDs are unchanged.
 The new names are display-only; saved configurations keep their original keys.
 
 The operator subsequently confirmed that Vivid, Retro Orange, Tropical, and
-Violet & Gold also affect Spectrum, Streamer, Rainbow Flow, Spectrum Chase,
-Pastel Pulse, Prism, Color Trails, Tide, Spectrum Bands, and Kaleidoscope.
+Violet & Gold also affect Spectrum, Ribbon, Moving palette, Particle path,
+Triangular palette pulses, Mirrored comets, Tide (slot 35), Tide, Palette
+stripes, and Kaleidoscope (the effects' names today; this note predates them).
 Only those styles and Rainbow use these four palettes; other styles ignore them.
 Existing Black & White behavior is unchanged.
 
 These additional previews reuse the current Rainbow stops, including the
 hand-tuned warm palettes. Spectrum uses its spatial phase directly; full-width
-Spectrum Bands uses its red-to-magenta index. Other hue-based renderers estimate
+Palette stripes uses its red-to-magenta index. Other hue-based renderers estimate
 palette position as normalized source hue / 0.85, capped at the final stop.
-RGB tables use source hue before fading or Pastel Pulse's whitening, with
+RGB tables use source hue before fading or Triangular palette pulses' whitening, with
 slightly pink reds clamped to the red endpoint. Achromatic RGB cells retain their
 original color because their palette phase cannot be recovered from hue.
 Each effect retains its geometry, direction, timing, and brightness envelope.
 Compatibility is hardware-confirmed by the operator; the additional phase
-mappings are approximations, not separately measured firmware curves.
+mappings are approximations, not separately measured curves.
 
 The focused tests cover all modes and directions, negative/positive phases,
 custom-color precedence, brightness variation, channel bounds, and Python/JS
@@ -163,7 +164,7 @@ different renderer in `mode`. In particular, Spectrum (`mode: 17`) keeps its
 geometry and motion when the normal effect ID 17 is replaced with 15 or 64-67,
 but uses a different color progression.
 
-The best current model is a firmware palette lookup:
+The best current model is a palette lookup:
 
 ```text
 output_color = palette[effect_id](animation_phase)
@@ -171,7 +172,7 @@ output_color = palette[effect_id](animation_phase)
 
 This is not generally a transformation of the RGB color produced by Spectrum.
 IDs 64-67 being consecutive also suggests a four-entry palette bank or enum,
-although that has not been confirmed from firmware.
+although that has not been confirmed.
 
 ## Photo experiment (2026-09-06)
 
@@ -201,7 +202,7 @@ Their image contents and chronological filenames consistently place IDs 65,
 ## Measured palettes
 
 Hex values below are camera-observed samples. They are useful as approximate
-anchors, not exact firmware RGB constants; exposure, clipping, lamp response,
+anchors, not the lamp's exact RGB values; exposure, clipping, lamp response,
 and white balance all affect them.
 
 ### ID 15 - Monochrome ramp
@@ -281,7 +282,7 @@ Current classification: a diverging blue/violet-white-yellow/gold palette.
 ## Conclusions
 
 - The overrides preserve Spectrum's spatial phase and animation structure.
-- They are best treated as fixed firmware palettes selected by the outer
+- They are best treated as fixed palettes selected by the outer
   command ID.
 - ID 64 is approximately a forward hue compression.
 - ID 66 is approximately a reversed hue compression with an offset.

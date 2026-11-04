@@ -144,7 +144,7 @@ class ControlEntityTests(unittest.TestCase):
 
     def test_a_dropdown_never_drops_a_change_because_the_lamp_is_off(self):
         # The display queue's off-lamp rule decides what to show; only Music
-        # Flow (sent to the firmware directly) checks here, and refuses.
+        # Flow (sent to the lamp directly) checks here, and refuses.
         number_source = (ROOT / "number.py").read_text(encoding="utf-8")
         self.assertNotIn("_should_auto_turn_on", number_source)
         self.assertEqual(SELECT_SOURCE.count("_should_auto_turn_on"), 1)

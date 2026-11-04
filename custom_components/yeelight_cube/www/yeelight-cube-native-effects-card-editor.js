@@ -17,6 +17,7 @@ import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { independentActionConfig } from "./action-button-utils.js";
+import { normalizeCardOptions } from "./card-config.js";
 import "./clock-preset-manager.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
@@ -28,6 +29,7 @@ import {
   isEffectName,
   nativeEffectPreviewConfig,
   nativeEffectFrame,
+  STILL_PREVIEW_SECONDS,
 } from "./native-effect-card-utils.js";
 import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
@@ -48,7 +50,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
   static openSection = "general";
   setConfig(config) {
     this._config = normalizePreviewAppearance(
-      independentActionConfig(config),
+      independentActionConfig(normalizeCardOptions(config, "native")),
       "native",
     );
   }
@@ -153,7 +155,8 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
       ${this._section(
         "orientation",
         "Device Orientation",
-        renderModeControlSettings("orientation", config, change),
+        html`${this._toggle("Show Effect Direction", "show_effect_direction")}
+        ${renderModeControlSettings("orientation", config, change)}`,
       )}
       ${this._section(
         "colors",
@@ -193,11 +196,15 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
               effects.find((item) => item.name === attrs.native_effect) ||
               effects[0];
             return effect
-              ? nativeEffectFrame(effect, {
-                  ...attrs,
-                  native_effect_color: color,
-                  native_effect_color_mode: "normal",
-                })
+              ? nativeEffectFrame(
+                  effect,
+                  {
+                    ...attrs,
+                    native_effect_color: color,
+                    native_effect_color_mode: "normal",
+                  },
+                  STILL_PREVIEW_SECONDS,
+                )
               : [];
           }}
         ></yeelight-clock-preset-manager>`,
@@ -240,6 +247,30 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                       renderAppearance: () => this._renderAppearance("gallery"),
                     },
                   )}
+                  ${createToggleRow(
+                    "Family filter",
+                    "show_family_filter",
+                    config.show_family_filter !== false,
+                    (event) => change("show_family_filter", event.target.checked),
+                  )}
+                  <div class="hint">
+                    The filter (All, Waves, Glow, Sparkles, Motion, Music, Still)
+                    beside the search field shows one family of effects, among
+                    those this card has; this browser remembers its choice.
+                  </div>
+                  ${createToggleRow(
+                    "Sort toggle",
+                    "show_sort",
+                    config.show_sort !== false,
+                    (event) => change("show_sort", event.target.checked),
+                  )}
+                  <div class="hint">
+                    Default, A → Z or By family, beside the filter; this
+                    browser remembers its choice. Until one is picked, the
+                    Order above. Default is your list, else the official
+                    effects as the Yeelight app lists them, then the others,
+                    as on the clock card.
+                  </div>
                 `,
               )
             : ""}

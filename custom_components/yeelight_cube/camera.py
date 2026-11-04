@@ -8,6 +8,7 @@ Two camera entities per lamp:
 import io
 import logging
 import math
+import threading
 import time as _time
 
 from PIL import Image, ImageDraw, ImageFilter  # type: ignore
@@ -21,21 +22,28 @@ from homeassistant.util import dt as dt_util  # type: ignore
 from .const import (
     CONF_CAMERA_FOLLOWS_ORIENTATION,
     DEFAULT_DEVICE_ORIENTATION,
-    FIRMWARE_MODES,
+    LAMP_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     CLOCK_MIXER_EFFECTS,
-    CLOCK_MIXER_EFFECT_SPEED,
     DEFAULT_NATIVE_CLOCK_STYLE,
+    DEFAULT_NATIVE_EFFECT,
+    DEFAULT_NATIVE_EFFECT_DIRECTION,
+    DEFAULT_NATIVE_EFFECT_SPEED,
     NATIVE_CLOCK_STYLES,
 )
 from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
-from .effect_orientation import clock_effect_direction
+from .lamp_renderers import (
+    LAMP_RENDERED_EFFECTS,
+    RENDER_SECONDS,
+    lamp_clock_settings,
+    lamp_effect_frame,
+    led_appearance,
+)
 from .layout import FONT_MAPS, char_advance
 from .matrix_view import display_cell, is_vertical_mount, view_size, viewer_frame
 from .native_effect_preview import (
-    effect_supports_color_override,
     render_music_flow_effect,
     render_native_effect_oriented,
 )
@@ -128,6 +136,27 @@ def _view_rects(vertical: bool) -> list[tuple[int, int, int, int]]:
 # vertical.
 _VIEWS = {vertical: (_view_base(vertical), _view_rects(vertical)) for vertical in (False, True)}
 
+# The same at the design size (409 x 124, every measure above divides exactly),
+# for a live stream of an effect the lamp renders itself. Encoding follows the image's
+# size, not the frame's content: about 85 ms per full-size frame on a real host
+# (4 fps at most, whatever the compression), about an eighth of that
+# here. A still picture stays full size.
+_LIVE_VIEWS = {
+    vertical: (
+        base.reduce(RENDER_SCALE),
+        [tuple(edge // RENDER_SCALE for edge in rect) for rect in rects],
+    )
+    for vertical, (base, rects) in _VIEWS.items()
+}
+_LIVE_DOT_MASK = _DOT_MASK.reduce(RENDER_SCALE)
+
+
+# An animation is followed at the lamp's own rate (RENDER_SECONDS) and only the
+# renders that change a pixel are encoded, but the whole job, frame and image,
+# never takes more than a third of a core (ENCODE_TIME_FACTOR): a slower host
+# shows fewer frames, not a busy core.
+ENCODE_TIME_FACTOR = 2
+
 
 # ── Perceptual brightness boost (must match JS matrix-const.js) ─────
 # LCD screens look dimmer than real LEDs at the same RGB value.
@@ -179,20 +208,30 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self._attr_translation_key = self._TRANSLATION_KEY
         self._attr_unique_id = f"{light_entity._attr_unique_id}{self._UID_SUFFIX}"
         self._attr_is_streaming = False
-        # MJPEG poll interval for the HA camera proxy -> ~3 fps preview refresh.
-        self._attr_frame_interval = 0.3
+        # MJPEG poll interval of the HA camera proxy (a live view): the lamp's
+        # render, the fastest a frame can change. async_camera_image answers
+        # with the same bytes unless it did, and the stream skips those.
+        self._attr_frame_interval = RENDER_SECONDS
         self._attr_content_type = "image/png"
         # The last image rendered (None: render on the next request) and the
         # frame count it must match (async_refresh_preview).
         self._cached_image: bytes | None = None
         self._image_generation = 0
+        # What the cached image shows (_view_frame), and when an animation's
+        # next image may be drawn.
+        self._cached_frame: tuple[list[tuple], bool, bool] | None = None
+        self._next_frame_at = 0.0
+        # Live streams open right now (handle_async_mjpeg_stream).
+        self._live_streams = 0
         self._native_preview_key: tuple[str, str] | None = None
         self._native_preview_started_at: float | None = None
-        # Background animation phase held while the panel is frozen. Cleared on
-        # resume so the animation continues seamlessly from the frozen frame.
-        self._frozen_background_phase: float | None = None
-        # Seamless-resume offset for the clock's absolute-phase background.
-        self._clock_phase_offset: float = 0.0
+        self._clock_preview_started_at: float | None = None
+        # Seconds into the background animation held while the panel is frozen.
+        # Cleared on resume so it continues seamlessly from the frozen frame.
+        self._frozen_background_seconds: float | None = None
+        # Those four: the image's job and the power estimate each run in an
+        # executor.
+        self._preview_lock = threading.Lock()
 
     # ── Lifecycle ──────────────────────────────────────────────────────
     async def async_added_to_hass(self) -> None:
@@ -221,11 +260,23 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self.async_write_ha_state()
 
     # ── Image serving ──────────────────────────────────────────────────
+    async def handle_async_mjpeg_stream(self, request):
+        """A live view: counted while open (_view_frame), so a still picture
+        is drawn full size."""
+        self._live_streams += 1
+        try:
+            return await super().handle_async_mjpeg_stream(request)
+        finally:
+            self._live_streams -= 1
+
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Return the full-size PNG.  Browser handles display scaling."""
-        if self._cached_image is not None and not self._is_native_preview_mode():
+        if self._cached_image is not None and (
+            not self._is_native_preview_mode()
+            or _time.monotonic() < self._next_frame_at
+        ):
             return self._cached_image
         return await self._async_render()
 
@@ -233,42 +284,76 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         if self._cached_image is None or self._is_native_preview_mode():
-            self._cached_image = self._render_matrix(*self._view_frame())
+            self._cached_frame = self._view_frame()
+            self._cached_image = self._render_matrix(*self._cached_frame)
         return self._cached_image
 
     # ── Internal helpers ───────────────────────────────────────────────
+    def _render_job(self) -> tuple[tuple, bytes | None]:
+        """The frame to show and its PNG (None: the cached image shows it). In
+        an executor: followed 25 times a second, a frame is real work on a
+        slow host, and the timelines take their own lock."""
+        frame = self._view_frame()
+        if self._cached_image is not None and frame == self._cached_frame:
+            return frame, None
+        return frame, self._render_matrix(*frame)
+
     async def _async_render(self) -> bytes:
-        """Compute the frame on the loop, encode the PNG in an executor thread,
-        and keep it unless a newer frame arrived meanwhile."""
+        """Compute the frame and encode the PNG in an executor thread, and
+        keep it unless a newer frame arrived meanwhile."""
         generation = self._image_generation
         started = _time.monotonic()
-        image = await self.hass.async_add_executor_job(
-            self._render_matrix, *self._view_frame()
-        )
+        frame, image = await self.hass.async_add_executor_job(self._render_job)
+        spent = _time.monotonic() - started
+        self._next_frame_at = started + spent * ENCODE_TIME_FACTOR
+        if image is None:
+            # Dropped meanwhile by a new frame: that one is drawn now.
+            return self._cached_image or await self._async_render()
         if generation == self._image_generation:
             self._cached_image = image
+            self._cached_frame = frame
         _LOGGER.debug(
-            "[TIMING] camera %s render: %.1fms",
-            self._TRANSLATION_KEY, (_time.monotonic() - started) * 1000,
+            "[TIMING] camera %s render: %.1fms", self._TRANSLATION_KEY, spent * 1000,
         )
         return image
 
-    def _view_frame(self) -> tuple[list[tuple], bool]:
+    def _view_frame(self) -> tuple[list[tuple], bool, bool]:
         """What the image shows: the lamp's frame as the viewer sees it
-        (matrix_view.viewer_frame, the rule of every card preview), and
-        whether it is drawn vertical: the lamp stands on one end and the
-        "Camera follows orientation" option is on."""
+        (matrix_view.viewer_frame, the rule of every card preview), whether
+        it is drawn vertical (the lamp stands on one end and the "Camera
+        follows orientation" option is on), and whether it is drawn small for
+        a live stream of an effect the lamp renders itself (_LIVE_VIEWS)."""
         orientation = getattr(
             self._light_entity, "_device_orientation", DEFAULT_DEVICE_ORIENTATION
         )
         vertical = is_vertical_mount(orientation) and bool(
             self._config_entry.options.get(CONF_CAMERA_FOLLOWS_ORIENTATION, False)
         )
-        return viewer_frame(self._get_matrix_colors(), orientation), vertical
+        live = self._live_streams > 0 and self._shows_lamp_renderer()
+        return viewer_frame(self._get_matrix_colors(), orientation), vertical, live
 
     def _is_native_preview_mode(self) -> bool:
         """Return whether the preview changes without an HA state update."""
-        return getattr(self._light_entity, "_mode", None) in FIRMWARE_MODES
+        return getattr(self._light_entity, "_mode", None) in LAMP_MODES
+
+    def _shows_lamp_renderer(self) -> bool:
+        """Whether the lamp shows an effect drawn by its own renderer (as the
+        preview reproduces it), alone or behind the clock."""
+        le = self._light_entity
+        if getattr(le, "_music_flow_enabled", False):
+            return False
+        mode = getattr(le, "_mode", None)
+        if mode == MODE_NATIVE_EFFECT:
+            effect = getattr(le, "_native_effect", DEFAULT_NATIVE_EFFECT)
+        elif mode == MODE_CLOCK:
+            style = NATIVE_CLOCK_STYLES.get(
+                int(getattr(le, "_native_clock_style", 6)),
+                NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
+            )
+            effect = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+        else:
+            return False
+        return effect in LAMP_RENDERED_EFFECTS
 
     def _get_matrix_colors(self) -> list[tuple]:
         """The matrix colors scaled by a perceptual brightness curve, like
@@ -286,7 +371,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         if getattr(le, "_music_flow_enabled", False):
             base = self._get_music_flow_preview()
         elif mode == MODE_CLOCK:
-            base = self._firmware_clock_frame(self._get_clock_preview())
+            base = self._lamp_clock_frame(self._get_clock_preview())
         elif mode == MODE_NATIVE_EFFECT:
             # Compensated for the lamp's mount profile (light_native): drawn
             # as calibrated, whatever the lamp's own direction setting.
@@ -295,6 +380,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             base = getattr(le, "_base_matrix_colors", None)
         if not base or len(base) != 100:
             return [(0, 0, 0)] * 100
+        # The lamp renderer's frame is LED drive: shown as those LEDs look.
+        # Display only (simulated_lamp_frame keeps the lamp's values).
+        if self._shows_lamp_renderer():
+            base = [led_appearance(rgb) for rgb in base]
 
         # --- Compute the effective multiplier (same net result as JS) ---
         brightness = getattr(le, "_brightness", 255) or 255
@@ -320,11 +409,24 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             result.append((r, g, b))
         return result
 
-    def simulated_firmware_frame(self) -> list[tuple[int, int, int]] | None:
-        """The simulated frame the lamp's firmware is drawing right now
+    def simulated_lamp_frame(self) -> list[tuple[int, int, int]] | None:
+        """The simulated frame the lamp is drawing right now
         (Music Flow, clock, native effect), at full intensity, before the
         preview's brightness boost; None outside those modes. Used for the
-        Estimated power sensor."""
+        Estimated power sensor.
+
+        Deliberately not the frame on screen (_get_matrix_colors), and what
+        its values are depends on what shows (lamp_renderers.py):
+        - an effect the lamp renders, all but the stored GIF
+          (_shows_lamp_renderer): the lamp's own LED drive, never
+          led_appearance's screen colors, which are about twice as bright and
+          would about double the estimate. A music slot's runs on the demo beat
+          (lamp_core), not the room's sound, so its estimate is rougher;
+        - Music Flow, the stored GIF or a solid clock: a fixed illustration or
+          an approximation in screen colors, not the lamp's real values, so
+          its estimate is rougher.
+        In an executor (light.py): it may replay a renderer's history.
+        """
         le = self._light_entity
         if getattr(le, "_music_flow_enabled", False):
             return self._get_music_flow_preview()
@@ -335,43 +437,51 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             return self._get_native_effect_preview()
         return None
 
-    def _firmware_clock_frame(self, frame: list) -> list:
-        """The firmware clock (lamp order) as the lamp draws it: its saved
+    def _lamp_clock_frame(self, frame: list) -> list:
+        """The lamp's clock (lamp order) as the lamp draws it: its saved
         mount profile turns it a half turn on 0 and 1
         (light_mount_profile.lamp_turns_clock)."""
         if getattr(self._light_entity, "lamp_turns_clock", False):
             return frame[::-1]
         return frame
 
+    def _preview_speed(self) -> int:
+        """The rate the lamp gets (1-255), which previews take as it is."""
+        return max(1, min(255, int(getattr(self._light_entity, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED))))
+
     def _get_native_effect_preview(self) -> list[tuple[int, int, int]]:
-        """Render a local approximation of the active firmware animation."""
+        """The active built-in animation as the lamp draws it: LED drive for an
+        effect the lamp renders (render_native_effect)."""
         le = self._light_entity
-        speed = max(1, min(100, int(getattr(le, "_native_effect_speed", 50))))
-        effect = getattr(le, "_native_effect", "Streamer")
-        direction = getattr(le, "_native_effect_direction", "Up")
-        now = _time.monotonic()
-        animation_key = (effect, direction)
-        if animation_key != self._native_preview_key:
-            self._native_preview_key = animation_key
-            self._native_preview_started_at = now
-            self._frozen_background_phase = None
-        rate = 0.25 + speed / 55.0
-        # While frozen, hold the frame the lamp is holding; resume seamlessly.
-        if getattr(le, "_display_frozen", False):
-            if self._frozen_background_phase is None:
-                self._frozen_background_phase = (now - self._native_preview_started_at) * rate
-            phase = self._frozen_background_phase
-        else:
-            if self._frozen_background_phase is not None:
-                self._native_preview_started_at = now - self._frozen_background_phase / rate
-                self._frozen_background_phase = None
-            phase = (now - self._native_preview_started_at) * rate
+        speed = self._preview_speed()
+        effect = getattr(le, "_native_effect", DEFAULT_NATIVE_EFFECT)
+        direction = getattr(le, "_native_effect_direction", DEFAULT_NATIVE_EFFECT_DIRECTION)
+        orientation = getattr(le, "_device_orientation", DEFAULT_DEVICE_ORIENTATION)
+        with self._preview_lock:
+            now = _time.monotonic()
+            animation_key = (effect, direction, orientation)
+            if animation_key != self._native_preview_key:
+                self._native_preview_key = animation_key
+                self._native_preview_started_at = now
+                self._frozen_background_seconds = None
+            # While frozen, hold the frame the lamp is holding; resume seamlessly.
+            if getattr(le, "_display_frozen", False):
+                if self._frozen_background_seconds is None:
+                    self._frozen_background_seconds = now - self._native_preview_started_at
+                seconds = self._frozen_background_seconds
+            else:
+                if self._frozen_background_seconds is not None:
+                    self._native_preview_started_at = now - self._frozen_background_seconds
+                    self._frozen_background_seconds = None
+                seconds = now - self._native_preview_started_at
         frame = render_native_effect_oriented(
             effect,
-            phase,
+            seconds * (0.25 + speed / 55.0),
             direction,
             color_mode=getattr(le, "_native_effect_color_mode", "normal"),
             color_override=getattr(le, "_native_effect_color", None),
+            speed=speed,
+            orientation=orientation,
         )
         # Lamp order (row 0 = physical bottom), like every frame: _view_frame
         # turns it the way the viewer sees it, once.
@@ -384,7 +494,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         )
 
     def _get_clock_preview(self) -> list[tuple[int, int, int]]:
-        """Render the active firmware clock face into a 20x5 matrix."""
+        """Render the active built-in clock face into a 20x5 matrix."""
         le = self._light_entity
         now = dt_util.now()
         # 3-way clock content (byte 0): time | time_date (alternate) | date.
@@ -413,7 +523,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             and now.second % 2 == 1
         )
 
-        # The firmware clock uses the bundled "native" font (monospace: every
+        # The lamp's clock uses the bundled "native" font (monospace: every
         # digit occupies a fixed cell, colon/period are narrow) so the preview
         # matches the hardware exactly.
         font_key = "native"
@@ -434,8 +544,8 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         style = NATIVE_CLOCK_STYLES.get(
             style_id, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE]
         )
-        # A color override (ARGB int) recolors compatible mixer effects (dark
-        # stays dark); incompatible styles fall back to the flat override color.
+        # A color override (ARGB int): sent to the mixer's renderer, which takes
+        # it or not as on the lamp; a style with no effect shows it flat.
         override_int = getattr(le, "_native_clock_color", None)
         override_rgb = (
             (
@@ -450,54 +560,21 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # A palette color mode (e.g. B&W) takes precedence over the override.
         color_mode = getattr(le, "_native_clock_color_mode", "normal") or "normal"
         mode_active = color_mode != "normal"
-        override_compatible = (
-            not mode_active
-            and override_rgb is not None
-            and effect_name is not None
-            and effect_supports_color_override(effect_name)
-        )
-        # Compatible effects recolor toward the override; incompatible effects
-        # render normally (ignore it); styles with no effect fall back to the
-        # flat override color in the mask loop below.
         effect_frame = None
         if effect_name is not None:
-            # While frozen, hold the background effect on the frame the lamp is
-            # holding; the clock digits/colon (rendered from real time below)
-            # still advance. Anchor the held phase to the freeze instant so the
-            # frozen frame is exact; resume seamlessly from the held phase.
-            rate = 0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0
-            if getattr(le, "_display_frozen", False):
-                if self._frozen_background_phase is None:
-                    frozen_at = getattr(le, "_display_frozen_at", None)
-                    reference = (
-                        _time.time() - frozen_at
-                        if isinstance(frozen_at, (int, float))
-                        else 0.0
-                    )
-                    self._frozen_background_phase = (
-                        (_time.monotonic() - reference) * rate
-                    )
-                phase = self._frozen_background_phase
-            else:
-                if self._frozen_background_phase is not None:
-                    self._clock_phase_offset = (
-                        self._frozen_background_phase - _time.monotonic() * rate
-                    )
-                    self._frozen_background_phase = None
-                phase = _time.monotonic() * rate + self._clock_phase_offset
-            direction = clock_effect_direction(effect_name)
-            effect_frame = render_native_effect_oriented(
-                effect_name,
-                phase,
-                direction,
-                override_rgb if override_compatible else None,
-                color_mode if mode_active else None,
+            # The mixer's renderer behind the clock overlay, on the command
+            # light_native sends: the user's speed, the mode 40 direction.
+            effect_frame = lamp_effect_frame(
+                lamp_clock_settings(
+                    effect_name, self._preview_speed(), override_rgb, color_mode
+                ),
+                self._clock_background_seconds(),
             )
         # A palette mode overrides the custom color, so don't flat-fill with it.
         flat_override = None if mode_active else override_rgb
         # Solid styles (no mixer effect) have no animated renderer to remap for
         # B&W; the backend achieves it by omitting their color, which the
-        # firmware renders as plain white.
+        # lamp renders as plain white.
         solo_bw_fallback = effect_frame is None and color_mode == "bw"
 
         for char_index, (char, glyph, advance) in enumerate(
@@ -524,9 +601,36 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                         )
             offset += advance
 
-        # Lamp order, like every frame: the firmware clock cannot turn, so on
+        # Lamp order, like every frame: the lamp's clock cannot turn, so on
         # an upside-down mount the viewer sees it upside down (_view_frame).
         return matrix
+
+    def _clock_background_seconds(self) -> float:
+        """Seconds into the clock's background animation. While frozen it holds
+        the frame the lamp is holding; the clock digits/colon (rendered from
+        real time) still advance. Anchored to the freeze instant so the frozen
+        frame is exact; resumes seamlessly from it."""
+        le = self._light_entity
+        with self._preview_lock:
+            now = _time.monotonic()
+            if self._clock_preview_started_at is None:
+                self._clock_preview_started_at = now
+            if getattr(le, "_display_frozen", False):
+                if self._frozen_background_seconds is None:
+                    frozen_at = getattr(le, "_display_frozen_at", None)
+                    reference = (
+                        _time.time() - frozen_at
+                        if isinstance(frozen_at, (int, float))
+                        else 0.0
+                    )
+                    self._frozen_background_seconds = max(
+                        0.0, now - reference - self._clock_preview_started_at
+                    )
+                return self._frozen_background_seconds
+            if self._frozen_background_seconds is not None:
+                self._clock_preview_started_at = now - self._frozen_background_seconds
+                self._frozen_background_seconds = None
+            return now - self._clock_preview_started_at
 
     @staticmethod
     def _gradient_color(
@@ -592,10 +696,13 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     def _draw_pixel(self, img: Image.Image, draw: ImageDraw.Draw, rect: tuple, fill: tuple) -> None:
         raise NotImplementedError
 
-    def _render_matrix(self, colors: list[tuple], vertical: bool = False) -> bytes:
-        """Render a top-first frame (_view_frame) landscape or vertical and
-        return lossless PNG bytes (RGBA: transparent around the frame)."""
-        base, rects = _VIEWS[bool(vertical)]
+    def _render_matrix(
+        self, colors: list[tuple], vertical: bool = False, live: bool = False
+    ) -> bytes:
+        """Render a top-first frame (_view_frame) landscape or vertical,
+        full size or small for a live stream, and return lossless PNG bytes
+        (RGBA: transparent around the frame)."""
+        base, rects = (_LIVE_VIEWS if live else _VIEWS)[bool(vertical)]
         img = base.copy()
         draw = ImageDraw.Draw(img)
 
@@ -635,4 +742,7 @@ class YeelightCubeMatrixCameraRound(_YeelightCubeMatrixCameraBase):
     _UID_SUFFIX = "_matrix_preview_round"
 
     def _draw_pixel(self, img, draw, rect, fill):
+        if rect[2] - rect[0] < PIXEL_SIZE:
+            img.paste(fill, rect[:2], _LIVE_DOT_MASK)
+            return
         img.paste(fill, rect[:2], _DOT_MASK)

@@ -23,7 +23,7 @@ from .cube_matrix import check_tcp, send_once
 from .discovery import is_cube_device, parse_service_name, normalize_device_id
 from .mount_profile import (
     STAR_CHECK_PARAMS,
-    FIRMWARE_DEFAULT_PROFILE,
+    LAMP_DEFAULT_PROFILE,
     PROFILE_DEGREES,
     PROFILES,
     SOURCE_USER,
@@ -257,7 +257,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_orientation(self, user_input=None):
         """How is the lamp mounted? The orientation saved in the Yeelight app
         (it turns the lamp's effects; nothing reads it over LAN), a lamp never
-        set (the firmware's 270°), a check on the lamp, or read over Matter."""
+        set (the lamp's default, 270°), a check on the lamp, or read over Matter."""
         errors = {}
         if user_input is not None:
             choice = user_input[CONF_MOUNT_PROFILE]
@@ -356,7 +356,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 # The orientation step's answers besides the four arrows (270° is also a lamp
-# never set, the firmware's default): "check it on the lamp", "read it over
+# never set, the lamp's default): "check it on the lamp", "read it over
 # Matter" (setup only).
 MOUNT_CHECK = "check"
 MOUNT_FROM_MATTER = "matter"
@@ -413,7 +413,7 @@ class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={
                 "now": (
-                    f"not set ({PROFILE_DEGREES[FIRMWARE_DEFAULT_PROFILE]}° in use)"
+                    f"not set ({PROFILE_DEGREES[LAMP_DEFAULT_PROFILE]}° in use)"
                     if current is None
                     else f"{PROFILE_DEGREES[current]}°, {MOUNT_SOURCE_TEXT.get(source, source)}"
                 ),

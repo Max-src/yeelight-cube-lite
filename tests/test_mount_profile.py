@@ -1,12 +1,12 @@
 """The lamp's saved mount profile (mount_profile.py, light_mount_profile.py,
-light_matter.py): the firmware turns every native effect direction by it
-(DIRECTION_TABLE, MCU v34), the integration's directions were calibrated on
+light_matter.py): the lamp turns every native effect direction by it
+(DIRECTION_TABLE), the integration's directions were calibrated on
 profile 2, and the value sent is compensated for the lamp's own profile.
 
 Where the profile comes from: Matter once confirmed (written here, or changed
 in the Yeelight app, on the linked node) or when only a save gives its value,
 else the user's choice (options, the Fire check), else unknown (then the
-firmware's default 3, what a lamp never saved, or reset, runs)."""
+lamp's default 3, what a lamp never saved, or reset, runs)."""
 import asyncio
 import types
 import unittest
@@ -22,17 +22,17 @@ TABLE = PROFILE.DIRECTION_TABLE
 compensate = PROFILE.compensate_direction
 resolve = PROFILE.resolve_profile
 
-# The DIRECTION_TABLE of the firmware analysis (ORIENTATION_AND_MOUNT_PROFILE.md).
-FIRMWARE_TABLE = [[2, 3, 1, 0], [1, 0, 3, 2], [3, 2, 0, 1], [0, 1, 2, 3]]
+# The lamp's DIRECTION_TABLE.
+LAMP_TABLE = [[2, 3, 1, 0], [1, 0, 3, 2], [3, 2, 0, 1], [0, 1, 2, 3]]
 
 
 class CompensationTests(unittest.TestCase):
-    def test_the_table_is_the_firmwares_and_each_row_a_permutation(self):
-        self.assertEqual(FIRMWARE_TABLE, [list(row) for row in TABLE])
+    def test_the_table_matches_the_lamp_and_each_row_is_a_permutation(self):
+        self.assertEqual(LAMP_TABLE, [list(row) for row in TABLE])
         for row in TABLE:
             self.assertEqual([0, 1, 2, 3], sorted(row))
-        self.assertEqual(3, PROFILE.FIRMWARE_DEFAULT_PROFILE)
-        self.assertEqual((0, 1, 2, 3), TABLE[PROFILE.FIRMWARE_DEFAULT_PROFILE])  # identity
+        self.assertEqual(3, PROFILE.LAMP_DEFAULT_PROFILE)
+        self.assertEqual((0, 1, 2, 3), TABLE[PROFILE.LAMP_DEFAULT_PROFILE])  # identity
         self.assertEqual(2, PROFILE.REFERENCE_PROFILE)
 
     def test_every_profile_pair_and_direction_draws_the_same(self):
@@ -136,7 +136,7 @@ class ResolutionTests(unittest.TestCase):
         self.assertFalse(PROFILE.saved_on_lamp(0, None))
         self.assertFalse(PROFILE.saved_on_lamp(None, saved))
 
-    def test_unknown_runs_the_firmware_default(self):
+    def test_unknown_runs_the_lamp_default(self):
         self.assertEqual(3, PROFILE.effective_profile(None))
         self.assertEqual(1, PROFILE.effective_profile(1))
         self.assertFalse(PROFILE.clock_turned(PROFILE.effective_profile(None)))
@@ -336,13 +336,34 @@ class LanOnlyTests(unittest.TestCase):
     def sent_direction(self, profile, effect, direction):
         return FNS["_native_effect_params"](native_lamp(profile, effect, direction))[3]["direction"]
 
+    def test_an_effect_with_no_direction_is_compensated_too(self):
+        # The lamp turns the preset row's direction like any other, so a
+        # lamp on another profile drew these turned from their preview.
+        undirected = [
+            name for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
+            if not spec.get("directions")
+        ]
+        self.assertEqual(
+            {"Ribbon", "Starry Sky", "Bouncing Ball", "Magic", "Wonderland"}
+            | {CONSTANTS["_EXTENDED_EFFECT_NAMES"][mode]
+               for mode in CONSTANTS["_EXTENDED_EFFECT_NO_DIRECTION"]},
+            set(undirected),
+        )
+        fixed = CONSTANTS["UNDIRECTED_EFFECT_DIRECTION"]
+        for name in undirected:
+            self.assertEqual(fixed, self.sent_direction(2, name, "Up"), name)
+            for profile in range(4):
+                self.assertEqual(
+                    TABLE[2][fixed], TABLE[profile][self.sent_direction(profile, name, "Up")], name
+                )
+
     def test_a_180_degree_lamp_sends_what_it_always_did(self):
         value = CONSTANTS["effect_direction_value"]
         for name, spec in CONSTANTS["NATIVE_EFFECTS"].items():
             for direction in spec.get("directions") or ():
                 self.assertEqual(value(spec, direction), self.sent_direction(2, name, direction), name)
 
-    def test_an_unknown_lamp_is_compensated_for_the_firmware_default(self):
+    def test_an_unknown_lamp_is_compensated_for_the_lamp_default(self):
         # Never saved in the app, or reset: the lamp runs 3.
         for name, spec in CONSTANTS["NATIVE_EFFECTS"].items():
             for direction in spec.get("directions") or ():
@@ -475,7 +496,7 @@ class CheckLight(ProfileLight):
         self._mode, self._native_clock_style, self._orientation = "Clock", 12, "normal"
         self._device_orientation = "right"
         self._rotation_active, self._rotation_kind = True, "clock"
-        self._rotation_items, self._rotation_interval = [{"name": "Prism"}, {"name": "Pulse"}], 60
+        self._rotation_items, self._rotation_interval = [{"name": "Mirrored comets"}, {"name": "Sunrise and sunset"}], 60
         self.sent, self.started = [], []
         self._scroll_offset, self._scroll_direction = 0, 1
 
@@ -508,7 +529,7 @@ class CheckRestoreTests(unittest.TestCase):
         self.assertTrue(asyncio.run(light.async_show_mount_check()))
         self.assertFalse(light._rotation_active)  # does not draw over the stars
         asyncio.run(light.async_set_user_mount_profile(3, after_check=True))
-        self.assertEqual([("clock", ["Prism", "Pulse"], 60)], light.started)
+        self.assertEqual([("clock", ["Mirrored comets", "Sunrise and sunset"], 60)], light.started)
         self.assertEqual(("Clock", 12), (light._mode, light._native_clock_style))
 
     def test_the_checks_own_reports_are_not_followed(self):
@@ -523,7 +544,7 @@ class CheckRestoreTests(unittest.TestCase):
         self.assertEqual("Clock", light._mode)
         self.assertFalse(light._external_display)
         asyncio.run(light._async_end_mount_check())
-        # Deliberate, as restore_state's: after the stars (a firmware mode) a
+        # Deliberate, as restore_state's: after the stars (a built-in mode) a
         # text_change over a drawing is dropped (light_display).
         light.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
         # Afterwards, a report is the lamp's own again.
@@ -548,7 +569,7 @@ class CheckRestoreTests(unittest.TestCase):
         light._execute_hardware_op = refused
         self.assertFalse(asyncio.run(light.async_show_mount_check()))
         self.assertFalse(light._mount_check_active)
-        self.assertEqual([("clock", ["Prism", "Pulse"], 60)], light.started)  # going on
+        self.assertEqual([("clock", ["Mirrored comets", "Sunrise and sunset"], 60)], light.started)  # going on
 
 
 if __name__ == "__main__":

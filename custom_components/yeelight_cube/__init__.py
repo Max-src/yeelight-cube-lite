@@ -118,7 +118,7 @@ async def _async_register_lovelace_resources(
     covered the top-level card files and left their imports stale.
 
     Returns True if the resource collection was available and registration was
-    handled here; False if it was unavailable (the caller should then fall back
+    handled here; False if it was unavailable (then fall back
     to add_extra_js_url).
     """
     try:

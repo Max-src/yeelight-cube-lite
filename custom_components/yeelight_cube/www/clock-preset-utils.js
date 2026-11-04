@@ -170,6 +170,7 @@ export function clockStylesWithPresets(builtins, presets) {
       presetId: preset.id,
       color: preset.color,
       mixer: 0,
+      family: "still",
       solid: true,
       experimental: false,
     })),

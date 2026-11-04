@@ -18,6 +18,8 @@ from .storage import async_schedule_save
 from .color_utils import argb_to_rgb, rgb_to_argb
 from .const import (
     ALL_NATIVE_EFFECTS,
+    canonical_clock_style_name,
+    canonical_effect_name,
     CLOCK_COLOR_MODES,
     DOMAIN,
     MODE_CLOCK,
@@ -50,6 +52,35 @@ ROTATION_RESUME_TIMELINE_TTL = 300.0  # seconds a late lamp can still join
 # Lamps whose rotation loop runs: a lamp starting the same rotation alone
 # (the card's Retry, a manual start) joins their schedule.
 _ROTATING_LAMPS: dict = {}  # id(lamp) -> lamp
+
+# The prefix of a saved clock preset's key in a clock rotation / favourites.
+CLOCK_PRESET_PREFIX = "custom:"
+
+
+def canonical_item_name(kind: str, name: str) -> str:
+    """A rotation / favourite entry's name in today's names: a native effect's
+    for ``native``, a clock style's for ``clock`` (a clock preset's key as it
+    is). Bare numbers are names here, never style ids: entries are names."""
+    if kind == "clock":
+        if name.startswith(CLOCK_PRESET_PREFIX):
+            return name
+        return canonical_clock_style_name(name)
+    return canonical_effect_name(name)
+
+
+def _former_names(kind, items) -> bool:
+    """Whether saved entries (favourites, a rotation) of ``kind`` name an
+    effect or clock style by a name it had before."""
+    if not isinstance(items, list):
+        return False
+    for entry in items:
+        name = entry.get("name") if isinstance(entry, dict) else entry
+        if isinstance(name, str) and name.strip():
+            name = name.strip()
+            if canonical_item_name(kind, name) != name:
+                return True
+    return False
+
 
 # Seconds before a lamp that answers but failed a step (a refusal, e.g. its
 # rate limit) tries again: growing, then every 5 minutes. A lamp that was
@@ -161,12 +192,13 @@ class RotationMixin:
         style = NATIVE_CLOCK_STYLES.get(self._native_clock_style)
         return style["name"] if style else None
 
-    def _normalize_rotation_items(self, items) -> list:
+    def _normalize_rotation_items(self, items, kind="native") -> list:
         """Normalize rotation entries to ``{"name", "color_mode", "color"}`` dicts.
 
         Accepts legacy plain strings (color mode defaults to "normal") and
         dicts of the form ``{"name": ..., "color_mode": ..., "color": [r,g,b]}``
-        produced by the cards' favourites system.
+        produced by the cards' favourites system. A former effect or clock
+        style name (``kind``) is read as today's.
         """
         result = []
         seen = set()
@@ -181,6 +213,7 @@ class RotationMixin:
                 continue
             if not name:
                 continue
+            name = canonical_item_name(kind, name)
             if color_mode not in CLOCK_COLOR_MODES and color_mode != "custom":
                 color_mode = "normal"
             if color_mode == "custom":
@@ -206,14 +239,16 @@ class RotationMixin:
             )
         return result
 
-    def _normalize_favourites(self, items) -> list:
+    def _normalize_favourites(self, items, kind="native") -> list:
         """Normalize a favourites list the way rotation items are normalized
-        (same entries, de-duplicated per name + color mode), dropping names
-        the cards never create (numeric) and capping its length."""
+        (same entries, de-duplicated per name + color mode, in today's names),
+        dropping names the cards never create (a bare number) and capping its
+        length."""
         return [
             item
-            for item in self._normalize_rotation_items(items)
-            if not item["name"].isdigit() and len(item["name"]) <= MAX_FAVOURITE_NAME
+            for item in self._normalize_rotation_items(items, kind)
+            if not item["name"].isdigit()
+            and len(item["name"]) <= MAX_FAVOURITE_NAME
         ][:MAX_FAVOURITES]
 
     def _device_store(self, name: str) -> dict | None:
@@ -239,16 +274,24 @@ class RotationMixin:
         if not isinstance(saved, dict):
             return
         self._favourites = {
-            kind: self._normalize_favourites(items)
+            kind: self._normalize_favourites(items, kind)
             for kind, items in saved.items()
             if kind in FAVOURITE_KINDS and isinstance(items, list)
         }
+        # Saved under a former effect or clock style name: saved back in
+        # today's names, once.
+        if any(_former_names(kind, items) for kind, items in saved.items()):
+            store[self._music_flow_runtime_storage_key()] = {
+                key: [dict(item) for item in value]
+                for key, value in self._favourites.items()
+            }
+            self._schedule_integration_save()
 
     async def async_set_favourites(self, kind: str, items) -> None:
         """Replace the favourites of ``kind``, publish them, then persist."""
         if kind not in FAVOURITE_KINDS:
             raise invalid("unknown_kind", kind=kind)
-        self._favourites = {**self._favourites, kind: self._normalize_favourites(items)}
+        self._favourites = {**self._favourites, kind: self._normalize_favourites(items, kind)}
         # Publish first: every open dashboard updates without waiting for disk.
         if self.hass is not None:
             self.async_write_ha_state()
@@ -280,6 +323,16 @@ class RotationMixin:
             }
         active = saved.get("active")
         if isinstance(active, dict) and active.get("kind") in FAVOURITE_KINDS:
+            if _former_names(active["kind"], active.get("items")):
+                # Saved under a former name: saved back in today's names.
+                active = {
+                    **active,
+                    "items": self._normalize_rotation_items(
+                        active.get("items"), active["kind"]
+                    ),
+                }
+                store[self._music_flow_runtime_storage_key()] = {**saved, "active": active}
+                self._schedule_integration_save()
             self._rotation_restore = active
 
     def _save_rotation_state(self) -> None:
@@ -394,7 +447,8 @@ class RotationMixin:
         Returning before that result hides hardware failures from the calling
         service. Subsequent steps belong to the entity, not the service/client.
         """
-        items = self._normalize_rotation_items(items)
+        kind = kind if kind in ("native", "clock") else "native"
+        items = self._normalize_rotation_items(items, kind)
         if len(items) < 2:
             raise invalid("rotation_too_few")
         # Replacing a running loop: its saved state is rewritten below.
@@ -716,7 +770,7 @@ class RotationMixin:
 
     async def _start_rotation_apply(self) -> bool:
         """Run the guards + reset the full display pipeline performs before a
-        firmware mode switch, without its retry bookkeeping or queue overhead.
+        built-in mode switch, without its retry bookkeeping or queue overhead.
 
         Returns False when the lamp cannot take a rotation step right now.
         """
@@ -737,7 +791,7 @@ class RotationMixin:
         return True
 
     async def _apply_rotation_native(self, item) -> bool:
-        name = item["name"]
+        name = canonical_item_name("native", item["name"])
         color_mode = item.get("color_mode", "normal")
         color = item.get("color")
         spec = ALL_NATIVE_EFFECTS.get(name)
@@ -753,7 +807,7 @@ class RotationMixin:
         self._native_effect = name
         self._mode = MODE_NATIVE_EFFECT
         self._custom_draw_active = False
-        # Reapply the color mode recorded with the favourite. The firmware
+        # Reapply the color mode recorded with the favourite. The lamp
         # represents a free custom color as mode "normal" plus an RGB override.
         self._native_effect_color_mode = (
             "normal" if color_mode == "custom" else color_mode
@@ -773,11 +827,11 @@ class RotationMixin:
         return True
 
     async def _apply_rotation_clock(self, item) -> bool:
-        name = item["name"]
+        name = canonical_item_name("clock", item["name"])
         color_mode = item.get("color_mode", "normal")
         color = item.get("color")
-        if name.startswith("custom:"):
-            preset_id = name[len("custom:"):]
+        if name.startswith(CLOCK_PRESET_PREFIX):
+            preset_id = name[len(CLOCK_PRESET_PREFIX):]
             preset = next(
                 (
                     item for item in self.hass.data.get(DOMAIN, {}).get("clock_presets", [])

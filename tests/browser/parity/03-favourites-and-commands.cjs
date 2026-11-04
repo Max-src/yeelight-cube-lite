@@ -179,9 +179,11 @@ module.exports = async (t) => {
       document.querySelector("main").append(card);
       await card.updateComplete;
       const browser = card.shadowRoot.querySelector("yc-collection-gallery");
+      // It opens on the active style's page.
+      const opened = browser.page;
       browser.querySelector('[data-pagination-action="next"]').click();
       await browser.updateComplete;
-      const advanced = browser.page === 1;
+      const advanced = browser.page === opened + 1;
       const input = browser.querySelector('input[type="search"]');
       input.value = "rainbow";
       input.dispatchEvent(new Event("input", { bubbles: true }));
