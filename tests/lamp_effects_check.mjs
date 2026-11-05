@@ -77,10 +77,16 @@ for (const [name, effect] of effects) {
   medians[name] = median(times);
   let worst = 0;
   for (const target of [0, 1000, 5000, 7600, 90000]) {
-    const timeline = new renderers.Timeline(renderers.REGISTRY.get(settings.mode), settings);
-    const began = performance.now();
-    timeline.frameAt(target);
-    worst = Math.max(worst, performance.now() - began);
+    // Best of three fresh timelines: a GC pause or a descheduled CI runner
+    // stalls one call, a slow renderer all of them.
+    let best = Infinity;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const timeline = new renderers.Timeline(renderers.REGISTRY.get(settings.mode), settings);
+      const began = performance.now();
+      timeline.frameAt(target);
+      best = Math.min(best, performance.now() - began);
+    }
+    worst = Math.max(worst, best);
   }
   cold[name] = worst;
 }

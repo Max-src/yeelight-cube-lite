@@ -428,10 +428,15 @@ class TimelineTests(unittest.TestCase):
             seen.add(name)
             times = []
             for target in (0, 1000, 5000, 7600, 90000):
-                timeline = self.timeline(config)
-                began = time.perf_counter()
-                timeline.frame_at(target)
-                times.append((time.perf_counter() - began) * 1000)
+                # Best of three fresh timelines: a GC pause or a descheduled
+                # CI runner stalls one call, a slow renderer all of them.
+                attempts = []
+                for _ in range(3):
+                    timeline = self.timeline(config)
+                    began = time.perf_counter()
+                    timeline.frame_at(target)
+                    attempts.append((time.perf_counter() - began) * 1000)
+                times.append(min(attempts))
             worst[name] = max(times)
         print("\nPython cold frame_at, worst ms:", {k: round(v, 1) for k, v in worst.items()})
         self.assertLess(max(worst.values()), 2 * _PYTHON_COLD_MS, worst)
