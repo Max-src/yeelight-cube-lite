@@ -68,6 +68,9 @@ import {
   brightnessRawToPct,
   speedPctToRaw,
   speedRawToPct,
+  intensityPctToRaw,
+  intensityRawToPct,
+  sliderWhenUsed,
   isSliderHandler,
 } from "./slider-control-utils.js";
 import { TEXT_SELECTOR_STYLES, PREVIEW_SELECTOR_STYLES } from "./selector-shared-styles.js";
@@ -76,6 +79,7 @@ import {
   clockStyleColorModeState,
   clockStyleRespondsToCustomColor,
   clockStyleByName,
+  clockStyleTakes,
   getClockStyles,
   renderClockFrame,
   lookupNativeClockFont,
@@ -89,7 +93,7 @@ import {
 import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
-import { DEFAULT_EFFECT_SPEED } from "./lamp-renderers.js";
+import { chosenIntensity, chosenSpeed } from "./lamp-renderers.js";
 import { FamilyFilter, GallerySort, matchesEffectFamily } from "./effect-families.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
 import { rgbToHex } from "./color-utils.js";
@@ -136,6 +140,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         config: () => this._speedGc(),
         commit: (pct, options) => this._applySpeed(speedPctToRaw(pct), options),
       },
+      intensity: {
+        config: () => this._intensityGc(),
+        commit: (pct, options) =>
+          this._callSetClock({ intensity: intensityPctToRaw(pct) }, false, options),
+      },
       brightness: {
         config: () => this._brightnessGc(),
         live: () => this._paintVisible(),
@@ -158,6 +167,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return pct == null ? null : speedPctToRaw(pct);
   }
 
+  // Live intensity as a raw device value (1-255), or null when not dragged.
+  get _intensityPreview() {
+    const pct = this._lampSliders?.value("intensity");
+    return pct == null ? null : intensityPctToRaw(pct);
+  }
+
   // Live brightness in slider %, or null when not overridden.
   get _brightnessPreview() {
     return this._lampSliders?.value("brightness") ?? null;
@@ -171,6 +186,24 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
 
   _brightnessGc() {
     return lightSliderConfig(this.config, "brightness", this._sliderKeys);
+  }
+
+  _intensityGc() {
+    // The background's family picks the icons (music: 🔈 → 🔊).
+    return lightSliderConfig(this.config, "intensity", this._sliderKeys, {
+      family: this._lampStyle()?.family,
+    });
+  }
+
+  // The style the lamp runs (not a preset picked on this card): its
+  // background decides which effect sliders apply.
+  _lampStyle() {
+    const a = this._attrs();
+    const list = getClockStyles(true);
+    return (
+      list.find((s) => s.id === a.clock_style_id) ||
+      (typeof a.clock_style === "string" ? clockStyleByName(a.clock_style) : null)
+    );
   }
 
   setConfig(config) {
@@ -224,17 +257,14 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       color_mode_shape: "rounded", // dropdown shape: square | rounded | round
       // Custom color is now a color mode; its picker style lives here.
       color_override_style: "swatch",
-      // Sliders: brightness + animation speed share one appearance config
-      // (slider_*); each can be shown/hidden independently.
+      // Sliders: brightness, speed and intensity share one appearance
+      // config (slider_*); each can be shown/hidden independently.
       show_brightness: false,
       show_animation_speed: true,
+      show_intensity: true,
       slider_style: "slider", // slider | bar | wheel | matrix | rotary | capsule
       slider_width: 100,
       slider_theme: "subtle",
-      slider_thickness: 6,
-      slider_variant: "thin",
-      slider_show_icon_left: true, // 🐢 / 🌙 lower icon on the capsule
-      slider_show_icon_right: true, // ⚡ / ☀️ upper icon on the capsule
       show_active_label: true,
       ...resolveClockAppearance(cfg),
     };
@@ -447,6 +477,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       a.clock_color,
       a.clock_color_mode,
       a.native_effect_speed,
+      a.native_effect_intensity,
       a.native_effect_direction,
       a.device_orientation,
       a.extended_effects_enabled,
@@ -649,6 +680,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       clock_color_mode: a.clock_color_mode,
       native_effect_direction: a.native_effect_direction,
       native_effect_speed: this._animationSpeed(),
+      native_effect_intensity: this._animationIntensity(),
     };
     if (style.presetId) {
       // A preset previews its OWN saved color, not the active override.
@@ -683,6 +715,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         colorMode === "custom" ? "normal" : colorMode || "normal",
       native_effect_direction: a.native_effect_direction,
       native_effect_speed: this._animationSpeed(),
+      native_effect_intensity: this._animationIntensity(),
     };
     if (style.presetId) {
       attrs.clock_style = "White";
@@ -910,11 +943,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
 
   // The sliders' commands (options: the slider's, LampSliders).
   _applySpeed(value, options) {
-    this._callSetClock({ speed: Math.max(1, Math.min(255, value | 0)) }, false, options);
+    this._callSetClock({ speed: Math.max(0, Math.min(255, value | 0)) }, false, options);
   }
 
+  // Brightness 0 turns the lamp off (light.turn_on does).
   _applyBrightness(bri, options) {
-    const brightness = Math.max(3, Math.min(255, bri | 0));
+    const brightness = Math.max(0, Math.min(255, bri | 0));
     return this._command("turn_on", { brightness }, "light", false, options);
   }
 
@@ -1027,7 +1061,9 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
             : "";
     const sliders =
       !offline &&
-      (config.show_brightness === true || config.show_animation_speed !== false)
+      (config.show_brightness === true ||
+        config.show_animation_speed !== false ||
+        config.show_intensity !== false)
         ? this._renderSliders(a)
         : "";
 
@@ -1314,16 +1350,19 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   }
 
   _renderSliders(a) {
+    // Speed and intensity only while the clock's background reads them;
+    // otherwise hidden or greyed out (sliderWhenUsed).
+    const style = this._lampStyle();
     const showBrightness = this.config.show_brightness === true;
     const showSpeed = this.config.show_animation_speed !== false;
-    if (!showBrightness && !showSpeed) return "";
+    const showIntensity = this.config.show_intensity !== false;
 
     const controls = [];
     if (showBrightness) {
       const briRaw =
         this._brightnessPreview != null
           ? brightnessPctToRaw(this._brightnessPreview)
-          : Number(this._attrs().brightness) || 3;
+          : Number(this._attrs().brightness) || 0;
       const briPct =
         this._brightnessPreview != null
           ? this._brightnessPreview
@@ -1336,17 +1375,24 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       });
     }
     if (showSpeed) {
-      const raw = Math.max(
-        1,
-        Math.min(255, Number(a.native_effect_speed) || DEFAULT_EFFECT_SPEED),
-      );
-      controls.push({
-        label: "Animation speed",
+      const raw = chosenSpeed(a);
+      controls.push(sliderWhenUsed(this.config, clockStyleTakes(style, "speed"), {
+        label: "Speed",
         gc: { ...this._speedGc(), rawValue: this._speedPreview ?? raw },
         value: this._lampSliders.value("speed") ?? speedRawToPct(raw),
         ns: "speed",
-      });
+      }));
     }
+    if (showIntensity) {
+      const raw = chosenIntensity(a);
+      controls.push(sliderWhenUsed(this.config, clockStyleTakes(style, "intensity"), {
+        label: "Intensity",
+        gc: { ...this._intensityGc(), rawValue: this._intensityPreview ?? raw },
+        value: this._lampSliders.value("intensity") ?? intensityRawToPct(raw),
+        ns: "intensity",
+      }));
+    }
+    if (!controls.some(Boolean)) return "";
     // The shared slider renderer emits an HTML string naming this card's
     // `_sl*` handlers in data-on-* attributes (see host-events.js).
     return html`<div class="section section-sliders">

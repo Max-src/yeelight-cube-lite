@@ -605,7 +605,22 @@ const SLOT_COLORS = {
   33: [0x01ff563d],
   72: [0x01ff3010, 0x0110ff40, 0x012050ff, 0x01e0c0a0],
 };
-export const LAMP_EFFECTS = {
+// const.py LAMP_INTENSITY_SLOTS (what intensity sets on each is listed there)
+// and LAMP_INTENSITY_MINIMUMS.
+export const LAMP_INTENSITY_SLOTS = new Set([
+  4, 5, 6, 7, 9, 11, 14, 15, 18, 23, 25, 26, 28, 30, 32, 37, 42, 43, 45, 47,
+  49, 51, 60, 61, 70, 73,
+]);
+export const LAMP_INTENSITY_MINIMUMS = { 15: 13, 70: 1 };
+// The effects that read the intensity get `intensity: true`, like `speed`.
+const withIntensity = (effects) =>
+  Object.fromEntries(
+    Object.entries(effects).map(([name, spec]) => [
+      name,
+      LAMP_INTENSITY_SLOTS.has(spec.mode) ? { ...spec, intensity: true } : spec,
+    ]),
+  );
+export const LAMP_EFFECTS = withIntensity({
   Ribbon: { mode: 3, effectId: 3, speed: true },
   "Starry Sky": { mode: 5, effectId: 5, speed: true, color: 255 },
   Spectrum: { mode: 17, effectId: 17, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
@@ -659,7 +674,7 @@ export const LAMP_EFFECTS = {
       },
     ]),
   ),
-};
+});
 export const DIRECTION_VALUES = { Up: 0, Down: 1, Left: 2, Right: 3 };
 // const.py MOUNT_DIRECTION_VALUES: what keeps an effect flowing the same way for
 // the viewer once the lamp is turned.
@@ -682,8 +697,12 @@ export const LAMP_RATE_LIMITS = { 28: 254, 51: 239 };
 // The lamp's stored presets, by command id, as far as the commands sent use
 // them: [colour selector, intensity, rate, direction]. A command starts from
 // the row, then only the sent keys change.
-// const.py DEFAULT_NATIVE_EFFECT_SPEED and UNDIRECTED_EFFECT_DIRECTION.
+// const.py DEFAULT_NATIVE_EFFECT_SPEED, DEFAULT_NATIVE_EFFECT_INTENSITY,
+// SPEED_RANGE, INTENSITY_RANGE and UNDIRECTED_EFFECT_DIRECTION.
 export const DEFAULT_EFFECT_SPEED = 128;
+export const DEFAULT_EFFECT_INTENSITY = 128;
+export const SPEED_RANGE = Object.freeze({ min: 0, max: 255 });
+export const INTENSITY_RANGE = Object.freeze({ min: 0, max: 255 });
 export const UNDIRECTED_EFFECT_DIRECTION = 0;
 
 export const PRESET_ROWS = {
@@ -722,6 +741,38 @@ export const CLOCK_BACKGROUND_DIRECTION = DIRECTION_TABLE[REFERENCE_PROFILE].ind
 
 export const lampRate = (mode, rate) =>
   Math.min(rate, LAMP_RATE_LIMITS[mode] ?? rate);
+
+/** const.py lamp_intensity: the intensity sent for slot `mode`. */
+export function lampIntensity(mode, intensity) {
+  const value = Math.max(
+    INTENSITY_RANGE.min,
+    Math.min(INTENSITY_RANGE.max, Math.trunc(Number(intensity))),
+  );
+  return Math.max(value, LAMP_INTENSITY_MINIMUMS[mode] ?? value);
+}
+
+/** The intensity chosen on a lamp (its native_effect_intensity attribute), the
+ * default when it reports none. Previews pass it on as the lamp gets it: only
+ * the effects that read it change. */
+export const chosenIntensity = (attrs) =>
+  lampSetting(attrs?.native_effect_intensity, INTENSITY_RANGE, DEFAULT_EFFECT_INTENSITY);
+
+/** The speed chosen on a lamp (its native_effect_speed attribute, 0-255),
+ * the default when it reports none. */
+export const chosenSpeed = (attrs) =>
+  lampSetting(attrs?.native_effect_speed, SPEED_RANGE, DEFAULT_EFFECT_SPEED);
+
+// A reported setting in its range; 0 is a value, only a missing one defaults.
+function lampSetting(value, { min, max }, fallback) {
+  const n = value == null || value === "" ? NaN : Number(value);
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : fallback;
+}
+
+// The intensity a command sends for the effect `spec`: null when the effect
+// reads none or none is chosen, so the preset row's applies (lamp_renderers.py
+// _sent_intensity).
+const sentIntensity = (spec, intensity) =>
+  intensity == null || !spec.intensity ? null : lampIntensity(spec.mode, intensity);
 
 // What the lamp does with a color: not what a preview shows, so these stay
 // whatever draws the frames.
@@ -787,9 +838,11 @@ export const effectSupportsColorMode = (effect, mode) =>
   (mode === "bw" && COLOR_MODE_BW_EFFECTS.has(effect));
 
 /** The fields a renderer reads, from what a command sends. */
-// `word`: the first colour word sent (null: no color key), `more` the others.
-function commandSettings(mode, commandId, direction, rate, word, more = []) {
-  const [selector, intensity] = PRESET_ROWS[commandId];
+// `word`: the first colour word sent (null: no color key), `more` the others,
+// `sent` the intensity sent (null: the preset row's).
+function commandSettings(mode, commandId, direction, rate, word, more = [], sent = null) {
+  const [selector, rowIntensity] = PRESET_ROWS[commandId];
+  const intensity = sent ?? rowIntensity;
   const coloured = word !== null;
   const settings = {
     mode,
@@ -822,6 +875,7 @@ export function lampSettings(
   colorOverride = null,
   colorMode = null,
   orientation = null,
+  intensity = null,
 ) {
   const spec = LAMP_EFFECTS[effect];
   const palette = effectSupportsColorMode(effect, colorMode)
@@ -840,12 +894,21 @@ export function lampSettings(
     );
   if (colorOverride && (!colorMode || colorMode === "normal") && effectSupportsColorOverride(effect))
     words = [(colorOverride[0] << 16) | (colorOverride[1] << 8) | colorOverride[2], ...words.slice(1)];
-  return commandSettings(spec.mode, commandId, value, rate, words[0] ?? null, words.slice(1));
+  return commandSettings(
+    spec.mode, commandId, value, rate, words[0] ?? null, words.slice(1),
+    sentIntensity(spec, intensity),
+  );
 }
 
 /** What the lamp runs behind the clock when `effect` is its mixer
  * (lamp_renderers.py). */
-export function lampClockSettings(effect, speed, colorOverride = null, colorMode = null) {
+export function lampClockSettings(
+  effect,
+  speed,
+  colorOverride = null,
+  colorMode = null,
+  intensity = null,
+) {
   const spec = LAMP_EFFECTS[effect];
   // A slot that draws its colour words (1, 8, 28, 33, 72) is sent all of them,
   // the color first, none under B&W, and no palette, which would only drop
@@ -872,7 +935,10 @@ export function lampClockSettings(effect, speed, colorOverride = null, colorMode
   }
   const rate = spec.speed ? lampRate(spec.mode, speed) : PRESET_ROWS[commandId][2];
   const more = !active && word !== null ? words.slice(1) : [];
-  return commandSettings(spec.mode, commandId, CLOCK_BACKGROUND_DIRECTION, rate, word, more);
+  return commandSettings(
+    spec.mode, commandId, CLOCK_BACKGROUND_DIRECTION, rate, word, more,
+    sentIntensity(spec, intensity),
+  );
 }
 
 // The families: one line each.

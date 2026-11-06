@@ -145,9 +145,11 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
         "Sliders",
         html`
           ${this._toggle("Show Brightness Slider", "show_brightness")}
-          ${this._toggle("Show Animation Speed Slider", "show_animation_speed")}
+          ${this._toggle("Show Speed Slider", "show_animation_speed")}
+          ${this._toggle("Show Intensity Slider", "show_intensity")}
           ${config.show_brightness !== false ||
-          config.show_animation_speed !== false
+          config.show_animation_speed !== false ||
+          config.show_intensity !== false
             ? renderLightSliderSettings(config, change)
             : ""}
         `,

@@ -124,7 +124,10 @@
         },
         "number": {
             "native_effect_speed": {
-                "name": "Animation speed"
+                "name": "Effect speed"
+            },
+            "native_effect_intensity": {
+                "name": "Effect intensity"
             },
             "scroll_speed": {
                 "name": "Text scroll: Interval"
@@ -409,6 +412,9 @@
         "no_speed": {
             "message": "{effect} does not support animation speed."
         },
+        "no_intensity": {
+            "message": "{effect} does not support intensity."
+        },
         "no_direction": {
             "message": "{effect} cannot run {direction}."
         },
@@ -616,7 +622,11 @@
                 },
                 "speed": {
                     "name": "Speed",
-                    "description": "Animation speed for effect-backed clock styles (1-255)."
+                    "description": "Animation speed for effect-backed clock styles (0-255)."
+                },
+                "intensity": {
+                    "name": "Intensity",
+                    "description": "Intensity for clock backgrounds that use it (0-255), shared with the effects."
                 },
                 "activate": {
                     "name": "Activate",
@@ -827,6 +837,10 @@
                 "speed": {
                     "name": "Speed",
                     "description": "Animation speed for effects that support it."
+                },
+                "intensity": {
+                    "name": "Intensity",
+                    "description": "Intensity for effects that support it (0-255): the number of glows or meteors, how often drops start, a wave's size... Shared by all effects."
                 },
                 "direction": {
                     "name": "Direction",

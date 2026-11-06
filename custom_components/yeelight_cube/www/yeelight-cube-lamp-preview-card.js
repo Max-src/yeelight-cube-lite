@@ -12,10 +12,6 @@ import { orientationOptions, nextOrientation, orientationControlModel } from "./
 import { renderOrientationControls } from "./orientation-control-ui.js";
 
 import {
-  resolveCapsuleTheme,
-  resolveCapsuleThickness,
-} from "./capsule-slider-utils.js";
-import {
   renderSliderGroup,
   stableSliderMarkup,
   lightSliderConfig,
@@ -92,11 +88,9 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       buttons_style: "gradient",
       show_brightness: true,
       slider_style: "capsule",
-      slider_thickness: 6,
       slider_theme: "subtle",
-      slider_value_display: "none",
+      slider_value: "none",
       show_power_toggle: false,
-      slider_show_icon_left: true,
       show_adjustment_controls: true,
       adjustments_layout: "categories",
       reset_button_mode: "changed",
@@ -201,24 +195,12 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       });
   }
 
-  // Build the generic slider render config from the brightness config, applying
-  // the same legacy theme/thickness migrations the card used before.
+  // The shared lamp-slider config (units, raw range, icons, the older
+  // options read as today's: same as the Clock and Native Effects cards),
+  // with this card's own additions. The slider_* options are the shared
+  // ones (older brightness_* names are aliases, see card-config.js).
   _brightnessGc() {
-    // The shared lamp-slider config (units, raw range, icons: same as the
-    // Clock and Native Effects cards), with this card's own additions.
-    // The slider_* options are the shared ones (older brightness_* names are
-    // aliases, see card-config.js).
     return lightSliderConfig(this.config, "brightness", sliderKeys("slider"), {
-      // Older theme names and the old "thick"/"thin" appearance still work.
-      theme: resolveCapsuleTheme(
-        this.config.slider_theme,
-        this.config.capsule_theme,
-      ),
-      thickness: resolveCapsuleThickness(
-        this.config.slider_thickness,
-        this.config.brightness_slider_appearance,
-        6,
-      ),
       // Only this card lets the user pick the slider color.
       color: this.config.slider_color || "#ff9800",
       rawValue:
@@ -571,7 +553,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
                 // The dragged value until the lamp reports it, else the lamp's.
                 value:
                   this._lampSliders.value("brightness") ??
-                  brightnessRawToPct(stateObj.attributes.brightness ?? 255),
+                  brightnessRawToPct(Number(stateObj.attributes.brightness) || 0),
                 ns: "brightness",
               },
             ]),

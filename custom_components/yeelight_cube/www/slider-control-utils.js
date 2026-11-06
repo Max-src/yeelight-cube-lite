@@ -4,7 +4,7 @@
 // ============================================================================
 //
 // The SAME control (all styles, CSS and interactions) is used by every card
-// with a lamp slider: brightness and animation speed in the Clock, Native
+// with a lamp slider: brightness, speed and intensity in the Clock, Native
 // Effects and Lamp Preview cards. One source of truth: a fix here benefits
 // every consumer.
 //
@@ -12,8 +12,9 @@
 // Consumers map that to their own device range in `onCommit(value1to100)`;
 // `onLive(value1to100)` fires immediately for responsive feedback.
 //
-// This file holds what every style shares: the container, the step buttons,
-// the pointer / commit logic and the config keys. Each style's markup, visual
+// This file holds what every style shares: the container, the ends (step
+// buttons), the pointer / commit logic, the config keys and their
+// migration from older options. Each style's markup, visual
 // update, interactions and CSS live in its module (slider-style-*.js, see
 // SLIDER_STYLES); the editor settings in slider-settings-ui.js.
 //
@@ -28,6 +29,9 @@ import { escapeHtml } from "./html-escape-utils.js";
 import { hostEventAttrs } from "./host-events.js";
 import {
   BRIGHTNESS_RAW,
+  SLIDER_MAX,
+  SLIDER_MIN,
+  INTENSITY_RAW,
   SPEED_RAW,
   TOKEN_PATTERN,
   formatSliderValue,
@@ -47,9 +51,12 @@ export {
   sliderPctToRaw,
   sliderRawToPct,
   BRIGHTNESS_RAW,
+  INTENSITY_RAW,
   SPEED_RAW,
   brightnessPctToRaw,
   brightnessRawToPct,
+  intensityPctToRaw,
+  intensityRawToPct,
   speedPctToRaw,
   speedRawToPct,
   sliderRawValue,
@@ -59,9 +66,11 @@ export {
 
 /**
  * The styles, by name. Each module gives:
- * - render(c) -> { html, mirror }: its markup inside the slider container,
- *   and what sits beside its track (mirrored by the step-button row so the
- *   buttons line up under the track: gap, padX, left, right, trackMaxWidth);
+ * - render(c) -> { html }: its markup inside the slider container (`c.ends`:
+ *   the ends to draw, for a style that draws its own);
+ * - ends: "sides" (drawn beside it) or "inside" (it draws them), when it
+ *   has room for the ends; thickShape: its own Thick look; compact: a fixed
+ *   size on the card's background (sliderStyleFeatures);
  * - update(view, value): its visuals for a value (drag, external updates);
  * - handlers(tools) (optional): its own interactions;
  * - css.
@@ -71,23 +80,50 @@ const SLIDER_STYLES = { slider: range, bar, wheel, matrix, rotary, capsule };
 const styleOf = (name) => SLIDER_STYLES[name] || range;
 
 /**
+ * A slider's two ends: buttons that step the value down / up by the step
+ * size, showing the slider's icons (➖ / ➕ when it has none). `html` is the
+ * button; `events` its data-on-* attributes, for a style drawing its own.
+ */
+function sliderEnds(gc, on) {
+  const step = Math.max(1, Math.min(25, parseInt(gc.stepSize) || 5));
+  const end = (side, delta, content) => {
+    const title = `${delta < 0 ? "Decrease" : "Increase"} by ${step}`;
+    const events = `title="${title}" aria-label="${title}" ${on({ click: "Step" }, [delta])}`;
+    return {
+      content,
+      events,
+      html: `<button type="button" class="brightness-end brightness-end-${side}" ${events}>${content}</button>`,
+    };
+  };
+  return {
+    left: end("left", -step, gc.iconLeft || "➖"),
+    right: end("right", step, gc.iconRight || "➕"),
+  };
+}
+
+/**
  * Render the slider control for a generic config `gc` and current `value`
- * (1-100). Returns an HTML string.
+ * (0-100). Returns an HTML string.
  *
- * gc: {
- *   style, width, thickness, theme, color, showValue, unit,
- *   variant, barFill,
+ * gc (sliderConfigToGc): {
+ *   style, width, thickness, theme, color, showValue, valueMode, unit,
+ *   variant, capsuleVariant, barFill,
  *   wheelStep, wheelStyle, wheelLabels,
  *   matrixCols, matrixRows, matrixDir, matrixPixelStyle,
  *   rotaryStyle,
- *   stepButtons, stepSize, stepPosition,
- *   valueDisplay, valueSide, iconLeft, iconRight, snap, capsuleVariant,
+ *   ends, stepSize, iconLeft, iconRight, snap,
  * }
+ *
+ * Ends ("icons" or "plus_minus") are buttons that step the value down / up by
+ * stepSize: drawn beside the control for a style whose module says
+ * `ends: "sides"`, by the style itself for `ends: "inside"` (the Capsule's
+ * icons), absent otherwise.
  */
 export function renderSliderControl(gc, value, ns = "") {
   gc = sanitizeSliderGc(gc);
   ns = TOKEN_PATTERN.test(String(ns)) ? ns : "";
-  const v = Math.max(1, Math.min(100, Math.round(Number(value)) || 1));
+  const n = Math.round(Number(value));
+  const v = Math.max(SLIDER_MIN, Math.min(SLIDER_MAX, Number.isFinite(n) ? n : SLIDER_MIN));
   const style = SLIDER_STYLES[gc.style] ? gc.style : "slider";
   const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
   const thickness = gc.thickness ?? 6;
@@ -121,7 +157,9 @@ export function renderSliderControl(gc, value, ns = "") {
   });
   const idOf = (b) => (ns ? `${b}-${ns}` : b);
 
-  const { html: body, mirror = {} } = SLIDER_STYLES[style].render({
+  const placement = SLIDER_STYLES[style].ends;
+  const ends = placement && gc.ends && gc.ends !== "none" ? sliderEnds(gc, on) : null;
+  const { html: body } = SLIDER_STYLES[style].render({
     gc,
     v,
     showValue: gc.showValue !== false,
@@ -130,46 +168,32 @@ export function renderSliderControl(gc, value, ns = "") {
     on,
     drag,
     idOf,
+    ends: placement === "inside" ? ends : null,
   });
-  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" ${on({ wheel: "Wheel" })}>${body}`;
-
-  // Step buttons, below the track or on its sides.
-  const step = gc.stepButtons
-    ? Math.max(1, Math.min(25, parseInt(gc.stepSize) || 5))
-    : 0;
-  const position = gc.stepPosition || "below";
-  const stepButton = (delta, side = "") =>
-    `<button type="button" class="rotary-step-btn${side}" title="${delta < 0 ? "Decrease" : "Increase"} by ${Math.abs(delta)}%" ${on({ click: "RotaryStep" }, [delta])}>${delta < 0 ? "&#x2212;" : "&#x2b;"}</button>`;
-  if (step && position === "below") {
-    // Align the buttons under the TRACK, not the whole control, by mirroring
-    // the style's side content with an invisible spacer that reuses the exact
-    // same markup — so the button area always equals the track width
-    // regardless of value text, icons or control width.
-    const spacer = (inner) =>
-      inner
-        ? `<div class="brightness-step-spacer" aria-hidden="true">${inner}</div>`
-        : "";
-    const trackMax = mirror.trackMaxWidth ? `${mirror.trackMaxWidth}px` : "none";
-    html += `
-        <div class="brightness-step-buttons brightness-step-below"
-             style="--slider-step-gap:${mirror.gap ?? 12}px;--slider-step-pad-x:${mirror.padX ?? 0}px;--slider-step-track-max:${trackMax};">
-          ${spacer(mirror.left)}
-          <div class="brightness-step-btn-area">
-            ${stepButton(-step)}
-            ${stepButton(step)}
-          </div>
-          ${spacer(mirror.right)}
-        </div>`;
-  }
-  html += `</div>`;
-  if (step && position === "sides")
-    html = `<div class="brightness-sides-row">
-      ${stepButton(-step, " rotary-step-side")}
-      ${html}
-      ${stepButton(step, " rotary-step-side")}
-    </div>`;
+  const content =
+    ends && placement === "sides"
+      ? `<div class="brightness-ends-row">${ends.left.html}<div class="brightness-ends-body">${body}</div>${ends.right.html}</div>`
+      : body;
+  const html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" ${on({ wheel: "Wheel" })}>${content}</div>`;
 
   return `<div class="brightness-control-width" style="width:${width}%">${html}</div>`;
+}
+
+// Sliders for a setting what the card shows may not use (an effect's speed
+// or intensity): hidden while unused, or, with the card option
+// "Grey out unused sliders", kept in place greyed out. Every card with such
+// sliders decides through sliderWhenUsed, so they all behave the same.
+export const GREY_OUT_UNUSED_KEY = "slider_grey_out_unused";
+const UNUSED_SLIDER_HINT = "Not used by the current effect";
+
+/**
+ * The control to render for a slider whose setting is `used` or not: the
+ * control itself, the control marked unused (greyed out by
+ * renderSliderGroup) when the card greys out unused sliders, else null.
+ */
+export function sliderWhenUsed(config, used, control) {
+  if (used) return control;
+  return config?.[GREY_OUT_UNUSED_KEY] === true ? { ...control, unused: true } : null;
 }
 
 /**
@@ -180,15 +204,20 @@ export function renderSliderControl(gc, value, ns = "") {
 export function renderSliderGroup(controls) {
   const items = controls
     .filter(Boolean)
-    .map(({ label = "", gc, value, ns = "" }) => {
+    .map(({ label = "", gc, value, ns = "", unused = false }) => {
       // Sanitised here only for the wrapper's own values; renderSliderControl
       // sanitises `gc` itself (doing both would escape text twice).
       const safe = sanitizeSliderGc(gc);
       const width = Math.max(30, Math.min(100, Number(safe.width) || 100));
       const style = safe.style || "slider";
+      // An unused slider (sliderWhenUsed) stays in place, greyed out and
+      // inert: no drag, wheel, step button or keyboard focus.
+      const unusedAttrs = unused
+        ? ` inert aria-disabled="true" title="${escapeHtml(UNUSED_SLIDER_HINT)}"`
+        : "";
       return `
-        <div class="brightness-control-item brightness-control-item-${style}"
-             style="--brightness-control-width:${width}%">
+        <div class="brightness-control-item brightness-control-item-${style}${unused ? " brightness-control-unused" : ""}"
+             style="--brightness-control-width:${width}%"${unusedAttrs}>
           ${label ? `<div class="brightness-control-label">${escapeHtml(label)}</div>` : ""}
           ${renderSliderControl({ ...gc, width: 100 }, value, ns)}
         </div>`;
@@ -359,7 +388,7 @@ export function createSliderHandlers({
     );
   };
 
-  const clamp = (n) => Math.max(1, Math.min(100, n));
+  const clamp = (n) => Math.max(SLIDER_MIN, Math.min(SLIDER_MAX, n));
 
   const commit = (value) => {
     if (commitTimer) clearTimeout(commitTimer);
@@ -430,7 +459,7 @@ export function createSliderHandlers({
       applyValue(event.target.value);
     },
 
-    // The mouse wheel over any style: ±5.
+    // The mouse wheel over any style: one step (the step size).
     Wheel(event, element) {
       event.preventDefault();
       const container = element ?? event.currentTarget;
@@ -447,19 +476,20 @@ export function createSliderHandlers({
           Math.abs(event.deltaY) >= Math.abs(event.deltaX)
             ? event.deltaY < 0
             : event.deltaX > 0;
-        const nv = clamp(cur + (goUp ? 5 : -5));
+        const step = Math.max(1, Math.min(25, parseInt(getConfig().stepSize) || 5));
+        const nv = clamp(cur + (goUp ? step : -step));
         slider.value = nv;
         applyValue(nv);
       }
     },
 
-    // The step buttons.
-    RotaryStep(delta) {
+    // The ends (sliderEnds): one step down or up.
+    Step(delta) {
       const input =
         scoped()?.querySelector(".brightness-slider") ||
         scoped()?.querySelector(".capsule-input");
       if (!input) return;
-      const cur = parseInt(input.value) || 1;
+      const cur = parseInt(input.value) || SLIDER_MIN;
       const nv = clamp(cur + delta);
       input.value = nv;
       applyValue(nv);
@@ -505,6 +535,11 @@ const sliderLayoutStyles = `
   .brightness-control-item {
     flex: 0 1 calc(var(--brightness-control-width, 100%) - ${cardSpacing.control} / 2);
     min-width: 0;
+  }
+  .brightness-control-unused {
+    opacity: 0.4;
+    filter: grayscale(1);
+    cursor: not-allowed;
   }
   .brightness-control-label {
     font-size: 0.82em;
@@ -565,69 +600,40 @@ const sliderLayoutStyles = `
   }
 `;
 
-const sliderStepButtonStyles = `
-  .brightness-step-below {
+// The ends beside a Slider or Bar (the Capsule draws its own, the same way).
+const sliderEndStyles = `
+  .brightness-ends-row {
     display: flex;
     align-items: center;
-    gap: var(--slider-step-gap, 12px);
-    width: 100%;
-    margin-top: 6px;
-    padding: 2px var(--slider-step-pad-x, 0px) 0;
-    box-sizing: border-box;
-  }
-  .brightness-step-btn-area {
-    flex: 1;
-    max-width: var(--slider-step-track-max, none);
-    display: flex;
     gap: 10px;
-    justify-content: center;
-    min-width: 0;
   }
-  .brightness-step-spacer {
-    visibility: hidden;
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-  }
-  .brightness-sides-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .brightness-sides-row .brightness-slider-container {
+  .brightness-ends-body {
     flex: 1;
     min-width: 0;
   }
-  .rotary-step-side {
+  .brightness-end,
+  .capsule-icon-button {
     flex: 0 0 auto;
-  }
-  .rotary-step-btn {
-    flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
-    box-sizing: border-box;
-    border-radius: 50%;
-    border: 2px solid var(--divider-color, rgba(0, 0, 0, 0.15));
-    background: var(--card-background-color, #fff);
-    color: var(--primary-text-color, #333);
+    width: 28px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
     font-size: 22px;
     line-height: 1;
+    text-align: center;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.12);
-    transition:
-      box-shadow 0.15s ease,
-      transform 0.1s ease;
     user-select: none;
+    transition: transform 0.1s ease;
   }
-  .rotary-step-btn:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    transform: scale(1.05);
+  .brightness-end:hover,
+  .capsule-icon-button:hover {
+    transform: scale(1.12);
   }
-  .rotary-step-btn:active {
-    transform: scale(0.95);
+  .brightness-end:active,
+  .capsule-icon-button:active {
+    transform: scale(0.92);
   }
 `;
 
@@ -676,87 +682,288 @@ export const sliderControlStyles = [
   wheel.css,
   matrix.css,
   rotary.css,
-  sliderStepButtonStyles,
+  sliderEndStyles,
   capsule.css,
   sliderThemeStyles,
 ].join("\n");
 
 // ── Config key mapping ──────────────────────────────────────────────────────
 // Consumers may use any config key names; a `keys` map (K) decouples the shared
-// render/settings from specific names. `sliderKeys(prefix)` builds a uniform
-// `${prefix}_*` scheme (used by the clock speed slider); the brightness slider
-// passes its own historical key names.
+// render/settings from specific names. `sliderKeys(prefix)` builds the uniform
+// `${prefix}_*` scheme every lamp slider uses (slider_*). Its `retired` map
+// names the options merged into today's (read only by migrateSliderOptions).
+const SLIDER_FIELDS = {
+  style: "style",
+  width: "width",
+  theme: "theme",
+  thickness: "thickness", // thin | medium | thick
+  color: "color",
+  value: "value", // none | percent | raw
+  ends: "ends", // none | icons | plus_minus
+  stepSize: "step_size",
+  snap: "snap",
+  barFill: "bar_fill",
+  wheelStyle: "wheel_style",
+  wheelLabels: "wheel_labels",
+  matrixCols: "matrix_cols",
+  matrixRows: "matrix_rows",
+  matrixDir: "matrix_dir",
+  matrixPixelStyle: "matrix_pixel_style",
+  matrixColor: "matrix_color",
+  rotaryStyle: "rotary_style",
+};
+// Merged into the fields above: Value, Ends, Step Size and Thickness.
+const RETIRED_SLIDER_FIELDS = {
+  showValue: "show_value",
+  valueDisplay: "value_display",
+  valueSide: "value_side",
+  stepButtons: "step_buttons",
+  stepPosition: "step_position",
+  iconLeftShow: "show_icon_left",
+  iconRightShow: "show_icon_right",
+  iconSet: "icons",
+  wheelStep: "wheel_step",
+  variant: "variant",
+  capsuleVariant: "capsule_variant",
+};
+// Retired options without a prefix: the raw-value toggle (now Value: Device
+// units) and the Lamp Preview's oldest theme / thickness names.
+const RETIRED_SLIDER_OPTIONS = [
+  "slider_show_raw_value",
+  "capsule_theme",
+  "brightness_slider_appearance",
+];
+
+const prefixed = (prefix, fields) =>
+  Object.fromEntries(
+    Object.entries(fields).map(([field, name]) => [field, `${prefix}_${name}`]),
+  );
+
 export function sliderKeys(prefix) {
-  const p = (s) => `${prefix}_${s}`;
   return {
-    style: p("style"),
-    width: p("width"),
-    theme: p("theme"),
-    thickness: p("thickness"),
-    color: p("color"),
-    showValue: p("show_value"),
-    variant: p("variant"),
-    barFill: p("bar_fill"),
-    wheelStep: p("wheel_step"),
-    wheelStyle: p("wheel_style"),
-    wheelLabels: p("wheel_labels"),
-    matrixCols: p("matrix_cols"),
-    matrixRows: p("matrix_rows"),
-    matrixDir: p("matrix_dir"),
-    matrixPixelStyle: p("matrix_pixel_style"),
-    matrixColor: p("matrix_color"),
-    rotaryStyle: p("rotary_style"),
-    stepButtons: p("step_buttons"),
-    stepSize: p("step_size"),
-    stepPosition: p("step_position"),
-    valueDisplay: p("value_display"),
-    valueSide: p("value_side"),
-    snap: p("snap"),
-    capsuleVariant: p("capsule_variant"),
-    iconLeftShow: p("show_icon_left"),
-    iconRightShow: p("show_icon_right"),
+    ...prefixed(prefix, SLIDER_FIELDS),
+    retired: prefixed(prefix, RETIRED_SLIDER_FIELDS),
   };
 }
 
-// Build the generic render config (gc) for a lamp brightness/speed slider from a
-// card config + key map. `overrides` holds a card's own additions (e.g. the
-// Lamp Preview's configurable color and legacy values, a live rawValue).
+/** {older name: shared name} for every slider option, today's and retired
+ * (a card's own slider prefix, e.g. the Clock's speed_*, to slider_*). */
+export function sliderKeyAliases(fromPrefix, toPrefix = "slider") {
+  const pairs = (fields) =>
+    Object.values(fields).map((name) => [
+      `${fromPrefix}_${name}`,
+      `${toPrefix}_${name}`,
+    ]);
+  return Object.fromEntries([
+    ...pairs(SLIDER_FIELDS),
+    ...pairs(RETIRED_SLIDER_FIELDS),
+  ]);
+}
+
+// The choices of the merged settings (the editor lists the same). Ends
+// default per style (defaultSliderEnds).
+export const SLIDER_VALUE_MODES = ["none", "percent", "raw"];
+export const SLIDER_ENDS = ["none", "icons", "plus_minus"];
+export const SLIDER_THICKNESS = Object.freeze({ thin: 4, medium: 6, thick: 9 });
+// A style with its own thick shape (a fat track, a tall thumb) draws it at
+// this size for Thickness: Thick.
+const THICK_SHAPE_PX = 7;
+const STEP_SIZE = Object.freeze({ min: 1, max: 25, fallback: 5 });
+// Rotary dials sit side by side, on the card's own background.
+const COMPACT_WIDTH = 30;
+const PLUS_MINUS = ["➖", "➕"];
+
+/**
+ * What a style offers beyond the shared settings, from its module:
+ * `ends` ("sides": drawn beside the control, "inside": the style draws them;
+ * absent: none), `thickShape` (its own Thick look) and `compact` (a fixed
+ * size on the card background: no width or background setting).
+ */
+export function sliderStyleFeatures(style) {
+  const { ends = null, thickShape = false, compact = false } = styleOf(style);
+  return { ends, thickShape, compact };
+}
+
+/** The Ends a style starts with: the Capsule's icons, none beside the
+ * others (as before the ends could be chosen). */
+export const defaultSliderEnds = (style) =>
+  sliderStyleFeatures(style).ends === "inside" ? "icons" : "none";
+
+const isSet = (value) => value !== undefined && value !== null && value !== "";
+const pxLevel = (px, thickShape) =>
+  px <= 4 ? "thin" : px <= 7 || thickShape ? "medium" : "thick";
+
+/**
+ * The changes that turn a config's retired slider options into today's
+ * (Value, Ends, Step Size, Thickness): the new values, and `undefined` for
+ * each retired option to drop. An option already set the new way wins. Used
+ * by the cards' option normalisation (card-config.js) and, for configs that
+ * never went through it, by sliderConfigToGc.
+ */
+export function migrateSliderOptions(config = {}, K = sliderKeys("slider")) {
+  const R = K.retired || {};
+  const old = (field) => config[R[field]];
+  const changes = {};
+  const style = config[K.style] || "slider";
+  const { thickShape } = sliderStyleFeatures(style);
+
+  // Value: hidden, a percentage or the device value.
+  if (!isSet(config[K.value])) {
+    const shown =
+      style === "capsule" && isSet(old("valueDisplay"))
+        ? old("valueDisplay") !== "none"
+        : old("showValue") !== false;
+    if (!shown) changes[K.value] = "none";
+    else if (config.slider_show_raw_value === true) changes[K.value] = "raw";
+  }
+
+  // Ends: the Capsule's icons (now tapped to step), else the step buttons.
+  if (!isSet(config[K.ends])) {
+    const icons = old("iconLeftShow") !== false || old("iconRightShow") !== false;
+    const buttons = old("stepButtons") === true;
+    if (style === "capsule" && icons)
+      changes[K.ends] = old("iconSet") === "plus_minus" ? "plus_minus" : "icons";
+    else if (buttons) changes[K.ends] = "plus_minus";
+    else if (style === "capsule") changes[K.ends] = "none";
+  }
+
+  // Step Size: the Wheel's own step.
+  if (!isSet(config[K.stepSize]) && style === "wheel" && isSet(old("wheelStep")))
+    changes[K.stepSize] = Math.max(
+      STEP_SIZE.min,
+      Math.min(STEP_SIZE.max, Number(old("wheelStep")) || STEP_SIZE.fallback),
+    );
+
+  // Thickness: a level, from the pixels or the style's thick shape.
+  const thickness = config[K.thickness];
+  if (!Object.hasOwn(SLIDER_THICKNESS, String(thickness))) {
+    const shape = style === "capsule" ? old("capsuleVariant") : old("variant");
+    const appearance = config.brightness_slider_appearance;
+    const px = Number(thickness);
+    const level =
+      thickShape && shape === "thick"
+        ? "thick"
+        : isSet(thickness) && Number.isFinite(px)
+          ? pxLevel(px, thickShape)
+          : appearance === "thick" || appearance === "thin"
+            ? appearance
+            : undefined;
+    if (level && level !== "medium") changes[K.thickness] = level;
+    else if (thickness !== undefined) changes[K.thickness] = undefined;
+  }
+
+  // Card background: the oldest theme names ("transparent" was none).
+  const theme = config[K.theme] ?? config.capsule_theme;
+  if (theme === "flat" || theme === "transparent") {
+    if (config[K.theme] !== "flat") changes[K.theme] = "flat";
+  } else if (isSet(config[K.theme]) && config[K.theme] !== "subtle")
+    changes[K.theme] = undefined;
+
+  for (const key of [...Object.values(R), ...RETIRED_SLIDER_OPTIONS])
+    if (key in config) changes[key] = undefined;
+  return changes;
+}
+
+/** The config with its slider options in today's names (itself when none
+ * needs changing). */
+export function withSliderOptions(config, K = sliderKeys("slider")) {
+  const changes = migrateSliderOptions(config, K);
+  if (!Object.keys(changes).length) return config;
+  const result = { ...config, ...changes };
+  for (const [key, value] of Object.entries(changes))
+    if (value === undefined) delete result[key];
+  return result;
+}
+
+// The lamp's sliders, by kind: what tells them apart (color, end icons, the
+// device range). Everything else is the card's shared slider appearance.
+// `familyIcons` replaces the icons for an effect family (effect-families.js):
+// a music effect's intensity is how strongly it follows the sound.
+// A new lamp slider is one more row here, plus its draft in lamp-sliders.js.
+export const LAMP_SLIDER_KINDS = Object.freeze({
+  brightness: { color: "#ffb74d", icons: ["🌙", "☀️"], raw: BRIGHTNESS_RAW },
+  speed: { color: "#5aa9ff", icons: ["🐢", "⚡"], raw: SPEED_RAW },
+  intensity: {
+    color: "#b388ff",
+    icons: ["💧", "🌊"],
+    familyIcons: { music: ["🔈", "🔊"] },
+    raw: INTENSITY_RAW,
+  },
+});
+
+/**
+ * The end icons of a lamp slider `kind` for the effect family shown
+ * (`family`, optional): ➖ / ➕ with Ends: ➖ ➕, else the kind's own.
+ */
+export function lampSliderIcons(config, kind, family, keys = sliderKeys("slider")) {
+  if (withSliderOptions(config, keys)[keys.ends] === "plus_minus") return PLUS_MINUS;
+  const spec = LAMP_SLIDER_KINDS[kind] ?? LAMP_SLIDER_KINDS.brightness;
+  return spec.familyIcons?.[family] ?? spec.icons;
+}
+
+// Build the generic render config (gc) for a lamp slider (LAMP_SLIDER_KINDS)
+// from a card config + key map. `overrides` holds a card's own additions (e.g.
+// the Lamp Preview's configurable color, a live rawValue); its `family` is
+// the effect family shown, for the icons (lampSliderIcons).
 export function lightSliderConfig(
   config,
   kind,
   keys = sliderKeys("slider"),
-  overrides = {},
+  { family, ...overrides } = {},
 ) {
-  const speed = kind === "speed";
+  const { color, raw } = LAMP_SLIDER_KINDS[kind] ?? LAMP_SLIDER_KINDS.brightness;
+  const [iconLeft, iconRight] = lampSliderIcons(config, kind, family, keys);
   return sliderConfigToGc(config, keys, {
-    color: speed ? "#5aa9ff" : "#ffb74d",
+    color,
     unit: "%",
-    iconLeft:
-      config[keys.iconLeftShow] !== false ? (speed ? "🐢" : "🌙") : null,
-    iconRight:
-      config[keys.iconRightShow] !== false ? (speed ? "⚡" : "☀️") : null,
-    // Global "Show Raw Value" toggle: display the device value (speed 1-255,
-    // brightness 3-255) instead of a percentage.
-    valueMode: config.slider_show_raw_value ? "raw" : "percent",
-    rawMin: (speed ? SPEED_RAW : BRIGHTNESS_RAW).min,
-    rawMax: (speed ? SPEED_RAW : BRIGHTNESS_RAW).max,
+    iconLeft,
+    iconRight,
+    rawMin: raw.min,
+    rawMax: raw.max,
     rawUnit: "",
     ...overrides,
   });
 }
 
+/**
+ * The render config (gc) of a slider from a card config and key map: the
+ * shared settings resolved for the style (renderSliderControl and the style
+ * modules read it). Retired options are read as today's (withSliderOptions).
+ */
 export function sliderConfigToGc(config, K, overrides = {}) {
+  config = withSliderOptions(config, K);
   const g = (k, d) => (config[k] !== undefined ? config[k] : d);
+  const style = SLIDER_STYLES[g(K.style)] ? g(K.style) : "slider";
+  const features = sliderStyleFeatures(style);
+  const level = Object.hasOwn(SLIDER_THICKNESS, String(g(K.thickness)))
+    ? g(K.thickness)
+    : "medium";
+  const thickShape = features.thickShape && level === "thick";
+  const value = SLIDER_VALUE_MODES.includes(g(K.value)) ? g(K.value) : "percent";
+  const ends = SLIDER_ENDS.includes(g(K.ends)) ? g(K.ends) : defaultSliderEnds(style);
+  const stepSize = Math.max(
+    STEP_SIZE.min,
+    Math.min(STEP_SIZE.max, parseInt(g(K.stepSize)) || STEP_SIZE.fallback),
+  );
   return {
-    style: g(K.style, "slider"),
-    width: g(K.width, 100),
-    theme: g(K.theme, "subtle"),
-    thickness: g(K.thickness, 6),
+    style,
+    width: features.compact ? COMPACT_WIDTH : g(K.width, 100),
+    theme: features.compact ? "flat" : g(K.theme, "subtle") === "flat" ? "flat" : "subtle",
+    thickness: thickShape ? THICK_SHAPE_PX : SLIDER_THICKNESS[level],
+    // The Slider and Capsule styles' own thick shape.
+    variant: thickShape ? "thick" : "thin",
+    capsuleVariant: thickShape ? "thick" : "thin",
     color: g(K.matrixColor, g(K.color, "#ff9800")),
-    showValue: g(K.showValue, true) !== false,
-    variant: g(K.variant, "thin"),
+    showValue: value !== "none",
+    // The device value (speed and intensity 1-255, brightness 3-255) instead
+    // of a percentage, for a slider that has a device range.
+    valueMode: value === "raw" ? "raw" : "percent",
+    ends: features.ends ? ends : "none",
+    stepSize,
+    // The Wheel stops every step.
+    wheelStep: stepSize,
+    snap: g(K.snap, false) === true,
     barFill: g(K.barFill, "solid"),
-    wheelStep: g(K.wheelStep, 10),
     wheelStyle: resolveWheelStyle(g(K.wheelStyle, "ticks")),
     wheelLabels: g(K.wheelLabels, true),
     matrixCols: g(K.matrixCols, 10),
@@ -764,13 +971,6 @@ export function sliderConfigToGc(config, K, overrides = {}) {
     matrixDir: g(K.matrixDir, "row"),
     matrixPixelStyle: g(K.matrixPixelStyle, "rounded"),
     rotaryStyle: g(K.rotaryStyle, "glow"),
-    stepButtons: g(K.stepButtons, false) === true,
-    stepSize: g(K.stepSize, 5),
-    stepPosition: g(K.stepPosition, "below"),
-    valueDisplay: g(K.valueDisplay, undefined),
-    valueSide: g(K.valueSide, "under"),
-    snap: g(K.snap, false) === true,
-    capsuleVariant: g(K.capsuleVariant, "thin"),
     unit: "%",
     ...overrides,
   };

@@ -85,17 +85,17 @@ _TIDE_DIRECTIONS = {"Right": "Up", "Left": "Down", "Up": "Left", "Down": "Right"
 
 NATIVE_EFFECTS = {
     "Ribbon": {"effect_id": 3, "mode": 3, "speed": True},
-    "Starry Sky": {"effect_id": 5, "mode": 5, "speed": True, "color": 255},
+    "Starry Sky": {"effect_id": 5, "mode": 5, "speed": True, "intensity": True, "color": 255},
     "Spectrum": {"effect_id": 17, "mode": 17, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
-    "Waves": {"effect_id": 42, "mode": 42, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
+    "Waves": {"effect_id": 42, "mode": 42, "speed": True, "intensity": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Rainbow": {"effect_id": 39, "mode": 39, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
-    "Waterfall": {"effect_id": 32, "mode": 32, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 255},
-    "Aurora": {"effect_id": 15, "mode": 15, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "color": 16842496},
+    "Waterfall": {"effect_id": 32, "mode": 32, "speed": True, "intensity": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 255},
+    "Aurora": {"effect_id": 15, "mode": 15, "speed": True, "intensity": True, "directions": NATIVE_EFFECT_DIRECTIONS, "color": 16842496},
     "Fire": {"effect_id": 34, "mode": 34, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": {"Right": "Down", "Down": "Right", "Left": "Up", "Up": "Left"}},
-    "Bouncing Ball": {"effect_id": 37, "mode": 37, "speed": True},
-    "Meteor": {"effect_id": 47, "mode": 47, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
+    "Bouncing Ball": {"effect_id": 37, "mode": 37, "speed": True, "intensity": True},
+    "Meteor": {"effect_id": 47, "mode": 47, "speed": True, "intensity": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Tide": {"effect_id": 48, "mode": 48, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _TIDE_DIRECTIONS},
-    "Building Blocks": {"effect_id": 49, "mode": 49, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 16777471},
+    "Building Blocks": {"effect_id": 49, "mode": 49, "speed": True, "intensity": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 16777471},
     "Hacking": {"effect_id": 46, "mode": 46, "speed": True, "directions": ("Up", "Down")},
     "Flower Sea": {"effect_id": 91, "mode": 55, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
     "Magic": {"effect_id": 92, "mode": 76, "speed": True},
@@ -109,8 +109,10 @@ DEFAULT_NATIVE_EFFECT = "Ribbon"
 # not offer it runs its first direction.
 DEFAULT_NATIVE_EFFECT_DIRECTION = "Right"
 # The speed before one is chosen: the rate of every preset row, what an effect
-# runs at when the app starts it. Speed is one setting shared by all effects.
+# runs at when the app starts it. Speed is one setting shared by all effects,
+# 0-255 (every effect takes 0; a slot's highest is LAMP_RATE_LIMITS).
 DEFAULT_NATIVE_EFFECT_SPEED = 128
+SPEED_RANGE = (0, 255)
 # The direction an effect offered none is sent: its preset row's. Sent, not left
 # out, so that like any other it is compensated for the lamp's mount profile
 # (light_native.lamp_direction) and draws what its preview shows on every lamp.
@@ -141,6 +143,40 @@ def lamp_rate(mode: int, rate: int) -> int:
     """The rate to send for the lamp's slot ``mode``. Speed is shared by every
     effect, so a slot's limit applies when sending, not to the saved value."""
     return min(rate, LAMP_RATE_LIMITS.get(mode, rate))
+
+
+# Intensity: the second setting of an effect, beside its speed. What it sets
+# depends on the slot (below). One setting shared by all effects, like the
+# speed, 0-255; an effect that does not read it is sent none, so its preset
+# row's applies (128 for every effect the integration sends).
+DEFAULT_NATIVE_EFFECT_INTENSITY = 128
+INTENSITY_RANGE = (0, 255)
+# The slots whose renderer reads the intensity as an amount, and what it sets:
+#   4 pattern scale              5 how often stars appear   6 trail length
+#   7 bar length                 9 pulse width              11 wavelength and blur
+#   14, 23 trail length          15 number of glows         18 colour spread
+#   28 blur                      32 how often drops start   37 vertical speed
+#   42 wave size                 47 number of meteors       49 trail fade
+#   60 flicker                   61 number of glows, blur   70 stripe width
+#   25, 26, 30, 43, 45, 51, 73   how strongly the bars follow the music
+# Not 1 and 3: they read it as a switch (below 128 another colour source), not
+# an amount. Effects not listed draw the same at any intensity.
+LAMP_INTENSITY_SLOTS = frozenset({
+    4, 5, 6, 7, 9, 11, 14, 15, 18, 23, 25, 26, 28, 30, 32, 37, 42, 43, 45, 47,
+    49, 51, 60, 61, 70, 73,
+})
+# The lowest intensity these slots can take: below, Aurora (15) draws no glow
+# and the lamp hangs, and Palette stripes (70) divides by zero and restarts.
+# Under the clock the background's own limit applies.
+LAMP_INTENSITY_MINIMUMS = {15: 13, 70: 1}
+
+
+def lamp_intensity(mode: int, intensity: int) -> int:
+    """The intensity to send for the lamp's slot ``mode``: shared by every
+    effect, so a slot's limit applies when sending, not to the saved value."""
+    low, high = INTENSITY_RANGE
+    intensity = max(low, min(high, int(intensity)))
+    return max(intensity, LAMP_INTENSITY_MINIMUMS.get(mode, intensity))
 
 
 # "Extended" native effects: built-in animation ``mode`` values that exist in
@@ -270,6 +306,7 @@ EXTENDED_NATIVE_EFFECTS = {
         "effect_id": _EXTENDED_EFFECT_IDS.get(mode, 3),
         "mode": mode,
         "speed": _EXTENDED_EFFECT_SPEED.get(mode, True),
+        **({"intensity": True} if mode in LAMP_INTENSITY_SLOTS else {}),
         **({} if mode in _EXTENDED_EFFECT_NO_DIRECTION else {"directions": NATIVE_EFFECT_DIRECTIONS}),
         **({"colors": _EXTENDED_EFFECT_COLORS[mode]} if mode in _EXTENDED_EFFECT_COLORS else {}),
         "extended": True,
@@ -431,7 +468,9 @@ def effect_direction_value(spec, direction, orientation=None):
 #   reads the whole segment again (a missing color is reset to its default),
 #   and a custom color sent live (0x01RRGGBB)
 #   left the clock dark: not verified on an effect either;
-# - a color change, another effect or palette.
+# - a color change, another effect or palette;
+# - the intensity: several effects only read it when they start (how many
+#   glows or meteors), so it is set in full and the effect starts again.
 LIVE_EFFECT_KEYS = ("rate", "direction")
 
 

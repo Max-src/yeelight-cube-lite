@@ -1,5 +1,6 @@
 // Card events check (tests/card-events-browser.cjs): a lamp slider (every
-// card's, LampSliders) sends only its latest value while one is being sent.
+// card's, LampSliders: brightness, speed, intensity) sends only its latest
+// value while one is being sent.
 // A drag commits every few hundred ms and each call waits for the lamp: the
 // values in between are not played on the lamp one by one.
 const assert = require("node:assert/strict");
@@ -8,12 +9,38 @@ const SLIDERS = [
   ["yeelight-cube-lamp-preview-card", "brightness", "turn_on", "brightness"],
   ["yeelight-cube-clock-card", "brightness", "turn_on", "brightness"],
   ["yeelight-cube-clock-card", "speed", "set_clock_style", "speed"],
+  ["yeelight-cube-clock-card", "intensity", "set_clock_style", "intensity"],
   ["yeelight-cube-native-effects-card", "brightness", "turn_on", "brightness"],
   ["yeelight-cube-native-effects-card", "speed", "set_native_effect", "speed"],
+  ["yeelight-cube-native-effects-card", "intensity", "set_native_effect", "intensity"],
 ];
 
 module.exports = async (t) => {
   const { page } = t;
+  // Speed and intensity show only for what reads them: the Waves effect and
+  // the Waves clock read both (earlier checks may have left another style).
+  await page.evaluate(() => {
+    window.beforeSliders = hass;
+    const lamp = hass.states["light.a"];
+    hass = {
+      ...hass,
+      states: {
+        ...hass.states,
+        "light.a": {
+          ...lamp,
+          attributes: {
+            ...lamp.attributes,
+            native_effect: "Waves",
+            native_effect_catalog: [
+              { name: "Waves", speed: true, intensity: true, directions: ["Up", "Down"] },
+            ],
+            clock_style: "Waves",
+            clock_style_id: 2,
+          },
+        },
+      },
+    };
+  });
   for (const [tag, ns, service, key] of SLIDERS) {
     const label = `${tag} ${ns}`;
     await page.evaluate(
@@ -23,6 +50,7 @@ module.exports = async (t) => {
           target_entities: ["light.a"],
           show_brightness: true,
           show_animation_speed: true,
+          show_intensity: true,
           slider_style: "slider",
           show_device_orientation: false,
         }),
@@ -71,4 +99,8 @@ module.exports = async (t) => {
     assert.equal(sent.length, 2, `${label}: first and latest only, got ${sent}`);
     assert.ok(sent[1] > sent[0], `${label}: the latest value last, got ${sent}`);
   }
+  // The later checks get the lamp as it was.
+  await page.evaluate(() => {
+    hass = window.beforeSliders;
+  });
 };

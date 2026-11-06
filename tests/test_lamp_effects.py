@@ -587,6 +587,8 @@ class WhatTheLampRunsTests(unittest.TestCase):
             row = {"mode": spec["mode"], "effectId": spec["effect_id"]}
             if spec.get("speed"):
                 row["speed"] = True
+            if spec.get("intensity"):
+                row["intensity"] = True
             if spec.get("directions"):
                 row["directions"] = list(spec["directions"])
             if spec.get("direction_remap"):
@@ -615,6 +617,24 @@ class WhatTheLampRunsTests(unittest.TestCase):
             tables["rateLimits"],
         )
         self.assertEqual(CONST["NATIVE_EFFECT_DIRECTION_VALUES"], tables["directions"])
+        self.assertEqual(sorted(CONST["LAMP_INTENSITY_SLOTS"]), tables["intensitySlots"])
+        self.assertEqual(
+            {str(key): value for key, value in CONST["LAMP_INTENSITY_MINIMUMS"].items()},
+            tables["intensityMinimums"],
+        )
+        self.assertEqual(CONST["DEFAULT_NATIVE_EFFECT_INTENSITY"], tables["intensityDefault"])
+        self.assertEqual(
+            dict(zip(("min", "max"), CONST["INTENSITY_RANGE"])), tables["intensityRange"]
+        )
+        for name, drawn in tables["intensities"].items():
+            intensities = [
+                [
+                    LAMP["lamp_settings"](name, "Right", 50, None, None, None, chosen)["intensity"],
+                    LAMP["lamp_clock_settings"](name, 50, None, None, chosen)["intensity"],
+                ]
+                for chosen in (1, 5, 200, 255)
+            ]
+            self.assertEqual(intensities, drawn, name)
         self.assertEqual(sorted(LAMP["_COLOR_OVERRIDE_EFFECTS"]), tables["override"])
         self.assertEqual(sorted(LAMP["_COLOR_MODE_BW_EFFECTS"]), tables["bw"])
         modes = ("bw", "red_blue", "white_orange", "blue_yellow", "purple_orange", "normal")

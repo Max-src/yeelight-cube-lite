@@ -35,6 +35,7 @@ from .const import (
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     clock_segment_modes,
+    DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
     EFFECT_FAMILY_OF_SLOT,
     NATIVE_EFFECTS,
@@ -105,6 +106,7 @@ def _native_effect_catalog(extended_enabled: bool, playing_extended: str | None)
     combination instead of on every state write. Shared, never modified."""
     return [
         {"name": name, "speed": bool(spec.get("speed")),
+         "intensity": bool(spec.get("intensity")),
          "directions": list(spec.get("directions", ())),
          "extended": bool(spec.get("extended")),
          "family": EFFECT_FAMILY_OF_SLOT[spec["mode"]],
@@ -298,6 +300,8 @@ class YeelightCubeLight(
         self._native_clock_color_mode = "normal"  # palette preset (CLOCK_COLOR_MODES key)
         self._native_effect = DEFAULT_NATIVE_EFFECT
         self._native_effect_speed = DEFAULT_NATIVE_EFFECT_SPEED
+        # Shared by all effects like the speed; sent only to those that read it.
+        self._native_effect_intensity = DEFAULT_NATIVE_EFFECT_INTENSITY
         self._native_effect_color_mode = "normal"
         self._native_effect_color = None
         self._native_effect_direction = DEFAULT_NATIVE_EFFECT_DIRECTION
@@ -406,6 +410,7 @@ class YeelightCubeLight(
         self._native_effect_select_entity = None
         self._native_effect_direction_select_entity = None
         self._native_effect_speed_entity = None
+        self._native_effect_intensity_entity = None
         self._extended_effects_switch_entity = None
         self._music_flow_effect_select_entity = None
         self._power_on_state_select_entity = None
@@ -477,6 +482,7 @@ class YeelightCubeLight(
             self._mode, self._music_flow_enabled, self._music_flow_effect,
             self._native_effect, self._native_effect_color_mode,
             str(self._native_effect_color), self._native_effect_speed,
+            self._native_effect_intensity,
             self._native_clock_style, self._native_clock_color_mode,
             self._native_clock_color, self._brightness, self._display_frozen,
         )
@@ -809,6 +815,7 @@ class YeelightCubeLight(
             "clock_color_mode": self._native_clock_color_mode,
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
+            "native_effect_intensity": self._native_effect_intensity,
             "native_effect_color_mode": self._native_effect_color_mode,
             "native_effect_color": self._native_effect_color,
             "native_effect_direction": self._native_effect_direction,

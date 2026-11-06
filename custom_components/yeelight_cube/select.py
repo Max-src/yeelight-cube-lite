@@ -43,6 +43,7 @@ from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
 from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_art_map
 from .layout import FONT_MAPS
+from .light_native import write_effect_setting_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -514,6 +515,8 @@ class YeelightCubeContentModeSelect(CubeSelect):
             self._light_entity._mode_select_entity.async_update_from_light()
         if self._light_entity._pixel_art_select_entity:
             self._light_entity._pixel_art_select_entity.async_update_from_light()
+        # Speed and intensity follow the mode (what the lamp shows reads them or not).
+        write_effect_setting_entities(self._light_entity)
         # Keep native-effect helper entities in sync so their UI reflects the
         # current selection when switching into Native Effect content mode.
         if option == MODE_NATIVE_EFFECT:
@@ -521,8 +524,6 @@ class YeelightCubeContentModeSelect(CubeSelect):
                 self._light_entity._native_effect_select_entity.async_write_ha_state()
             if self._light_entity._native_effect_direction_select_entity:
                 self._light_entity._native_effect_direction_select_entity.async_update_from_light()
-            if self._light_entity._native_effect_speed_entity:
-                self._light_entity._native_effect_speed_entity.async_write_ha_state()
         if self._light_entity.hass is not None:
             self._light_entity.async_write_ha_state()
 
@@ -658,6 +659,8 @@ class YeelightCubeClockStyleSelect(CubeSelect):
             raise invalid("experimental_required", name=option)
 
         self._light_entity._native_clock_style = style_id
+        # Speed and intensity follow the style's background.
+        write_effect_setting_entities(self._light_entity)
 
         if self._light_entity._mode == MODE_CLOCK:
             await self._light_entity.async_apply_display_mode(
@@ -718,8 +721,7 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
         self._light_entity._native_effect = option
         if self._light_entity._native_effect_direction_select_entity:
             self._light_entity._native_effect_direction_select_entity.async_update_from_light()
-        if self._light_entity._native_effect_speed_entity:
-            self._light_entity._native_effect_speed_entity.async_write_ha_state()
+        write_effect_setting_entities(self._light_entity)
         if self._light_entity._mode == MODE_NATIVE_EFFECT and self._light_entity._is_on:
             await self._light_entity.async_apply_display_mode(
                 update_type="color_change"

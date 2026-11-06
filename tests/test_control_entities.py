@@ -11,7 +11,9 @@ import types
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from tests.test_native_features import CONSTANTS, ERRORS, ROOT, SELECT_SOURCE
+from tests.test_native_features import (
+    CONSTANTS, ERRORS, LIGHT_SOURCE, ROOT, SELECT_SOURCE, _load_standalone_functions,
+)
 from tests.test_text_modes import LAYOUT
 
 
@@ -57,8 +59,18 @@ def _load_platform(name, source, extra):
     return namespace
 
 
+# light_native's helpers the platforms call, without Home Assistant.
+NATIVE_HELPERS = _load_standalone_functions(
+    LIGHT_SOURCE,
+    {"write_effect_setting_entities", "shown_effect_reads", "shown_effect_spec"},
+    {name: CONSTANTS[name] for name in (
+        "ALL_NATIVE_EFFECTS", "CLOCK_MIXER_EFFECTS", "DEFAULT_NATIVE_CLOCK_STYLE",
+        "DEFAULT_NATIVE_EFFECT", "NATIVE_CLOCK_STYLES",
+    )},
+)
 SELECT = _load_platform("select", SELECT_SOURCE, {
     "SelectEntity": _Base,
+    "write_effect_setting_entities": NATIVE_HELPERS["write_effect_setting_entities"],
     "FONT_MAPS": LAYOUT["FONT_MAPS"],
     "get_builtin_pixel_art_map": lambda: {},
 })
@@ -161,6 +173,7 @@ class ControlEntityTests(unittest.TestCase):
         entities = [
             NUMBER["YeelightCubeGradientAngleNumber"](light, None),
             NUMBER["YeelightCubeNativeEffectSpeedNumber"](light, None),
+            NUMBER["YeelightCubeNativeEffectIntensityNumber"](light, None),
             *(
                 NUMBER["CubeSettingNumber"](light, None, spec)
                 for spec in (*NUMBER["SETTING_NUMBERS"], *NUMBER["PREVIEW_ADJUSTMENTS"])
@@ -168,7 +181,8 @@ class ControlEntityTests(unittest.TestCase):
         ]
         self.assertEqual(shown_names(entities, "number"), {
             "cube1_gradient_angle": "Cube Matrix: Gradient Angle",
-            "cube1_native_effect_speed": "Cube Animation speed",
+            "cube1_native_effect_speed": "Cube Effect speed",
+            "cube1_native_effect_intensity": "Cube Effect intensity",
             "cube1_scroll_speed": "Cube Text scroll: Interval",
             "cube1_power_limit": "Cube Power limit",
             "cube1_hue_shift": "Cube Color: Hue Shift",

@@ -1,8 +1,9 @@
 // The "Bar" style of the shared slider (slider-control-utils.js): its
 // markup, its visual update for a value, and its CSS.
-import { formatSliderValue } from "./slider-values.js";
+import { SLIDER_MAX, SLIDER_MIN, formatSliderValue } from "./slider-values.js";
 
 export default {
+  ends: "sides",
   render({ gc, v, showValue, drag }) {
     const barFill = gc.barFill || "solid";
     const stripesClass = barFill === "stripes" ? " bar-stripes-idle" : "";
@@ -15,13 +16,12 @@ export default {
         <div class="brightness-bar-track bar-fill-${barFill}${stripesClass}">
           <div class="brightness-bar-fill" style="width: ${v}%"></div>
           <div class="brightness-bar-seams"></div>
-          <input type="range" min="1" max="100" value="${v}"
+          <input type="range" min="${SLIDER_MIN}" max="${SLIDER_MAX}" value="${v}"
             class="brightness-slider brightness-slider-bar"
             ${drag} />
         </div>
         ${value}
       </div>`,
-      mirror: value ? { gap: 8, right: value } : {},
     };
   },
 

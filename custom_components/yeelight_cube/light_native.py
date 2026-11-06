@@ -33,6 +33,7 @@ from .const import (
     clock_style_default_color,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
+    DEFAULT_NATIVE_EFFECT_INTENSITY,
     DOMAIN,
     MUSIC_FLOW_DEFAULT_PALETTE,
     MUSIC_FLOW_EFFECTS,
@@ -45,6 +46,7 @@ from .const import (
     LIVE_EFFECT_KEYS,
     effect_direction_value,
     UNDIRECTED_EFFECT_DIRECTION,
+    lamp_intensity,
     lamp_rate,
     resolve_clock_mixer_direction,
 )
@@ -115,6 +117,55 @@ def live_effect_changes(running: list | None, params: list) -> dict | None:
         key: new[key] for key in LIVE_EFFECT_KEYS if key in new and old[key] != new[key]
     }
     return changes or None
+
+
+def shown_effect_spec(light) -> dict | None:
+    """The effect the lamp's renderer runs in the light's mode: the selected
+    native effect, or the clock's background (None for a solid clock style or
+    any other mode)."""
+    mode = getattr(light, "_mode", None)
+    if mode == MODE_NATIVE_EFFECT:
+        return ALL_NATIVE_EFFECTS.get(
+            light._native_effect, ALL_NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
+        )
+    if mode == MODE_CLOCK:
+        style = NATIVE_CLOCK_STYLES.get(
+            light._native_clock_style, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE]
+        )
+        name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
+        return ALL_NATIVE_EFFECTS[name] if name else None
+    return None
+
+
+def shown_effect_reads(light, setting: str) -> bool:
+    """Whether a setting shared by every effect ("speed", "intensity", the
+    effect spec's flag) changes what the lamp shows: the effect or clock
+    background it runs reads it. In another mode, whether the selected effect
+    reads it, for when it runs again."""
+    if getattr(light, "_mode", None) in (MODE_NATIVE_EFFECT, MODE_CLOCK):
+        spec = shown_effect_spec(light)
+    else:
+        spec = ALL_NATIVE_EFFECTS.get(getattr(light, "_native_effect", None))
+    return bool(spec and spec.get(setting))
+
+
+def write_effect_setting_entities(light) -> None:
+    """Publish the shared effect settings' entities (speed, intensity): their
+    value or availability follows the effect and the mode."""
+    for slot in ("_native_effect_speed_entity", "_native_effect_intensity_entity"):
+        entity = getattr(light, slot, None)
+        if entity is not None and getattr(entity, "hass", None) is not None:
+            entity.async_write_ha_state()
+
+
+def intensity_config(light, spec: dict) -> dict:
+    """The intensity key of a command running the effect ``spec``: the one
+    chosen, within the slot's limits (lamp_intensity), or nothing for an effect
+    that does not read it (its preset row's applies)."""
+    if not spec.get("intensity"):
+        return {}
+    chosen = getattr(light, "_native_effect_intensity", DEFAULT_NATIVE_EFFECT_INTENSITY)
+    return {"intensity": lamp_intensity(spec["mode"], chosen)}
 
 
 class NativeModesMixin:
@@ -245,6 +296,10 @@ class NativeModesMixin:
             "rate": lamp_rate(style["mixer"], self._native_effect_speed),
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
+        # The clock hands its intensity over to the background, like its rate.
+        effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
+        if effect_name is not None:
+            effect_config.update(intensity_config(self, ALL_NATIVE_EFFECTS[effect_name]))
         # The clock's color, and for a background that draws its own colours
         # (1, 8, 28, 33, 72) all of them, the clock's color first
         # (clock_style_colors).
@@ -259,7 +314,6 @@ class NativeModesMixin:
         # (lamp_clock_settings). Solid styles (no mixer effect) and the
         # own-colour backgrounds have no remap to protect except B&W, which
         # the lamp renders as plain white when no color is sent.
-        effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
         clock_color_mode = self._native_clock_color_mode
         # A background that draws its own colours takes no palette: it would
         # only drop them (lamp_renderers.lamp_clock_settings).
@@ -404,6 +458,11 @@ class NativeModesMixin:
         if self.hass is not None:
             self.async_schedule_update_ha_state()
 
+    def effect_setting_applies(self, setting: str) -> bool:
+        """Whether a shared effect setting ("speed", "intensity") changes what
+        the lamp shows now (shown_effect_reads)."""
+        return shown_effect_reads(self, setting)
+
     def _native_effect_params(self) -> list:
         """The set_fx_effect params of the selected native effect (speed,
         direction, palette, color)."""
@@ -415,6 +474,7 @@ class NativeModesMixin:
             effect_config["rate"] = lamp_rate(spec["mode"], self._native_effect_speed)
         elif spec.get("rate") is not None:
             effect_config["rate"] = spec["rate"]
+        effect_config.update(intensity_config(self, spec))
         effect_config["direction"] = effect_direction_sent(self, spec)
         color_mode = self._native_effect_color_mode
         palette_id = CLOCK_COLOR_MODES.get(color_mode)

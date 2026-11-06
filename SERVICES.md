@@ -31,7 +31,7 @@ while direct service calls use `entity_id`.
 | `show_current_preview` | Clock | Show the current clock preview |
 | `show_preview`, `lamp_preview_size`, `preview_brightness` | Native Effects | Show the current animation preview, its size (30–100 %) and whether it follows lamp brightness |
 | `show_actions`, `action_buttons`, `actions_buttons_style`, `actions_buttons_content_mode` | Both | Actions row (Previous, Next, Random, Freeze display, Refresh, Power), its order and button styling |
-| `show_brightness`, `show_animation_speed`, `slider_style`, `slider_show_raw_value` | Both | Lamp sliders, slider style, and raw device units (speed 1–255, brightness 3–255) instead of percentages |
+| `show_brightness`, `show_animation_speed`, `show_intensity`, `slider_grey_out_unused`, `slider_style`, `slider_value`, `slider_ends`, `slider_step_size`, `slider_snap`, `slider_width`, `slider_thickness`, `slider_theme` | Both | Lamp sliders and their shared settings: unused speed/intensity greyed out instead of hidden, style, value (`none`, `percent`, `raw` device units), tappable ends (`icons`, `plus_minus`, `none`), step size, snap, width, thickness (`thin`, `medium`, `thick`) and card background (see the README's slider settings) |
 | `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
 | `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-color selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
 | `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the color row |
@@ -924,7 +924,8 @@ mode).
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `effect` | No | Effect name (e.g. `Rainbow`, `Waves`). Omit to keep the current effect. A name an effect had in 1.4.0 or earlier (e.g. `Ocean Waves`) still works. |
-| `speed` | No | Animation speed 1–255 (only for effects that support it) |
+| `speed` | No | Speed 0–255 (only for effects that support it) |
+| `intensity` | No | Intensity 0–255 (only for effects that support it): the number of glows or meteors, how often stars or drops appear, a wave's size... One setting shared by all effects, like the speed |
 | `direction` | No | `Up`, `Down`, `Left` or `Right`: the way the effect flows as you see it, however the lamp is mounted. One setting shared by all effects (only for effects that offer that direction) |
 | `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it |
 | `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom color |
@@ -1016,7 +1017,8 @@ be provided.
 | `content` | No | `time`, `time_date` (alternating) or `date` |
 | `twelve_hour` | No | `true` for 12-hour, `false` for 24-hour |
 | `colon_blink` | No | `true` to blink the colon, `false` to keep it steady |
-| `speed` | No | Animation speed 1–255 |
+| `speed` | No | Speed 0–255 |
+| `intensity` | No | Intensity 0–255, shared with the effects: taken by the styles whose background uses it |
 | `color_mode` | No | Palette preset (see `set_native_effect`) |
 | `activate` | No | Switch to Clock mode immediately (default `true`) |
 | `entity_id` | Yes | Target lamp entity (list supported) |

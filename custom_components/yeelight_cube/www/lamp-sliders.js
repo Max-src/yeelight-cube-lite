@@ -1,5 +1,5 @@
 /**
- * A card's lamp sliders (brightness, animation speed) in one place: the shared
+ * A card's lamp sliders (brightness, animation speed, intensity) in one place: the shared
  * slider interactions (createSliderHandlers) plus, per slider, a draft that
  * keeps the dragged value until the lamp reports it back, so a slow drag or an
  * in-between state update never jumps the slider back.
@@ -24,28 +24,33 @@
  * Used the same way by every card with lamp sliders (Clock, Native Effects,
  * Lamp Preview); store it as `this._lampSliders`.
  *
- * The namespace names "brightness" and "speed" are a stable contract: they are
- * the `data-sl-ns` values in the rendered markup, and tests query sliders by
- * them (tests/card-docs-browser.js, tests/card-ui-parity.cjs). Lamp Preview
- * has "brightness" only. Renaming one, or adding/removing a card's slider,
+ * The namespace names "brightness", "speed" and "intensity" are a stable
+ * contract: they are the `data-sl-ns` values in the rendered markup, and tests
+ * query sliders by them (tests/card-docs-browser.js, tests/card-ui-parity.cjs).
+ * Lamp Preview has "brightness" only. Speed and intensity are shown only while
+ * the effect or clock background reads them (the effect catalogue's flags,
+ * clockStyleTakes). Renaming one, or adding/removing a card's slider,
  * means updating those tests too -- otherwise the screenshot CI breaks with
  * "Missing slider: <card>/<ns>".
  */
-import { DEFAULT_EFFECT_SPEED } from "./lamp-renderers.js";
+import { chosenIntensity, chosenSpeed } from "./lamp-renderers.js";
 import { previewBrightnessScale } from "./matrix-const.js";
 import {
   brightnessPctToRaw,
   brightnessRawToPct,
   createSliderDraft,
   createSliderHandlers,
+  intensityRawToPct,
   speedRawToPct,
 } from "./slider-control-utils.js";
 
 // The lamp attribute each slider follows, in slider % (the device's
-// brightness 3-255 and native effect speed 1-255, with their defaults).
+// brightness, 0 while off, native effect speed and intensity 0-255, with
+// their defaults).
 const STATE_PERCENT = {
-  brightness: (attrs) => brightnessRawToPct(Number(attrs.brightness) || 3),
-  speed: (attrs) => speedRawToPct(Number(attrs.native_effect_speed) || DEFAULT_EFFECT_SPEED),
+  brightness: (attrs) => brightnessRawToPct(Number(attrs.brightness) || 0),
+  speed: (attrs) => speedRawToPct(chosenSpeed(attrs)),
+  intensity: (attrs) => intensityRawToPct(chosenIntensity(attrs)),
 };
 
 export class LampSliders {

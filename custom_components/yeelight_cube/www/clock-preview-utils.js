@@ -19,6 +19,9 @@ import {
 } from "./native-effect-preview.js";
 import {
   DEFAULT_EFFECT_SPEED,
+  LAMP_EFFECTS,
+  chosenIntensity,
+  chosenSpeed,
   effectDisplayFrame,
   lampClockSettings,
   lampEffectFrame,
@@ -176,8 +179,7 @@ export const CLOCK_MIXER_EFFECTS = {
 export const DEFAULT_CLOCK_SPEED = DEFAULT_EFFECT_SPEED;
 
 /** The rate the lamp's clock background runs at: previews take it as it is. */
-export const clockSpeed = (attrs) =>
-  Math.max(1, Math.min(255, Number(attrs?.native_effect_speed) || DEFAULT_CLOCK_SPEED));
+export const clockSpeed = (attrs) => chosenSpeed(attrs);
 
 /** The phase of `seconds` of animation at a speed (renderClockFrame's). */
 export const clockPhase = (seconds, speed) => seconds * (0.25 + speed / 55);
@@ -319,6 +321,16 @@ function _buildClockStyles() {
 
 // Ordered list of every clock style, matching the backend id sequence.
 export const CLOCK_STYLES = _buildClockStyles();
+
+/**
+ * Whether a clock style's background reads a setting shared with the effects
+ * ("speed", "intensity", the effect's flag): a solid style reads neither
+ * (light_native.shown_effect_reads for the clock).
+ */
+export function clockStyleTakes(style, setting) {
+  const effect = CLOCK_MIXER_EFFECTS[style?.mixer];
+  return !!(effect && LAMP_EFFECTS[effect]?.[setting]);
+}
 
 const _CLOCK_STYLE_BY_ID = new Map(CLOCK_STYLES.map((s) => [s.id, s]));
 const _CLOCK_STYLE_BY_NAME = new Map(CLOCK_STYLES.map((s) => [s.name, s]));
@@ -593,7 +605,7 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
     ? effectDisplayFrame(
         effectName,
         lampEffectFrame(
-          lampClockSettings(effectName, rate, override, colorMode),
+          lampClockSettings(effectName, rate, override, colorMode, chosenIntensity(attrs)),
           phase / (0.25 + rate / 55),
         ),
       )

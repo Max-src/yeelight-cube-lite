@@ -20,7 +20,6 @@ import {
 } from "./form-row-utils.js";
 import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import { renderSectionLayoutSettings } from "./section-layout-settings.js";
-import { resolveCapsuleThickness } from "./capsule-slider-utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -130,21 +129,10 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
               cfg,
               (key, value) => this._setOption(key, value),
               {
-                showValueToggle: {
-                  label: "Show Brightness Percentage",
-                  key: "slider_show_value",
-                },
-                icons: {
-                  leftLabel: "Show Moon Icon (🌙)",
-                  rightLabel: "Show Sun Icon (☀️)",
-                },
+                // Brightness only, always used: nothing to grey out.
+                unusedToggle: null,
                 // Only this card lets the user pick the slider color.
                 matrixColorKey: "slider_color",
-                thickness: resolveCapsuleThickness(
-                  cfg.slider_thickness,
-                  cfg.brightness_slider_appearance,
-                  6,
-                ),
               },
             )}
         `)}

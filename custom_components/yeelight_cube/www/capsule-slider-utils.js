@@ -52,6 +52,9 @@ export function resolveCapsuleThickness(
  * @param {number}  opts.max           – range max
  * @param {string|null} opts.iconLeft  – emoji / text for left icon, or null
  * @param {string|null} opts.iconRight – emoji / text for right icon, or null
+ * @param {string|null} opts.iconLeftEvents – attributes (title, data-on-*)
+ *   that make the left icon a button (the shared slider's ends), or null
+ * @param {string|null} opts.iconRightEvents – the same for the right icon
  * @param {string}  opts.inputEvents   – data-on-* attributes for the range input
  *   (drag start/end, input), from hostEventAttrs (host-events.js)
  * @param {string|null} opts.label         – label text above the capsule (or null)
@@ -69,6 +72,8 @@ export function renderCapsuleHTML(opts) {
     max = 100,
     iconLeft = null,
     iconRight = null,
+    iconLeftEvents = null,
+    iconRightEvents = null,
     leftSlotHtml = null,
     rightSlotHtml = null,
     inputEvents = "",
@@ -82,17 +87,16 @@ export function renderCapsuleHTML(opts) {
 
   const labelHtml = label ? `<div class="capsule-label">${label}</div>` : "";
 
-  const leftContentHtml = leftSlotHtml
-    ? leftSlotHtml
-    : iconLeft
-      ? `<div class="capsule-icon capsule-icon-left">${iconLeft}</div>`
-      : "";
-
-  const rightContentHtml = rightSlotHtml
-    ? rightSlotHtml
-    : iconRight
-      ? `<div class="capsule-icon capsule-icon-right">${iconRight}</div>`
-      : "";
+  // An icon with events is a button; without, a plain icon.
+  const icon = (side, content, events) =>
+    !content
+      ? ""
+      : events
+        ? `<button type="button" class="capsule-icon capsule-icon-${side} capsule-icon-button" ${events}>${content}</button>`
+        : `<div class="capsule-icon capsule-icon-${side}">${content}</div>`;
+  const leftContentHtml = leftSlotHtml || icon("left", iconLeft, iconLeftEvents);
+  const rightContentHtml =
+    rightSlotHtml || icon("right", iconRight, iconRightEvents);
 
   // underHtml overrides showValue/valueText when provided
   const valueHtml = underHtml

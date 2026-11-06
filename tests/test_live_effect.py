@@ -145,6 +145,36 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(90, self.lamp._cube_matrix.running_effect[3]["rate"])
 
+    async def test_an_intensity_change_sets_the_effect_in_full(self):
+        # Several effects read it only when they start (how many glows or
+        # meteors): never live.
+        self.lamp._native_effect = "Waves"
+        self.lamp._native_effect_intensity = 40
+        await self.lamp._activate_native_effect()
+        self.assertEqual(40, self.sent[-1][1][3]["intensity"])
+        self.lamp._native_effect_intensity = 200
+        await self.lamp._activate_native_effect()
+        self.assertEqual("set_fx_effect", self.sent[-1][0])
+        self.assertEqual(200, self.sent[-1][1][3]["intensity"])
+
+    async def test_only_an_effect_that_reads_the_intensity_is_sent_it(self):
+        self.lamp._native_effect_intensity = 40
+        await self.lamp._activate_native_effect()  # Rainbow reads none
+        self.assertNotIn("intensity", self.sent[-1][1][3])
+        # Aurora draws nothing below 13 and the lamp hangs: never sent lower.
+        self.lamp._native_effect = "Aurora"
+        self.lamp._native_effect_intensity = 1
+        await self.lamp._activate_native_effect()
+        self.assertEqual(13, self.sent[-1][1][3]["intensity"])
+
+    async def test_the_clock_hands_the_intensity_to_its_background(self):
+        self.lamp._native_effect_intensity = 40
+        self.lamp._native_clock_style = 2  # Waves: reads it
+        self.assertEqual(40, self.lamp._native_clock_params()[3]["intensity"])
+        for style in (1, 4):  # Rainbow reads none; White is a solid style
+            self.lamp._native_clock_style = style
+            self.assertNotIn("intensity", self.lamp._native_clock_params()[3])
+
     async def test_a_music_effect_clears_the_fx_mode_flag_first(self):
         # While the flag is set (direct mode), a music effect's first frame
         # stops the microphone: deactivate_fx_mode goes first, then the

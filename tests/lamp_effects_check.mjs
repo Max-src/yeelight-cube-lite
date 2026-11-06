@@ -421,6 +421,18 @@ process.stdout.write(JSON.stringify({
     clockCommands: renderers.CLOCK_MIXER_COMMAND_IDS,
     clockId: renderers.NATIVE_CLOCK_EFFECT_ID,
     rateLimits: renderers.LAMP_RATE_LIMITS,
+    intensitySlots: [...renderers.LAMP_INTENSITY_SLOTS].sort((a, b) => a - b),
+    intensityMinimums: renderers.LAMP_INTENSITY_MINIMUMS,
+    intensityDefault: renderers.DEFAULT_EFFECT_INTENSITY,
+    intensityRange: renderers.INTENSITY_RANGE,
+    // The intensity each effect, and each clock over it, is drawn at for a few
+    // chosen ones (test_lamp_effects.py compares lamp_settings).
+    intensities: Object.fromEntries(Object.keys(renderers.LAMP_EFFECTS).map((name) => [
+      name, [1, 5, 200, 255].map((chosen) => [
+        renderers.lampSettings(name, "Right", 50, null, null, null, chosen).intensity,
+        renderers.lampClockSettings(name, 50, null, null, chosen).intensity,
+      ]),
+    ])),
     directions: renderers.DIRECTION_VALUES,
     override: [...renderers.COLOR_OVERRIDE_EFFECTS].sort(),
     bw: [...renderers.COLOR_MODE_BW_EFFECTS].sort(),

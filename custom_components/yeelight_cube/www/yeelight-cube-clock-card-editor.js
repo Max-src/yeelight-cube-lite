@@ -178,10 +178,16 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               (e) => this._onSwitchChange(e, "show_brightness"),
             )}
             ${createToggleRow(
-              "Show animation speed slider",
+              "Show speed slider",
               "show_animation_speed",
               config.show_animation_speed !== false,
               (e) => this._onSwitchChange(e, "show_animation_speed"),
+            )}
+            ${createToggleRow(
+              "Show intensity slider",
+              "show_intensity",
+              config.show_intensity !== false,
+              (e) => this._onSwitchChange(e, "show_intensity"),
             )}
             ${renderLightSliderSettings(config, (key, value) =>
               this._setOption(key, value))}

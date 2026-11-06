@@ -356,7 +356,7 @@ for layouts, offline editing and multi-lamp rotation.
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
 | **Style browser** | Search clock styles using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card (or show them A → Z). Your custom styles can be renamed and deleted (with confirmation) from the gallery. A **family filter** beside the search field (All, Waves, Glow, Sparkles, Motion, Still) shows one kind of style: solid colors and custom styles are under Still, and the rest follow their effect. It offers the families the card has, this browser remembers the choice, and the editor can hide it |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
-| **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
+| **Sliders** | Brightness, speed and intensity with selectable slider styles, labels and values; speed and intensity are shown only when the style's background uses them, or greyed out in place with **Grey out unused sliders** |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
 | **Actions** | Previous, next, random, freeze, refresh and power controls |
 | **Favourites & rotation** | Save style-and-color combinations on the lamp (the same on every dashboard and device); rotate at a configurable interval, even after closing the dashboard |
@@ -455,7 +455,7 @@ available where supported. Experimental effects require the lamp's
 | **Live previews** | Preview built-in animations with configurable pixels, spacing, background, shadow and size |
 | **Effect browser** | Search effects using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) A **family filter** beside the search field (All, Waves, Glow, Sparkles, Motion, Music, Still) shows one kind of effect; it offers the families the card has, this browser remembers the choice, and the editor can hide it. |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
-| **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
+| **Sliders** | Brightness, effect speed and intensity with selectable slider styles; speed and intensity are shown only for effects that use them, or greyed out in place with **Grey out unused sliders** |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
 | **Favourites & rotation** | Order saved effect-and-color combinations and rotate them on the lamp at a configurable interval |
 | **Multiple lamps & offline editing** | Control several targets; browse previews even while lamps are unavailable |
@@ -1014,7 +1014,8 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix: Pixel Art** | Select | Personal drawings followed by the 68 locally bundled, read-only official presets |
 | **Clock: Style** | Select | One of the 10 native clock styles (more with Experimental Features) |
 | **Native effect** | Select | One of the 18 LAN-compatible built-in animations (more with Experimental Features) |
-| **Animation speed** | Number | Speed for the native clock and for effects that support it (1–255 device units; unavailable when the selected effect has no speed control) |
+| **Effect speed** | Number | Speed for the native clock and for effects that support it (0–255 device units; unavailable when the effect or clock style shown has no speed control) |
+| **Effect intensity** | Number | Intensity for the effects and clock backgrounds that use it (0–255, default 128; never below 13 on Aurora and 1 on Palette stripes, where lower values hang or restart the lamp): the number of glows or meteors, how often stars or drops appear, a wave's size, how strongly music bars react. One setting shared by all effects, like the speed; unavailable when the effect or clock style shown has no intensity |
 | **Music Flow effect** | Select | Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Clock: Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date |
 | **Device Orientation** | Select | How the lamp is mounted: Right / Down / Left / Up (applies to all modes). It never changes an effect's direction |
@@ -1483,11 +1484,29 @@ library remain clock-only. No custom native-effect preset library is introduced.
 Both cards support custom RGB where the selected style or effect permits it.
 Native previews and camera previews use the existing shared palette renderers.
 
-The brightness and animation-speed sliders on the Native Effects, Clock and Lamp
-Preview cards share one conversion, so a given device value reads the same
-percentage on every card. Enable **Show Raw Value (device units)**
-(`slider_show_raw_value`) to display the device value (speed 1–255, brightness
-3–255) instead of a percentage; the current device value is shown exactly.
+The brightness, speed and intensity sliders on the Native Effects, Clock and
+Lamp Preview cards are one shared slider with the same settings on every card,
+and share one conversion, so a given device value reads the same percentage on
+every card:
+
+| Setting | Option | Choices |
+|---|---|---|
+| **Grey out unused sliders** | `slider_grey_out_unused` | Speed and intensity are hidden while the effect or clock style shown doesn't use them; on, they stay in place, greyed out and inactive (not on the Lamp Preview, whose brightness is always used) |
+| **Slider Style** | `slider_style` | `slider`, `bar`, `wheel`, `matrix`, `rotary` (dials side by side, on the card's background), `capsule`; each with its own options below it |
+| **Value** | `slider_value` | `none`, `percent` (default), `raw`: the device value (speed, intensity and brightness 0–255), shown exactly. Brightness 0 turns the lamp off |
+| **Ends** | `slider_ends` | Slider, Bar and Capsule: `icons` (the Capsule's default: 🌙 → ☀️ brightness, 🐢 → ⚡ speed, 💧 → 🌊 intensity, 🔈 → 🔊 for a music effect's intensity), `plus_minus` (➖ → ➕) or `none` (the Slider's and Bar's default). Tapping an end steps the value |
+| **Step Size** | `slider_step_size` | 1–25 % (default 5): an end tap, a mouse-wheel notch and the Wheel's stops |
+| **Snap to Positions** | `slider_snap` | Snaps to 20, 40, 60 and 80 % |
+| **Control Width** | `slider_width` | 30–100 % (not for Rotary) |
+| **Thickness** | `slider_thickness` | `thin`, `medium` (default), `thick` (the Slider's and Capsule's thick track) |
+| **Card background** | `slider_theme` | `subtle` (default) or `flat` (not for Rotary) |
+
+Older slider options (`slider_show_value`, `slider_show_raw_value`,
+`slider_value_display`, `slider_value_side`, `slider_step_buttons`,
+`slider_step_position`, `slider_show_icon_left` / `_right`, `slider_icons`,
+`slider_variant`, `slider_capsule_variant`, `slider_wheel_step` and a
+thickness in pixels) are read as these and replaced when the card is next
+saved.
 
 The lamp's state is never read back (see [How the State Updates](#how-the-state-updates)),
 so while Clock or Native Effect mode is active, Home Assistant keeps the last

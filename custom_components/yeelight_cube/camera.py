@@ -29,6 +29,7 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DEFAULT_NATIVE_EFFECT_DIRECTION,
+    DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
     NATIVE_CLOCK_STYLES,
 )
@@ -191,6 +192,12 @@ async def async_setup_entry(
 
 
 # ── Base camera ────────────────────────────────────────────────────────
+
+def _chosen_intensity(light) -> int:
+    """The intensity chosen for the effects (1-255): lamp_settings gives it
+    only to those that read it, as light_native sends it."""
+    return int(getattr(light, "_native_effect_intensity", DEFAULT_NATIVE_EFFECT_INTENSITY))
+
 class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     """Abstract base for the 20×5 LED matrix live-preview cameras.
 
@@ -447,7 +454,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
 
     def _preview_speed(self) -> int:
         """The rate the lamp gets (1-255), which previews take as it is."""
-        return max(1, min(255, int(getattr(self._light_entity, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED))))
+        return max(0, min(255, int(getattr(self._light_entity, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED))))
 
     def _get_native_effect_preview(self) -> list[tuple[int, int, int]]:
         """The active built-in animation as the lamp draws it: LED drive for an
@@ -482,6 +489,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             color_override=getattr(le, "_native_effect_color", None),
             speed=speed,
             orientation=orientation,
+            intensity=_chosen_intensity(le),
         )
         # Lamp order (row 0 = physical bottom), like every frame: _view_frame
         # turns it the way the viewer sees it, once.
@@ -566,7 +574,8 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             # light_native sends: the user's speed, the mode 40 direction.
             effect_frame = lamp_effect_frame(
                 lamp_clock_settings(
-                    effect_name, self._preview_speed(), override_rgb, color_mode
+                    effect_name, self._preview_speed(), override_rgb, color_mode,
+                    _chosen_intensity(self._light_entity),
                 ),
                 self._clock_background_seconds(),
             )

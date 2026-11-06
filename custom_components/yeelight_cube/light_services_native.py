@@ -23,6 +23,8 @@ from .const import (
     CLOCK_COLOR_MODES,
     DOMAIN,
     EXPERIMENTAL_CLOCK_STYLE_IDS,
+    INTENSITY_RANGE,
+    SPEED_RANGE,
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTIONS,
@@ -47,6 +49,10 @@ from .light_services_common import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+# The intensity shared by every effect and clock background (const.INTENSITY_RANGE).
+_INTENSITY_SCHEMA = vol.All(
+    vol.Coerce(int), vol.Range(min=INTENSITY_RANGE[0], max=INTENSITY_RANGE[1])
+)
 
 
 def async_register_native_services(hass: HomeAssistant) -> None:
@@ -193,6 +199,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         # A former name (e.g. "Ocean Waves") is today's ("Waves").
         effect = canonical_effect_name(service_call.data.get("effect"))
         speed = service_call.data.get("speed")
+        intensity = service_call.data.get("intensity")
         direction = service_call.data.get("direction")
         color_mode = service_call.data.get("color_mode")
         has_color = "color" in service_call.data
@@ -213,6 +220,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 raise invalid("experimental_required", name=name)
             if speed is not None and not spec.get("speed"):
                 raise invalid("no_speed", effect=name)
+            if intensity is not None and not spec.get("intensity"):
+                raise invalid("no_intensity", effect=name)
             # Not to run now, it is a choice shared by all effects, like the speed.
             if activate and direction is not None and direction not in spec.get("directions", ()):
                 raise invalid("no_direction", effect=name, direction=direction)
@@ -241,6 +250,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 for attr in (
                     "_native_effect",
                     "_native_effect_speed",
+                    "_native_effect_intensity",
                     "_native_effect_direction",
                     "_native_effect_color_mode",
                     "_native_effect_color",
@@ -255,6 +265,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 target._native_effect = effect
             if speed is not None:
                 target._native_effect_speed = speed
+            if intensity is not None:
+                target._native_effect_intensity = intensity
             if direction is not None:
                 target._native_effect_direction = direction
             if color_mode is not None:
@@ -267,8 +279,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 target._mode = MODE_NATIVE_EFFECT
                 target._custom_draw_active = False
             target._refresh_linked_entities()
-            if target._native_effect_speed_entity:
-                target._native_effect_speed_entity.async_write_ha_state()
             target.async_write_ha_state()
             applied = {attr: getattr(target, attr, None) for attr in snapshot}
             return snapshot, applied, generation
@@ -331,8 +341,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                     if getattr(target, attr, None) == applied[attr]:
                         setattr(target, attr, value)
                 target._refresh_linked_entities()
-                if target._native_effect_speed_entity:
-                    target._native_effect_speed_entity.async_write_ha_state()
             if latest:
                 target._native_effect_baseline = None
             elif ok is not False and getattr(target, "_native_effect_baseline", None):
@@ -361,7 +369,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("effect"): cv.string,
-            vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+            vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=SPEED_RANGE[0], max=SPEED_RANGE[1])),
+            vol.Optional("intensity"): _INTENSITY_SCHEMA,
             vol.Optional("direction"): vol.In(list(NATIVE_EFFECT_DIRECTIONS)),
             vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
             vol.Optional("color"): vol.Any(None, "clear", vol.All(
@@ -390,6 +399,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         twelve_hour = data.get("twelve_hour")
         colon_blink = data.get("colon_blink")
         speed = data.get("speed")
+        intensity = data.get("intensity")
         color_mode = data.get("color_mode")
         activate = data.get("activate", True)
 
@@ -453,6 +463,9 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 target._native_clock_color_mode = color_mode
             if speed is not None:
                 target._native_effect_speed = max(1, min(255, int(speed)))
+            # Shared with the effects; the background takes it if it reads it.
+            if intensity is not None:
+                target._native_effect_intensity = intensity
             if activate:
                 target._mode = MODE_CLOCK
                 target._custom_draw_active = False
@@ -460,8 +473,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 # Drawn now, or when an off lamp is turned on.
                 await target.async_apply_display_mode(update_type="color_change")
             target._refresh_linked_entities()
-            if speed is not None and target._native_effect_speed_entity:
-                target._native_effect_speed_entity.async_write_ha_state()
             target.async_write_ha_state()
 
         run_on_lamps("SET_CLOCK_STYLE", targets, _apply_one)
@@ -485,7 +496,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             vol.Optional("twelve_hour"): cv.boolean,
             vol.Optional("colon_blink"): cv.boolean,
             vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
-            vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+            vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=SPEED_RANGE[0], max=SPEED_RANGE[1])),
+            vol.Optional("intensity"): _INTENSITY_SCHEMA,
             vol.Optional("activate"): cv.boolean,
         }),
     )

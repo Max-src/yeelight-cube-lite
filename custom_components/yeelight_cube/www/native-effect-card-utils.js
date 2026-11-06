@@ -1,7 +1,8 @@
 import { renderNativeEffect } from "./native-effect-preview.js";
 import {
-  DEFAULT_EFFECT_SPEED,
   LAMP_EFFECTS,
+  chosenIntensity,
+  chosenSpeed,
   effectDisplayFrame,
 } from "./lamp-renderers.js";
 import { effectFamilyOfName } from "./effect-families.js";
@@ -90,6 +91,7 @@ export const nativePreviewCatalogue = [
     name,
     family: effectFamilyOfName(name),
     speed: name !== "Spectrum",
+    intensity: !!LAMP_EFFECTS[name].intensity,
     extended: false,
     preview: true,
     directions:
@@ -138,6 +140,7 @@ export const nativePreviewCatalogue = [
       "Night-sky waves",
       "Palette stripes",
     ].includes(name),
+    intensity: !!LAMP_EFFECTS[name].intensity,
     extended: true,
     preview: true,
     directions: ["Neon sine bands", "Night-amber waves", "Night-sky waves"].includes(name)
@@ -154,6 +157,7 @@ export const nativePreviewCatalogue = [
         name,
         family: effectFamilyOfName(name),
         speed: !!spec.speed,
+        intensity: !!spec.intensity,
         extended: true,
         preview: true,
         directions: spec.directions ? [...spec.directions] : [],
@@ -189,10 +193,7 @@ function viewedFrame(frame, orientation) {
 }
 
 export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
-  const speed = Math.max(
-    1,
-    Math.min(255, Number(attrs.native_effect_speed) || DEFAULT_EFFECT_SPEED),
-  );
+  const speed = chosenSpeed(attrs);
   // As the viewer sees the lamp (matrix-view.js): top row first, turned for
   // an upside-down mount like every preview. The lamp's own direction
   // setting does not turn it: the integration compensates the direction it
@@ -208,6 +209,7 @@ export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
         attrs.native_effect_color_mode || "normal",
         speed,
         deviceOrientation(attrs),
+        chosenIntensity(attrs),
       ),
     ),
     deviceOrientation(attrs),

@@ -13,7 +13,7 @@ import {
   renderClockFrame,
   clockUsesLampRenderer,
 } from "./clock-preview-utils.js";
-import { RENDER_SECONDS } from "./lamp-renderers.js";
+import { RENDER_SECONDS, chosenIntensity } from "./lamp-renderers.js";
 import {
   MATRIX_SIZE,
   lampClockFrame,
@@ -58,6 +58,12 @@ export const ClockPreviewMixin = (Base) => class extends Base {
   // takes over so the preview responds immediately.
   _animationSpeed() {
     return this._speedPreview ?? clockSpeed(this._attrs());
+  }
+
+  // The intensity the previews draw at (1-255): the dragged one, else the
+  // lamp's. Only a background that reads it changes.
+  _animationIntensity() {
+    return this._intensityPreview ?? chosenIntensity(this._attrs());
   }
 
   // The animation's phase at the current speed (peek). The seconds advance

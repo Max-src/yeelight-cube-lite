@@ -32,6 +32,7 @@ from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
 from .input_error import InputError
 from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
 from .light import _entity_id_or_list
+from .light_native import write_effect_setting_entities
 from .light_services_common import (
     COLOR_LIST_SCHEMA,
     _resolve_entity,
@@ -465,14 +466,14 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 target_entity._mode_select_entity.async_update_from_light()
             if target_entity._content_mode_select_entity:
                 target_entity._content_mode_select_entity.async_update_from_light()
+            # Speed and intensity follow the mode (what the lamp shows reads them or not).
+            write_effect_setting_entities(target_entity)
             # Keep native-effect helper entities in sync.
             if mode == MODE_NATIVE_EFFECT:
                 if target_entity._native_effect_select_entity:
                     target_entity._native_effect_select_entity.async_write_ha_state()
                 if target_entity._native_effect_direction_select_entity:
                     target_entity._native_effect_direction_select_entity.async_update_from_light()
-                if target_entity._native_effect_speed_entity:
-                    target_entity._native_effect_speed_entity.async_write_ha_state()
 
         run_on_lamps("SET_MODE", targets, _apply_one)
 

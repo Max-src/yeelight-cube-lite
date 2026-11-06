@@ -148,6 +148,11 @@ def _reflect_fx_effect(target, is_clock, style, config, native_effect_name) -> N
                 target._native_effect_speed = max(1, min(255, int(config["rate"])))
             except (TypeError, ValueError):
                 pass
+        if "intensity" in config:
+            try:
+                target._native_effect_intensity = max(1, min(255, int(config["intensity"])))
+            except (TypeError, ValueError):
+                pass
         if "direction" in config:
             spec = NATIVE_EFFECTS[native_effect_name]
             for name in spec.get("directions", ()):

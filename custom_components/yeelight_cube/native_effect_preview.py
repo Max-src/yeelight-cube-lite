@@ -193,17 +193,19 @@ def render_native_effect(
     color_mode=None,
     speed: int | None = None,
     orientation: str | None = None,
+    intensity: int | None = None,
 ) -> list[tuple[int, int, int]]:
     """One frame of a native effect, lamp order: what the lamp's renderer
     draws for the command sent, LED drive
     (lamp_renderers). ``speed``: the one the phase was computed with, and
     the rate the lamp gets (DEFAULT_PREVIEW_SPEED when omitted). ``orientation``:
-    how the lamp is mounted, which the direction sent is turned for."""
+    how the lamp is mounted, which the direction sent is turned for.
+    ``intensity``: the one chosen (None: the effect's own)."""
     if effect not in LAMP_RENDERED_EFFECTS:
         return _render_gradient(phase, direction)
     speed = DEFAULT_PREVIEW_SPEED if speed is None else speed
     settings = lamp_settings(
-        effect, direction, speed, color_override, color_mode, orientation
+        effect, direction, speed, color_override, color_mode, orientation, intensity
     )
     return lamp_effect_frame(settings, phase / (0.25 + speed / 55.0))
 

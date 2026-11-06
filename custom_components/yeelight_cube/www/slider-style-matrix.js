@@ -1,6 +1,11 @@
 // The "Matrix" (a grid of cells that light up) style of the shared slider (slider-control-utils.js): its
 // markup, its visual update for a value, its drag over the cells and its CSS.
-import { formatSliderValue } from "./slider-values.js";
+import {
+  SLIDER_MAX,
+  SLIDER_MIN,
+  capsulePercent,
+  formatSliderValue,
+} from "./slider-values.js";
 
 export default {
   render({ gc, v, showValue, thickness, on }) {
@@ -11,7 +16,7 @@ export default {
     const cellPx = thickness * 3 + 4;
     const total = cols * rows;
     const maxWidth = cols * (cellPx + 3) + 16;
-    const litCount = Math.max(1, Math.round((v / 100) * total));
+    const litCount = Math.round((capsulePercent(v) / 100) * total);
     let cells = "";
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -35,12 +40,10 @@ export default {
           ${cells}
         </div>
         ${value}
-        <input type="range" min="1" max="100" value="${v}"
+        <input type="range" min="${SLIDER_MIN}" max="${SLIDER_MAX}" value="${v}"
           class="brightness-slider brightness-slider-matrix" style="display:none;"
           ${on({ input: "Change" })} />
       </div>`,
-      // The grid's width is capped: the step buttons stay centred under it.
-      mirror: { right: value, trackMaxWidth: maxWidth },
     };
   },
 
@@ -48,7 +51,7 @@ export default {
     const grid = scoped()?.querySelector(".brightness-matrix-grid");
     if (!grid) return;
     const total = parseInt(grid.dataset.total) || 1;
-    const litCount = Math.max(1, Math.round((value / 100) * total));
+    const litCount = Math.round((capsulePercent(value) / 100) * total);
     grid.querySelectorAll(".brightness-matrix-cell").forEach((cell) => {
       const level = parseInt(cell.dataset.level) || 0;
       cell.classList.toggle("lit", level <= litCount);
@@ -69,19 +72,28 @@ export default {
         const input = grid.parentElement?.querySelector(
           ".brightness-slider-matrix",
         );
-        const applyAt = (cx, cy) => {
+        const set = (val) => {
+          if (input) input.value = val;
+          applyValue(val);
+        };
+        // A cell lights it and those before it; past the grid's start (its
+        // left edge: the first cell is bottom-left in both directions) is
+        // 0, as at the start of every other style.
+        const applyAt = (cx, cy, press = false) => {
           if (cx === undefined || cy === undefined) return;
+          if (cx < grid.getBoundingClientRect().left) return set(SLIDER_MIN);
           const el = host.shadowRoot.elementFromPoint(cx, cy);
-          if (el?.classList?.contains("brightness-matrix-cell")) {
-            const level = parseInt(el.dataset.level) || 1;
-            const val = clamp(Math.round((level / total) * 100));
-            if (input) input.value = val;
-            applyValue(val);
-          }
+          if (!el?.classList?.contains("brightness-matrix-cell")) return;
+          const level = parseInt(el.dataset.level) || 1;
+          const lit = grid.querySelectorAll(".brightness-matrix-cell.lit").length;
+          // Tapping the only lit cell turns it off.
+          if (press && level === 1 && lit === 1) return set(SLIDER_MIN);
+          set(clamp(Math.round(SLIDER_MIN + (level / total) * (SLIDER_MAX - SLIDER_MIN))));
         };
         applyAt(
           event.clientX ?? event.touches?.[0]?.clientX,
           event.clientY ?? event.touches?.[0]?.clientY,
+          true,
         );
         // One cell lookup per frame while dragging.
         let rafPending = false;

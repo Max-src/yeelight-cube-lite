@@ -1,6 +1,8 @@
-// The editor settings of the shared slider (slider-control-utils.js): the
-// style, its options and the step buttons, as a Lit template. Imported by the
-// card editors only, so the cards never load the editor helpers.
+// The editor settings of the shared slider (slider-control-utils.js), as a
+// Lit template, in one order for every card: which sliders (the card's own
+// toggles, then Grey out unused), the style and its own options, the value,
+// the ends and steps, then the size. Imported by the card editors only, so the
+// cards never load the editor helpers.
 import { html } from "./lib/lit-all.js";
 import { handleColorPickerClick } from "./color-picker-utils.js";
 import {
@@ -9,7 +11,13 @@ import {
 } from "./button-group-utils.js";
 import { createSliderRow, createToggleRow } from "./form-row-utils.js";
 import { renderSettingsBox } from "./editor_ui_utils.js";
-import { sliderKeys } from "./slider-control-utils.js";
+import {
+  GREY_OUT_UNUSED_KEY,
+  defaultSliderEnds,
+  sliderKeys,
+  sliderStyleFeatures,
+  withSliderOptions,
+} from "./slider-control-utils.js";
 import { resolveWheelStyle } from "./slider-values.js";
 
 const STYLE_CHOICES = [
@@ -21,86 +29,77 @@ const STYLE_CHOICES = [
   { value: "capsule", label: "Capsule" },
 ];
 
-// Editor block for a lamp brightness/speed slider (the counterpart of
-// lightSliderConfig). `options.keys` selects a card's key map; any other
-// option (see renderSliderSettings) is added or replaces a default.
+// Editor block for a lamp brightness/speed/intensity slider (the counterpart
+// of lightSliderConfig). `options.keys` selects a card's key map; any other
+// option (see renderSliderSettings) is added or replaces a default. A card
+// whose sliders are always used (Lamp Preview: brightness) passes
+// `unusedToggle: null`.
 export function renderLightSliderSettings(
   config,
   onChange,
   { keys = sliderKeys("slider"), ...options } = {},
 ) {
   return renderSliderSettings(config, keys, onChange, {
-    icons: { leftLabel: "Show Left Icon", rightLabel: "Show Right Icon" },
-    showValueToggle: { label: "Show Value", key: keys.showValue },
-    rawValueToggle: {
-      label: "Show Raw Value (device units)",
-      key: "slider_show_raw_value",
+    unusedToggle: {
+      label: "Grey out unused sliders (instead of hiding them)",
+      key: GREY_OUT_UNUSED_KEY,
     },
     ...options,
   });
 }
 
 /**
- * Render the full slider settings block (all style options + per-style
- * sub-settings) for a card editor, as a Lit template. Every conditional group
- * (per-style options, step-button options) is wrapped in the shared blue
- * "mode settings" block so conditional settings are visually grouped.
+ * Render the full slider settings block for a card editor, as a Lit
+ * template. A style's own options are wrapped in the shared blue "mode
+ * settings" block. Older options are shown as today's (withSliderOptions).
  *
  * @param {Object} config  - the editor config object
- * @param {Object} K       - key map (from sliderKeys(prefix) or custom)
+ * @param {Object} K       - key map (from sliderKeys(prefix))
  * @param {Function} onChange - (key, value) => void
  * @param {Object} [opts]   - extra, consumer-specific controls:
- *   - showValueToggle: { label, key }  top-level toggle (non-capsule styles)
+ *   - unusedToggle: { label, key }     grey out sliders the content does not
+ *                                      use instead of hiding them
+ *                                      (sliderWhenUsed)
  *   - matrixColorKey: string           color picker inside the Matrix block
- *   - icons: { leftLabel, rightLabel } capsule icon show/hide toggles
- *                                      (uses K.iconLeftShow / K.iconRightShow)
- *   - thickness: number                override the displayed track thickness
  */
 export function renderSliderSettings(config, K, onChange, opts = {}) {
+  config = withSliderOptions(config, K);
   const value = (key, fallback) =>
     config[key] !== undefined ? config[key] : fallback;
   const style = value(K.style, "slider");
+  const features = sliderStyleFeatures(style);
   const view = { config, K, onChange, opts, value };
-  const stepButtonsOn = value(K.stepButtons, false) === true;
   const settings = STYLE_SETTINGS[style];
+  const row = (r) => settingRow(view, r);
   return html`
-    ${opts.showValueToggle && style !== "capsule"
-      ? settingRow(view, toggle(() => opts.showValueToggle.key, opts.showValueToggle.label, true))
+    ${opts.unusedToggle
+      ? row(toggle(() => opts.unusedToggle.key, opts.unusedToggle.label, false))
       : ""}
-    ${opts.rawValueToggle
-      ? settingRow(view, toggle(() => opts.rawValueToggle.key, opts.rawValueToggle.label, false))
-      : ""}
-    ${settingRow(view, choice("style", "Slider Style", STYLE_CHOICES, "slider"))}
-    ${settingRow(view, range("width", "Control Width", 100, { min: 30, max: 100, step: 5 }, "%"))}
-    ${createToggleRow(
-      "Card background",
-      K.theme,
-      value(K.theme, "subtle") !== "flat",
-      (e) => onChange(K.theme, e.target.checked ? "subtle" : "flat"),
-    )}
+    ${row(choice("style", "Slider Style", STYLE_CHOICES, "slider"))}
     ${settings
       ? renderSettingsBox(
           settings.title,
-          html`${settings.rows.map((row) => settingRow(view, row))}`,
+          html`${settings.rows.map(row)}`,
         )
       : ""}
-    ${settingRow(view, toggle("stepButtons", "Step Buttons", false))}
-    ${stepButtonsOn
-      ? renderSettingsBox(
-          "Step Button Settings",
-          html`
-            ${settingRow(view, range("stepSize", "Step Size", 5, { min: 1, max: 25, step: 1 }, "%"))}
-            ${settingRow(view, choice("stepPosition", "Step Position", STEP_POSITIONS, "below"))}
-          `,
-        )
+    ${row(choice("value", "Value", VALUE_CHOICES, "percent"))}
+    ${features.ends
+      ? row(choice("ends", "Ends", END_CHOICES, defaultSliderEnds(style)))
       : ""}
-    ${createSliderRow(
-      "Track Thickness",
-      opts.thickness ?? value(K.thickness, 6),
-      { min: 2, max: 10, step: 1 },
-      (e) => onChange(K.thickness, parseInt(e.target.value, 10)),
-      "px",
-    )}
+    ${row(range("stepSize", "Step Size", 5, { min: 1, max: 25, step: 1 }, "%"))}
+    ${row(toggle("snap", "Snap to Positions", false))}
+    ${features.compact
+      ? ""
+      : row(range("width", "Control Width", 100, { min: 30, max: 100, step: 5 }, "%"))}
+    ${row(choice("thickness", "Thickness", THICKNESS_CHOICES, "medium"))}
+    ${features.compact
+      ? ""
+      : createToggleRow(
+          "Card background",
+          K.theme,
+          value(K.theme, "subtle") !== "flat",
+          (e) => onChange(K.theme, e.target.checked ? "subtle" : "flat"),
+        )}
   `;
 }
 
@@ -117,22 +116,28 @@ const range = (field, label, fallback, bounds, unit) => ({
 });
 const when = (shown, row) => ({ ...row, shown });
 
-const STEP_POSITIONS = [
-  { value: "below", label: "Below" },
-  { value: "sides", label: "Sides" },
+// The merged settings' choices (slider-control-utils.js SLIDER_VALUE_MODES,
+// SLIDER_ENDS, SLIDER_THICKNESS).
+const VALUE_CHOICES = [
+  { value: "none", label: "None" },
+  { value: "percent", label: "%" },
+  { value: "raw", label: "Device units" },
+];
+// Each end steps the value by the step size when tapped.
+const END_CHOICES = [
+  { value: "none", label: "None" },
+  { value: "icons", label: "Icons" },
+  { value: "plus_minus", label: "➖ ➕" },
+];
+const THICKNESS_CHOICES = [
+  { value: "thin", label: "Thin" },
+  { value: "medium", label: "Medium" },
+  { value: "thick", label: "Thick" },
 ];
 
-// Each style's own settings (the blue section under the style choice).
+// Each style's own settings (the blue section under the style choice); the
+// Slider and Capsule have none beyond the shared ones.
 const STYLE_SETTINGS = {
-  slider: {
-    title: "Slider Settings",
-    rows: [
-      choice("variant", "Slider Variant", [
-        { value: "thin", label: "Thin" },
-        { value: "thick", label: "Thick" },
-      ], "thin"),
-    ],
-  },
   bar: {
     title: "Bar Settings",
     rows: [
@@ -152,7 +157,6 @@ const STYLE_SETTINGS = {
         { value: "mesh", label: "Mesh" },
       ], "ticks", resolveWheelStyle),
       toggle("wheelLabels", "Show Wheel Labels", true),
-      range("wheelStep", "Wheel Step", 10, { min: 5, max: 50, step: 5 }, "%"),
     ],
   },
   matrix: {
@@ -184,38 +188,6 @@ const STYLE_SETTINGS = {
         { value: "thick", label: "Thick" },
         { value: "dial", label: "Dial" },
       ], "glow"),
-    ],
-  },
-  capsule: {
-    title: "Capsule Settings",
-    rows: [
-      choice("valueDisplay", "Value Display", [
-        { value: "none", label: "None" },
-        { value: "text", label: "Text" },
-        { value: "input", label: "Input" },
-      ], "text"),
-      when(
-        (view) => view.value(view.K.valueDisplay, "text") !== "none",
-        choice("valueSide", "Value Side", [
-          { value: "under", label: "Under" },
-          { value: "left", label: "Left" },
-          { value: "right", label: "Right" },
-        ], "under"),
-      ),
-      // The icons' toggles: for the cards that pass their labels.
-      when(
-        (view) => !!(view.opts.icons && view.K.iconLeftShow),
-        { kind: "toggle", field: "iconLeftShow", label: (view) => view.opts.icons.leftLabel, fallback: true },
-      ),
-      when(
-        (view) => !!(view.opts.icons && view.K.iconRightShow),
-        { kind: "toggle", field: "iconRightShow", label: (view) => view.opts.icons.rightLabel, fallback: true },
-      ),
-      toggle("snap", "Snap to Positions", false),
-      choice("capsuleVariant", "Track Style", [
-        { value: "thin", label: "Thin" },
-        { value: "thick", label: "Thick" },
-      ], "thin"),
     ],
   },
 };

@@ -1,14 +1,22 @@
 // The "Rotary" (a 270° dial: glow, gloss, thick, dial) style of the shared slider (slider-control-utils.js): its
 // markup, its visual update for a value, its drag around the dial and its CSS.
-import { formatSliderValue } from "./slider-values.js";
+import {
+  SLIDER_MAX,
+  SLIDER_MIN,
+  capsulePercent,
+  formatSliderValue,
+} from "./slider-values.js";
+
+// The share (0-1) of the dial's arc for a value.
+const capsuleShare = (value) => capsulePercent(value) / 100;
 
 const RADIUS = 40;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const ARC_LENGTH = (CIRCUMFERENCE * 270) / 360;
 
-// The dial's geometry for a 1-100 value: the arc drawn and the knob's angle.
+// The dial's geometry for a 0-100 value: the arc drawn and the knob's angle.
 function dial(value) {
-  const angle = ((value - 1) / 99) * 270;
+  const angle = (capsuleShare(value)) * 270;
   const rad = (angle * Math.PI) / 180;
   return {
     angle,
@@ -19,6 +27,8 @@ function dial(value) {
 }
 
 export default {
+  // Dials sit side by side on the card's background.
+  compact: true,
   render({ gc, v, showValue, thickness, on }) {
     const rotaryStyle = gc.rotaryStyle || "glow";
     const { angle, progress, knobX, knobY } = dial(v);
@@ -51,10 +61,9 @@ export default {
           <div class="rotary-center-content">
             ${showValue ? `<div class="rotary-value">${formatSliderValue(v, gc)}</div>` : ""}
           </div>
-          <input type="range" min="1" max="100" value="${v}" class="brightness-slider brightness-slider-rotary" style="display: none;" />
+          <input type="range" min="${SLIDER_MIN}" max="${SLIDER_MAX}" value="${v}" class="brightness-slider brightness-slider-rotary" style="display: none;" />
         </div>
       </div>`,
-      mirror: {},
     };
   },
 
@@ -96,7 +105,7 @@ export default {
           let adj = angle - 135;
           if (adj < 0) adj += 360;
           if (adj > 270) adj = adj > 315 ? 0 : 270;
-          const value = Math.round((adj / 270) * 99) + 1;
+          const value = Math.round(SLIDER_MIN + (adj / 270) * (SLIDER_MAX - SLIDER_MIN));
           const input = container.querySelector(".brightness-slider-rotary");
           if (input) input.value = value;
           applyValue(value);

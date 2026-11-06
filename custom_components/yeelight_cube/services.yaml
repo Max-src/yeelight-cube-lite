@@ -226,12 +226,21 @@ set_clock_style:
             - "blue_yellow"
             - "purple_orange"
     speed:
-      description: Animation speed for effect-backed clock styles (1-255).
+      description: Animation speed for effect-backed clock styles (0-255).
       required: false
       example: 50
       selector:
         number:
-          min: 1
+          min: 0
+          max: 255
+          mode: slider
+    intensity:
+      description: Intensity for clock backgrounds that use it (0-255), shared with the effects.
+      required: false
+      example: 128
+      selector:
+        number:
+          min: 0
           max: 255
           mode: slider
     activate:
@@ -588,7 +597,16 @@ set_native_effect:
       description: Animation speed for effects that support it.
       selector:
         number:
-          min: 1
+          min: 0
+          max: 255
+          mode: slider
+    intensity:
+      description: >-
+        Intensity for effects that support it (0-255): the number of glows or
+        meteors, how often drops start, a wave's size... Shared by all effects.
+      selector:
+        number:
+          min: 0
           max: 255
           mode: slider
     direction:

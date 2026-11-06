@@ -53,6 +53,9 @@ import {
   brightnessRawToPct,
   speedPctToRaw,
   speedRawToPct,
+  intensityPctToRaw,
+  intensityRawToPct,
+  sliderWhenUsed,
   stableSliderMarkup,
   isSliderHandler,
 } from "./slider-control-utils.js";
@@ -72,8 +75,9 @@ import {
   matrixSurface,
 } from "./matrix-animator.js";
 import {
-  DEFAULT_EFFECT_SPEED,
   RENDER_SECONDS,
+  chosenIntensity,
+  chosenSpeed,
   isLampRendered,
 } from "./lamp-renderers.js";
 import { FamilyFilter, GallerySort } from "./effect-families.js";
@@ -165,6 +169,15 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           options,
         ),
       ),
+      intensity: slider("intensity", (value, options) =>
+        this._command(
+          "set_native_effect",
+          { intensity: intensityPctToRaw(value), activate: false },
+          "yeelight_cube",
+          false,
+          options,
+        ),
+      ),
       // Raw brightness on the shared curve, like the other cards.
       brightness: slider("brightness", (value, options) =>
         this._command(
@@ -195,6 +208,12 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   set _speedDraft(value) {
     this._lampSliders?.setDraft("speed", value);
   }
+  get _intensityDraft() {
+    return this._lampSliders?.value("intensity") ?? null;
+  }
+  set _intensityDraft(value) {
+    this._lampSliders?.setDraft("intensity", value);
+  }
   get _brightnessDraft() {
     return this._lampSliders?.value("brightness") ?? null;
   }
@@ -215,12 +234,14 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._commands.reset();
     if (config?.show_gallery === false) this._searchQuery = "";
     this._speedDraft = null;
+    this._intensityDraft = null;
     this._brightnessDraft = null;
     this.config = {
       show_preview: true,
       show_gallery: true,
       show_brightness: true,
       show_animation_speed: true,
+      show_intensity: true,
       show_actions: true,
       show_search: true,
       show_family_filter: true,
@@ -398,8 +419,12 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   _disabled() {
     return !availableTargets(this._hass, this.config).length;
   }
+  // The shown effect's family picks the slider's icons (a music effect's
+  // intensity: 🔈 → 🔊).
   _sliderConfig(ns) {
-    return lightSliderConfig(this.config, ns);
+    return lightSliderConfig(this.config, ns, undefined, {
+      family: this._effect()?.family,
+    });
   }
 
   async _command(
@@ -492,6 +517,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     const action = nativeEffectAction(name);
     if (this._speedDraft != null && this._effect()?.speed)
       action.speed = speedPctToRaw(this._speedDraft);
+    if (this._intensityDraft != null && this._effect()?.intensity)
+      action.intensity = intensityPctToRaw(this._intensityDraft);
     const result = await this._command(
       "set_native_effect",
       action,
@@ -504,6 +531,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     if (result === SUPERSEDED) return SUPERSEDED;
     if (result && context === this._context) {
       this._speedDraft = null;
+      this._intensityDraft = null;
       return true;
     }
     return false;
@@ -590,11 +618,13 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         gc: { ...this._sliderConfig("brightness"), rawValue: attrs.brightness },
         value:
           this._brightnessDraft ??
-          brightnessRawToPct(attrs.brightness || 3),
+          brightnessRawToPct(Number(attrs.brightness) || 0),
       });
-    if (this.config.show_animation_speed && effect?.speed)
-      controls.push({
-        label: "Animation speed",
+    // Speed and intensity only for an effect that reads them (const.py
+    // LAMP_INTENSITY_SLOTS); otherwise hidden or greyed out (sliderWhenUsed).
+    if (this.config.show_animation_speed)
+      controls.push(sliderWhenUsed(this.config, effect?.speed, {
+        label: "Speed",
         ns: "speed",
         gc: {
           ...this._sliderConfig("speed"),
@@ -602,9 +632,19 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         },
         value:
           this._speedDraft ??
-          speedRawToPct(attrs.native_effect_speed || DEFAULT_EFFECT_SPEED),
-      });
-    if (!controls.length) return "";
+          speedRawToPct(chosenSpeed(attrs)),
+      }));
+    if (this.config.show_intensity)
+      controls.push(sliderWhenUsed(this.config, effect?.intensity, {
+        label: "Intensity",
+        ns: "intensity",
+        gc: {
+          ...this._sliderConfig("intensity"),
+          rawValue: chosenIntensity(attrs),
+        },
+        value: this._intensityDraft ?? intensityRawToPct(chosenIntensity(attrs)),
+      }));
+    if (!controls.some(Boolean)) return "";
     // Usable while a command runs (like the Clock and Lamp Preview sliders:
     // the shared slider draft keeps a dragged value until the lamp has it);
     // inert only while the lamp is unavailable.
@@ -987,7 +1027,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   }
 
   // The lamp's attributes the previews follow: the orientation and direction
-  // being set (the lamp's until it confirms) and the speed being dragged.
+  // being set (the lamp's until it confirms) and the speed and intensity being
+  // dragged.
   _previewAttrs() {
     const attrs = this._attrs();
     return {
@@ -1000,6 +1041,10 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         this._speedDraft == null
           ? attrs.native_effect_speed
           : speedPctToRaw(this._speedDraft),
+      native_effect_intensity:
+        this._intensityDraft == null
+          ? attrs.native_effect_intensity
+          : intensityPctToRaw(this._intensityDraft),
     };
   }
 

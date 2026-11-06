@@ -412,8 +412,9 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
 
         preview = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
-            {"_get_native_effect_preview"},
+            {"_get_native_effect_preview", "_chosen_intensity"},
             {"_time": FakeTime,
+             "DEFAULT_NATIVE_EFFECT_INTENSITY": CONSTANTS["DEFAULT_NATIVE_EFFECT_INTENSITY"],
              "DEFAULT_NATIVE_EFFECT": CONSTANTS["DEFAULT_NATIVE_EFFECT"],
              "DEFAULT_NATIVE_EFFECT_DIRECTION": CONSTANTS["DEFAULT_NATIVE_EFFECT_DIRECTION"],
              "DEFAULT_DEVICE_ORIENTATION": CONSTANTS["DEFAULT_DEVICE_ORIENTATION"],

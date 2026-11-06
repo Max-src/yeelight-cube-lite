@@ -32,7 +32,7 @@ class ClockPreviewTests(unittest.TestCase):
         }
         methods = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
-            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed"}, namespace,
+            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed", "_chosen_intensity"}, namespace,
         )
         self.render = methods["_get_clock_preview"]
         self.camera = SimpleNamespace(

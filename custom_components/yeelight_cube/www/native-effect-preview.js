@@ -123,7 +123,8 @@ export function effectSupportsFreeze(name) {
 // for the command sent, LED drive (lamp-renderers.js).
 // `speed`: the one the phase was computed with, and the rate the lamp gets
 // (DEFAULT_PREVIEW_SPEED when omitted). `orientation`: how the lamp is mounted,
-// which the direction sent is turned for.
+// which the direction sent is turned for. `intensity`: the one chosen (null:
+// the effect's own).
 export function renderNativeEffect(
   effect,
   phase,
@@ -132,11 +133,12 @@ export function renderNativeEffect(
   colorMode = null,
   speed = null,
   orientation = null,
+  intensity = null,
 ) {
   if (!isLampRendered(effect)) return renderGradient(phase, direction);
   const rate = speed ?? DEFAULT_PREVIEW_SPEED;
   return lampEffectFrame(
-    lampSettings(effect, direction, rate, colorOverride, colorMode, orientation),
+    lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity),
     phase / (0.25 + rate / 55),
   );
 }

@@ -5,6 +5,10 @@ const assert = require("node:assert/strict");
 module.exports = async (t) => {
   const { page, waitForCall, reset, lamp, SLIDER_STYLES } = t;
   // --- Every slider style on the Lamp Preview --------------------------------
+  // The ends (tapped: one step) beside a Slider or Bar and inside the
+  // Capsule; the other styles have none. Its older step-button option still
+  // turns them on (slider-control-utils.js withSliderOptions).
+  const END = `.brightness-end[title^="Increase"], .capsule-icon-button[title^="Increase"]`;
   for (const style of SLIDER_STYLES) {
     await page.evaluate(
       ({ tag, style }) =>
@@ -13,18 +17,16 @@ module.exports = async (t) => {
           show_brightness_slider: true,
           brightness_slider_style: style,
           brightness_step_buttons: true,
-          brightness_value_display: "input",
           show_device_orientation: false,
         }),
       { tag: lamp, style },
     );
-    // Step button (click, with a numeric argument).
-    await page
-      .locator(`${lamp} .rotary-step-btn[title^="Increase"]`)
-      .first()
-      .click();
-    await waitForCall("turn_on", `${style} step button`);
-    await reset();
+    const ends = page.locator(`${lamp} :is(${END})`);
+    if (["slider", "bar", "capsule"].includes(style)) {
+      await ends.first().click();
+      await waitForCall("turn_on", `${style} end`);
+      await reset();
+    } else assert.equal(await ends.count(), 0, `${style}: no ends`);
 
     if (style === "slider" || style === "bar") {
       // Press, move and release on the range input: drag lifecycle + input.
@@ -83,25 +85,121 @@ module.exports = async (t) => {
       await page.locator(`${lamp} .brightness-rotary-container`).click();
       await waitForCall("turn_on", "rotary press");
     } else if (style === "capsule") {
-      const value = page.locator(
-        `${lamp} .brightness-capsule-input[type="number"]`,
+      // Its icons are the ends: the left one steps down by the step size.
+      await page.evaluate(
+        (tag) =>
+          mount(tag, {
+            entity: "light.a",
+            show_brightness_slider: true,
+            slider_style: "capsule",
+            slider_ends: "icons",
+            slider_step_size: 10,
+            show_device_orientation: false,
+          }),
+        lamp,
       );
-      await value.click();
-      assert.equal(
-        await page.evaluate(() => card._slBrightnessTyping),
-        true,
-        "capsule: typing flag on focus",
+      const before = await page.evaluate(
+        () => +card.shadowRoot.querySelector(".capsule-input").value,
       );
-      await value.fill("40");
-      await value.press("Enter");
-      const data = await waitForCall("turn_on", "capsule typed value");
-      assert.equal(data.brightness, 102); // 40% on the 3-255 curve
+      await page
+        .locator(`${lamp} .capsule-icon-button[title^="Decrease"]`)
+        .click();
+      await waitForCall("turn_on", "capsule icon end");
       assert.equal(
-        await page.evaluate(() => card._slBrightnessTyping),
-        false,
+        await page.evaluate(
+          () => +card.shadowRoot.querySelector(".capsule-input").value,
+        ),
+        Math.max(1, before - 10),
+        "capsule: an icon steps by the step size",
       );
     }
   }
+
+  // --- A drag past the start reaches 0 on every style that is dragged --------
+  for (const [style, target] of [
+    ["slider", "input.brightness-slider"],
+    ["bar", ".brightness-bar-track"],
+    ["capsule", ".capsule-track"],
+    ["matrix", ".brightness-matrix-grid"],
+  ]) {
+    await page.evaluate(
+      ({ tag, style }) =>
+        mount(tag, {
+          entity: "light.a",
+          show_brightness: true,
+          slider_style: style,
+          show_device_orientation: false,
+        }),
+      { tag: lamp, style },
+    );
+    const box = await page.locator(`${lamp} ${target}`).first().boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 40, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    // The drag sends several values; the last one is 0.
+    const reached = await page
+      .waitForFunction(
+        () => calls.some((c) => c.service === "turn_on" && c.data.brightness === 0),
+        null,
+        { timeout: 3000 },
+      )
+      .then(() => true, () => false);
+    assert.ok(reached, `${style}: a drag past the start sends 0`);
+    await reset();
+  }
+
+  // --- An end tap: the thumb stays where it landed after the card redraws ----
+  await page.evaluate(
+    (tag) =>
+      mount(tag, {
+        entity: "light.a",
+        show_brightness: true,
+        slider_style: "capsule",
+        slider_ends: "plus_minus",
+        show_device_orientation: false,
+      }),
+    lamp,
+  );
+  await page.locator(`${lamp} .capsule-icon-button[title^="Increase"]`).click();
+  await waitForCall("turn_on", "capsule + tap");
+  const thumbAt = () =>
+    page.evaluate(() => [
+      +card.shadowRoot.querySelector(".capsule-input").value,
+      parseFloat(
+        card.shadowRoot
+          .querySelector(".capsule-thumb")
+          .style.getPropertyValue("--capsule-percent"),
+      ),
+    ]);
+  const [tapped, drawn] = await thumbAt();
+  // A redraw (as when the lamp state arrives) draws the same position.
+  await page.evaluate(async () => {
+    card._stableSliderMarkup = {};
+    card.requestUpdate();
+    await card.updateComplete;
+  });
+  const [, redrawn] = await thumbAt();
+  assert.ok(
+    Math.abs(drawn - tapped) < 1e-6 && Math.abs(redrawn - tapped) < 1e-6,
+    `capsule: the thumb stays at ${tapped} (live ${drawn}, redrawn ${redrawn})`,
+  );
+  await reset();
+
+  // --- Brightness 0 is sent as 0 (Home Assistant turns the light off) -------
+  await page.evaluate(
+    (tag) =>
+      mount(tag, {
+        entity: "light.a",
+        show_brightness: true,
+        slider_style: "slider",
+        show_device_orientation: false,
+      }),
+    lamp,
+  );
+  await page.locator(`${lamp} input.brightness-slider`).first().fill("0");
+  assert.equal((await waitForCall("turn_on", "brightness 0")).brightness, 0);
+  await reset();
 
   // --- Lamp Preview: a dragged brightness holds until the lamp reports it ---
   await page.evaluate(
@@ -259,13 +357,11 @@ module.exports = async (t) => {
           entity: "light.a",
           show_brightness: true,
           show_brightness_slider: true,
-          slider_step_buttons: true,
+          slider_ends: "plus_minus",
         }),
       tag,
     );
-    const step = page
-      .locator(`${tag} .rotary-step-btn[title^="Increase"]`)
-      .first();
+    const step = page.locator(`${tag} :is(${END})`).first();
     await step.click();
     await waitForCall("turn_on", `${tag} brightness step`);
     await reset();

@@ -37,6 +37,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   stores the new command.
 
 ### Added
+- **Intensity for effects and clock styles:** a new slider on the Native
+  Effects and Clock cards, an **Effect intensity** number entity and an
+  `intensity` field in `set_native_effect` and `set_clock_style`. What it
+  changes depends on the effect: the number of glows (Aurora) or meteors, how
+  often stars (Starry Sky) or drops (Waterfall) appear, the size of the waves,
+  how strongly the music bars react, and more. Like the speed, it is one
+  setting shared by all effects. Changing it restarts the effect. Its slider
+  shows 💧 → 🌊, or 🔈 → 🔊 on a music effect.
+- **Sliders show only when they do something:** speed and intensity appear
+  only for an effect or clock style that uses them. The Clock card hides
+  speed on solid color styles, and the Effect speed entity is unavailable
+  there. To keep every slider in its place instead, turn on **Grey out unused
+  sliders** (`slider_grey_out_unused`) in the card's slider settings: an
+  unused slider is then shown greyed out and can't be moved.
 - **Sort the effect and clock galleries:** a toggle beside the family filter
   sorts them by default order, A → Z or by family. Each browser remembers its
   choice, per card; the editor's Order applies until one is picked, and its new
@@ -86,6 +100,33 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   card's choice. The editor can hide it.
 
 ### Changed
+- **Simpler slider settings, the same on every card:** the Native Effects,
+  Clock and Lamp Preview sliders have fewer settings that do more.
+  - **Ends** replace the step buttons and the Capsule's icons: each end is
+    a slider's icon (🌙 ☀️, 🐢 ⚡, 💧 🌊, 🔈 🔊 for a music effect's
+    intensity) or ➖ ➕, and tapping it steps the value. They sit beside the
+    Slider and Bar and inside the Capsule.
+  - **Step Size** is used by the ends, the mouse wheel and the Wheel style's
+    stops (it replaces the Wheel Step).
+  - **Value** (None, %, Device units) replaces Show Value, Show Raw Value
+    and the Capsule's Value Display and Value Side; typing a value in the
+    Capsule is gone.
+  - **Thickness** (Thin, Medium, Thick) replaces the track thickness in
+    pixels and the Slider's and Capsule's Thin / Thick.
+  - **Rotary** dials sit side by side on the card's background, with no
+    width or background setting.
+  - Snap to Positions now works with every style.
+  Older options are read as the new ones, so dashboards keep their look.
+- **Speed:** the speed slider is called **Speed** on the cards, and the
+  Animation speed entity is now **Effect speed**, beside Effect intensity.
+  Its entity id is unchanged.
+- **Speed, intensity and brightness go down to 0:** every effect takes speed
+  0 and intensity 0 (the slider, the entities and the services). Intensity is
+  still never sent below 13 on Aurora or below 1 on Palette stripes, where
+  lower values hang or restart the lamp. A brightness slider at 0 turns the
+  lamp off, and reads 0 while it is off. The sliders now run from 0 to 100 %
+  in every style: drag to the start (on the Matrix, past its left edge, or tap
+  its only lit cell).
 - **Every effect has the lamp's own name:** the effects, and the clock
   styles named after them, now carry the names the lamp gives
   them (an effect the Yeelight app sends as a preset takes its preset

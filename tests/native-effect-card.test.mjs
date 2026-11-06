@@ -255,39 +255,38 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
   }
 });
 
-test("light slider settings share icon toggles and non-capsule value visibility", () => {
+test("every card's slider settings are the one shared block", () => {
   const [, params, body] = sourceFor("slider-settings-ui.js").match(
     /export function renderLightSliderSettings\(([\s\S]*?)\) \{([\s\S]*?)\n\}/,
   );
   const render = new Function(
     "sliderKeys",
     "renderSliderSettings",
+    "GREY_OUT_UNUSED_KEY",
     `return function(${params}) {${body}}`,
   )(
-    () => ({ showValue: "slider_show_value" }),
+    () => ({}),
     (config, keys, change, options) => options,
+    "slider_grey_out_unused",
   );
   const options = render({}, () => {});
-  // A card can pass its own key map and replace a default option.
-  const custom = render({}, () => {}, {
-    keys: { showValue: "show_pct" },
-    icons: { leftLabel: "Moon", rightLabel: "Sun" },
-  });
-  assert.equal(custom.showValueToggle.key, "show_pct");
-  assert.equal(custom.icons.leftLabel, "Moon");
-  assert.equal(custom.rawValueToggle.key, "slider_show_raw_value");
-  assert.ok(options.icons.leftLabel);
-  assert.ok(options.icons.rightLabel);
-  assert.equal(options.showValueToggle.key, "slider_show_value");
-  assert.equal(options.rawValueToggle.key, "slider_show_raw_value");
+  assert.equal(options.unusedToggle.key, "slider_grey_out_unused");
+  // Value, Ends, Step Size and Thickness are shared settings, not options.
+  for (const retired of ["showValueToggle", "rawValueToggle", "icons", "thickness"])
+    assert.equal(options[retired], undefined, retired);
+  // Lamp Preview's only slider (brightness) is always used: no toggle.
+  const lampEditor = sourceFor("yeelight-cube-lamp-preview-card-editor.js");
+  assert.match(lampEditor, /unusedToggle: null/);
+  assert.doesNotMatch(lampEditor, /showValueToggle|resolveCapsuleThickness/);
   for (const file of [
     "yeelight-cube-clock-card-editor.js",
     "yeelight-cube-native-effects-card-editor.js",
+    "yeelight-cube-lamp-preview-card-editor.js",
   ])
     assert.match(sourceFor(file), /renderLightSliderSettings\(/);
 });
 
-test("shared slider conversions agree across cards and fix the speed 20/19 mismatch", () => {
+test("shared slider conversions agree across cards and fix the speed 20/19 mismatch", async () => {
   const src = sourceFor("slider-values.js");
   const grabFn = (sig) => {
     const match = src.match(new RegExp(`function ${sig} \\{[\\s\\S]*?\\n\\}`));
@@ -304,18 +303,18 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
   )();
   // The reported bug: speed 50 rendered as 20% on one card and 19% on another.
   // Both now derive from the same helper, so both read 20%.
-  assert.equal(api.sliderRawToPct(50, 1, 255), 20);
-  // Endpoints are exact for speed (1-255) and brightness (3-255).
-  assert.equal(api.sliderRawToPct(1, 1, 255), 1);
-  assert.equal(api.sliderRawToPct(255, 1, 255), 100);
-  assert.equal(api.sliderPctToRaw(1, 1, 255), 1);
-  assert.equal(api.sliderPctToRaw(100, 1, 255), 255);
-  assert.equal(api.sliderPctToRaw(1, 3, 255), 3);
-  assert.equal(api.sliderPctToRaw(100, 3, 255), 255);
+  assert.equal(api.sliderRawToPct(50, 0, 255), 20);
+  // Endpoints are exact (speed, intensity and brightness: 0-255).
+  assert.equal(api.sliderRawToPct(0, 0, 255), 0);
+  assert.equal(api.sliderRawToPct(1, 0, 255), 1);
+  assert.equal(api.sliderRawToPct(255, 0, 255), 100);
+  assert.equal(api.sliderPctToRaw(0, 0, 255), 0);
+  assert.equal(api.sliderPctToRaw(1, 0, 255), 3);
+  assert.equal(api.sliderPctToRaw(100, 0, 255), 255);
   // Percent → raw → percent is a stable round-trip across the whole range.
-  for (let pct = 1; pct <= 100; pct++) {
+  for (let pct = 0; pct <= 100; pct++) {
     for (const [min, max] of [
-      [1, 255],
+      [0, 255],
       [3, 255],
     ]) {
       const raw = api.sliderPctToRaw(pct, min, max);
@@ -324,29 +323,29 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
     }
   }
   // Out-of-range inputs clamp instead of producing NaN or values past bounds.
-  assert.equal(api.sliderRawToPct(9999, 1, 255), 100);
-  assert.equal(api.sliderPctToRaw(0, 1, 255), 1);
-  assert.equal(api.sliderPctToRaw(500, 1, 255), 255);
+  assert.equal(api.sliderRawToPct(9999, 0, 255), 100);
+  assert.equal(api.sliderPctToRaw(-5, 0, 255), 0);
+  assert.equal(api.sliderPctToRaw(500, 0, 255), 255);
   // Percent vs raw display formatting.
   assert.equal(api.formatSliderValue(20, { unit: "%" }), "20%");
   assert.equal(
     api.formatSliderValue(20, {
       valueMode: "raw",
-      rawMin: 1,
+      rawMin: 0,
       rawMax: 255,
       rawUnit: "",
     }),
-    "50",
+    "51",
   );
   assert.equal(
     api.formatSliderValue(100, { valueMode: "raw", rawMin: 3, rawMax: 255 }),
     "255",
   );
   // Exact device value wins over the mapping while the percent still represents
-  // it (128 reads 128, not 129), but a dragged percent uses the mapping.
-  const rawGc = { valueMode: "raw", rawMin: 1, rawMax: 255, rawValue: 128 };
-  assert.equal(api.formatSliderValue(51, rawGc), "128");
-  assert.equal(api.formatSliderValue(60, rawGc), "152");
+  // it (128 reads 128, not 127), but a dragged percent uses the mapping.
+  const rawGc = { valueMode: "raw", rawMin: 0, rawMax: 255, rawValue: 128 };
+  assert.equal(api.formatSliderValue(50, rawGc), "128");
+  assert.equal(api.formatSliderValue(60, rawGc), "153");
   // Raw mode falls back to percent unless a full raw range is provided.
   assert.equal(
     api.formatSliderValue(42, { valueMode: "raw", unit: "%" }),
@@ -366,12 +365,14 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
   }
   assert.match(
     sourceFor("yeelight-cube-native-effects-card.js"),
-    /speedRawToPct\(attrs\.native_effect_speed/,
+    /speedRawToPct\(chosenSpeed\(attrs\)\)/,
   );
-  assert.match(
-    sourceFor("slider-control-utils.js"),
-    /valueMode: config\.slider_show_raw_value \? "raw" : "percent"/,
+  // Value: Device units (slider_value: raw) on every lamp slider.
+  const { lightSliderConfig } = await import(
+    "../custom_components/yeelight_cube/www/slider-control-utils.js"
   );
+  for (const kind of ["brightness", "speed", "intensity"])
+    assert.equal(lightSliderConfig({ slider_value: "raw" }, kind).valueMode, "raw");
   // The Lamp Preview gets the raw toggle (and the rest) from the shared
   // lamp-slider config and editor block, with the same slider_* names.
   assert.match(
@@ -621,32 +622,23 @@ test("named effects exclude raw experimental mode numbers even when explicitly v
   );
 });
 
-test("native and clock sliders share capsule icon configuration", () => {
-  const source = sourceFor("slider-control-utils.js");
-  const body = source.match(
-    /export function lightSliderConfig\([\s\S]*?\) \{([\s\S]*?)\n\}/,
-  )[1];
-  const keys = {
-    iconLeftShow: "slider_show_icon_left",
-    iconRightShow: "slider_show_icon_right",
-  };
-  const config = new Function(
-    "sliderConfigToGc",
-    "SPEED_RAW",
-    "BRIGHTNESS_RAW",
-    `return function(config, kind, keys, overrides = {}) {${body}}`,
-  )((cfg, map, overrides) => overrides, { min: 1, max: 255 }, { min: 3, max: 255 });
+test("native and clock sliders share their kinds' colors, icons and ranges", async () => {
+  const { lightSliderConfig } = await import(
+    "../custom_components/yeelight_cube/www/slider-control-utils.js"
+  );
   // A card's own additions win (the Lamp Preview's color).
   assert.equal(
-    config({}, "brightness", keys, { color: "#123456" }).color,
+    lightSliderConfig({}, "brightness", undefined, { color: "#123456" }).color,
     "#123456",
   );
-  assert.equal(config({}, "brightness", keys).iconLeft, "🌙");
-  assert.equal(config({}, "speed", keys).iconRight, "⚡");
-  assert.equal(
-    config({ slider_show_icon_left: false }, "speed", keys).iconLeft,
-    null,
-  );
+  assert.equal(lightSliderConfig({}, "brightness").iconLeft, "🌙");
+  assert.equal(lightSliderConfig({}, "speed").iconRight, "⚡");
+  // Intensity is one more kind: its own color and icons, the same range as speed.
+  const intensity = lightSliderConfig({}, "intensity");
+  assert.notEqual(intensity.color, lightSliderConfig({}, "speed").color);
+  assert.deepEqual([intensity.rawMin, intensity.rawMax], [0, 255]);
+  // No ends: no icons shown.
+  assert.equal(lightSliderConfig({ slider_ends: "none" }, "speed").ends, "none");
   for (const file of [
     "yeelight-cube-clock-card.js",
     "yeelight-cube-native-effects-card.js",
@@ -790,6 +782,7 @@ test("native editor sections follow the card and use shared conditional controls
     show_actions: false,
     show_brightness: false,
     show_animation_speed: false,
+    show_intensity: false,
     show_device_orientation: false,
     show_gallery: false,
   };
@@ -1233,4 +1226,15 @@ test("a tile is not blank for having just started, frozen at the first moment", 
       `${name} at its first moment`,
     );
   }
+});
+
+test("every effect previews at speed 0 and intensity 0", () => {
+  // Every effect takes both (lamp-renderers.js lampIntensity raises the few
+  // with a minimum); the previews draw them without failing.
+  for (const effect of nativePreviewCatalogue)
+    for (const elapsed of [0, 1.3, 7])
+      assert.ok(
+        nativeEffectFrame(effect, { native_effect_speed: 0, native_effect_intensity: 0 }, elapsed),
+        effect.name,
+      );
 });

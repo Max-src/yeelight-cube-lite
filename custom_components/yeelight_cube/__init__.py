@@ -380,6 +380,7 @@ _ENTITY_SUFFIXES_BY_PLATFORM: list[tuple[str, str]] = [
     ("button", "_force_refresh"),
     ("number", "_gradient_angle"),
     ("number", "_native_effect_speed"),
+    ("number", "_native_effect_intensity"),
     ("number", "_scroll_speed"),
     # Preview adjustment numbers (keys from number.PREVIEW_ADJUSTMENTS)
     ("number", "_hue_shift"),

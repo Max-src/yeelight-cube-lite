@@ -19,9 +19,14 @@
  * it first in setConfig(). An older option whose values also changed has a
  * migration (OPTION_MIGRATIONS) instead.
  */
-import { sliderKeys } from "./slider-control-utils.js";
+import { sliderKeyAliases, withSliderOptions } from "./slider-control-utils.js";
 import { withCanonicalNames } from "./effect-names.js";
 import { EFFECT_FAMILIES } from "./effect-families.js";
+
+// The cards with lamp sliders: their older slider options are read as
+// today's (slider-control-utils.js withSliderOptions: Value, Ends, Step
+// Size, Thickness), after the card's own aliases.
+const SLIDER_CARDS = new Set(["clock", "native", "lamp-preview"]);
 
 // The cards whose config names native effects or clock styles (visible and
 // hidden items, item labels): a former name is read as today's
@@ -31,13 +36,8 @@ const NAMED_ITEMS = Object.freeze({ clock: "clock", native: "native" });
 export const OPTION_ALIASES = Object.freeze({
   clock: {
     // The Clock's speed slider had its own speed_* appearance options; the
-    // shared slider_* ones now drive both its sliders.
-    ...Object.fromEntries(
-      Object.entries(sliderKeys("speed")).map(([field, key]) => [
-        key,
-        sliderKeys("slider")[field],
-      ]),
-    ),
+    // shared slider_* ones now drive all its sliders.
+    ...sliderKeyAliases("speed"),
     // The shared visible-items vocabulary (visible-items.js).
     hidden_clock_styles: "hidden_styles",
   },
@@ -458,6 +458,11 @@ export const RETIRED_OPTIONS = Object.freeze({
 
 export function normalizeCardOptions(config, card) {
   if (!config || typeof config !== "object") return config;
+  const result = withCardOptions(config, card);
+  return SLIDER_CARDS.has(card) ? withSliderOptions(result) : result;
+}
+
+function withCardOptions(config, card) {
   if (NAMED_ITEMS[card]) config = withCanonicalNames(config, NAMED_ITEMS[card]);
   const aliases = OPTION_ALIASES[card] || {};
   const retired = RETIRED_OPTIONS[card] || [];

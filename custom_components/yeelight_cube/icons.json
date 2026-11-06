@@ -20,6 +20,9 @@
             "native_effect_speed": {
                 "default": "mdi:speedometer"
             },
+            "native_effect_intensity": {
+                "default": "mdi:tune-vertical"
+            },
             "scroll_speed": {
                 "default": "mdi:timer-play-outline"
             },

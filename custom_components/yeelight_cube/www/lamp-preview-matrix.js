@@ -9,6 +9,7 @@ import {
   effectDisplayFrame,
   isLampRendered,
   DEFAULT_EFFECT_SPEED,
+  chosenIntensity,
 } from "./lamp-renderers.js";
 import {
   clockStyleMixer,
@@ -281,6 +282,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
         st.attributes.native_effect_color_mode || "normal",
         speed,
         orientation,
+        chosenIntensity(st.attributes),
       ),
     );
     const grid = this._matrixColorsToGridColors(raw, st);

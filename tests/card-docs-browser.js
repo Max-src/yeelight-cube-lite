@@ -419,8 +419,10 @@ window.cardDocs = {
     if (!this.options.section && !this.options.offline) {
       // These are the slider `ns` values the cards pass to renderSliderGroup
       // via the shared LampSliders (www/lamp-sliders.js): every card now uses
-      // "brightness", and the Clock / Native Effects cards add "speed". Lamp
-      // Preview has the brightness slider only. If you rename a slider
+      // "brightness", and the Clock / Native Effects cards add "speed"
+      // ("intensity" too, but not for Rainbow, the effect and clock style
+      // shown here: it reads none). Lamp Preview has the brightness slider
+      // only. If you rename a slider
       // namespace or add/remove a lamp slider, update this list to match --
       // it is the only place that still hardcodes them, and it only runs in
       // the screenshot capture (needs a real HA), so a stale value here fails

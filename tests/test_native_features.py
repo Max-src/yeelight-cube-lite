@@ -31,11 +31,11 @@ NATIVE_ACTIVATION = frozenset({
     "_activate_native_clock", "_native_clock_params",
     "_send_native", "_update_running_effect", "_native_renderer_shown",
     "_native_brightness_due", "live_effect_changes",
-    "runs_lamp_music", "_clear_fx_mode_flag",
+    "runs_lamp_music", "_clear_fx_mode_flag", "intensity_config",
 })
 NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {
     "live_effect_changes", "effect_direction_sent", "lamp_direction",
-    "runs_lamp_music",
+    "runs_lamp_music", "intensity_config",
 }
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
 MOUNT_PROFILE = runpy.run_path(ROOT / "mount_profile.py")
@@ -76,7 +76,7 @@ ERRORS = {
 _DEFAULT_NAMESPACE = {
     **{name: CONSTANTS[name] for name in (
         "MODE_CLOCK", "MODE_NATIVE_EFFECT", "LAMP_MODES", "ROTATION_KIND_MODES",
-        "lamp_rate",
+        "lamp_rate", "lamp_intensity", "DEFAULT_NATIVE_EFFECT_INTENSITY",
     )},
     **{name: COLOR_UTILS[name] for name in ("rgb_to_argb", "argb_to_rgb")},
     "compensate_direction": MOUNT_PROFILE["compensate_direction"],
@@ -222,6 +222,7 @@ class NativeFeatureTests(unittest.TestCase):
             name: {
                 "name": name,
                 "speed": bool(spec.get("speed")),
+                "intensity": bool(spec.get("intensity")),
                 "directions": list(spec.get("directions", ())),
                 "extended": bool(spec.get("extended")),
                 "family": CONSTANTS["EFFECT_FAMILY_OF_SLOT"][spec["mode"]],

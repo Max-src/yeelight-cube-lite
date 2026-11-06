@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
+from .const import INTENSITY_RANGE, MODE_CLOCK, MODE_NATIVE_EFFECT, SPEED_RANGE
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
 from .lamp_power import BASE_W, NO_LIMIT_W
@@ -215,6 +215,7 @@ async def async_setup_entry(
     async_add_entities([
         YeelightCubeGradientAngleNumber(light_entity, entry),
         YeelightCubeNativeEffectSpeedNumber(light_entity, entry),
+        YeelightCubeNativeEffectIntensityNumber(light_entity, entry),
         *(
             CubeSettingNumber(light_entity, entry, spec)
             for spec in (*SETTING_NUMBERS, *PREVIEW_ADJUSTMENTS)
@@ -256,43 +257,59 @@ class YeelightCubeGradientAngleNumber(CubeNumber):
         self._write_states()
 
 
-class YeelightCubeNativeEffectSpeedNumber(CubeNumber):
-    """Control the rate used by built-in animations."""
+class _EffectSettingNumber(CubeNumber):
+    """A setting shared by every built-in animation (speed, intensity), kept
+    in the light's ``_attr``: available while the lamp shows an effect or a
+    clock background that reads it (light.effect_setting_applies), and sent
+    at once when it does."""
 
-    _attr_translation_key = "native_effect_speed"
-    _slot = "_native_effect_speed_entity"
-
-    def __init__(self, light_entity, config_entry: ConfigEntry):
-        super().__init__(light_entity, config_entry, "native_effect_speed", 1, 255, 1)
+    _setting = None  # "speed" / "intensity": the effect spec's flag
+    _attr = None
 
     @property
     def available(self) -> bool:
         light = self._light_entity
-        if not light.available:
-            return False
-        # The lamp's clock accepts the same rate byte, so the slider applies
-        # to clock mode too; otherwise it depends on the selected effect.
-        if light._mode == MODE_CLOCK:
-            return True
-        spec = ALL_NATIVE_EFFECTS[light._native_effect]
-        return bool(spec.get("speed"))
+        return light.available and light.effect_setting_applies(self._setting)
 
     @property
     def native_value(self) -> float:
-        return float(self._light_entity._native_effect_speed)
+        return float(getattr(self._light_entity, self._attr))
 
     async def async_set_native_value(self, value: float) -> None:
         light = self._light_entity
-        light._native_effect_speed = max(1, min(255, int(value)))
-        if light._mode == MODE_CLOCK:
-            reapply = light._is_on
-        else:
-            spec = ALL_NATIVE_EFFECTS[light._native_effect]
-            reapply = (
-                bool(spec.get("speed"))
-                and light._mode == MODE_NATIVE_EFFECT
-                and light._is_on
-            )
-        if reapply:
+        low, high = int(self._attr_native_min_value), int(self._attr_native_max_value)
+        setattr(light, self._attr, max(low, min(high, int(value))))
+        if (
+            light._is_on
+            and light._mode in (MODE_CLOCK, MODE_NATIVE_EFFECT)
+            and light.effect_setting_applies(self._setting)
+        ):
             await light.async_apply_display_mode(update_type="color_change")
         self._write_states()
+
+
+class YeelightCubeNativeEffectSpeedNumber(_EffectSettingNumber):
+    """Control the rate used by built-in animations."""
+
+    _attr_translation_key = "native_effect_speed"
+    _slot = "_native_effect_speed_entity"
+    _setting = "speed"
+    _attr = "_native_effect_speed"
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        super().__init__(light_entity, config_entry, "native_effect_speed", *SPEED_RANGE, 1)
+
+
+class YeelightCubeNativeEffectIntensityNumber(_EffectSettingNumber):
+    """Control the intensity of built-in animations (what it sets depends on
+    the effect: const.LAMP_INTENSITY_SLOTS)."""
+
+    _attr_translation_key = "native_effect_intensity"
+    _slot = "_native_effect_intensity_entity"
+    _setting = "intensity"
+    _attr = "_native_effect_intensity"
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        super().__init__(
+            light_entity, config_entry, "native_effect_intensity", *INTENSITY_RANGE, 1
+        )

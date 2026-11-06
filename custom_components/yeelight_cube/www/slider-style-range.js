@@ -1,8 +1,10 @@
 // The "Slider" (thin / thick range input) style of the shared slider (slider-control-utils.js): its
 // markup, its visual update for a value, and its CSS.
-import { formatSliderValue } from "./slider-values.js";
+import { SLIDER_MAX, SLIDER_MIN, formatSliderValue } from "./slider-values.js";
 
 export default {
+  ends: "sides",
+  thickShape: true,
   render({ gc, v, showValue, drag }) {
     const variant = gc.variant === "thick" ? "thick" : "thin";
     const value = showValue
@@ -11,13 +13,12 @@ export default {
     return {
       html: `
       <div class="brightness-slider-wrapper${showValue ? "" : " brightness-slider-full"}" style="--slider-pct:${v}%">
-        <input type="range" min="1" max="100" value="${v}"
+        <input type="range" min="${SLIDER_MIN}" max="${SLIDER_MAX}" value="${v}"
           class="brightness-slider brightness-slider-variable slider-variant-${variant}"
           style="--slider-pct:${v}%"
           ${drag} />
         ${value}
       </div>`,
-      mirror: { right: value },
     };
   },
 

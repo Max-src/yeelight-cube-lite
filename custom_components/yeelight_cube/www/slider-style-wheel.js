@@ -1,13 +1,18 @@
 // The "Wheel" (a scrolling row of ticks) style of the shared slider (slider-control-utils.js): its
 // markup, its visual update for a value, its interactions (tick, mouse wheel, drag) and its CSS.
-import { formatSliderValue, resolveWheelStyle } from "./slider-values.js";
+import {
+  SLIDER_MAX,
+  SLIDER_MIN,
+  formatSliderValue,
+  resolveWheelStyle,
+} from "./slider-values.js";
 
-// The values the wheel stops at (every `wheelStep`, and 100).
+// The values the wheel stops at (0, every `wheelStep`, and 100).
 function wheelStops(gc) {
   const step = Math.max(1, Math.min(50, parseInt(gc.wheelStep) || 10));
   const stops = [];
-  for (let s = step; s <= 100; s += step) stops.push(s);
-  if (stops[stops.length - 1] !== 100) stops.push(100);
+  for (let s = SLIDER_MIN; s <= SLIDER_MAX; s += step) stops.push(s);
+  if (stops[stops.length - 1] !== SLIDER_MAX) stops.push(SLIDER_MAX);
   return stops;
 }
 
@@ -29,7 +34,8 @@ const wheelGoesUp = (event) =>
 export default {
   render({ gc, v, showValue, thickness, on }) {
     const stops = wheelStops(gc);
-    const step = stops[0];
+    // The spacing between stops (the first one is 0).
+    const step = stops[1] - stops[0] || 1;
     const wheelStyle = resolveWheelStyle(gc.wheelStyle);
     const showWheelLabels = gc.wheelLabels !== false;
     const tickW = thickness * 5 + 20;
@@ -61,11 +67,10 @@ export default {
             ${ticks}
           </div>
         </div>
-        <input type="range" min="${step}" max="100" step="${step}" value="${stops[activeIndex]}"
+        <input type="range" min="${SLIDER_MIN}" max="${SLIDER_MAX}" step="${step}" value="${stops[activeIndex]}"
           class="brightness-slider brightness-slider-wheel" style="display:none;"
           ${on({ input: "Change" })} />
       </div>`,
-      mirror: {},
     };
   },
 

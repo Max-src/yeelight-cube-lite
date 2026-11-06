@@ -60,6 +60,7 @@ try:
         UNDIRECTED_EFFECT_DIRECTION,
         NATIVE_CLOCK_EFFECT_ID,
         effect_direction_value,
+        lamp_intensity,
         lamp_rate,
     )
     from . import lamp_effects_core
@@ -106,6 +107,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         UNDIRECTED_EFFECT_DIRECTION,
         NATIVE_CLOCK_EFFECT_ID,
         effect_direction_value,
+        lamp_intensity,
         lamp_rate,
     )
     import lamp_effects_core
@@ -763,11 +765,13 @@ def _colour_word(color) -> int:
 
 
 def _command_settings(
-    mode: int, command_id: int, direction: int, rate: int, word, more=(),
+    mode: int, command_id: int, direction: int, rate: int, word, more=(), intensity=None,
 ) -> dict:
     """The fields a renderer reads, from what a command sends: ``word``, the
-    first colour word sent (None: no color key), ``more`` the others."""
-    selector, intensity, *_ = PRESET_ROWS[command_id]
+    first colour word sent (None: no color key), ``more`` the others,
+    ``intensity`` the one sent (None: the preset row's)."""
+    selector, row_intensity, *_ = PRESET_ROWS[command_id]
+    intensity = row_intensity if intensity is None else intensity
     coloured = word is not None
     settings = {
         "mode": mode,
@@ -787,15 +791,23 @@ def _rgb(word: int) -> list:
     return [word >> 16 & 255, word >> 8 & 255, word & 255]
 
 
+def _sent_intensity(spec: dict, intensity) -> int | None:
+    """The intensity a command sends for the effect ``spec`` (lamp_intensity):
+    None when the effect reads none or none is chosen, so the row's applies."""
+    if intensity is None or not spec.get("intensity"):
+        return None
+    return lamp_intensity(spec["mode"], intensity)
+
+
 def lamp_settings(
     effect: str, direction: str, speed: int, color_override=None, color_mode=None,
-    orientation=None,
+    orientation=None, intensity=None,
 ) -> dict:
     """What the lamp runs for a native effect (light_native._native_effect_params):
     the settings its renderer takes, from the same choices. ``color_override`` is
     [r, g, b]. What the send path ignores is ignored here. A direction label goes
     through the effect's remap and is turned for the mount; an effect offered none
-    has its fixed one."""
+    has its fixed one. ``intensity``: the one chosen (None: the row's)."""
     spec = ALL_NATIVE_EFFECTS[effect]
     palette = (
         CLOCK_COLOR_MODES.get(color_mode)
@@ -825,6 +837,7 @@ def lamp_settings(
         words = [_colour_word(color_override), *words[1:]]
     return _command_settings(
         spec["mode"], command_id, value, rate, words[0] if words else None, words[1:],
+        _sent_intensity(spec, intensity),
     )
 
 
@@ -839,14 +852,17 @@ def lamp_effect_frame(settings, seconds: float) -> list:
     return frame_pixels(timeline.frame_at(render))
 
 
-def lamp_clock_settings(effect: str, speed: int, color_override=None, color_mode=None) -> dict:
+def lamp_clock_settings(
+    effect: str, speed: int, color_override=None, color_mode=None, intensity=None,
+) -> dict:
     """What the lamp runs behind the clock when ``effect`` is its mixer: mode 40
     hands over to it under the clock overlay (light_native._native_clock_params
     for the command, the renderers here for what it does). The color and
     the palette reach every mixer (CLOCK_MIXER_EFFECTS there). A slot that draws its colour
     words (1, 8, 28, 33, 72) is sent all of them, the color first, none under
     B&W, and no palette, which would only drop them (const.clock_style_colors).
-    A mixer with no speed reads no rate, so its timeline stays the effect's."""
+    A mixer with no speed reads no rate, so its timeline stays the effect's;
+    the same for the intensity."""
     spec = ALL_NATIVE_EFFECTS[effect]
     mode = spec["mode"]
     words = [int(word) & 0xFFFFFF for word in spec.get("colors", ())]
@@ -869,7 +885,10 @@ def lamp_clock_settings(effect: str, speed: int, color_override=None, color_mode
             word = words[0]
     rate = lamp_rate(mode, speed) if spec.get("speed") else PRESET_ROWS[command_id][2]
     more = words[1:] if not active and word is not None else ()
-    return _command_settings(mode, command_id, CLOCK_BACKGROUND_DIRECTION, rate, word, more)
+    return _command_settings(
+        mode, command_id, CLOCK_BACKGROUND_DIRECTION, rate, word, more,
+        _sent_intensity(spec, intensity),
+    )
 
 
 # The families: one line each.

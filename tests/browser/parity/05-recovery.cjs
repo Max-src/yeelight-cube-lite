@@ -259,7 +259,8 @@ module.exports = async (t) => {
     );
     // Slider namespaces are a contract (www/lamp-sliders.js): every card's
     // lamp sliders render with data-sl-ns="brightness", and Clock / Native
-    // Effects add "speed"; Lamp Preview has brightness only. The screenshot
+    // Effects add "speed" (and "intensity", checked below); Lamp Preview has
+    // brightness only. The screenshot
     // capture (tests/card-docs-browser.js) also queries sliders by these
     // names, but only runs with a real HA -- assert them here too so a
     // renamed/removed namespace fails `npm run check` (no HA) as well,
@@ -288,6 +289,72 @@ module.exports = async (t) => {
           sliderCard.shadowRoot.querySelector(`[data-sl-ns="${ns}"]`),
           `${name}: lamp slider must render with data-sl-ns="${ns}"`,
         );
+    }
+    // Speed and intensity show only while what the lamp runs reads them:
+    // Starry Sky and the Waves clock both, Rainbow no intensity, a solid
+    // clock style neither (const.py LAMP_INTENSITY_SLOTS, clockStyleTakes).
+    const catalogue = [
+      { name: "Rainbow", speed: true, intensity: false, directions: [] },
+      { name: "Starry Sky", speed: true, intensity: true, directions: [] },
+      { name: "Palette stripes", speed: false, intensity: true, directions: [] },
+    ];
+    for (const [name, attributes, shown, hidden, greyed] of [
+      ["native-effects", { native_effect: "Starry Sky" }, ["speed", "intensity"], []],
+      ["native-effects", { native_effect: "Rainbow" }, ["speed"], ["intensity"]],
+      ["native-effects", { native_effect: "Palette stripes" }, ["intensity"], ["speed"]],
+      ["clock", { clock_style: "Waves", clock_style_id: 2 }, ["speed", "intensity"], []],
+      ["clock", { clock_style: "White", clock_style_id: 4 }, [], ["speed", "intensity"]],
+      // Greyed out in place instead (slider_grey_out_unused): shown, inert.
+      ["native-effects", { native_effect: "Palette stripes" }, ["intensity", "speed"], [], ["speed"]],
+      ["clock", { clock_style: "White", clock_style_id: 4 }, ["speed", "intensity"], [], ["speed", "intensity"]],
+    ]) {
+      const lamp = state.states["light.a"];
+      const sliderCard = document.createElement(`yeelight-cube-${name}-card`);
+      sliderCard.setConfig({
+        ...config,
+        show_brightness: true,
+        slider_grey_out_unused: !!greyed,
+      });
+      sliderCard.hass = {
+        ...state,
+        states: {
+          ...state.states,
+          "light.a": {
+            ...lamp,
+            attributes: {
+              ...lamp.attributes,
+              native_effect_catalog: catalogue,
+              ...attributes,
+            },
+          },
+        },
+      };
+      sliderProbe.append(sliderCard);
+      await sliderCard.updateComplete;
+      await frames();
+      const label = `${name} on ${Object.values(attributes)[0]}`;
+      for (const ns of shown)
+        check(
+          sliderCard.shadowRoot.querySelector(`[data-sl-ns="${ns}"]`),
+          `${label}: the ${ns} slider must show`,
+        );
+      for (const ns of hidden)
+        check(
+          !sliderCard.shadowRoot.querySelector(`[data-sl-ns="${ns}"]`),
+          `${label}: the ${ns} slider must not show`,
+        );
+      // Only the unused ones are greyed out, and they cannot be used.
+      for (const ns of shown) {
+        const item = sliderCard.shadowRoot
+          .querySelector(`[data-sl-ns="${ns}"]`)
+          ?.closest(".brightness-control-item");
+        const isGreyed = (greyed || []).includes(ns);
+        check(
+          item?.classList.contains("brightness-control-unused") === isGreyed &&
+            item?.inert === isGreyed,
+          `${label}: the ${ns} slider must ${isGreyed ? "" : "not "}be greyed out`,
+        );
+      }
     }
     sliderProbe.remove();
     gradients[0].remove();

@@ -618,6 +618,7 @@ test("Custom stays selectable and built-in selections respect the active color m
     _styleList: () => styles,
     _controlStyles: () => styles,
     _animationSpeed: () => 50,
+    _animationIntensity: () => 128,
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),

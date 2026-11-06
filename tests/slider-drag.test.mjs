@@ -15,6 +15,9 @@ const {
   speedPctToRaw,
   speedRawToPct,
   lightSliderConfig,
+  sliderWhenUsed,
+  GREY_OUT_UNUSED_KEY,
+  lampSliderIcons,
 } =
   await import("../custom_components/yeelight_cube/www/slider-control-utils.js");
 const { RenderGate } = await import("../custom_components/yeelight_cube/www/render-gate.js");
@@ -246,6 +249,42 @@ test("slider config cannot inject markup into the rendered HTML", () => {
   );
 });
 
+test("an unused slider is hidden, or greyed out in place when the card asks", () => {
+  const control = { label: "Intensity", gc: { style: "slider" }, value: 50, ns: "intensity" };
+  assert.equal(GREY_OUT_UNUSED_KEY, "slider_grey_out_unused");
+  assert.equal(sliderWhenUsed({}, true, control), control);
+  assert.equal(sliderWhenUsed({}, false, control), null);
+  assert.equal(sliderWhenUsed({ slider_grey_out_unused: false }, false, control), null);
+  const greyed = sliderWhenUsed({ slider_grey_out_unused: true }, false, control);
+  assert.equal(greyed.unused, true);
+  assert.equal(sliderWhenUsed({ slider_grey_out_unused: true }, true, control).unused, undefined);
+  const html = renderSliderGroup([{ ...control, ns: "speed" }, greyed]);
+  // Only the unused one is greyed and inert; both keep their place.
+  assert.equal(html.match(/brightness-control-unused/g)?.length, 1);
+  assert.match(html, /brightness-control-unused"[^>]* inert [^>]*aria-disabled="true"/);
+  assert.ok(html.indexOf('data-sl-ns="speed"') < html.indexOf('data-sl-ns="intensity"'));
+});
+
+test("a slider's icons follow its kind, the effect family and the card's ends", () => {
+  assert.deepEqual(lampSliderIcons({}, "brightness"), ["🌙", "☀️"]);
+  assert.deepEqual(lampSliderIcons({}, "speed", "music"), ["🐢", "⚡"]);
+  assert.deepEqual(lampSliderIcons({}, "intensity", "sparkles"), ["💧", "🌊"]);
+  assert.deepEqual(lampSliderIcons({}, "intensity", "music"), ["🔈", "🔊"]);
+  assert.deepEqual(lampSliderIcons({}, "intensity"), ["💧", "🌊"]);
+  // Ends: ➖ ➕ on every slider, whatever the family (also from the older
+  // Capsule icon set).
+  for (const kind of ["brightness", "speed", "intensity"])
+    assert.deepEqual(lampSliderIcons({ slider_ends: "plus_minus" }, kind, "music"), ["➖", "➕"]);
+  assert.deepEqual(
+    lampSliderIcons({ slider_style: "capsule", slider_icons: "plus_minus" }, "speed"),
+    ["➖", "➕"],
+  );
+  // Through the card's render config.
+  const config = lightSliderConfig({}, "intensity", undefined, { family: "music" });
+  assert.deepEqual([config.iconLeft, config.iconRight], ["🔈", "🔊"]);
+  assert.equal(config.family, undefined);
+});
+
 test("slider text is escaped exactly once", () => {
   const html = renderSliderGroup([
     { gc: { style: "slider", unit: " & up" }, value: 40, ns: "a" },
@@ -269,20 +308,25 @@ test("valid CSS color syntaxes and empty numbers are handled sensibly", () => {
 });
 
 test("brightness and speed use one curve, exact at the ends and round-tripping", () => {
+  // 0 % is 0 (brightness 0: off; speed 0), 1 % brightness the lamp's lowest.
   assert.deepEqual(
-    [brightnessPctToRaw(1), brightnessPctToRaw(100), brightnessRawToPct(3)],
-    [3, 255, 1],
+    [brightnessPctToRaw(0), brightnessPctToRaw(1), brightnessPctToRaw(100), brightnessRawToPct(3)],
+    [0, 3, 255, 1],
   );
-  assert.deepEqual([speedPctToRaw(1), speedPctToRaw(100), speedRawToPct(50)], [1, 255, 20]);
-  for (let pct = 1; pct <= 100; pct++) {
+  assert.deepEqual(
+    [speedPctToRaw(0), speedPctToRaw(100), speedRawToPct(0), speedRawToPct(50)],
+    [0, 255, 0, 20],
+  );
+  for (let pct = 0; pct <= 100; pct++) {
     assert.equal(brightnessRawToPct(brightnessPctToRaw(pct)), pct);
     assert.equal(speedRawToPct(speedPctToRaw(pct)), pct);
   }
-  // Out-of-range device values clamp (a lamp reporting 0 or 256).
-  assert.deepEqual([brightnessRawToPct(0), brightnessRawToPct(300)], [1, 100]);
+  // A device value above 0 never reads 0 %; out-of-range values clamp.
+  assert.deepEqual([speedRawToPct(1), brightnessRawToPct(2)], [1, 1]);
+  assert.deepEqual([brightnessRawToPct(-4), brightnessRawToPct(300)], [0, 100]);
   // The raw-value display uses the same ranges.
   assert.deepEqual(
     [lightSliderConfig({}, "brightness").rawMin, lightSliderConfig({}, "speed").rawMin],
-    [3, 1],
+    [0, 0],
   );
 });
