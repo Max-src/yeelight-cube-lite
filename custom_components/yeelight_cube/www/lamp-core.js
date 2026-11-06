@@ -540,14 +540,17 @@ export function installedWords(settings) {
  * four words, the palette and its sampled table. Shared: not to be changed. */
 export function effectColours(settings) {
   const { mode, selector, intensity, coloured, primary } = settings;
-  const key = `${mode},${selector},${intensity >= 128},${coloured},${primary},${settings.colours ?? ""}`;
+  const key = `${mode},${selector},${intensity >= 128},${coloured},${primary},${settings.colours ?? ""},${settings.palette ?? ""}`;
   let out = colourMemo.get(key);
   if (out) return out;
   const words = installedWords(settings);
   const paletteMode =
     LAMP_PALETTE_MODES.has(mode) && !(mode === 3 && intensity < 128);
   let palette;
-  if (paletteMode)
+  if (paletteMode && settings.palette?.length)
+    // A music mode's own palette (lamp-renderers.js musicPalette).
+    palette = settings.palette.map((colour) => convertColour(colour));
+  else if (paletteMode)
     palette =
       coloured || selector === 8 ? primaryRamp(words[0]) : nativePalette(selector, mode);
   else if (mode === 8 || mode === 28) palette = words.slice(); // its four band colors

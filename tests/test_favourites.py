@@ -30,6 +30,7 @@ def lamp_class():
         {
             "DOMAIN": DOMAIN,
             "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
+            "NATIVE_COLOR_MODES": CONSTANTS["NATIVE_COLOR_MODES"],
             "FAVOURITE_KINDS": ("native", "clock"),
             "MAX_FAVOURITES": 100,
             "MAX_FAVOURITE_NAME": 100,

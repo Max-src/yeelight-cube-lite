@@ -363,6 +363,10 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             target_entity._text_colors = converted_colors
             if target_entity._text_colors:
                 target_entity._rgb_color = target_entity._text_colors[0]
+            # Published at once, like load_palette's: the previews drawing
+            # the palette follow without waiting for the lamp.
+            if target_entity.hass is not None:
+                target_entity.async_write_ha_state()
             await target_entity.async_apply_display_mode(update_type='color_change')
             target_entity.async_schedule_update_ha_state()
 

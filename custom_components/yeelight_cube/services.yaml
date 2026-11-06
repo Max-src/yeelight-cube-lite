@@ -213,7 +213,9 @@ set_clock_style:
     color_mode:
       description: >-
         Built-in color palette preset for compatible effects/styles. "normal"
-        keeps each effect's own colors; the others remap the palette.
+        keeps each effect's own colors; "palette" uses the lamp's palette (the
+        one loaded with load_palette or set with set_text_colors) and follows
+        it when it changes; the others remap the palette.
       required: false
       example: red_blue
       selector:
@@ -225,6 +227,7 @@ set_clock_style:
             - "white_orange"
             - "blue_yellow"
             - "purple_orange"
+            - "palette"
     speed:
       description: Animation speed for effect-backed clock styles (0-255).
       required: false
@@ -580,7 +583,7 @@ set_default:
 
 set_native_effect:
   name: Set Native Effect
-  description: Select and apply a built-in animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.
+  description: Select and apply a built-in animation, optionally setting its speed and compatible color palette. Respects the auto-turn-on setting.
   fields:
     entity_id:
       required: true
@@ -628,7 +631,11 @@ set_native_effect:
       selector:
         object:
     color_mode:
-      description: Palette for compatible effects. Normal restores the effect's own colors. Independent of clock palettes.
+      description: >-
+        Palette for compatible effects. Normal restores the effect's own
+        colors. Palette uses the lamp's palette (the one loaded with
+        load_palette or set with set_text_colors) and follows it when it
+        changes. Independent of clock palettes.
       selector:
         select:
           options:
@@ -644,6 +651,8 @@ set_native_effect:
               value: blue_yellow
             - label: Violet & Gold
               value: purple_orange
+            - label: Palette
+              value: palette
     activate:
       description: Switch to Native Effect mode and apply the selected animation.
       default: true

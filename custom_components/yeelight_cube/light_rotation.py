@@ -20,7 +20,7 @@ from .const import (
     ALL_NATIVE_EFFECTS,
     canonical_clock_style_name,
     canonical_effect_name,
-    CLOCK_COLOR_MODES,
+    NATIVE_COLOR_MODES,
     DOMAIN,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -214,7 +214,7 @@ class RotationMixin:
             if not name:
                 continue
             name = canonical_item_name(kind, name)
-            if color_mode not in CLOCK_COLOR_MODES and color_mode != "custom":
+            if color_mode not in NATIVE_COLOR_MODES and color_mode != "custom":
                 color_mode = "normal"
             if color_mode == "custom":
                 if (
@@ -798,11 +798,9 @@ class RotationMixin:
         if spec is None:
             _LOGGER.debug("[ROTATION] [%s] Unknown native effect %s -- skipped", self._ip, name)
             return True
-        if spec.get("extended") and not self._extended_effects_enabled:
-            _LOGGER.debug(
-                "[ROTATION] [%s] Experimental effect %s skipped (Experimental Features off)",
-                self._ip, name,
-            )
+        if spec.get("animation"):
+            # Each would upload the lamp's GIF again, a flash write per step.
+            _LOGGER.debug("[ROTATION] [%s] Animation %s skipped", self._ip, name)
             return True
         self._native_effect = name
         self._mode = MODE_NATIVE_EFFECT
@@ -855,7 +853,7 @@ class RotationMixin:
             if color_mode == "custom" and color:
                 self._native_clock_color = rgb_to_argb(color)
                 self._native_clock_color_mode = "normal"
-            elif color_mode in CLOCK_COLOR_MODES and color_mode != "normal":
+            elif color_mode in NATIVE_COLOR_MODES and color_mode != "normal":
                 self._native_clock_color = None
                 self._native_clock_color_mode = color_mode
             else:
@@ -879,7 +877,7 @@ class RotationMixin:
             else:
                 self._native_clock_color = None
                 self._native_clock_color_mode = (
-                    color_mode if color_mode in CLOCK_COLOR_MODES else "normal"
+                    color_mode if color_mode in NATIVE_COLOR_MODES else "normal"
                 )
         self._mode = MODE_CLOCK
         self._custom_draw_active = False

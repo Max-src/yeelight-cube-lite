@@ -14,7 +14,8 @@ import { collectionGalleryStyles } from "./collection-gallery.js";
 import "./color-mode-ui.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
-import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
+import { NATIVE_COLOR_MODES } from "./clock-preview-utils.js";
+import { paletteMusicFlow } from "./lamp-renderers.js";
 import {
   effectSupportsColorMode,
   effectSupportsColorOverride,
@@ -354,7 +355,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       ? {
           ...attrs,
           native_effect_catalog: nativePreviewCatalogue,
-          extended_effects_enabled: true,
         }
       : attrs;
   }
@@ -364,10 +364,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       ? "normal"
       : attrs.native_effect_color_mode || "normal";
     const color = this._customColorDraft || attrs.native_effect_color;
-    return nativeEffectItems(attrs, {
-      ...this.config,
-      show_experimental: !!attrs.extended_effects_enabled,
-    }).filter((item) => this._respondsToColor(item.name, mode, color));
+    return nativeEffectItems(attrs, this.config).filter((item) => this._respondsToColor(item.name, mode, color));
   }
 
   get _sort() {
@@ -396,19 +393,14 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       this._effectAvailable(current.name)
     )
       return current.name;
-    return nativeEffectItems(this._attrs(), {
-      ...this.config,
-      show_experimental: !!this._attrs().extended_effects_enabled,
-    }).find(
+    return nativeEffectItems(this._attrs(), this.config).find(
       (item) =>
         this._respondsToColor(item.name, mode, color) &&
         this._effectAvailable(item.name),
     )?.name;
   }
   _effect() {
-    const catalogue = nativeEffectItems(this._attrs(), {
-      show_experimental: true,
-    });
+    const catalogue = nativeEffectItems(this._attrs());
     return (
       catalogue.find(
         (item) => item.name === (this._selected || this._attrs().native_effect),
@@ -622,8 +614,15 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       });
     // Speed and intensity only for an effect that reads them (const.py
     // LAMP_INTENSITY_SLOTS); otherwise hidden or greyed out (sliderWhenUsed).
+    // A music effect in the Palette color mode runs as the microphone's
+    // music mode, which takes neither (lamp-renderers.js paletteMusicFlow).
+    const musicMode = !!paletteMusicFlow(
+      effect?.name,
+      attrs.native_effect_color_mode,
+      attrs.text_colors,
+    );
     if (this.config.show_animation_speed)
-      controls.push(sliderWhenUsed(this.config, effect?.speed, {
+      controls.push(sliderWhenUsed(this.config, effect?.speed && !musicMode, {
         label: "Speed",
         ns: "speed",
         gc: {
@@ -635,7 +634,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           speedRawToPct(chosenSpeed(attrs)),
       }));
     if (this.config.show_intensity)
-      controls.push(sliderWhenUsed(this.config, effect?.intensity, {
+      controls.push(sliderWhenUsed(this.config, effect?.intensity && !musicMode, {
         label: "Intensity",
         ns: "intensity",
         gc: {
@@ -666,9 +665,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     if (previewOnly(this))
       return nativePreviewCatalogue.some((item) => item.name === effect);
     return everyAvailable(this._hass, this.config, (entity, state) =>
-      nativeEffectItems(state.attributes, {
-        show_experimental: !!state.attributes.extended_effects_enabled,
-      }).some((item) => item.name === effect),
+      nativeEffectItems(state.attributes).some((item) => item.name === effect),
     );
   }
 
@@ -690,7 +687,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   _colorOptions() {
     const custom = this._supportsCustomColor();
     const options = clockColorModeOptions(
-      CLOCK_COLOR_MODES,
+      NATIVE_COLOR_MODES,
       custom ? clockPresetLibrary(this._hass) : [],
       this.config,
     );

@@ -19,6 +19,10 @@ import {
   lampSettings,
   isLampRendered,
 } from "./lamp-renderers.js";
+import { ANIMATION_EFFECTS, animationFrame, isAnimation } from "./lamp-animation-frames.js";
+
+// const.py STORED_GIF_EFFECT: the lamp's stored GIF.
+export const STORED_GIF_EFFECT = "Stored GIF";
 
 export {
   COLOR_MODE_BW_EFFECTS,
@@ -134,11 +138,25 @@ export function renderNativeEffect(
   speed = null,
   orientation = null,
   intensity = null,
+  palette = null,
+  stored = null,
+  layout = null,
 ) {
-  if (!isLampRendered(effect)) return renderGradient(phase, direction);
   const rate = speed ?? DEFAULT_PREVIEW_SPEED;
+  // An animation, or the stored GIF when it is one of them (`stored`, the
+  // stored_gif attribute or its animation): its frames as drawn, at their own
+  // pace, laid out as sent (`layout`, the animation_layout attribute; the
+  // stored GIF's own).
+  let animation = ANIMATION_EFFECTS[effect];
+  if (effect === STORED_GIF_EFFECT) {
+    animation = typeof stored === "string" ? stored : stored?.animation;
+    layout = typeof stored === "string" ? null : stored?.layout ?? null;
+  }
+  if (isAnimation(animation))
+    return animationFrame(animation, phase / (0.25 + rate / 55), orientation, layout);
+  if (!isLampRendered(effect)) return renderGradient(phase, direction);
   return lampEffectFrame(
-    lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity),
+    lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity, palette),
     phase / (0.25 + rate / 55),
   );
 }

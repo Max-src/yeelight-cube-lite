@@ -8,18 +8,14 @@ from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, _load_stan
 
 class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
     def make_light(self, options):
-        methods = _load_standalone_functions(
-            LIGHT_SOURCE,
-            {"set_extended_effects_enabled", "_restore_extended_effects"},
-        )
+        methods = _load_standalone_functions(LIGHT_SOURCE, {"_drop_extended_effects_option"})
         entry = SimpleNamespace(options=dict(options))
         update = Mock(side_effect=lambda entry, **changes: vars(entry).update(changes))
         light = SimpleNamespace(
-            _config_entry=entry, _extended_effects_enabled=False,
+            _config_entry=entry,
             hass=SimpleNamespace(config_entries=SimpleNamespace(async_update_entry=update)),
         )
-        light.set_extended_effects_enabled = lambda value: methods["set_extended_effects_enabled"](light, value)
-        light.restore = lambda state: methods["_restore_extended_effects"](light, state)
+        light.drop_option = lambda: methods["_drop_extended_effects_option"](light)
         return light
 
     def test_a_removed_entity_unregisters_from_its_light(self):
@@ -47,45 +43,22 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         first.remove()
         self.assertIs(light._text_input_entity, second)
 
-    def test_experimental_options_survive_missing_and_stale_restore_states(self):
+    def test_the_experimental_features_option_of_earlier_versions_is_dropped(self):
+        # Every effect and clock style is offered now: the option goes, the
+        # others stay.
         for enabled in (True, False):
-            for old_state in (None, SimpleNamespace(attributes={}), SimpleNamespace(
-                    attributes={"extended_effects_enabled": not enabled})):
-                with self.subTest(enabled=enabled, old_state=old_state):
-                    light = self.make_light({"extended_effects_enabled": enabled})
-                    light.restore(old_state)
-                    self.assertIs(light._extended_effects_enabled, enabled)
-                    light.hass.config_entries.async_update_entry.assert_not_called()
-
-    def test_experimental_legacy_migration_and_toggle_preserve_other_options(self):
-        for enabled in (True, False):
-            light = self.make_light({"auto_turn_on": False})
-            light.restore(SimpleNamespace(attributes={"extended_effects_enabled": enabled}))
-            self.assertEqual(light._config_entry.options,
-                             {"auto_turn_on": False, "extended_effects_enabled": enabled})
-            light.set_extended_effects_enabled(not enabled)
-            replacement = self.make_light(light._config_entry.options)
-            replacement.restore(None)
-            self.assertIs(replacement._extended_effects_enabled, not enabled)
-
-    async def test_switch_saves_setting_and_refreshes_linked_controls(self):
-        setter = _load_standalone_functions(
-            (ROOT / "switch.py").read_text(encoding="utf-8"), {"_set_enabled"})["_set_enabled"]
+            light = self.make_light({"auto_turn_on": False, "extended_effects_enabled": enabled})
+            light.drop_option()
+            self.assertEqual({"auto_turn_on": False}, light._config_entry.options)
         light = self.make_light({"auto_turn_on": False})
-        light.async_write_ha_state = Mock()
-        light._native_effect_select_entity = SimpleNamespace(hass=light.hass, async_write_ha_state=Mock())
-        light._clock_style_select_entity = SimpleNamespace(hass=light.hass, async_write_ha_state=Mock())
-        switch = SimpleNamespace(_light_entity=light, async_write_ha_state=Mock())
-        for enabled in (True, False):
-            await setter(switch, enabled)
-            self.assertIs(light._config_entry.options["extended_effects_enabled"], enabled)
-            self.assertIs(light._extended_effects_enabled, enabled)
-        self.assertEqual(light._native_effect_select_entity.async_write_ha_state.call_count, 2)
-        self.assertEqual(light._clock_style_select_entity.async_write_ha_state.call_count, 2)
-        self.assertEqual(switch.async_write_ha_state.call_count, 2)
-        self.assertEqual(light.async_write_ha_state.call_count, 2)
+        light.drop_option()
+        light.hass.config_entries.async_update_entry.assert_not_called()
+        # Its switch is no longer created, and is removed from the registry.
+        switch = (ROOT / "switch.py").read_text(encoding="utf-8")
+        self.assertNotIn("ExtendedEffectsSwitch", switch)
+        self.assertIn('f"{light_entity._attr_unique_id}_extended_effects"', switch)
 
-    async def test_experimental_clock_service_persists_implicit_enable(self):
+    async def test_an_experimental_clock_style_needs_no_setting(self):
         light = self.make_light({"auto_turn_on": True})
         light._is_on = True
         light._mode = "Clock"
@@ -102,9 +75,9 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         await handler(SimpleNamespace(data={"style": "Violet twinkles"}))
         for task in pending:
             await task
-        self.assertIs(light._config_entry.options["extended_effects_enabled"], True)
-        self.assertIs(light._config_entry.options["auto_turn_on"], True)
-        light._refresh_linked_entities.assert_called_once()
+        self.assertIn(light._native_clock_style, CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"])
+        self.assertEqual({"auto_turn_on": True}, light._config_entry.options)
+        light.async_apply_display_mode.assert_awaited()
 
     async def test_manual_setup_checks_existing_ip_before_creating_entry(self):
         step = _load_standalone_functions(

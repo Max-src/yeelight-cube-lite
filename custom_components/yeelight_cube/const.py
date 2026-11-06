@@ -255,8 +255,9 @@ FORMERLY_NUMBERED_SLOTS = frozenset({
     45, 51, 52, 62, 63, 65, 66, 68, 69, 71, 72, 73, 74,
 })
 # Slots whose renderer takes no rate: no speed is offered or sent, the preset row's applies.
+# The stored GIF (71) plays at the GIF's own pace.
 _EXTENDED_EFFECT_NO_SPEED = {
-    20, 24, 27, 33, 38, 44, 52, 54, 56, 58, 59, 65, 66, 68, 69, 70, 72, 73,
+    20, 24, 27, 33, 38, 44, 52, 54, 56, 58, 59, 65, 66, 68, 69, 70, 71, 72, 73,
 }
 _EXTENDED_EFFECT_SPEED = {mode: False for mode in _EXTENDED_EFFECT_NO_SPEED}
 # Slots offered no direction (UNDIRECTED_EFFECT_DIRECTION): their renderer
@@ -284,6 +285,12 @@ _EXTENDED_EFFECT_COLORS = {
 # clock command id 40; command id 71 enables the colored confetti burst. Keyed
 # by the lamp's mode (which equals a clock style's ``mixer``).
 _EXTENDED_EFFECT_IDS = {10: 71}
+# The outer id of every other effect the Yeelight app does not offer. The
+# lamp reports it as the effect playing, and the app highlights the effect of
+# that id: 3 showed Ribbon. 63 is no effect of the app's, and its preset gives
+# a command that sends its own mode the same defaults as 3 (colour selector 0,
+# intensity and rate 128, direction 0).
+EXTENDED_EFFECT_COMMAND_ID = 63
 # Public view used by the clock builder to override the command id per mixer.
 CLOCK_MIXER_COMMAND_IDS = dict(_EXTENDED_EFFECT_IDS)
 
@@ -301,9 +308,14 @@ CLOCK_COLOR_MODES = {
     "purple_orange": 67,
 }
 DEFAULT_CLOCK_COLOR_MODE = "normal"
+# The native effects' own color mode: the lamp's palette (its text colors,
+# chosen with load_palette or set_text_colors), followed when it changes. It
+# is no lamp preset: the colors are sent (lamp_renderers.palette_words).
+PALETTE_COLOR_MODE = "palette"
+NATIVE_COLOR_MODES = (*CLOCK_COLOR_MODES, PALETTE_COLOR_MODE)
 EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES[mode]: {
-        "effect_id": _EXTENDED_EFFECT_IDS.get(mode, 3),
+        "effect_id": _EXTENDED_EFFECT_IDS.get(mode, EXTENDED_EFFECT_COMMAND_ID),
         "mode": mode,
         "speed": _EXTENDED_EFFECT_SPEED.get(mode, True),
         **({"intensity": True} if mode in LAMP_INTENSITY_SLOTS else {}),
@@ -411,6 +423,59 @@ for _clock_mode in range(1, LAMP_ANIMATION_SLOTS):
 EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset(
     style_id for style_id in NATIVE_CLOCK_STYLES if style_id > 10
 )
+
+# The lamp's stored GIF, as an effect: its name, offered like the official
+# effects (it plays over LAN whatever the lamp holds: an animation of ours, or
+# the Yeelight app's last one). Sent as effect 71, as the Yeelight app plays
+# it: the lamp then reports 71, the one id for which the app reads the custom
+# id to show which of its GIFs plays (sent as 3 with slot 71, the lamp shows
+# the same GIF but reports 3).
+STORED_GIF_EFFECT = _MODE_TO_EFFECT_NAME[LAMP_STORED_GIF_SLOT]
+ALL_NATIVE_EFFECTS[STORED_GIF_EFFECT] = EXTENDED_NATIVE_EFFECTS[STORED_GIF_EFFECT] = {
+    **EXTENDED_NATIVE_EFFECTS[STORED_GIF_EFFECT], "extended": False,
+    "effect_id": LAMP_STORED_GIF_SLOT,
+}
+# The animations this integration made (lamp_animations.py; their frames are
+# www/lamp-animations.js, the names there too): each plays as the stored GIF
+# once it is uploaded over Matter (light_native._store_animation), so they are
+# offered only while a server delivers the Yeelight commands. The lamp keeps
+# one GIF; switching between them uploads again. Added after the tables keyed
+# by slot above: they share slot 71 with the stored GIF. Each stands for one
+# of the Yeelight app's four GIF tiles (Winter, Dream, Halloween, Moonlight)
+# and is played with its id (app_tile, the command's custom id), so the app
+# shows that tile as the one playing; the id does not choose the GIF, the
+# lamp plays the one it stores.
+# How an animation is laid out in the GIF the lamp stores: upright (turned so
+# the viewer sees it as drawn, for the lamp's mount), or as the Yeelight app
+# sends its own GIFs (the picture as it is, which the lamp shows rearranged,
+# like the app's). The Animation layout select (light._animation_layout).
+ANIMATION_LAYOUT_UPRIGHT = "upright"
+ANIMATION_LAYOUT_APP = "app"
+ANIMATION_LAYOUTS = {
+    ANIMATION_LAYOUT_UPRIGHT: "Upright",
+    ANIMATION_LAYOUT_APP: "As the Yeelight app",
+}
+DEFAULT_ANIMATION_LAYOUT = ANIMATION_LAYOUT_UPRIGHT
+LAMP_ANIMATION_EFFECTS = {
+    # Drawn upright for the lamp's mount: no direction.
+    name: {
+        "effect_id": ALL_NATIVE_EFFECTS[STORED_GIF_EFFECT]["effect_id"],
+        "mode": LAMP_STORED_GIF_SLOT, "speed": False, "extended": False,
+        "animation": key, "family": family, "app_tile": app_tile,
+    }
+    for name, key, family, app_tile in (
+        ("Snowfall", "snowfall", "sparkles", 77),
+        ("Daydream", "daydream", "waves", 79),
+        ("Halloween glow", "halloween_glow", "glow", 72),
+        ("Moonlit clouds", "moonlit_clouds", "glow", 93),
+    )
+}
+ALL_NATIVE_EFFECTS.update(LAMP_ANIMATION_EFFECTS)
+
+
+def effect_family(spec: dict) -> str:
+    """An effect's family (EFFECT_FAMILIES): its slot's, or its own."""
+    return spec.get("family") or EFFECT_FAMILY_OF_SLOT[spec["mode"]]
 
 # What keeps an effect flowing the same way for the viewer once the lamp is
 # turned: mount -> the lamp direction to send for each one a lamp on the
@@ -552,6 +617,28 @@ MUSIC_FLOW_EFFECTS = {
 MUSIC_FLOW_EFFECT_IDS = {
     effect_id: name for name, effect_id in MUSIC_FLOW_EFFECTS.items()
 }
+# The native music effects the microphone's music modes run (the same
+# renderer: Gather is slot 43, Breathing 44, Blossom 45, Spectrum 41, Note 73,
+# Impact 74). In the palette color mode they are started as that music mode,
+# which takes a whole palette, instead of one color (light_native).
+PALETTE_MUSIC_FLOWS = {
+    "Music Gather": "Gather",
+    "Music Breathing": "Breathing",
+    "Music Blossom": "Blossom",
+    "Music Spectrum": "Spectrum",
+    "Music Note": "Music Note",
+    "Music Impact": "Impact",
+}
+# A music mode's palette has 16 entries; the lamp fills a shorter one with
+# black, which leaves Spectrum and Impact dark and Breathing dark most of the
+# time, so a palette is spread over all 16 (lamp_renderers.music_palette).
+MUSIC_PALETTE_SIZE = 16
+# A music mode takes its direction over Matter (setDirection) once it runs,
+# at the lamp's microphone-on report, or after this long without one: sent
+# at once, some modes (Impact) stop and the lamp shows its saved effect.
+PALETTE_MUSIC_DIRECTION_DELAY = 1.5
+# The lamp direction a music mode starts in: then nothing follows.
+MUSIC_MODE_START_DIRECTION = 0
 DEFAULT_MUSIC_FLOW_EFFECT = "Breathing"
 MUSIC_FLOW_DEFAULT_PALETTE = (
     0xFFFF3B30,

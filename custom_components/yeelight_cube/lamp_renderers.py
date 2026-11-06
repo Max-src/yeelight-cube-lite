@@ -57,6 +57,9 @@ try:
         CLOCK_COLOR_MODES,
         CLOCK_MIXER_COMMAND_IDS,
         DEFAULT_NATIVE_EFFECT_SPEED,
+        MUSIC_PALETTE_SIZE,
+        PALETTE_COLOR_MODE,
+        PALETTE_MUSIC_FLOWS,
         UNDIRECTED_EFFECT_DIRECTION,
         NATIVE_CLOCK_EFFECT_ID,
         effect_direction_value,
@@ -104,6 +107,9 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         CLOCK_COLOR_MODES,
         CLOCK_MIXER_COMMAND_IDS,
         DEFAULT_NATIVE_EFFECT_SPEED,
+        MUSIC_PALETTE_SIZE,
+        PALETTE_COLOR_MODE,
+        PALETTE_MUSIC_FLOWS,
         UNDIRECTED_EFFECT_DIRECTION,
         NATIVE_CLOCK_EFFECT_ID,
         effect_direction_value,
@@ -676,6 +682,7 @@ PRESET_ROWS = {
     47: (0, 128, 128, 0),
     48: (0, 128, 128, 0),
     49: (0, 128, 128, 0),
+    63: (0, 128, 128, 0),
     64: (12, 128, 128, 0),
     65: (13, 128, 128, 0),
     66: (14, 128, 128, 0),
@@ -754,9 +761,61 @@ def effect_supports_color_override(effect: str) -> bool:
 
 
 def effect_supports_color_mode(effect: str, mode: str) -> bool:
-    return (effect in _COLOR_PALETTE_EFFECTS and mode in _COLOR_PALETTE_MODES) or (
-        mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS
+    return (
+        (effect in _COLOR_PALETTE_EFFECTS and mode in _COLOR_PALETTE_MODES)
+        or (mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS)
+        # The palette's colors reach every effect that takes a color.
+        or (mode == PALETTE_COLOR_MODE and effect in _COLOR_OVERRIDE_EFFECTS)
     )
+
+
+# ── The palette color mode ───────────────────────────────────────────────
+# An effect takes as many colors as it draws: one (the first, which the lamp
+# spreads into its own ramp), or each colour word of the effects that draw
+# several (const._EXTENDED_EFFECT_COLORS), the palette repeated when it is
+# shorter, since a word left out is black. The music effects of
+# PALETTE_MUSIC_FLOWS take the whole palette (music_palette).
+def palette_words(effect: str, palette) -> list[int]:
+    """The colour words (0xRRGGBB) an effect is sent for ``palette``, a
+    list of [r, g, b]; empty when the palette is."""
+    colours = [tuple(colour) for colour in palette or ()]
+    if not colours:
+        return []
+    count = len(ALL_NATIVE_EFFECTS[effect].get("colors", ())) or 1
+    return [_colour_word(colours[index % len(colours)]) for index in range(count)]
+
+
+def clock_palette_words(effect, palette) -> list[int]:
+    """The colour words (0xRRGGBB) a clock is sent in the palette color
+    mode: a plain-colour style (``effect`` None) its first colour, a style
+    whose background ``effect`` takes the palette as many as that effect
+    (palette_words), another none (it then runs as in the normal mode)."""
+    if effect is None:
+        colours = [tuple(colour) for colour in palette or ()]
+        return [_colour_word(colours[0])] if colours else []
+    if not effect_supports_color_mode(effect, PALETTE_COLOR_MODE):
+        return []
+    return palette_words(effect, palette)
+
+
+def music_palette(palette) -> list[tuple]:
+    """A palette spread over a music mode's 16 entries, in its order: each
+    color as many times as fits (the lamp fills a short palette with black)."""
+    colours = [tuple(colour) for colour in palette or ()]
+    if not colours:
+        return []
+    return [
+        colours[index * len(colours) // MUSIC_PALETTE_SIZE]
+        for index in range(MUSIC_PALETTE_SIZE)
+    ]
+
+
+def palette_music_flow(effect: str, color_mode, palette) -> str | None:
+    """The microphone music mode an effect runs as in the palette color
+    mode (PALETTE_MUSIC_FLOWS), None for any other effect, mode, or no palette."""
+    if color_mode != PALETTE_COLOR_MODE or not palette:
+        return None
+    return PALETTE_MUSIC_FLOWS.get(effect)
 
 
 def _colour_word(color) -> int:
@@ -801,20 +860,22 @@ def _sent_intensity(spec: dict, intensity) -> int | None:
 
 def lamp_settings(
     effect: str, direction: str, speed: int, color_override=None, color_mode=None,
-    orientation=None, intensity=None,
+    orientation=None, intensity=None, palette=None,
 ) -> dict:
     """What the lamp runs for a native effect (light_native._native_effect_params):
     the settings its renderer takes, from the same choices. ``color_override`` is
     [r, g, b]. What the send path ignores is ignored here. A direction label goes
     through the effect's remap and is turned for the mount; an effect offered none
-    has its fixed one. ``intensity``: the one chosen (None: the row's)."""
+    has its fixed one. ``intensity``: the one chosen (None: the row's).
+    ``palette``: the lamp's palette ([r, g, b] each), for the palette color
+    mode; without one that mode sends what the normal one does."""
     spec = ALL_NATIVE_EFFECTS[effect]
-    palette = (
+    preset = (
         CLOCK_COLOR_MODES.get(color_mode)
         if effect_supports_color_mode(effect, color_mode)
         else None
     )
-    command_id = spec["effect_id"] if palette is None else palette
+    command_id = spec["effect_id"] if preset is None else preset
     directions = spec.get("directions")
     if directions:
         label = direction if direction in directions else directions[0]
@@ -825,7 +886,7 @@ def lamp_settings(
         lamp_rate(spec["mode"], speed) if spec.get("speed")
         else PRESET_ROWS[command_id][2]
     )
-    words = [] if palette is not None else [
+    words = [] if preset is not None else [
         int(color) & 0xFFFFFF
         for color in ((spec["color"],) if spec.get("color") is not None else spec.get("colors", ()))
     ]
@@ -835,10 +896,18 @@ def lamp_settings(
         and effect_supports_color_override(effect)
     ):
         words = [_colour_word(color_override), *words[1:]]
-    return _command_settings(
+    if color_mode == PALETTE_COLOR_MODE and effect_supports_color_mode(effect, color_mode):
+        words = palette_words(effect, palette) or words
+    settings = _command_settings(
         spec["mode"], command_id, value, rate, words[0] if words else None, words[1:],
         _sent_intensity(spec, intensity),
     )
+    if palette_music_flow(effect, color_mode, palette):
+        # The music mode: the whole palette, at the effect's own speed and
+        # intensity (the music mode takes none).
+        settings["palette"] = [list(colour) for colour in music_palette(palette)]
+        _, settings["intensity"], settings["rate"], _ = PRESET_ROWS[command_id]
+    return settings
 
 
 def lamp_effect_frame(settings, seconds: float) -> list:
@@ -854,6 +923,7 @@ def lamp_effect_frame(settings, seconds: float) -> list:
 
 def lamp_clock_settings(
     effect: str, speed: int, color_override=None, color_mode=None, intensity=None,
+    palette=None,
 ) -> dict:
     """What the lamp runs behind the clock when ``effect`` is its mixer: mode 40
     hands over to it under the clock overlay (light_native._native_clock_params
@@ -862,9 +932,21 @@ def lamp_clock_settings(
     words (1, 8, 28, 33, 72) is sent all of them, the color first, none under
     B&W, and no palette, which would only drop them (const.clock_style_colors).
     A mixer with no speed reads no rate, so its timeline stays the effect's;
-    the same for the intensity."""
+    the same for the intensity. In the palette color mode a background that
+    takes it is sent the palette's colours (clock_palette_words, ``palette``);
+    without them it runs as in the normal mode."""
     spec = ALL_NATIVE_EFFECTS[effect]
     mode = spec["mode"]
+    if color_mode == PALETTE_COLOR_MODE:
+        sent = clock_palette_words(effect, palette)
+        color_mode = None
+        if sent:
+            command_id = CLOCK_MIXER_COMMAND_IDS.get(mode, NATIVE_CLOCK_EFFECT_ID)
+            rate = lamp_rate(mode, speed) if spec.get("speed") else PRESET_ROWS[command_id][2]
+            return _command_settings(
+                mode, command_id, CLOCK_BACKGROUND_DIRECTION, rate, sent[0], sent[1:],
+                _sent_intensity(spec, intensity),
+            )
     words = [int(word) & 0xFFFFFF for word in spec.get("colors", ())]
     if words:
         if color_mode == "bw":

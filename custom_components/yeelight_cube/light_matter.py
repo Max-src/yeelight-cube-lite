@@ -170,6 +170,8 @@ class MatterMixin:
         self._lamp_power_command_at = -MATTER_ECHO_WINDOW
         self._expected_lamp_music: bool | None = None
         self._lamp_music_command_at = -MATTER_ECHO_WINDOW
+        # Set by the next microphone-on report (_await_lamp_music_on).
+        self._lamp_music_on_event: asyncio.Event | None = None
         # When deactivate_fx_mode last made the lamp put back its saved effect
         # (_note_fx_restore).
         self._fx_restore_at = -MATTER_ECHO_WINDOW
@@ -299,6 +301,13 @@ class MatterMixin:
         )
 
     @property
+    def animations_available(self) -> bool:
+        """Whether a server delivers the Yeelight commands now, so an
+        animation can be uploaded (the `matter` attribute's "commands")."""
+        channel = self._matter_commands
+        return channel is not None and channel.backend is not None
+
+    @property
     def matter_commands(self) -> MatterCommands | None:
         """Yeelight writes and commands over Matter, for features that use
         them: check ``await matter_commands.async_available()`` (or catch
@@ -350,6 +359,10 @@ class MatterMixin:
         if self._music_flow_enabled:
             return MUSIC_FLOW_EFFECTS.get(self._music_flow_effect)
         if self._mode == MODE_NATIVE_EFFECT:
+            # A music effect in the palette color mode runs as its music mode.
+            palette_music = getattr(self, "_palette_music", None)  # light_native
+            if flow := (palette_music and palette_music()):
+                return MUSIC_FLOW_EFFECTS.get(flow)
             return (NATIVE_EFFECTS.get(self._native_effect) or {}).get("effect_id")
         if self._mode == MODE_CLOCK:
             # Mixers and palette modes can override the clock's outer id.
@@ -381,6 +394,27 @@ class MatterMixin:
         """Only music commands can explain a microphone on/off report."""
         self._expected_lamp_music = on
         self._lamp_music_command_at = time.monotonic()
+
+    def _expect_lamp_music_on(self) -> None:
+        """A music mode is started: _await_lamp_music_on returns at its
+        microphone-on report."""
+        self._lamp_music_on_event = asyncio.Event()
+
+    async def _await_lamp_music_on(self, timeout: float) -> bool:
+        """Wait for the microphone-on report _expect_lamp_music_on waits
+        for, at most ``timeout`` s (none comes when the microphone already
+        ran): whether it came."""
+        event = self._lamp_music_on_event
+        try:
+            if event is None:
+                await asyncio.sleep(timeout)
+                return False
+            await asyncio.wait_for(event.wait(), timeout)
+            return True
+        except TimeoutError:
+            return False
+        finally:
+            self._lamp_music_on_event = None
 
     def _music_echo(self, on: bool) -> bool:
         if (
@@ -435,6 +469,8 @@ class MatterMixin:
             if not initial and value != seen:
                 self._lamp_turned(value)
         elif not initial:
+            if name in ("effect", "effect_sub"):
+                self._note_app_gif()
             if name == "effect" and isinstance(value, int):
                 self._effect_reported_at = time.monotonic()
                 if self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
@@ -479,6 +515,8 @@ class MatterMixin:
                     self._wake_for_press()
                     self._restore_after_lamp_change(music=self._take_back_display())
             elif name == "mic_music_on" and value is True:
+                if self._lamp_music_on_event is not None:
+                    self._lamp_music_on_event.set()
                 # The left button started a microphone music mode: with Left
                 # as Remote, put back at once (its mode, the event, may be
                 # reported a moment later).
@@ -544,6 +582,21 @@ class MatterMixin:
         self._lamp_content_check = self._create_tracked_task(
             check(), name=f"yeelight_cube_lamp_content_{self._ip}",
         )
+
+    def _note_app_gif(self) -> None:
+        """The Yeelight app plays one of its GIFs (effect 71, a GIF tile's
+        id): it uploaded it first, over the animation this integration stored
+        (light._stored_gif), which the next activation uploads again."""
+        values = self._matter.values if self._matter else {}
+        stored = getattr(self, "_stored_gif", None)
+        if (
+            stored and stored.get("animation")
+            and values.get("effect") == APP_GIF_EFFECT
+            and values.get("effect_sub") in APP_GIF_TILES
+            and not self._matter_echo()
+        ):
+            _LOGGER.debug("[MATTER] [%s] The app replaced the stored GIF", self._ip)
+            self._stored_gif = {**stored, "animation": None}
 
     def _lamp_changed_effect(self, effect_id: int) -> None:
         """The lamp switched to effect ``effect_id`` by itself (a button, the

@@ -55,6 +55,12 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
             target_entity._text_colors = [tuple(c) for c in palette["colors"]]
             if target_entity._text_colors:
                 target_entity._rgb_color = target_entity._text_colors[0]
+            # Published at once: the previews that draw the palette (effects
+            # and clock in the Palette color mode) follow it without waiting
+            # for the lamp, which may take a while (queued commands, a music
+            # mode starting) or refuse.
+            if target_entity.hass is not None:
+                target_entity.async_write_ha_state()
             # (Panel Color Sequence included: the display render colors it.)
             await target_entity.async_apply_display_mode(update_type='pixel_art')
             # Push the updated state so consumers watching the `text_colors`

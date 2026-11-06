@@ -64,7 +64,7 @@ test("all clock styles display the lamp's background whatever the native directi
   const mask = flipMatrixVertical(
     renderClockFrame({ clock_style_id: 6 }, null, null),
   );
-  for (const style of getClockStyles(true)) {
+  for (const style of getClockStyles()) {
     const effect = CLOCK_MIXER_EFFECTS[style.mixer];
     if (!effect) continue;
     for (const seconds of [0, 0.75, 2.5]) {
@@ -609,7 +609,7 @@ test("Custom stays selectable and built-in selections respect the active color m
     { id: "first", name: "Amber", color: [255, 120, 0] },
     { id: "second", name: "Gold", color: [255, 120, 0] },
   ];
-  const styles = clockStylesWithPresets(getClockStyles(false), presets);
+  const styles = clockStylesWithPresets(getClockStyles(), presets);
   const calls = [];
   let renders = 0;
   const card = {
@@ -996,7 +996,7 @@ test("saving a custom color as a clock style forgets it as the Custom color", ()
     clock_color: null,
   };
   const presets = [];
-  const styles = clockStylesWithPresets(getClockStyles(false), presets);
+  const styles = clockStylesWithPresets(getClockStyles(), presets);
   const calls = [];
   const card = {
     _hass: { states: { library: { attributes: { clock_presets: presets } } } },
@@ -1051,7 +1051,7 @@ test("saving a custom color as a clock style forgets it as the Custom color", ()
   attrs.clock_color = 0x01000000 + (40 << 16) + (100 << 8) + 220;
   attrs.clock_color_mode = "normal";
   card._styleList = () =>
-    clockStylesWithPresets(getClockStyles(false), presets);
+    clockStylesWithPresets(getClockStyles(), presets);
   // Now the lamp echoes the saved style; entering Custom must NOT reuse blue.
   assert.equal(card._currentColorMode(attrs), "normal");
   assert.equal(card._lastCustomHex, null);
@@ -1076,9 +1076,9 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
   const card = {
     _hass: { states: { library: { attributes: { clock_presets: presets } } } },
     _attrs: () => attrs,
-    _styleList: () => clockStylesWithPresets(getClockStyles(false), presets),
+    _styleList: () => clockStylesWithPresets(getClockStyles(), presets),
     _controlStyles: () =>
-      clockStylesWithPresets(getClockStyles(false), presets),
+      clockStylesWithPresets(getClockStyles(), presets),
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
@@ -1222,7 +1222,7 @@ test("the card offers a style over every slot, a formerly numbered one too, not 
   assert.equal(CLOCK_MIXER_EFFECTS[1], "Two-colour alternation");
   assert.equal(clockPreviewEffect(71), undefined); // the GIF stored in the lamp
   assert.equal(clockPreviewEffect(0), undefined);
-  const styles = getClockStyles(true);
+  const styles = getClockStyles();
   assert.equal(styles.length, 72);
   assert.ok(!styles.some((style) => style.mixer === 71));
   // The ids after it keep the backend's: Random scatter (72) is style 74.

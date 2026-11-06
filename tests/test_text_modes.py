@@ -183,6 +183,50 @@ class TextModeTests(unittest.TestCase):
                     self.assertEqual(lit[mode], lit["Solid Color"])
 
 
+class TurnedPictureTests(unittest.TestCase):
+    """A new mount publishes the picture as the redraw for it draws it
+    (light._turn_published_picture), not the old one a moment in the wrong
+    place: the state is written before that redraw."""
+
+    turn = staticmethod(_load_standalone_functions(
+        LIGHT_SOURCE, {"_turn_published_picture"}, {}
+    )["_turn_published_picture"])
+
+    def test_the_published_picture_is_the_redraw_s(self):
+        pixels = [
+            {"position": position, "color": [position * 2, 255 - position, 40]}
+            for position in (0, 3, 21, 47, 99)
+        ]
+        cases = {
+            "pixel art": {
+                "_custom_draw_active": True, "_custom_pixels": pixels,
+                "_remember_drawing": lambda *args, **kwargs: None,
+            },
+            "text": {"_mode": "Letter Gradient", "_custom_text": "AB", "_text_colors": [(255, 0, 0), (0, 0, 255)]},
+        }
+        normal, flipped = CONSTANTS["ORIENTATION_NORMAL"], CONSTANTS["ORIENTATION_FLIPPED"]
+        for name, state in cases.items():
+            with self.subTest(name):
+                drawn = lamp_frame(**state)
+                light = types.SimpleNamespace(
+                    _orientation=normal, lamp_draws_matrix=False, _base_matrix_colors=list(drawn),
+                )
+                self.turn(light, flipped)
+                self.assertEqual(light._base_matrix_colors, lamp_frame(**state, _orientation=flipped))
+                # The same flip (right to down): nothing to turn.
+                light._orientation = flipped
+                self.turn(light, flipped)
+                self.assertEqual(light._base_matrix_colors, lamp_frame(**state, _orientation=flipped))
+
+    def test_what_the_lamp_draws_itself_is_not_turned(self):
+        light = types.SimpleNamespace(
+            _orientation=CONSTANTS["ORIENTATION_NORMAL"], lamp_draws_matrix=True,
+            _base_matrix_colors=[(1, 2, 3), (4, 5, 6)],
+        )
+        self.turn(light, CONSTANTS["ORIENTATION_FLIPPED"])
+        self.assertEqual(light._base_matrix_colors, [(1, 2, 3), (4, 5, 6)])
+
+
 class PanelColorSequenceTests(unittest.TestCase):
     """Panel Color Sequence: the colors one module after another over the
     whole panel, whatever the text or full-panel setting (the panel once went

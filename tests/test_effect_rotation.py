@@ -97,6 +97,7 @@ def _rotation_helpers():
             )},
             "CLOCK_PRESET_PREFIX": "custom:",
             "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
+            "NATIVE_COLOR_MODES": CONSTANTS["NATIVE_COLOR_MODES"],
             "_LOGGER": Mock(),
             "APPLY_HARD_TIMEOUT": 8,
             "HomeAssistantError": ValueError,
@@ -148,7 +149,7 @@ class FakeCubeMatrix:
     summary = ""
 
 
-def make_light(helpers, kind="native", is_on=True, extended=False):
+def make_light(helpers, kind="native", is_on=True):
     light = SimpleNamespace(
         _ip="192.168.4.102",
         hass=SimpleNamespace(
@@ -160,7 +161,6 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         # Saving to disk is stubbed.
         _schedule_integration_save=Mock(),
         _is_on=is_on,
-        _extended_effects_enabled=extended,
         _native_effect="Rainbow",
         _native_clock_style=1,
         _native_clock_color=None,
@@ -784,8 +784,8 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light._native_effect_color_mode, "red_blue")
         self.assertIsNone(light._native_effect_color)
 
-    async def test_native_unknown_and_experimental_are_skipped(self):
-        light = make_light(self.helpers, kind="native", extended=False)
+    async def test_native_unknown_is_skipped_and_experimental_applied(self):
+        light = make_light(self.helpers, kind="native")
         self.assertTrue(
             await light._apply_rotation_native(
                 {"name": "No Such Effect", "color_mode": "normal", "color": None}
@@ -795,12 +795,14 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         experimental = next(
             name for name, spec in ALL_NATIVE_EFFECTS.items() if spec.get("extended")
         )
+        # No setting gates them any more.
         self.assertTrue(
             await light._apply_rotation_native(
                 {"name": experimental, "color_mode": "normal", "color": None}
             )
         )
-        light._execute_hardware_op.assert_not_awaited()
+        self.assertEqual(experimental, light._native_effect)
+        light._execute_hardware_op.assert_awaited()
 
     async def test_off_lamp_stops_rotation(self):
         light = make_light(self.helpers, kind="native", is_on=False)

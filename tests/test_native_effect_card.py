@@ -42,7 +42,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.target = SimpleNamespace(
             _native_effect="Ribbon", _native_effect_speed=50,
             _native_effect_direction="Right",
-            _extended_effects_enabled=False, _is_on=True, _mode="Clock",
+            _is_on=True, _mode="Clock",
             _custom_draw_active=True, _native_effect_speed_entity=None,
             _should_auto_turn_on=lambda: False,
             async_apply_display_mode=AsyncMock(), _refresh_linked_entities=Mock(),
@@ -59,6 +59,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
              "canonical_effect_name": CONSTANTS["canonical_effect_name"],
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
+             "NATIVE_COLOR_MODES": CONSTANTS["NATIVE_COLOR_MODES"],
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
              "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
              "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: self.targets,
@@ -176,7 +177,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
                 await self.handle(SimpleNamespace(data={"color": color}))
         unsupported = next(name for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
                            if not spec.get("extended") and not NATIVE_PREVIEW["effect_supports_color_override"](name))
-        second = SimpleNamespace(_native_effect=unsupported, _extended_effects_enabled=False, _is_on=True)
+        second = SimpleNamespace(_native_effect=unsupported, _is_on=True)
         self.targets.append(second)
         with self.assertRaisesRegex(ValueError, "custom colors"):
             await self.handle(SimpleNamespace(data={"color": [1, 2, 3]}))
@@ -185,10 +186,9 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await self.handle(SimpleNamespace(data={"color": "clear"}))
         self.assertIsNone(self.target._native_effect_color)
 
-    async def test_rejects_unknown_experimental_and_off_without_mutating(self):
-        for effect in ("missing", "Mirrored comets"):
-            with self.subTest(effect=effect), self.assertRaises(ValueError):
-                await self.handle(SimpleNamespace(data={"effect": effect}))
+    async def test_rejects_unknown_and_off_without_mutating(self):
+        with self.assertRaises(ValueError):
+            await self.handle(SimpleNamespace(data={"effect": "missing"}))
         self.target._is_on = False
         with self.assertRaisesRegex(ValueError, "auto-turn-on"):
             await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
@@ -339,14 +339,13 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*self.scheduled)
         self.target.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
 
-    async def test_unsupported_speed_and_multi_target_preflight(self):
-        self.target._extended_effects_enabled = True
+    async def test_unsupported_speed_and_experimental_effects(self):
         with self.assertRaisesRegex(ValueError, "speed"):
             await self.handle(SimpleNamespace(data={"effect": "Palette stripes", "speed": 80}))
-        self.targets.append(SimpleNamespace(_extended_effects_enabled=False))
-        with self.assertRaisesRegex(ValueError, "Experimental"):
-            await self.handle(SimpleNamespace(data={"effect": "Mirrored comets"}))
         self.target.async_apply_display_mode.assert_not_awaited()
+        # An experimental effect needs no setting.
+        await self.handle(SimpleNamespace(data={"effect": "Mirrored comets"}))
+        self.assertEqual(self.target._native_effect, "Mirrored comets")
 
     async def test_freeze_display_sends_mode_64_to_every_target(self):
         def make_target(mode="Native Effect"):

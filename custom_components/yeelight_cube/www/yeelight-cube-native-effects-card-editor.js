@@ -10,7 +10,6 @@ import {
   sharedEditorStyles,
   YeelightEditorMixin,
   renderSettingsBox,
-  renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
@@ -39,6 +38,7 @@ import {
   renderVisibleColorModes,
 } from "./mode-controls-settings.js";
 import { defineOnce } from "./card-registration.js";
+import { NATIVE_COLOR_MODES } from "./clock-preview-utils.js";
 
 class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement) {
   static properties = {
@@ -81,7 +81,6 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
     const attrs = this.hass?.states[targets[0]]?.attributes || {};
     const effects = nativeEffectItems(attrs, {
       ...config,
-      show_experimental: !!attrs.extended_effects_enabled,
       visible_effects: undefined,
       hidden_effects: undefined,
     });
@@ -91,7 +90,6 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
       : names;
     const change = (key, value) => this._change(key, value);
     return html`<div class="editor-root">
-      ${renderExperimentalAvailability(this.hass, targets, config, true)}
       ${this._section(
         "general",
         "Global Settings",
@@ -172,7 +170,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                 "Show 'save color mode' button",
                 "show_save_color_mode_button",
               )}
-              ${renderVisibleColorModes(this)}`,
+              ${renderVisibleColorModes(this, NATIVE_COLOR_MODES)}`,
             )
           : ""}
         ${config.show_color_modes

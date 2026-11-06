@@ -637,13 +637,17 @@ def effect_colours(settings) -> dict:
     key = (
         mode, selector, intensity >= 128, coloured, primary,
         tuple(map(tuple, settings.get("colours", ()))),
+        tuple(map(tuple, settings.get("palette", ()))),
     )
     out = _COLOURS.get(key)
     if out is not None:
         return out
     words = installed_words(settings)
     palette_mode = mode in LAMP_PALETTE_MODES and not (mode == 3 and intensity < 128)
-    if palette_mode:
+    if palette_mode and settings.get("palette"):
+        # A music mode's own palette (lamp_renderers.music_palette).
+        palette = [convert_colour(tuple(colour)) for colour in settings["palette"]]
+    elif palette_mode:
         palette = primary_ramp(words[0]) if coloured or selector == 8 else native_palette(selector, mode)
     elif mode in (8, 28):
         palette = list(words)  # already converted: its four band colors

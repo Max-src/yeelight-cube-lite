@@ -283,6 +283,9 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
         speed,
         orientation,
         chosenIntensity(st.attributes),
+        st.attributes.text_colors,
+        st.attributes.stored_gif,
+        st.attributes.animation_layout,
       ),
     );
     const grid = this._matrixColorsToGridColors(raw, st);

@@ -52,13 +52,13 @@ test("the sort toggle follows the card's Order until one is picked", () => {
 });
 
 test("the clock card lists its effect styles first, then the colours and custom styles", () => {
-  const styles = clockStylesWithPresets(getClockStyles(false), [
+  const styles = clockStylesWithPresets(getClockStyles(), [
     { id: "p1", name: "My orange", color: [255, 120, 0] },
   ]);
-  // The official clocks over an effect, as on the effect card.
+  // The clocks over an effect, as on the effect card.
   assert.deepEqual(
-    styles.slice(0, 3).map((style) => style.name),
-    ["Spectrum", "Waves", "Rainbow"],
+    styles.slice(0, 5).map((style) => style.name),
+    ["Ribbon", "Starry Sky", "Spectrum", "Waves", "Rainbow"],
   );
   const solid = styles.map((style) => style.solid);
   assert.deepEqual(solid, [...solid].sort((a, b) => a - b));

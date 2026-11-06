@@ -46,14 +46,17 @@ async def async_setup_entry(
         YeelightCubeClock12HourSwitch(config_entry, light_entity),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_entity),
         YeelightCubeScrollSwitch(config_entry, light_entity),
-        YeelightCubeExtendedEffectsSwitch(config_entry, light_entity),
     ]
     
     async_add_entities(switches)
 
-    # The UDP Connection switch of an earlier version: UDP is always used now
-    # (TCP is the fallback).
-    remove_retired_entities(hass, "switch", [f"{config_entry.entry_id}_udp_connection"])
+    # Switches of earlier versions: UDP Connection (UDP is always used now,
+    # TCP is the fallback) and Experimental Features (every effect and clock
+    # style is listed now).
+    remove_retired_entities(hass, "switch", [
+        f"{config_entry.entry_id}_udp_connection",
+        f"{light_entity._attr_unique_id}_extended_effects",
+    ])
     _LOGGER.debug("Added %s switch entities for Yeelight Cube Lite", len(switches))
 
 
@@ -150,65 +153,6 @@ class YeelightCubeButtonsWakeLampSwitch(_YeelightCubeOptionSwitch):
     option_key = CONF_BUTTONS_WAKE_LAMP
     default = True  # what a lamp's button is expected to do
     _attr_entity_category = EntityCategory.CONFIG
-
-
-class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
-    """Reveal built-in effects the official Yeelight app never exposed.
-
-    When on, the native effect and clock style dropdowns also offer the hidden
-    built-in modes. Off by default.
-    """
-
-    _attr_should_poll = False
-
-    def __init__(self, config_entry: ConfigEntry, light_entity):
-        self._config_entry = config_entry
-        self._light_entity = light_entity
-        self._attr_translation_key = "extended_effects"
-        self._attr_unique_id = (
-            f"{self._light_entity._attr_unique_id}_extended_effects"
-        )
-
-    @property
-    def is_on(self) -> bool:
-        return bool(getattr(self._light_entity, "_extended_effects_enabled", False))
-
-    async def async_turn_on(self, **kwargs):
-        await self._set_enabled(True)
-
-    async def async_turn_off(self, **kwargs):
-        await self._set_enabled(False)
-
-    async def _set_enabled(self, value: bool) -> None:
-        self._light_entity.set_extended_effects_enabled(value)
-        # Refresh the effect dropdown so the extended options appear/disappear.
-        select = getattr(self._light_entity, "_native_effect_select_entity", None)
-        if select is not None and getattr(select, "hass", None) is not None:
-            select.async_write_ha_state()
-        clock_select = getattr(self._light_entity, "_clock_style_select_entity", None)
-        if clock_select is not None and getattr(clock_select, "hass", None) is not None:
-            clock_select.async_write_ha_state()
-        self.async_write_ha_state()
-        if self._light_entity.hass is not None:
-            self._light_entity.async_write_ha_state()
-
-    def async_update_from_light(self):
-        # is_on reads _extended_effects_enabled live, so rewriting state is
-        # enough to reflect the light's restored value after a reload (e.g. a
-        # DHCP IP change) where this switch was added before the light restored.
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self._register_on_light("_extended_effects_switch_entity")
-        self.async_update_from_light()
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
-        # the entity id, so it keeps running as it is.
-        super().async_entity_id_changed(old_entity_id)
 
 
 class _YeelightCubeClockOptionSwitch(CubeControlEntity, SwitchEntity):

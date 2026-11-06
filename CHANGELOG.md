@@ -35,8 +35,50 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   72, which stayed black, now starts its background properly. If your physical
   button's list holds a Palette sparks clock, save the list again so the lamp
   stores the new command.
+- **No more flash when the lamp's orientation changes:** a drawing, text or
+  pixel art showed for a split second in the wrong place on the Lamp Preview
+  card and the preview camera, then turned to where it belongs. The new
+  orientation now comes with the picture turned for it.
+- **The Yeelight app no longer shows Ribbon for effects it does not have:**
+  every effect that is not in the app (Violet twinkles, the music bars and
+  the others) made the app show Ribbon as playing. They now run under an id
+  the app does not use, so it shows none of its effects; they look the same
+  on the lamp.
+- **Previews follow a new palette at once:** loading a palette or editing the
+  colors now updates the previews of effects and clocks in the Palette color
+  mode straight away, without waiting for the lamp (which can take a moment,
+  or refuse).
 
 ### Added
+- **Palette color mode for effects and the clock:** the Native Effects and
+  Clock cards' new **Palette** color mode (`color_mode: palette` in
+  `set_native_effect` and `set_clock_style`) gives an effect or a clock the
+  colors of the lamp's palette, the one loaded from the Palette card or set
+  with `set_text_colors`, and follows it when it changes. It lists the effects
+  and clock styles that take a color: one color for most (a plain clock style
+  takes the first), as many as they draw for the multi-color ones (the palette
+  repeated when shorter). Music Gather, Breathing, Blossom, Spectrum, Note and
+  Impact take the whole palette, spread over the 16 colors of the lamp's
+  microphone music mode, which they run as there (no speed or intensity in
+  this mode). With a Matter server that sends Yeelight commands, they also
+  run in the direction chosen, as soon as the lamp's microphone is on (no
+  step at all when it is the direction they start in); otherwise in the
+  lamp's own.
+- **Stored GIF and four animations:** the lamp's **Stored GIF** effect is now
+  on the cards and in the effect dropdown.
+  Four animations made for the integration, **Snowfall**, **Daydream**,
+  **Halloween glow** and **Moonlit clouds**, are uploaded to the lamp as its
+  stored GIF and played. Uploading needs a Matter server that delivers the
+  Yeelight commands; without one they are not listed. A GIF is uploaded only
+  when the lamp does not hold it yet, laid out for how the lamp is mounted,
+  and the Stored GIF effect's preview shows it. Effect rotations skip them.
+  Each stands for one of the Yeelight app's four animations (Snowfall for
+  Winter, Daydream for Dream, Halloween glow for Halloween, Moonlit clouds
+  for Moonlight) and is played as the app plays it, so the app shows that one
+  as playing (Stored GIF too, while the lamp holds one of them). The new
+  **Native effect: Animation layout** select sends them upright (as drawn,
+  the default) or as the Yeelight app sends its own GIFs, which the lamp
+  shows rearranged; the previews follow it.
 - **Intensity for effects and clock styles:** a new slider on the Native
   Effects and Clock cards, an **Effect intensity** number entity and an
   `intensity` field in `set_native_effect` and `set_clock_style`. What it
@@ -100,6 +142,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   card's choice. The editor can hide it.
 
 ### Changed
+- **No more Experimental Features switch:** every effect and clock style is
+  offered, on the cards, in the dropdowns, in the services and in rotations.
+  The switch is removed from each lamp's controls, with its setting and its
+  notice in the card editors. The cards still mark the effects and styles the
+  Yeelight app does not offer as Experimental.
 - **Simpler slider settings, the same on every card:** the Native Effects,
   Clock and Lamp Preview sliders have fewer settings that do more.
   - **Ends** replace the step buttons and the Capsule's icons: each end is

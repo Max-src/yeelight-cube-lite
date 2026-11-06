@@ -32,12 +32,14 @@ from .const import (
     DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
     NATIVE_CLOCK_STYLES,
+    PALETTE_COLOR_MODE,
 )
 from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
 from .lamp_renderers import (
     LAMP_RENDERED_EFFECTS,
     RENDER_SECONDS,
+    clock_palette_words,
     lamp_clock_settings,
     lamp_effect_frame,
     led_appearance,
@@ -490,6 +492,9 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             speed=speed,
             orientation=orientation,
             intensity=_chosen_intensity(le),
+            palette=getattr(le, "_text_colors", None),
+            stored=getattr(le, "_stored_gif", None),
+            layout=getattr(le, "_animation_layout", None),
         )
         # Lamp order (row 0 = physical bottom), like every frame: _view_frame
         # turns it the way the viewer sees it, once.
@@ -567,7 +572,16 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         effect_name = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
         # A palette color mode (e.g. B&W) takes precedence over the override.
         color_mode = getattr(le, "_native_clock_color_mode", "normal") or "normal"
-        mode_active = color_mode != "normal"
+        palette = getattr(le, "_text_colors", None)
+        if color_mode == PALETTE_COLOR_MODE:
+            # The palette's first color on a plain style; its colors on a
+            # background that takes them (lamp_clock_settings); else normal.
+            words = clock_palette_words(effect_name, palette)
+            if effect_name is None and words:
+                override_rgb = (words[0] >> 16 & 255, words[0] >> 8 & 255, words[0] & 255)
+            if not words:
+                color_mode = "normal"
+        mode_active = color_mode not in ("normal", PALETTE_COLOR_MODE)
         effect_frame = None
         if effect_name is not None:
             # The mixer's renderer behind the clock overlay, on the command
@@ -575,7 +589,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             effect_frame = lamp_effect_frame(
                 lamp_clock_settings(
                     effect_name, self._preview_speed(), override_rgb, color_mode,
-                    _chosen_intensity(self._light_entity),
+                    _chosen_intensity(self._light_entity), palette,
                 ),
                 self._clock_background_seconds(),
             )

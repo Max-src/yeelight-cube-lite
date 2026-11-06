@@ -75,7 +75,7 @@ import {
 } from "./slider-control-utils.js";
 import { TEXT_SELECTOR_STYLES, PREVIEW_SELECTOR_STYLES } from "./selector-shared-styles.js";
 import {
-  CLOCK_COLOR_MODES,
+  NATIVE_COLOR_MODES,
   clockStyleColorModeState,
   clockStyleRespondsToCustomColor,
   clockStyleByName,
@@ -199,7 +199,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // background decides which effect sliders apply.
   _lampStyle() {
     const a = this._attrs();
-    const list = getClockStyles(true);
+    const list = getClockStyles();
     return (
       list.find((s) => s.id === a.clock_style_id) ||
       (typeof a.clock_style === "string" ? clockStyleByName(a.clock_style) : null)
@@ -437,10 +437,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   }
 
   _attrs() {
-    const attrs = previewAttributes(this);
-    return previewOnly(this)
-      ? { ...attrs, extended_effects_enabled: true }
-      : attrs;
+    return previewAttributes(this);
   }
 
   _restoreCustomColor() {
@@ -476,11 +473,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       a.clock_colon_blink,
       a.clock_color,
       a.clock_color_mode,
+      // The palette color mode follows the lamp's palette.
+      JSON.stringify(a.text_colors ?? null),
       a.native_effect_speed,
       a.native_effect_intensity,
       a.native_effect_direction,
       a.device_orientation,
-      a.extended_effects_enabled,
       a.content_mode,
       a.brightness,
       this._stateObj()?.state,
@@ -517,15 +515,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
 
   _controlStyles(attrs = this._attrs()) {
     return clockStylesWithPresets(
-      getClockStyles(!!attrs.extended_effects_enabled),
+      getClockStyles(),
       clockPresetLibrary(this._hass),
     );
   }
 
   _styleList() {
-    // Experimental styles follow the entity's Experimental Features switch
-    // exactly — no separate card-level override.
-    const extended = !!this._attrs().extended_effects_enabled;
     // The library shown: a preset just renamed or deleted here changes it
     // without a state update (clock-preset-utils).
     const presets = clockPresetLibrary(this._hass);
@@ -533,13 +528,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     if (
       cache &&
       cache.presets === presets &&
-      cache.extended === extended &&
       cache.config === this.config
     )
       return cache.styles;
-    const styles = clockStylesWithPresets(getClockStyles(extended), presets);
+    const styles = clockStylesWithPresets(getClockStyles(), presets);
     const visible = visibleClockStyles(styles, this.config);
-    this._styleListCache = { presets, extended, config: this.config, styles: visible };
+    this._styleListCache = { presets, config: this.config, styles: visible };
     return visible;
   }
 
@@ -652,7 +646,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // Selector options: Custom sits right after Normal, ahead of the palettes.
   _colorModeOptions() {
     return clockColorModeOptions(
-      CLOCK_COLOR_MODES,
+      NATIVE_COLOR_MODES,
       clockPresetLibrary(this._hass),
       this.config,
     );
@@ -678,6 +672,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       clock_12_hour: a.clock_12_hour,
       clock_colon_blink: a.clock_colon_blink,
       clock_color_mode: a.clock_color_mode,
+      // The lamp's palette, for the palette color mode.
+      text_colors: a.text_colors,
       native_effect_direction: a.native_effect_direction,
       native_effect_speed: this._animationSpeed(),
       native_effect_intensity: this._animationIntensity(),
@@ -713,6 +709,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       clock_colon_blink: a.clock_colon_blink,
       clock_color_mode:
         colorMode === "custom" ? "normal" : colorMode || "normal",
+      text_colors: a.text_colors,
       native_effect_direction: a.native_effect_direction,
       native_effect_speed: this._animationSpeed(),
       native_effect_intensity: this._animationIntensity(),
@@ -736,7 +733,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       const s = clockStyleByName(a.clock_style);
       if (s) return s;
     }
-    const list = getClockStyles(true);
+    const list = getClockStyles();
     return list.find((s) => s.id === a.clock_style_id) || list[0];
   }
 

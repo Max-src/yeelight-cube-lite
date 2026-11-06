@@ -346,7 +346,9 @@ class LanOnlyTests(unittest.TestCase):
         self.assertEqual(
             {"Ribbon", "Starry Sky", "Bouncing Ball", "Magic", "Wonderland"}
             | {CONSTANTS["_EXTENDED_EFFECT_NAMES"][mode]
-               for mode in CONSTANTS["_EXTENDED_EFFECT_NO_DIRECTION"]},
+               for mode in CONSTANTS["_EXTENDED_EFFECT_NO_DIRECTION"]}
+            # The animations are drawn upright for the mount instead.
+            | set(CONSTANTS["LAMP_ANIMATION_EFFECTS"]),
             set(undirected),
         )
         fixed = CONSTANTS["UNDIRECTED_EFFECT_DIRECTION"]

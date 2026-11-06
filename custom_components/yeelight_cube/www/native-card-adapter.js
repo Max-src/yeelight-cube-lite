@@ -27,9 +27,7 @@ export function createNativeCardAdapter(card) {
     kind: "native",
     previewOnly: () => previewOnly(card),
     items: () =>
-      nativeEffectItems(card._attrs(), {
-        show_experimental: !!card._attrs().extended_effects_enabled,
-      }).map((item) => ({
+      nativeEffectItems(card._attrs()).map((item) => ({
         key: item.name,
         title: itemLabel(card.config, item.name, item.name),
       })),

@@ -27,11 +27,10 @@ import {
   sharedEditorStyles,
   YeelightEditorMixin,
   renderSettingsBox,
-  renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
 import { buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
-import { getClockStyles } from "./clock-preview-utils.js";
+import { getClockStyles, NATIVE_COLOR_MODES } from "./clock-preview-utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
@@ -115,14 +114,13 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
       this._commitConfig(next);
     };
     const modes = clockStylesWithPresets(
-      getClockStyles(true),
+      getClockStyles(),
       clockPresetLibrary(this._hass),
     ).map((style) => ({ key: clockPresetKey(style), title: style.name }));
 
     // Editor sections follow the card's visual order.
     return html`
       <div class="editor-root">
-        ${renderExperimentalAvailability(this._hass, selectedEntities, config)}
         ${this._section(
           "general",
           "Global Settings",
@@ -232,7 +230,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                       config.show_save_clock_style_button !== false,
                       (e) => this._onSwitchChange(e, "show_save_clock_style_button"),
                     )}
-                    ${renderVisibleColorModes(this)}
+                    ${renderVisibleColorModes(this, NATIVE_COLOR_MODES)}
                   `,
                 )
               : ""}
@@ -351,7 +349,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
   // Ordered list of styles shown in the selector (all styles when unset).
   _visibleStyleList() {
     const all = clockStylesWithPresets(
-      getClockStyles(true),
+      getClockStyles(),
       clockPresetLibrary(this._hass),
     );
     return visibleClockStyles(all, this._config).map(clockPresetKey);
@@ -359,7 +357,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
 
   _renderVisibleStyleList() {
     const allStyles = clockStylesWithPresets(
-      getClockStyles(true),
+      getClockStyles(),
       clockPresetLibrary(this._hass),
     );
     const labels = new Map(

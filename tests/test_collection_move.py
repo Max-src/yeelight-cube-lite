@@ -57,6 +57,27 @@ if __name__ == "__main__":
     unittest.main()
 
 
+async def published_before_drawn(test, apply, colors):
+    """``apply`` (a service's run for one lamp) writes the lamp's state
+    with ``colors`` before the lamp is drawn, which may take a while or
+    fail: the previews drawing the palette follow at once."""
+    from types import SimpleNamespace
+
+    seen = []
+    lamp = SimpleNamespace(entity_id="light.a", hass=object(), _text_colors=None)
+    lamp.async_write_ha_state = lambda: seen.append(("state", list(lamp._text_colors)))
+    lamp.async_schedule_update_ha_state = lambda: None
+
+    async def draw(update_type):
+        seen.append(("draw", None))
+        raise RuntimeError("the lamp refused")
+
+    lamp.async_apply_display_mode = draw
+    with test.assertRaises(RuntimeError):
+        await apply(lamp)
+    test.assertEqual([("state", colors), ("draw", None)], seen)
+
+
 class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
     """set_text_colors' documented save_as_palette option saves the colors."""
 
@@ -71,6 +92,7 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
         )
         lamp = SimpleNamespace(entity_id="light.a")
         self.runs = []
+        self.applies = []
         handler = _load_standalone_functions(
             (ROOT / "light_services_display.py").read_text(encoding="utf-8"),
             {"handle_set_text_colors"},
@@ -81,7 +103,9 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
                 "_LOGGER": Mock(),
                 "_resolve_entities": lambda call, name: [lamp],
                 # The shared multi-lamp runner (light_services_common).
-                "run_on_lamps": lambda label, lamps, apply: self.runs.append((label, lamps)),
+                "run_on_lamps": lambda label, lamps, apply: (
+                    self.runs.append((label, lamps)), self.applies.append(apply),
+                ),
             },
         )["handle_set_text_colors"]
         await handler(SimpleNamespace(data=data))
@@ -101,6 +125,33 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
     async def test_saves_nothing_by_default(self):
         call = await self.run_set_text_colors({"text_colors": [[255, 0, 0]]})
         call.assert_not_awaited()
+
+    async def test_the_colors_are_published_before_the_lamp_is_drawn(self):
+        await self.run_set_text_colors({"text_colors": [[255, 0, 0], [0, 0, 255]]})
+        (_, lamps), = self.runs
+        await published_before_drawn(self, self.applies[0], [(255, 0, 0), (0, 0, 255)])
+
+    async def test_a_loaded_palette_is_published_before_the_lamp_is_drawn(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        applies = []
+        handler = _load_standalone_functions(
+            (ROOT / "light_services_palette.py").read_text(encoding="utf-8"),
+            {"handle_load_palette"},
+            {
+                "hass": SimpleNamespace(),
+                "asyncio": asyncio,
+                "_LOGGER": Mock(),
+                "collection": lambda hass, key: [],
+                "_locate_item": lambda items, idx, name, kind: {"colors": [[0, 255, 0], [9, 9, 9]]},
+                "_resolve_entities": lambda call, name: [SimpleNamespace(entity_id="light.a")],
+                "run_on_lamps": lambda label, lamps, apply: applies.append(apply),
+            },
+        )["handle_load_palette"]
+        await handler(SimpleNamespace(data={"idx": 0}))
+        await published_before_drawn(self, applies[0], [(0, 255, 0), (9, 9, 9)])
 
     async def test_the_lamps_are_updated_like_every_multi_lamp_action(self):
         # Through run_on_lamps: a lamp's failure is logged and shown on the

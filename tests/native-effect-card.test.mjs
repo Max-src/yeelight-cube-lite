@@ -50,7 +50,7 @@ import {
   effectSupportsColorOverride,
 } from "../custom_components/yeelight_cube/www/native-effect-preview.js";
 import { effectDisplayFrame } from "../custom_components/yeelight_cube/www/lamp-renderers.js";
-import { CLOCK_COLOR_MODES } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
+import { CLOCK_COLOR_MODES, NATIVE_COLOR_MODES } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import {
   clockPresetLibrary,
   clockColorModeOptions,
@@ -78,53 +78,6 @@ const sourceFor = (file) =>
     "utf8",
   );
 const template = (strings, ...values) => ({ strings, values });
-
-test("experimental editor status distinguishes device gates, missing states and card filter", () => {
-  const source = sourceFor("editor_ui_utils.js");
-  const match = source.match(
-    /export function renderExperimentalAvailability\(([\s\S]*?)\) \{([\s\S]*?)\n\}/,
-  );
-  const flatten = (value) =>
-    Array.isArray(value) ? value.map(flatten).join("") : String(value ?? "");
-  const html = (strings, ...values) =>
-    strings.reduce(
-      (text, part, index) => text + part + flatten(values[index]),
-      "",
-    );
-  const render = new Function(
-    "html",
-    `return function(${match[1]}) {${match[2]}}`,
-  )(html);
-  const hass = {
-    states: {
-      "light.top": {
-        state: "on",
-        attributes: { friendly_name: "Top", extended_effects_enabled: true },
-      },
-      "light.bottom": {
-        state: "off",
-        attributes: {
-          friendly_name: "Bottom",
-          extended_effects_enabled: false,
-        },
-      },
-    },
-  };
-  const mixed = render(
-    hass,
-    ["light.top", "light.bottom", "light.missing"],
-    {},
-    true,
-  );
-  assert.match(mixed, /Off: Bottom/);
-  assert.match(mixed, /Status unavailable: light.missing/);
-  assert.doesNotMatch(mixed, /On for all/);
-  const enabled = render(hass, ["light.top"], {}, true);
-  assert.match(enabled, /On for all selected lamps/);
-  assert.doesNotMatch(enabled, /Off: /);
-  assert.match(render(hass, ["light.bottom"], {}, false), /Off: Bottom/);
-  assert.equal(render(hass, [], {}, false), "");
-});
 
 test("native color choices retain configured order while effects respond to the color", async () => {
   const attrs = {
@@ -162,7 +115,7 @@ test("native color choices retain configured order while effects respond to the 
   card._effectForColor = cardMethod("_effectForColor", { nativeEffectItems });
   card._items = cardMethod("_items", { nativeEffectItems });
   const options = cardMethod("_colorOptions", {
-    CLOCK_COLOR_MODES,
+    NATIVE_COLOR_MODES,
     clockColorModeOptions,
     clockPresetLibrary,
   });
@@ -174,9 +127,10 @@ test("native color choices retain configured order while effects respond to the 
     clockPresetsByKind,
     clockPresetLibrary,
   });
+  // Palette came after the list was saved: it shows, at the end.
   assert.deepEqual(
     options.call(card).map((mode) => mode.value),
-    ["white_orange", "normal", "__pick__"],
+    ["white_orange", "normal", "__pick__", "palette"],
   );
   await apply.call(card, "white_orange");
   assert.equal(card.command.data.effect, "Tide");
@@ -188,7 +142,7 @@ test("native color choices retain configured order while effects respond to the 
   assert.equal(selected.call(card), "white_orange");
   assert.deepEqual(
     options.call(card).map((mode) => mode.value),
-    ["white_orange", "normal", "__pick__"],
+    ["white_orange", "normal", "__pick__", "palette"],
   );
   attrs.native_effect_color_mode = "normal";
   assert.equal(card._items().length, 3);
@@ -196,6 +150,16 @@ test("native color choices retain configured order while effects respond to the 
   assert.ok(
     card._items().every((item) => effectSupportsColorOverride(item.name)),
   );
+  // Palette lists only the effects that take a color, and sends no color.
+  attrs.native_effect_color = null;
+  await apply.call(card, "palette");
+  assert.deepEqual(card.command.data, { effect: "Starry Sky", color_mode: "palette", color: "clear" });
+  attrs.native_effect_color_mode = "palette";
+  assert.deepEqual(
+    card._items().map((item) => item.name),
+    ["Starry Sky", "Tide", "Rainbow"].filter((name) => effectSupportsColorOverride(name)),
+  );
+  attrs.native_effect_color_mode = "normal";
   card._effectAvailable = () => false;
   card.command = null;
   await apply.call(card, "white_orange");
@@ -608,14 +572,11 @@ test("named effects exclude raw experimental mode numbers even when explicitly v
     ],
   };
   assert.deepEqual(
-    nativeEffectItems(attrs, { show_experimental: true }).map(
-      (item) => item.name,
-    ),
+    nativeEffectItems(attrs).map((item) => item.name),
     ["Rainbow", "Mirrored comets"],
   );
   assert.deepEqual(
     nativeEffectItems(attrs, {
-      show_experimental: true,
       visible_effects: ["63", "Mirrored comets"],
     }).map((item) => item.name),
     ["Mirrored comets"],
@@ -688,7 +649,6 @@ test("native editor sections follow the card and use shared conditional controls
     renderOrientationSettings: () => {
       records.orientation = true;
     },
-    renderExperimentalAvailability: () => "",
     renderColorModeSettings: () => "",
     renderOrderableList: (options) => {
       records.list = options;
@@ -1140,7 +1100,7 @@ test("rotation keeps the latest pending direction until Home Assistant echoes it
     controls.disconnect();
   }
 });
-test("native effect catalogue respects availability, visibility and order", () => {
+test("native effect catalogue lists every effect, by visibility and order", () => {
   const attrs = {
     native_effect_catalog: [
       rainbow,
@@ -1148,20 +1108,16 @@ test("native effect catalogue respects availability, visibility and order", () =
       { name: "Ribbon" },
     ],
   };
+  // Experimental effects too: no setting hides them.
   assert.deepEqual(
     nativeEffectItems(attrs).map((item) => item.name),
-    ["Rainbow", "Ribbon"],
+    ["Rainbow", "Mirrored comets", "Ribbon"],
   );
   assert.deepEqual(
     nativeEffectItems(attrs, {
       visible_effects: ["Ribbon", "missing", "Rainbow", "Ribbon"],
     }).map((item) => item.name),
     ["Ribbon", "Rainbow"],
-  );
-  assert.equal(nativeEffectItems(attrs, { show_experimental: true }).length, 3);
-  assert.equal(
-    nativeEffectItems({ ...attrs, native_effect: "Mirrored comets" }).length,
-    3,
   );
   assert.deepEqual(nativeEffectItems(attrs, { visible_effects: [] }), []);
 });
@@ -1237,4 +1193,32 @@ test("every effect previews at speed 0 and intensity 0", () => {
         nativeEffectFrame(effect, { native_effect_speed: 0, native_effect_intensity: 0 }, elapsed),
         effect.name,
       );
+});
+
+test("a music effect in the Palette color mode has no speed or intensity slider", async () => {
+  const { paletteMusicFlow } = await import(
+    "../custom_components/yeelight_cube/www/lamp-renderers.js"
+  );
+  const palette = [[255, 0, 0]];
+  assert.equal(paletteMusicFlow("Music Spectrum", "palette", palette), "Spectrum");
+  assert.equal(paletteMusicFlow("Music Spectrum", "normal", palette), null);
+  assert.equal(paletteMusicFlow("Music Spectrum", "palette", []), null);
+  assert.equal(paletteMusicFlow("Rainbow", "palette", palette), null);
+  // The card asks it for both sliders.
+  const source = sourceFor("yeelight-cube-native-effects-card.js");
+  assert.match(source, /paletteMusicFlow\(\s*effect\?\.name,\s*attrs\.native_effect_color_mode,\s*attrs\.text_colors,?\s*\)/);
+  assert.match(source, /sliderWhenUsed\(this\.config, effect\?\.speed && !musicMode,/);
+  assert.match(source, /sliderWhenUsed\(this\.config, effect\?\.intensity && !musicMode,/);
+});
+
+test("the cards preview the animations and the stored GIF they hold", async () => {
+  const preview = await import("../custom_components/yeelight_cube/www/native-effect-preview.js");
+  const { animationFrame } = await import("../custom_components/yeelight_cube/www/lamp-animation-frames.js");
+  assert.equal(preview.renderNativeEffect("Snowfall", 0.5, "Up", null, "normal", 128, "right"), animationFrame("snowfall", 0.5 / (0.25 + 128 / 55), "right"));
+  // The stored GIF: the animation it holds, or a placeholder.
+  assert.equal(
+    preview.renderNativeEffect("Stored GIF", 0.5, "Up", null, "normal", 128, "right", null, null, "daydream"),
+    animationFrame("daydream", 0.5 / (0.25 + 128 / 55), "right"),
+  );
+  assert.equal(preview.renderNativeEffect("Stored GIF", 0.5, "Up", null, "normal", 128, "right", null, null, "nope").length, 100);
 });

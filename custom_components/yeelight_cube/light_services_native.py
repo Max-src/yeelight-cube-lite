@@ -20,9 +20,8 @@ from .const import (
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     ALL_NATIVE_EFFECTS,
-    CLOCK_COLOR_MODES,
+    NATIVE_COLOR_MODES,
     DOMAIN,
-    EXPERIMENTAL_CLOCK_STYLE_IDS,
     INTENSITY_RANGE,
     SPEED_RANGE,
     NATIVE_CLOCK_CONTENT_OPTIONS,
@@ -216,8 +215,9 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             spec = ALL_NATIVE_EFFECTS.get(name)
             if spec is None:
                 raise invalid("unknown_effect", effect=name)
-            if spec.get("extended") and not target._extended_effects_enabled:
-                raise invalid("experimental_required", name=name)
+            # Uploaded to the lamp first, over Matter (light_native._store_animation).
+            if activate and spec.get("animation") and not getattr(target, "animations_available", False):
+                raise invalid("animation_needs_matter")
             if speed is not None and not spec.get("speed"):
                 raise invalid("no_speed", effect=name)
             if intensity is not None and not spec.get("intensity"):
@@ -228,7 +228,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             if has_color and not clear_color and not effect_supports_color_override(name):
                 raise invalid("no_custom_color", effect=name)
             if color_mode is not None and (
-                color_mode not in CLOCK_COLOR_MODES
+                color_mode not in NATIVE_COLOR_MODES
                 or (color_mode != "normal" and not effect_supports_color_mode(name, color_mode))
             ):
                 raise invalid("color_mode_unsupported", effect=name, color_mode=color_mode)
@@ -372,7 +372,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=SPEED_RANGE[0], max=SPEED_RANGE[1])),
             vol.Optional("intensity"): _INTENSITY_SCHEMA,
             vol.Optional("direction"): vol.In(list(NATIVE_EFFECT_DIRECTIONS)),
-            vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
+            vol.Optional("color_mode"): vol.In(list(NATIVE_COLOR_MODES)),
             vol.Optional("color"): vol.Any(None, "clear", vol.All(
                 [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
                 vol.Length(min=3, max=3),
@@ -442,13 +442,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target):
             if style_id is not None:
-                # Experimental styles need the extended catalogue on; enabling
-                # it here keeps the select entity and this action consistent.
-                if (
-                    style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
-                    and not target._extended_effects_enabled
-                ):
-                    target.set_extended_effects_enabled(True)
                 target._native_clock_style = style_id
             if has_color:
                 target._native_clock_color = None if clear_color else clock_color
@@ -495,7 +488,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             vol.Optional("content"): vol.In(NATIVE_CLOCK_CONTENT_OPTIONS),
             vol.Optional("twelve_hour"): cv.boolean,
             vol.Optional("colon_blink"): cv.boolean,
-            vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
+            vol.Optional("color_mode"): vol.In(list(NATIVE_COLOR_MODES)),
             vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=SPEED_RANGE[0], max=SPEED_RANGE[1])),
             vol.Optional("intensity"): _INTENSITY_SCHEMA,
             vol.Optional("activate"): cv.boolean,

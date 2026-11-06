@@ -591,6 +591,9 @@ export function renderFireworks(seconds, rate, direction, profile = REFERENCE_PR
 // ── What a command installs (const.py and lamp_renderers.py) ──────
 // The effects as the integration sends them: this side has no const.py.
 // tests/test_lamp_renderers.py keeps this equal to it.
+// const.py EXTENDED_EFFECT_COMMAND_ID: the outer id of the effects the
+// Yeelight app does not offer (3 made the app show Ribbon).
+const EXTENDED_EFFECT_ID = 63;
 const ALL_DIRECTIONS = ["Up", "Down", "Left", "Right"];
 const SWAP_UP_DOWN = { Up: "Down", Down: "Up" };
 // const.py _EXTENDED_EFFECT_NO_SPEED / _NO_DIRECTION for the slots named by
@@ -639,26 +642,26 @@ export const LAMP_EFFECTS = withIntensity({
   Wonderland: { mode: 77, effectId: 94, speed: true },
   Kaleidoscope: { mode: 80, effectId: 95, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
   Palette: { mode: 81, effectId: 96, speed: true, directions: ALL_DIRECTIONS },
-  "Moving palette": { mode: 4, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Particle path": { mode: 6, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Triangular palette pulses": { mode: 9, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
+  "Moving palette": { mode: 4, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Particle path": { mode: 6, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Triangular palette pulses": { mode: 9, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
   Fireworks: { mode: 10, effectId: 71, speed: true, directions: ALL_DIRECTIONS },
-  "Sine wave": { mode: 11, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Sunrise and sunset": { mode: 18, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Heat fire": { mode: 19, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Mirrored comets": { mode: 22, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Palette sparks": { mode: 24, effectId: 3, directions: ALL_DIRECTIONS },
-  "Tide (slot 35)": { mode: 35, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Rainbow noise": { mode: 54, effectId: 3, directions: ALL_DIRECTIONS },
-  "Violet interference": { mode: 56, effectId: 3, directions: ALL_DIRECTIONS },
-  "Night-amber waves": { mode: 57, effectId: 3, speed: true },
-  "Navy-white noise": { mode: 58, effectId: 3, directions: ALL_DIRECTIONS },
-  "Night-sky waves": { mode: 59, effectId: 3 },
-  "Flicker sweep": { mode: 60, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Particle glows": { mode: 61, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
-  "Palette stripes": { mode: 70, effectId: 3, directions: ALL_DIRECTIONS },
-  "Neon sine bands": { mode: 75, effectId: 3, speed: true },
-  "Violet twinkles": { mode: 79, effectId: 3, speed: true, directions: ALL_DIRECTIONS },
+  "Sine wave": { mode: 11, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Sunrise and sunset": { mode: 18, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Heat fire": { mode: 19, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Mirrored comets": { mode: 22, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Palette sparks": { mode: 24, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS },
+  "Tide (slot 35)": { mode: 35, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Rainbow noise": { mode: 54, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS },
+  "Violet interference": { mode: 56, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS },
+  "Night-amber waves": { mode: 57, effectId: EXTENDED_EFFECT_ID, speed: true },
+  "Navy-white noise": { mode: 58, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS },
+  "Night-sky waves": { mode: 59, effectId: EXTENDED_EFFECT_ID },
+  "Flicker sweep": { mode: 60, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Particle glows": { mode: 61, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  "Palette stripes": { mode: 70, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS },
+  "Neon sine bands": { mode: 75, effectId: EXTENDED_EFFECT_ID, speed: true },
+  "Violet twinkles": { mode: 79, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
   // The slots named by number until 1.4.0 (effect-names.js). Not 71: it plays
   // the lamp's stored GIF.
   ...Object.fromEntries(
@@ -667,7 +670,7 @@ export const LAMP_EFFECTS = withIntensity({
       FORMERLY_NUMBERED_EFFECT_NAMES[mode],
       {
         mode,
-        effectId: 3,
+        effectId: EXTENDED_EFFECT_ID,
         ...(NUMBERED_NO_SPEED.has(mode) ? {} : { speed: true }),
         ...(NUMBERED_NO_DIRECTION.has(mode) ? {} : { directions: ALL_DIRECTIONS }),
         ...(SLOT_COLORS[mode] ? { colors: SLOT_COLORS[mode] } : {}),
@@ -720,6 +723,7 @@ export const PRESET_ROWS = {
   47: [0, 128, 128, 0],
   48: [0, 128, 128, 0],
   49: [0, 128, 128, 0],
+  63: [0, 128, 128, 0],
   64: [12, 128, 128, 0],
   65: [13, 128, 128, 0],
   66: [14, 128, 128, 0],
@@ -833,9 +837,73 @@ const COLOR_PALETTE_MODES = new Set([
 export const effectSupportsColorOverride = (effect) =>
   COLOR_OVERRIDE_EFFECTS.has(effect);
 
+// const.py PALETTE_COLOR_MODE: the native effects' own color mode, the
+// lamp's palette (its text_colors attribute).
+export const PALETTE_COLOR_MODE = "palette";
+
 export const effectSupportsColorMode = (effect, mode) =>
   (COLOR_PALETTE_EFFECTS.has(effect) && COLOR_PALETTE_MODES.has(mode)) ||
-  (mode === "bw" && COLOR_MODE_BW_EFFECTS.has(effect));
+  (mode === "bw" && COLOR_MODE_BW_EFFECTS.has(effect)) ||
+  // The palette's colors reach every effect that takes a color.
+  (mode === PALETTE_COLOR_MODE && COLOR_OVERRIDE_EFFECTS.has(effect));
+
+// const.py PALETTE_MUSIC_FLOWS and MUSIC_PALETTE_SIZE.
+export const PALETTE_MUSIC_FLOWS = {
+  "Music Gather": "Gather",
+  "Music Breathing": "Breathing",
+  "Music Blossom": "Blossom",
+  "Music Spectrum": "Spectrum",
+  "Music Note": "Music Note",
+  "Music Impact": "Impact",
+};
+const MUSIC_PALETTE_SIZE = 16;
+
+const paletteColours = (palette) =>
+  Array.isArray(palette) ? palette.filter((colour) => Array.isArray(colour) && colour.length >= 3) : [];
+
+/** The colour words (0xRRGGBB) an effect is sent for `palette`, a list of
+ * [r, g, b]; empty when the palette is (lamp_renderers.py palette_words). */
+export function paletteWords(effect, palette) {
+  const colours = paletteColours(palette);
+  if (!colours.length) return [];
+  const count = (LAMP_EFFECTS[effect].colors ?? []).length || 1;
+  return Array.from({ length: count }, (_, index) => {
+    const [r, g, b] = colours[index % colours.length];
+    return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255);
+  });
+}
+
+/** The colour words a clock is sent in the palette color mode
+ * (lamp_renderers.py clock_palette_words): a plain-colour style (`effect`
+ * null) its first colour, a background that takes the palette as many as that
+ * effect, another none. */
+export function clockPaletteWords(effect, palette) {
+  if (!effect) {
+    const colours = paletteColours(palette);
+    if (!colours.length) return [];
+    const [r, g, b] = colours[0];
+    return [((r & 255) << 16) | ((g & 255) << 8) | (b & 255)];
+  }
+  if (!effectSupportsColorMode(effect, PALETTE_COLOR_MODE)) return [];
+  return paletteWords(effect, palette);
+}
+
+/** A palette spread over a music mode's 16 entries (lamp_renderers.py
+ * music_palette). */
+export function musicPalette(palette) {
+  const colours = paletteColours(palette);
+  if (!colours.length) return [];
+  return Array.from({ length: MUSIC_PALETTE_SIZE }, (_, index) =>
+    colours[Math.floor((index * colours.length) / MUSIC_PALETTE_SIZE)].slice(0, 3),
+  );
+}
+
+/** The microphone music mode an effect runs as in the palette color mode,
+ * null otherwise (lamp_renderers.py palette_music_flow). */
+export const paletteMusicFlow = (effect, colorMode, palette) =>
+  colorMode === PALETTE_COLOR_MODE && paletteColours(palette).length
+    ? (PALETTE_MUSIC_FLOWS[effect] ?? null)
+    : null;
 
 /** The fields a renderer reads, from what a command sends. */
 // `word`: the first colour word sent (null: no color key), `more` the others,
@@ -876,6 +944,7 @@ export function lampSettings(
   colorMode = null,
   orientation = null,
   intensity = null,
+  lampPalette = null,
 ) {
   const spec = LAMP_EFFECTS[effect];
   const palette = effectSupportsColorMode(effect, colorMode)
@@ -894,10 +963,21 @@ export function lampSettings(
     );
   if (colorOverride && (!colorMode || colorMode === "normal") && effectSupportsColorOverride(effect))
     words = [(colorOverride[0] << 16) | (colorOverride[1] << 8) | colorOverride[2], ...words.slice(1)];
-  return commandSettings(
+  if (colorMode === PALETTE_COLOR_MODE && effectSupportsColorMode(effect, colorMode)) {
+    const sent = paletteWords(effect, lampPalette);
+    if (sent.length) words = sent;
+  }
+  const settings = commandSettings(
     spec.mode, commandId, value, rate, words[0] ?? null, words.slice(1),
     sentIntensity(spec, intensity),
   );
+  if (paletteMusicFlow(effect, colorMode, lampPalette)) {
+    // The music mode: the whole palette, at the effect's own speed and
+    // intensity (the music mode takes none).
+    settings.palette = musicPalette(lampPalette);
+    [, settings.intensity, settings.rate] = PRESET_ROWS[commandId];
+  }
+  return settings;
 }
 
 /** What the lamp runs behind the clock when `effect` is its mixer
@@ -908,8 +988,23 @@ export function lampClockSettings(
   colorOverride = null,
   colorMode = null,
   intensity = null,
+  lampPalette = null,
 ) {
   const spec = LAMP_EFFECTS[effect];
+  // The palette color mode: the palette's colours to a background that takes
+  // them, else as the normal mode (lamp_renderers.py).
+  if (colorMode === PALETTE_COLOR_MODE) {
+    const sent = clockPaletteWords(effect, lampPalette);
+    colorMode = null;
+    if (sent.length) {
+      const commandId = CLOCK_MIXER_COMMAND_IDS[spec.mode] ?? NATIVE_CLOCK_EFFECT_ID;
+      const rate = spec.speed ? lampRate(spec.mode, speed) : PRESET_ROWS[commandId][2];
+      return commandSettings(
+        spec.mode, commandId, CLOCK_BACKGROUND_DIRECTION, rate, sent[0], sent.slice(1),
+        sentIntensity(spec, intensity),
+      );
+    }
+  }
   // A slot that draws its colour words (1, 8, 28, 33, 72) is sent all of them,
   // the color first, none under B&W, and no palette, which would only drop
   // them (lamp_renderers.py).

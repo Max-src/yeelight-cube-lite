@@ -22,6 +22,8 @@ ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
 CONSTANTS = runpy.run_path(ROOT / "const.py")
 PIXEL_ART = runpy.run_path(ROOT / "builtin_pixel_art.py")
 NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
+LAMP_RENDERERS = runpy.run_path(ROOT / "lamp_renderers.py")
+LAMP_ANIMATIONS_MODULE = runpy.run_path(ROOT / "lamp_animations.py")
 # The built-in effect / clock activation (light_native.py) as tests load it on
 # its own: the activations and the helpers they call. live_effect_changes is a
 # module function; the others are methods (NATIVE_ACTIVATION_METHODS).
@@ -32,10 +34,13 @@ NATIVE_ACTIVATION = frozenset({
     "_send_native", "_update_running_effect", "_native_renderer_shown",
     "_native_brightness_due", "live_effect_changes",
     "runs_lamp_music", "_clear_fx_mode_flag", "intensity_config",
+    "palette_music", "_send_palette_music", "_build_music_flow_payload",
+    "_store_animation", "_send_music_direction", "_music_direction_due", "stored_gif_tile",
 })
 NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {
-    "live_effect_changes", "effect_direction_sent", "lamp_direction",
-    "runs_lamp_music", "intensity_config",
+    "live_effect_changes", "effect_direction_sent", "lamp_direction", "stored_gif_tile",
+    "runs_lamp_music", "intensity_config", "palette_music",
+    "_build_music_flow_payload",
 }
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
 MOUNT_PROFILE = runpy.run_path(ROOT / "mount_profile.py")
@@ -51,6 +56,14 @@ def import_pure_module(name: str) -> types.ModuleType:
     return importlib.import_module(f"yeelight_cube.{name}")
 
 
+MATTER_COMMANDS = import_pure_module("matter_commands")
+# The effect ids the Yeelight app shows as one of its effects when the lamp
+# reports them: its 18 effect tiles, the clock, a drawing, a plain colour and
+# the ids it shows as Music Flow. (71, its GIFs, it tells by the custom id.)
+APP_EFFECT_IDS = frozenset((
+    3, 5, 15, 17, 32, 34, 37, 39, 42, 46, 47, 48, 49, 91, 92, 94, 95, 96,
+    40, 36, 0, 41, 43, 44, 45, 50, 51,
+))
 STRINGS = json.loads((ROOT / "strings.json").read_text(encoding="utf-8"))
 
 
@@ -77,7 +90,18 @@ _DEFAULT_NAMESPACE = {
     **{name: CONSTANTS[name] for name in (
         "MODE_CLOCK", "MODE_NATIVE_EFFECT", "LAMP_MODES", "ROTATION_KIND_MODES",
         "lamp_rate", "lamp_intensity", "DEFAULT_NATIVE_EFFECT_INTENSITY",
+        "PALETTE_COLOR_MODE", "MUSIC_FLOW_EFFECTS", "MUSIC_FLOW_DEFAULT_PALETTE",
     )},
+    # The palette color mode's rule (light_native imports it).
+    **{name: LAMP_RENDERERS[name] for name in (
+        "palette_music_flow", "palette_words", "music_palette", "clock_palette_words",
+    )},
+    # The animations' upload (light_native._store_animation).
+    **{name: LAMP_ANIMATIONS_MODULE[name] for name in ("gif_packets", "lamp_gif")},
+    "EFFECTS_CLUSTER": MATTER_COMMANDS.EFFECTS_CLUSTER,
+    "MatterCommandsUnavailable": MATTER_COMMANDS.MatterCommandsUnavailable,
+    "GIF_PACKET_ACK": 6,
+    "base64": __import__("base64"),
     **{name: COLOR_UTILS[name] for name in ("rgb_to_argb", "argb_to_rgb")},
     "compensate_direction": MOUNT_PROFILE["compensate_direction"],
     **ERRORS,
@@ -1010,7 +1034,7 @@ class NativeFeatureTests(unittest.TestCase):
         # Mode 4 (Rainbow Flow) is a full rainbow that advances hue per-pixel in
         # reading order (diagonal bands) and is available as a clock mixer.
         self.assertEqual(4, CONSTANTS["ALL_NATIVE_EFFECTS"]["Moving palette"]["mode"])
-        self.assertEqual(3, CONSTANTS["ALL_NATIVE_EFFECTS"]["Moving palette"]["effect_id"])
+        self.assertEqual(63, CONSTANTS["ALL_NATIVE_EFFECTS"]["Moving palette"]["effect_id"])
         self.assertEqual("Moving palette", CONSTANTS["CLOCK_MIXER_EFFECTS"][4])
 
         frame = render("Moving palette", 0.0, "Right")
@@ -1384,6 +1408,13 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("clock_style_id", CLOCK_CARD_SOURCE)
         self.assertIn("clockStyleMixer(", CLOCK_CARD_SOURCE)
 
+    def test_the_outer_id_of_the_other_effects_installs_what_3_did(self):
+        # A command sends its mode, rate, direction and colours: of the preset
+        # row it starts from it keeps the colour selector and, unless sent,
+        # the intensity (lamp_renderers.PRESET_ROWS). 63's are 3's.
+        rows = LAMP_RENDERERS["PRESET_ROWS"]
+        self.assertEqual(rows[3], rows[CONSTANTS["EXTENDED_EFFECT_COMMAND_ID"]])
+
     def test_extended_native_effects_are_hidden_gradient_modes(self):
         official = CONSTANTS["NATIVE_EFFECTS"]
         extended = CONSTANTS["EXTENDED_NATIVE_EFFECTS"]
@@ -1431,8 +1462,13 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertIn(effect_name, extended)
             self.assertEqual(mode, extended[effect_name]["mode"])
         for name, spec in extended.items():
-            self.assertEqual(71 if name == "Fireworks" else 3, spec["effect_id"])
-            self.assertTrue(spec.get("extended"))
+            # Fireworks' preset row, and the stored GIF played as the app
+            # plays it (the app reads its GIF tile only with effect 71). The
+            # others: 63, no effect of the app's (3 showed Ribbon there).
+            self.assertEqual(71 if name in ("Fireworks", "Stored GIF") else 63, spec["effect_id"])
+            self.assertNotIn(spec["effect_id"], APP_EFFECT_IDS)
+            # The stored GIF is offered like the official effects.
+            self.assertEqual(name != "Stored GIF", spec.get("extended"))
             self.assertEqual(
                 spec["mode"] not in CONSTANTS["_EXTENDED_EFFECT_NO_SPEED"], spec.get("speed")
             )
@@ -1442,7 +1478,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertIn(spec["mode"], CONSTANTS["FORMERLY_NUMBERED_SLOTS"])
         # Official list is untouched; merged is the exact union.
         self.assertEqual(18, len(official))
-        self.assertEqual({**official, **extended}, merged)
+        self.assertEqual({**official, **extended, **CONSTANTS["LAMP_ANIMATION_EFFECTS"]}, merged)
 
     def test_nothing_offered_is_outside_the_lamp_tables(self):
         # The lamp has no mode above 81: one sent runs something undefined.
@@ -1484,7 +1520,7 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(
             offline,
             {
-                name: CONSTANTS["EFFECT_FAMILY_OF_SLOT"][spec["mode"]]
+                name: CONSTANTS["effect_family"](spec)
                 for name, spec in effects.items()
                 if name in offline
             },
@@ -1551,7 +1587,7 @@ class NativeFeatureTests(unittest.TestCase):
     def test_magic_and_neon_are_their_own_slots(self):
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         self.assertEqual((92, 76), (effects["Magic"]["effect_id"], effects["Magic"]["mode"]))
-        self.assertEqual((3, 75), (effects["Neon sine bands"]["effect_id"], effects["Neon sine bands"]["mode"]))
+        self.assertEqual((63, 75), (effects["Neon sine bands"]["effect_id"], effects["Neon sine bands"]["mode"]))
         self.assertTrue(effects["Neon sine bands"]["extended"])
         self.assertNotIn("76", effects)
         # Neon keeps what it was sent as Magic: no direction, on effects or clocks.
@@ -1583,29 +1619,16 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertNotEqual(right, up)
         self.assertTrue(any(any(pixel) for pixel in up))
 
-    def test_extended_effects_are_gated_behind_the_switch(self):
-        # The effect dropdown only offers the extended effects when enabled, and
-        # refuses to select one while the switch is off.
-        self.assertIn("EXTENDED_NATIVE_EFFECTS", SELECT_SOURCE)
-        self.assertIn("_extended_effects_enabled", SELECT_SOURCE)
-        self.assertIn('invalid("experimental_required", name=option)', SELECT_SOURCE)
-        # A dedicated switch toggles the feature and refreshes the dropdown.
-        self.assertIn("class YeelightCubeExtendedEffectsSwitch", SWITCH_SOURCE)
-        self.assertIn(
-            "YeelightCubeExtendedEffectsSwitch(config_entry, light_entity)",
-            SWITCH_SOURCE,
-        )
-        self.assertIn("_native_effect_select_entity", SWITCH_SOURCE)
-        # Discovered clock styles follow the same gate and refresh immediately.
-        self.assertIn("EXPERIMENTAL_CLOCK_STYLE_IDS", SELECT_SOURCE)
-        self.assertIn("_clock_style_select_entity", SWITCH_SOURCE)
-        self.assertIn(
-            15,
-            CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"],
-        )
-        # The toggle is persisted on the light for restore, and spec lookups use
-        # the merged dict so a selected extended effect still activates.
-        self.assertIn('"extended_effects_enabled"', LIGHT_SOURCE)
+    def test_every_effect_and_clock_style_is_offered_without_a_setting(self):
+        # No Experimental Features setting any more: the dropdowns offer
+        # everything (the animations only while a server delivers the
+        # Yeelight commands).
+        for source in (SELECT_SOURCE, SWITCH_SOURCE, LIGHT_SOURCE, SERVICES_SOURCE):
+            self.assertNotIn("_extended_effects_enabled", source)
+            self.assertNotIn("experimental_required", source)
+        self.assertIn('invalid("animation_needs_matter")', SELECT_SOURCE)
+        self.assertNotIn("ExtendedEffectsSwitch", SWITCH_SOURCE)
+        self.assertIn(15, CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"])
         self.assertIn("ALL_NATIVE_EFFECTS", LIGHT_SOURCE)
 
     def test_experimental_clock_styles_mirror_native_effect_modes(self):
@@ -1629,7 +1652,9 @@ class NativeFeatureTests(unittest.TestCase):
 
         # Styles beyond the lamp's 10 built-ins are experimental, each maps to
         # a distinct mixer, and named modes never appear as a bare number.
-        mode_to_name = {spec["mode"]: name for name, spec in all_effects.items()}
+        mode_to_name = {
+            spec["mode"]: name for name, spec in all_effects.items() if not spec.get("animation")
+        }
         seen_mixers = set()
         for style_id, style in clock_styles.items():
             if style_id <= 10:
@@ -1644,9 +1669,8 @@ class NativeFeatureTests(unittest.TestCase):
         labels = [style["name"] for style in clock_styles.values()]
         self.assertEqual(len(labels), len(set(labels)))
 
-    def test_experimental_dropdowns_sort_by_mode_and_mixer(self):
-        # Native effects sort by lamp mode and clock styles by mixer, but
-        # only when Experimental Features is enabled.
+    def test_dropdowns_sort_by_mode_and_mixer(self):
+        # Native effects sort by lamp mode and clock styles by mixer.
         self.assertIn(
             'key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"]', SELECT_SOURCE
         )
@@ -1699,25 +1723,23 @@ class NativeEffectCatalogTests(unittest.TestCase):
         catalog = _load_standalone_functions(
             LIGHT_SOURCE, {"_native_effect_catalog"},
             {"functools": functools, "ALL_NATIVE_EFFECTS": effects,
-             "EFFECT_FAMILY_OF_SLOT": CONSTANTS["EFFECT_FAMILY_OF_SLOT"],
+             "effect_family": CONSTANTS["effect_family"],
              "LAMP_STORED_GIF_SLOT": CONSTANTS["LAMP_STORED_GIF_SLOT"]},
         )["_native_effect_catalog"]
-        extended = [
-            name for name, spec in effects.items()
-            if spec.get("extended") and name != "Stored GIF"
-        ]
-        self.assertTrue(extended)
+        animations = set(CONSTANTS["LAMP_ANIMATION_EFFECTS"])
         names = lambda items: [item["name"] for item in items]
-        self.assertFalse(set(extended) & set(names(catalog(False, None))))
-        self.assertTrue(set(extended) <= set(names(catalog(True, None))))
-        # An experimental effect playing while they are hidden stays listed.
-        self.assertIn(extended[0], names(catalog(False, extended[0])))
-        self.assertIs(catalog(False, None), catalog(False, None))
-        # Every effect is listed with a preview, but the stored GIF, not
-        # listed for now.
-        self.assertNotIn("Stored GIF", names(catalog(True, None)))
-        self.assertNotIn("Stored GIF", names(catalog(False, "Stored GIF")))
-        self.assertTrue(all(item["preview"] for item in catalog(True, None)))
+        # Every effect, experimental ones too (marked for the cards' badge),
+        # with a preview; the stored GIF always.
+        self.assertEqual(set(effects) - animations, set(names(catalog(None))))
+        self.assertTrue(any(item["extended"] for item in catalog(None)))
+        self.assertTrue(all(item["preview"] for item in catalog(None)))
+        self.assertIs(catalog(None), catalog(None))
+        # The animations to upload only while a server delivers the Yeelight
+        # commands, or while one plays.
+        self.assertEqual(set(effects), set(names(catalog(None, True))))
+        self.assertIn("Snowfall", names(catalog("Snowfall")))
+        snowfall = next(item for item in catalog(None, True) if item["name"] == "Snowfall")
+        self.assertEqual((snowfall["animation"], snowfall["family"], snowfall["speed"]), ("snowfall", "sparkles", False))
 
 if __name__ == "__main__":
     unittest.main()

@@ -100,7 +100,13 @@ module.exports = async (t) => {
         value: "Rainbow",
         same: true,
         focused: true,
-        names: ["Rainbow"],
+        // Every style is offered: the experimental ones match too.
+        names: [
+          "Rainbow",
+          "Rainbow noise",
+          "Rainbow fill-in (one-shot)",
+          "Rainbow wipe-out (one-shot)",
+        ],
         escaped: [],
       },
     );

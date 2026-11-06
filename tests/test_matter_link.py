@@ -870,6 +870,35 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual("Flower Sea", MATTER.NATIVE_EFFECT_IDS[91])
 
 
+class MusicOnReportTests(unittest.IsolatedAsyncioTestCase):
+    """A palette music mode turns to its direction at the lamp's
+    microphone-on report (light_native._send_music_direction)."""
+
+    async def test_the_wait_ends_at_the_report(self):
+        light = FakeLight()
+        light._expect_lamp_music(True)
+        light._expect_lamp_music_on()
+        waiting = asyncio.ensure_future(light._await_lamp_music_on(5.0))
+        await asyncio.sleep(0)
+        light._on_matter_report("mic_music_on", True, False)
+        self.assertTrue(await asyncio.wait_for(waiting, 1.0))
+        self.assertIsNone(light._lamp_music_on_event)
+
+    async def test_a_report_before_the_wait_counts(self):
+        light = FakeLight()
+        light._expect_lamp_music_on()
+        light._on_matter_report("mic_music_on", True, False)
+        self.assertTrue(await asyncio.wait_for(light._await_lamp_music_on(5.0), 1.0))
+
+    async def test_without_a_report_it_waits_the_timeout(self):
+        # The microphone already ran (one music effect after another).
+        light = FakeLight()
+        light._expect_lamp_music_on()
+        light._on_matter_report("mic_music_on", False, False)
+        self.assertFalse(await light._await_lamp_music_on(0.05))
+        self.assertIsNone(light._lamp_music_on_event)
+
+
 class ButtonCombinationTests(unittest.TestCase):
     """Every switch combination (Right / Left as Remote) and press sequence
     of docs/MATTER.md's table; the lamp shows the Native Effect Bonfire

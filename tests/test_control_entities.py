@@ -62,7 +62,7 @@ def _load_platform(name, source, extra):
 # light_native's helpers the platforms call, without Home Assistant.
 NATIVE_HELPERS = _load_standalone_functions(
     LIGHT_SOURCE,
-    {"write_effect_setting_entities", "shown_effect_reads", "shown_effect_spec"},
+    {"write_effect_setting_entities", "shown_effect_reads", "shown_effect_spec", "palette_music"},
     {name: CONSTANTS[name] for name in (
         "ALL_NATIVE_EFFECTS", "CLOCK_MIXER_EFFECTS", "DEFAULT_NATIVE_CLOCK_STYLE",
         "DEFAULT_NATIVE_EFFECT", "NATIVE_CLOCK_STYLES",
@@ -103,7 +103,7 @@ def make_light(**state):
     light = types.SimpleNamespace(
         _attr_unique_id="cube1", _lamp_name="Cube", _ip="10.0.0.1", hass=None,
         _native_effect="Rainbow", _native_effect_direction="Right",
-        _extended_effects_enabled=False, _native_clock_style=6, _mode="Solid Color",
+        _native_clock_style=6, _mode="Solid Color",
         **state,
     )
     return light
@@ -137,6 +137,7 @@ class ControlEntityTests(unittest.TestCase):
             "cube1_power_on_state": "Cube Power-on behavior",
             "cube1_alignment_select": "Cube Matrix: Text Alignment",
             "cube1_font_select": "Cube Matrix: Font",
+            "cube1_animation_layout": "Cube Native effect: Animation layout",
             "cube1_device_orientation_select": "Cube Device Orientation",
         })
 

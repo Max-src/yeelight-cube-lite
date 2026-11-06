@@ -97,6 +97,9 @@
             "native_effect_direction": {
                 "name": "Native effect: Direction"
             },
+            "animation_layout": {
+                "name": "Native effect: Animation layout"
+            },
             "music_flow_effect": {
                 "name": "Music Flow effect"
             },
@@ -187,9 +190,6 @@
             },
             "camera_follows_orientation": {
                 "name": "Camera Follows Orientation"
-            },
-            "extended_effects": {
-                "name": "Experimental Features"
             },
             "buttons_as_remote": {
                 "name": "Buttons: Right as Remote"
@@ -406,9 +406,6 @@
         "unknown_effect": {
             "message": "Unknown native effect: {effect}"
         },
-        "experimental_required": {
-            "message": "Turn on the Experimental Features switch before applying {name}."
-        },
         "no_speed": {
             "message": "{effect} does not support animation speed."
         },
@@ -426,6 +423,12 @@
         },
         "unknown_clock_style": {
             "message": "Unknown clock style: {style}"
+        },
+        "animation_needs_matter": {
+            "message": "Animations are uploaded to the lamp over Matter: link the lamp to a Matter server that delivers the Yeelight commands."
+        },
+        "animation_upload_failed": {
+            "message": "The lamp stopped the animation upload (answer {status}). The next upload is sent twice, as the lamp stores the one after an interrupted upload corrupted."
         },
         "music_flow_failed": {
             "message": "The lamp could not complete the Music Flow change."
@@ -618,7 +621,7 @@
                 },
                 "color_mode": {
                     "name": "Color mode",
-                    "description": "Built-in color palette preset for compatible effects/styles. \"normal\" keeps each effect's own colors; the others remap the palette."
+                    "description": "Built-in color palette preset for compatible effects/styles. \"normal\" keeps each effect's own colors; \"palette\" uses the lamp's palette (the one loaded with load_palette or set with set_text_colors) and follows it when it changes; the others remap the palette."
                 },
                 "speed": {
                     "name": "Speed",
@@ -824,7 +827,7 @@
         },
         "set_native_effect": {
             "name": "Set Native Effect",
-            "description": "Select and apply a built-in animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.",
+            "description": "Select and apply a built-in animation, optionally setting its speed and compatible color palette. Respects the auto-turn-on setting.",
             "fields": {
                 "entity_id": {
                     "name": "Entity",
@@ -852,7 +855,7 @@
                 },
                 "color_mode": {
                     "name": "Color mode",
-                    "description": "Palette for compatible effects. Normal restores the effect's own colors. Independent of clock palettes."
+                    "description": "Palette for compatible effects. Normal restores the effect's own colors. Palette uses the lamp's palette (load_palette or set_text_colors) and follows it when it changes. Independent of clock palettes."
                 },
                 "activate": {
                     "name": "Activate",

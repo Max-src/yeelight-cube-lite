@@ -90,6 +90,28 @@ fallback.
 column n / 5, row n % 5 from the top. It plays GIFs with 16- or 256-colour
 tables; a 4-colour one-frame GIF showed as all red.
 
+**The integration's animations** (`lamp_animations.py`,
+`light_native._store_animation`) follow these rules:
+- **Files:** 256-colour global table, full frames, looping, at most 32 KB
+  (the lamp's GIF area).
+- **Packets:** one per command. Each waits for its answer, and anything but 6
+  stops the upload without `[4]`, which would store the part sent.
+- **After an interrupted upload:** the lamp stores the next one corrupted, so
+  the next upload is sent twice; the second goes to its other, clean area.
+- **Uploading only when needed:** the lamp writes the GIF to its memory, so it
+  is uploaded only when the lamp does not hold that animation for its mount.
+- **Without a server:** the animations are not offered.
+
+**Music effects in the Palette color mode** (`light_native._send_music_direction`):
+the microphone music mode starts in the lamp's own direction, so the
+direction chosen follows with `setDirection` as soon as the lamp reports its
+microphone on (`mic_music_on`), or 1.5 s after the music starts without that
+report (the microphone already ran); nothing when it is the one the music
+starts in. Sent at once, some modes (Impact) stop. A LAN `update_fx_effect` is never
+used for this: the lamp turns the microphone off a few seconds later and
+shows its saved effect. Without a server, the music runs in the lamp's own
+direction.
+
 **Safety:**
 - Send exactly 4 colours per effect, and at most 16 per music palette. The
   lamp keeps these lists in fixed-size buffers.

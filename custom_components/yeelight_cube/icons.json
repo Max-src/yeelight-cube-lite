@@ -99,6 +99,9 @@
             },
             "native_effect_direction": {
                 "default": "mdi:arrow-all"
+            },
+            "animation_layout": {
+                "default": "mdi:file-gif-box"
             }
         },
         "sensor": {

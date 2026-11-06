@@ -11,7 +11,9 @@ from homeassistant.exceptions import HomeAssistantError  # type: ignore
 
 from .const import (
     ALL_NATIVE_EFFECTS,
-    CLOCK_COLOR_MODES,
+    ANIMATION_LAYOUTS,
+    LAMP_ANIMATION_EFFECTS,
+    NATIVE_COLOR_MODES,
     DEFAULT_NATIVE_EFFECT_DIRECTION,
     DEVICE_ORIENTATIONS,
     DEVICE_ORIENTATION_TO_FLIP,
@@ -93,6 +95,24 @@ def _button_effect_names(value):
     ][:8]
 
 
+def _stored_gif(value):
+    """The stored_gif attribute (light._stored_gif): an animation of
+    LAMP_ANIMATION_EFFECTS or none, its mount, an interrupted upload."""
+    if not isinstance(value, dict):
+        return _INVALID
+    keys = {spec["animation"] for spec in LAMP_ANIMATION_EFFECTS.values()}
+    animation = value.get("animation")
+    stored = {
+        "animation": animation if animation in keys else None,
+        "upside_down": value.get("upside_down") is True,
+        "interrupted": value.get("interrupted") is True,
+    }
+    # Its layout (const.ANIMATION_LAYOUTS); none before layouts existed: upright.
+    if value.get("layout") in ANIMATION_LAYOUTS:
+        stored["layout"] = value["layout"]
+    return stored
+
+
 def _bool_only(value):
     return value if isinstance(value, bool) else _INVALID
 
@@ -119,10 +139,10 @@ _RESTORED_ATTRIBUTES = (
     ("clock_12_hour", "_native_clock_12_hour", bool),
     ("clock_colon_blink", "_native_clock_colon_blink", bool),
     ("clock_color", "_native_clock_color", _int_or_none),
-    ("clock_color_mode", "_native_clock_color_mode", _member_of(CLOCK_COLOR_MODES)),
+    ("clock_color_mode", "_native_clock_color_mode", _member_of(NATIVE_COLOR_MODES)),
     # Native effects and Music Flow
     ("native_effect_color", "_native_effect_color", _rgb_list),
-    ("native_effect_color_mode", "_native_effect_color_mode", _member_of(CLOCK_COLOR_MODES)),
+    ("native_effect_color_mode", "_native_effect_color_mode", _member_of(NATIVE_COLOR_MODES)),
     ("native_effect", "_native_effect", _native_effect_name),
     ("native_effect_speed", "_native_effect_speed", _clamped(int, 0, 255)),
     ("native_effect_intensity", "_native_effect_intensity", _clamped(int, 1, 255)),
@@ -130,6 +150,8 @@ _RESTORED_ATTRIBUTES = (
     ("music_flow_enabled", "_music_flow_enabled", bool),
     ("music_flow_effect", "_music_flow_effect", _member_of(MUSIC_FLOW_EFFECTS)),
     ("music_flow_restore_power", "_music_flow_restore_power", _bool_only),
+    ("stored_gif", "_stored_gif", _stored_gif),
+    ("animation_layout", "_animation_layout", _member_of(ANIMATION_LAYOUTS)),
     ("power_on_state", "_power_on_state", _power_on_state),
     ("button_effects", "_button_effects", _button_effect_names),
     # Text and layout
@@ -201,14 +223,18 @@ class StateRestoreMixin:
             self._ip, len(self._custom_pixels), self._active_pixel_art_name,
         )
 
-    def _restore_extended_effects(self, old_state) -> None:
-        saved = self._config_entry.options.get("extended_effects_enabled")
-        if isinstance(saved, bool):
-            self._extended_effects_enabled = saved
-        elif old_state is not None:
-            legacy = old_state.attributes.get("extended_effects_enabled")
-            if isinstance(legacy, bool):
-                self.set_extended_effects_enabled(legacy)
+    def _drop_extended_effects_option(self) -> None:
+        """The Experimental Features option of earlier versions: every effect
+        and clock style is offered now, so it is no longer stored."""
+        options = self._config_entry.options
+        if "extended_effects_enabled" in options:
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                options={
+                    key: value for key, value in options.items()
+                    if key != "extended_effects_enabled"
+                },
+            )
 
     def _restore_state(self, old_state) -> None:
         """Restore the display settings saved in the last state before a

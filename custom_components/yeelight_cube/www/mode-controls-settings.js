@@ -36,14 +36,15 @@ import { VISIBILITY_KEYS, withAllItems } from "./visible-items.js";
 
 /**
  * Visible color modes (Clock and Native Effects editors): the built-in modes
- * and the saved color presets the card offers, in their order. `editor` is
- * a YeelightEditorMixin editor (its config, hass and _commitConfig).
+ * (`builtins`, the Clock's by default) and the saved color presets the card
+ * offers, in their order. `editor` is a YeelightEditorMixin editor (its
+ * config, hass and _commitConfig).
  */
-export function renderVisibleColorModes(editor) {
+export function renderVisibleColorModes(editor, builtins = CLOCK_COLOR_MODES) {
   const config = editor._config;
   const presets = clockPresetLibrary(editor._hass ?? editor.hass);
-  const all = clockColorModeOptions(CLOCK_COLOR_MODES, presets);
-  const visible = clockColorModeOptions(CLOCK_COLOR_MODES, presets, config).map(
+  const all = clockColorModeOptions(builtins, presets);
+  const visible = clockColorModeOptions(builtins, presets, config).map(
     (mode) => mode.value,
   );
   const labels = new Map(all.map((mode) => [mode.value, mode.label]));

@@ -49,14 +49,7 @@ export function nativeEffectItems(attrs = {}, config = {}) {
   const catalogue = Array.isArray(attrs.native_effect_catalog)
     ? attrs.native_effect_catalog
     : [];
-  const items = catalogue.filter(
-    (item) =>
-      item &&
-      isEffectName(item.name) &&
-      (!item.extended ||
-        config.show_experimental === true ||
-        item.name === attrs.native_effect),
-  );
+  const items = catalogue.filter((item) => item && isEffectName(item.name));
   return visibleItems(
     items,
     (item) => item.name,
@@ -210,6 +203,9 @@ export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
         speed,
         deviceOrientation(attrs),
         chosenIntensity(attrs),
+        attrs.text_colors,
+        attrs.stored_gif,
+        attrs.animation_layout,
       ),
     ),
     deviceOrientation(attrs),

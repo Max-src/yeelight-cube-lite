@@ -54,8 +54,8 @@ while direct service calls use `entity_id`.
 
 Use the visual editor for section visibility, button styles, orientation,
 appearance presets and browser layouts. Color-responsive filtering is automatic;
-`show_only_responding_styles` is obsolete. Experimental playback is controlled
-by the lamp's **Experimental Features** setting, not a card-only toggle.
+`show_only_responding_styles` is obsolete. Every effect and clock style is
+offered: there is no Experimental Features setting any more.
 
 ### Favourites, Presets and Offline Use
 
@@ -927,7 +927,7 @@ mode).
 | `speed` | No | Speed 0–255 (only for effects that support it) |
 | `intensity` | No | Intensity 0–255 (only for effects that support it): the number of glows or meteors, how often stars or drops appear, a wave's size... One setting shared by all effects, like the speed |
 | `direction` | No | `Up`, `Down`, `Left` or `Right`: the way the effect flows as you see it, however the lamp is mounted. One setting shared by all effects (only for effects that offer that direction) |
-| `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it |
+| `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it, or `palette`: the lamp's palette (`load_palette`, `set_text_colors`), followed when it changes, for every effect that takes a color |
 | `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom color |
 | `activate` | No | Switch to Native Effect mode immediately (default `true`) |
 | `entity_id` | Yes | Target lamp entity (list supported) |
@@ -951,14 +951,14 @@ The names are the lamp's own.
 `Aurora`, `Fire`, `Bouncing Ball`, `Meteor`, `Tide`, `Building Blocks`,
 `Hacking`, `Flower Sea`, `Magic`, `Wonderland`, `Kaleidoscope`, `Palette`
 
-**Experimental (20, require the Experimental Features switch):**
+**Experimental (20):**
 `Moving palette`, `Particle path`, `Triangular palette pulses`, `Fireworks`,
 `Sine wave`, `Sunrise and sunset`, `Heat fire`, `Mirrored comets`,
 `Palette sparks`, `Tide (slot 35)`, `Rainbow noise`, `Violet interference`,
 `Night-amber waves`, `Navy-white noise`, `Night-sky waves`, `Flicker sweep`,
 `Particle glows`, `Palette stripes`, `Neon sine bands`, `Violet twinkles`
 
-**Other slots (33, experimental, require the Experimental Features switch):**
+**Other slots (33, experimental):**
 `Two-colour alternation` (slot 1), `Breathing` (2), `Dual scan` (7),
 `Rotating colour bands` (8), `Palette trails` (14), `Drop and bounce` (16),
 `Music level glow` (20), `Stacking blocks` (21), `Aqua-lime trails` (23),
@@ -991,11 +991,8 @@ had in 1.4.0 or earlier still works too: `Streamer` is `Ribbon`, `Starry sky` is
 
 </details>
 
-Experimental effects require **Experimental Features** to be enabled on the lamp.
-
 The call validates its fields (unknown effect, unsupported speed or color,
-experimental effect while Experimental Features is off, lamp off with
-auto-turn-on disabled) and fails immediately on any of them. It then publishes
+lamp off with auto-turn-on disabled) and fails immediately on any of them. It then publishes
 the new settings and returns without waiting for the lamp, exactly like
 `set_clock_style`. The lamp is updated in the background, and a failure there
 (e.g. the lamp is unreachable) is written to the Home Assistant log instead of
@@ -1039,7 +1036,7 @@ data:
 `Rainbow`, `Waves`, `Spectrum`, `White`, `Mint`, `Yellow`, `Pink`, `Red`,
 `Cyan`, `Purple`
 
-**Experimental (30, require the Experimental Features switch):**
+**Experimental (30):**
 `Rainbow noise`, `Night-amber waves`, `Night-sky waves`, `Navy-white noise`,
 `Violet interference`, `Ribbon`, `Moving palette`, `Starry Sky`,
 `Particle path`, `Triangular palette pulses`, `Fireworks`, `Sine wave`,
@@ -1056,9 +1053,9 @@ and the experimental ones) still works under its former name.
 11 and up for experimental ones, as exposed by the light's `clock_style_id`
 attribute); a number is always an id, never a name. The styles over the 33
 other slots (named like those effects, e.g. `Dual scan`) are
-experimental and not offered by the cards: select them by name or id. Selecting an experimental style switches
-the lamp's Experimental Features on. Solid-color styles (`White`, `Mint`,
-`Yellow`, …) ignore `color_mode`; animated styles honour it.
+experimental. Solid-color styles (`White`, `Mint`, `Yellow`, …) ignore
+`color_mode` except `palette`, which gives them the palette's first color;
+animated styles honour it.
 
 </details>
 
@@ -1236,8 +1233,8 @@ background: the call succeeds, nothing starts, and a warning is logged.
 
 Each lamp's entity loop still waits for its own first display operation before
 marking itself active. For a known, enabled item, that step awaits the display
-operation. Unknown names, missing clock presets, and experimental native effects
-with Experimental Features off are skipped without sending a display command, so
+operation. Unknown names, missing clock presets, and the animations to upload
+are skipped without sending a display command, so
 an all-skipped list can remain active without changing the lamp. The card filters
 available favourites, but service callers must supply valid, enabled items.
 
@@ -1305,7 +1302,7 @@ When investigating a repeat report:
 
 1. Record the target entities, rotation kind, submitted items and interval,
   service response, and `effect_rotation` attributes before and after Start.
-  Check item availability and Experimental Features, including skipped items.
+  Check item availability, including skipped items.
 2. Trace the same request through the card adapter, service handler, entity loop,
   display dispatcher, hardware wrapper and `set_fx_effect` transport. Look for
   unsolicited Stop calls from other cards and correlate `[ROTATION]`, `[DISPLAY]`,

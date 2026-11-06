@@ -425,8 +425,7 @@ See [configuration and storage details](SERVICES.md#clock-and-native-effects-car
 Browse the lamp's built-in animations with local animated previews. Choose
 supported palette modes or custom RGB, manage favourites, and rotate through
 them. Brightness, speed, orientation, Freeze, Refresh, and power controls are
-available where supported. Experimental effects require the lamp's
-**Experimental Features** setting for playback.
+available where supported.
 
 <details>
 <summary>View card variations</summary>
@@ -1012,14 +1011,13 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix: Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
 | **Matrix: Palette** | Select | Apply one of the saved color palettes |
 | **Matrix: Pixel Art** | Select | Personal drawings followed by the 68 locally bundled, read-only official presets |
-| **Clock: Style** | Select | One of the 10 native clock styles (more with Experimental Features) |
-| **Native effect** | Select | One of the 18 LAN-compatible built-in animations (more with Experimental Features) |
+| **Clock: Style** | Select | One of the 73 native clock styles: the lamp's 10 and the experimental ones |
+| **Native effect** | Select | One of the 71 built-in animations, the experimental ones included (and the four animations to upload, with a Matter server that delivers the Yeelight commands) |
 | **Effect speed** | Number | Speed for the native clock and for effects that support it (0–255 device units; unavailable when the effect or clock style shown has no speed control) |
 | **Effect intensity** | Number | Intensity for the effects and clock backgrounds that use it (0–255, default 128; never below 13 on Aurora and 1 on Palette stripes, where lower values hang or restart the lamp): the number of glows or meteors, how often stars or drops appear, a wave's size, how strongly music bars react. One setting shared by all effects, like the speed; unavailable when the effect or clock style shown has no intensity |
 | **Music Flow effect** | Select | Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Clock: Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date |
 | **Device Orientation** | Select | How the lamp is mounted: Right / Down / Left / Up (applies to all modes). It never changes an effect's direction |
-| **Experimental Features** | Switch | Reveal built-in animation modes and clock styles the Yeelight app never exposed. Off by default |
 
 #### Sensors
 
@@ -1043,6 +1041,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Clock: 12-hour format** | Switch | Use 12-hour time instead of 24-hour time |
 | **Clock: Blink colon** | Switch | Blink the time separator in Clock mode |
 | **Native effect: Direction** | Select | Direction for effects that support movement (Up / Down / Left / Right; Hacking offers Up / Down only) |
+| **Native effect: Animation layout** | Select | How the four animations are sent: **Upright** (as drawn, turned for the mount) or **As the Yeelight app** (the way the app sends its own, which the lamp shows rearranged, like the app's) |
 | **Power-on behavior** | Select | What the lamp does when mains power comes back: **Restore** (its previous state), **Always on** or **Always off** |
 | **Text scroll** | Switch | Enable scrolling for text wider than the matrix |
 | **Text scroll: Interval** | Number | Delay between scroll steps (0.05–2 seconds) |
@@ -1353,8 +1352,8 @@ imported into, written to, or allowed to overwrite your own drawings.
 
 ### Native Clock
 
-Clock mode provides 10 built-in styles (with additional experimental styles
-unlocked by the Experimental Features switch) and separate options for date
+Clock mode provides 73 styles (the lamp's 10 built-in ones and experimental
+styles over the other effects) and separate options for date
 display, 12/24-hour time, and colon blinking. Brightness and orientation
 previews remain available while Clock mode is active.
 
@@ -1388,9 +1387,30 @@ screen. Random effects (Fireworks, Starry Sky, ...) use stand-in random numbers,
 so a preview shows the same kind of picture, not the same sparks at the same
 moment. Effects that react to sound run on a fixed demo beat, because nothing can
 hear the lamp's microphone: the preview shows how the effect moves, not what the
-lamp shows now. Effect 71, Stored GIF, plays the GIF stored in the lamp, which
-nothing can read back, so it has no preview and the cards do not list it yet: the
-effect and clock style dropdowns offer it.
+lamp shows now.
+
+**Stored GIF and animations.** A lamp keeps one GIF and plays it as the
+**Stored GIF** effect, over LAN, without Matter. Its picture cannot be read back,
+so its preview is a placeholder unless the GIF is one of the integration's
+animations. Four animations come with the integration, drawn for it: **Snowfall**,
+**Daydream**, **Halloween glow** and **Moonlit clouds**. Starting one uploads
+it to the lamp as its stored GIF, then plays it. The upload needs a Matter
+server that delivers the Yeelight commands
+([docs/MATTER_COMMANDS.md](docs/MATTER_COMMANDS.md)): without one, the
+animations are not listed. The lamp writes the GIF to its memory, so the
+integration uploads only when the lamp does not hold that animation yet (it
+remembers which one it stored, for which mount). Each animation stands for one
+of the Yeelight app's four: Snowfall for Winter, Daydream for Dream, Halloween
+glow for Halloween and Moonlit clouds for Moonlight. It is played under that
+animation's id, so the app shows it as the one playing (Stored GIF too, while
+the lamp holds one of them). The lamp shows the Yeelight app's own GIFs
+rearranged: the app sends a 20 × 5 picture, which the lamp lays out five
+pixels to a column. The integration sends its animations upright by default;
+the **Native effect: Animation layout** select sends them the app's way
+instead, so they look like the app's on the lamp. The previews follow it, and
+changing it uploads a playing animation again. The Yeelight app
+replaces the stored GIF when it plays one of its own. Effect rotations skip the
+animations, which would upload a GIF at every step.
 
 Effect names are the lamp's own. An effect's or clock style's name from
 1.4.0 or earlier (Streamer, Ocean Waves, Bonfire, Sunset, Blue White, a slot
@@ -1474,7 +1494,25 @@ Enable `show_color_modes` on the Native Effects Card for **Color Modes &
 Controls**. Its button/dropdown presentation and settings are shared with the
 Clock Card. Only hardware-confirmed palettes for the selected effect are offered:
 Normal, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
-supported. The `set_native_effect` service accepts `color_mode`; this setting is
+supported.
+
+**Palette** gives an effect the colors of the lamp's palette, the one loaded
+from the Palette card (`load_palette`) or set with `set_text_colors`, and
+follows it: load another palette and the effect changes with it. The Clock
+card has it too (`color_mode: palette` in `set_clock_style`): a plain style
+takes the palette's first color, a style over an effect what that effect would.
+The tab lists the effects and styles that take a color. An effect that draws one
+color takes the palette's first; the ones that draw several (Two-colour
+alternation, Rotating colour bands, Scrolling bands, Rising wisps, Random
+scatter) take as many as they draw, the palette repeated if it is shorter.
+Music Gather, Breathing, Blossom, Spectrum, Note and Impact take the whole
+palette: they run as the lamp's microphone music mode, spread over its 16
+colors (a shorter palette is repeated, as the lamp would otherwise fill it with
+black), and have no speed or intensity there. They run in the direction
+chosen when a Matter server sends Yeelight commands to the lamp (see
+[Matter commands](docs/MATTER_COMMANDS.md)), otherwise in the lamp's own.
+
+The `set_native_effect` service accepts `color_mode`; this setting is
 independent of clock colors and persists with the lamp state. An incompatible
 effect uses its original colors. Restart Home Assistant after updating before using
 this feature; an older backend does not expose the palette controls.

@@ -10,6 +10,9 @@ import base64
 import json
 import logging
 from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
+from .lamp_renderers import clock_palette_words, music_palette, palette_music_flow, palette_words
+from .lamp_animations import gif_packets, lamp_gif
+from .matter_commands import EFFECTS_CLUSTER, MatterCommandsUnavailable
 from .color_utils import rgb_to_argb
 from .light_color import hardware_brightness_for
 from .cube_matrix import CubeConnectionError, encode_rgb_frame
@@ -34,7 +37,9 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DEFAULT_NATIVE_EFFECT_INTENSITY,
+    DEVICE_ORIENTATION_TO_FLIP,
     DOMAIN,
+    ORIENTATION_FLIPPED,
     MUSIC_FLOW_DEFAULT_PALETTE,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_APPLY,
@@ -43,7 +48,15 @@ from .const import (
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_APPLY,
+    ANIMATION_LAYOUT_APP,
+    ANIMATION_LAYOUT_UPRIGHT,
+    DEFAULT_ANIMATION_LAYOUT,
+    LAMP_ANIMATION_EFFECTS,
     LIVE_EFFECT_KEYS,
+    STORED_GIF_EFFECT,
+    PALETTE_COLOR_MODE,
+    MUSIC_MODE_START_DIRECTION,
+    PALETTE_MUSIC_DIRECTION_DELAY,
     effect_direction_value,
     UNDIRECTED_EFFECT_DIRECTION,
     lamp_intensity,
@@ -53,6 +66,9 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 MUSIC_FLOW_HARD_TIMEOUT = 12.0
+# A GIF packet the lamp accepted (sendGifDataFragment's status): anything else
+# (21 refused, 0 no answer in time) stops the upload.
+GIF_PACKET_ACK = 6
 
 
 def lamp_direction(light, value: int) -> int:
@@ -78,16 +94,47 @@ def effect_direction_sent(light, spec: dict) -> int:
     ))
 
 
-def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
-    """Build the private-protocol JSON used by device-microphone music flow."""
+def stored_gif_tile(light) -> int:
+    """The Yeelight app's GIF tile of the animation the lamp stores
+    (light._stored_gif) while the stored GIF is chosen; 0 otherwise."""
+    if light._native_effect != STORED_GIF_EFFECT:
+        return 0
+    stored = (getattr(light, "_stored_gif", None) or {}).get("animation")
+    for spec in LAMP_ANIMATION_EFFECTS.values():
+        if spec["animation"] == stored:
+            return spec["app_tile"]
+    return 0
+
+
+def _build_music_flow_payload(enabled: bool, effect_name: str, palette=None) -> str:
+    """Build the private-protocol JSON used by device-microphone music flow:
+    with the app's palette, or ``palette`` ([r, g, b] each) spread over its 16
+    entries (lamp_renderers.music_palette)."""
     payload = {"on": 1 if enabled else 0}
     if enabled:
         if effect_name not in MUSIC_FLOW_EFFECTS:
             raise ValueError(f"Unsupported music flow effect: {effect_name}")
         payload["effect_id"] = MUSIC_FLOW_EFFECTS[effect_name]
+        spread = music_palette(palette)
         # The misspelling is part of the device's private protocol.
-        payload["palatte"] = list(MUSIC_FLOW_DEFAULT_PALETTE)
+        payload["palatte"] = (
+            [0xFF000000 | rgb_to_argb(colour) & 0xFFFFFF for colour in spread]
+            if spread else list(MUSIC_FLOW_DEFAULT_PALETTE)
+        )
     return json.dumps(payload, separators=(",", ":"))
+
+
+def palette_music(light) -> str | None:
+    """The microphone music mode the selected native effect runs as: one of
+    PALETTE_MUSIC_FLOWS in the palette color mode, with a palette (None
+    otherwise, or in another mode)."""
+    if getattr(light, "_mode", None) != MODE_NATIVE_EFFECT:
+        return None
+    return palette_music_flow(
+        getattr(light, "_native_effect", None),
+        getattr(light, "_native_effect_color_mode", None),
+        getattr(light, "_text_colors", None),
+    )
 
 
 def runs_lamp_music(params: list) -> bool:
@@ -142,6 +189,9 @@ def shown_effect_reads(light, setting: str) -> bool:
     effect spec's flag) changes what the lamp shows: the effect or clock
     background it runs reads it. In another mode, whether the selected effect
     reads it, for when it runs again."""
+    if palette_music(light):
+        # A microphone music mode takes no speed or intensity.
+        return False
     if getattr(light, "_mode", None) in (MODE_NATIVE_EFFECT, MODE_CLOCK):
         spec = shown_effect_spec(light)
     else:
@@ -315,6 +365,13 @@ class NativeModesMixin:
         # own-colour backgrounds have no remap to protect except B&W, which
         # the lamp renders as plain white when no color is sent.
         clock_color_mode = self._native_clock_color_mode
+        if clock_color_mode == PALETTE_COLOR_MODE:
+            # The lamp's palette as the clock's colors (clock_palette_words);
+            # without one, or on a background that takes none, as normal.
+            words = clock_palette_words(effect_name, getattr(self, "_text_colors", None))
+            if words:
+                clock_colors = [0x01000000 | word for word in words]
+            clock_color_mode = "normal"
         # A background that draws its own colours takes no palette: it would
         # only drop them (lamp_renderers.lamp_clock_settings).
         takes_palette = effect_name is not None and not ALL_NATIVE_EFFECTS[
@@ -359,8 +416,150 @@ class NativeModesMixin:
 
     async def _activate_native_effect(self) -> None:
         """Activate one of the Cube Lite's built-in animations (live
-        when only its speed or direction changed: _send_native)."""
+        when only its speed or direction changed: _send_native); a music
+        effect in the palette color mode as its microphone music mode."""
+        if flow := palette_music(self):
+            await self._send_palette_music(flow)
+            return
+        animation = ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
+        if animation:
+            await self._store_animation(animation)
         await self._send_native(self._native_effect_params())
+
+    async def _store_animation(self, key: str) -> None:
+        """Put the animation ``key`` (lamp_animations) in the lamp's stored
+        GIF, laid out for its mount, unless it is there already: over Matter
+        (sendGifDataFragment), as the Yeelight app uploads its GIFs. The lamp
+        writes its flash each time, so never more often than needed.
+
+        Each packet waits for its answer, and anything but an acknowledgement
+        stops the upload without its end marker (which would store the part
+        sent). The lamp then stores the next upload corrupted, so the next one
+        is sent twice: the second goes to its other, clean GIF area."""
+        layout = getattr(self, "_animation_layout", DEFAULT_ANIMATION_LAYOUT)
+        # The mount turns only an upright layout: the app's is the picture as is.
+        upside_down = layout != ANIMATION_LAYOUT_APP and (
+            DEVICE_ORIENTATION_TO_FLIP.get(self._device_orientation) == ORIENTATION_FLIPPED
+        )
+        stored = self._stored_gif
+        if (
+            stored.get("animation") == key
+            and stored.get("upside_down") == upside_down
+            and stored.get("layout", ANIMATION_LAYOUT_UPRIGHT) == layout
+            and not stored.get("interrupted")
+        ):
+            return
+        channel = self.matter_commands
+        if channel is None or not await channel.async_available():
+            raise failed("animation_needs_matter")
+        packets = gif_packets(lamp_gif(key, self._device_orientation, layout))
+        copies = 2 if stored.get("interrupted") else 1
+        # Until the end marker is acknowledged, the lamp's GIF is unknown.
+        self._stored_gif = {
+            "animation": None, "upside_down": upside_down, "layout": layout, "interrupted": True,
+        }
+        for _ in range(copies):
+            for packet in packets:
+                try:
+                    reply = await channel.async_command(
+                        EFFECTS_CLUSTER, "sendGifDataFragment",
+                        {"data": base64.b64encode(packet).decode("ascii")},
+                    )
+                except MatterCommandsUnavailable as err:
+                    raise failed("animation_needs_matter") from err
+                status = (reply or {}).get("status")
+                if status != GIF_PACKET_ACK:
+                    _LOGGER.warning(
+                        "[ANIMATION] [%s] Upload of %s stopped: the lamp answered %s",
+                        self._ip, key, status,
+                    )
+                    raise failed("animation_upload_failed", status=str(status))
+        self._stored_gif = {
+            "animation": key, "upside_down": upside_down, "layout": layout, "interrupted": False,
+        }
+        _LOGGER.debug("[ANIMATION] [%s] %s stored (%d packets)", self._ip, key, len(packets) * copies)
+
+    async def _send_palette_music(self, flow: str) -> None:
+        """Run a native music effect as the microphone music mode ``flow``
+        with the lamp's palette (palette_music). The light stays on the native
+        effect: it is not the Music Flow content mode, and the next effect,
+        drawing or clock replaces it like any effect. The lamp reports it as
+        that music mode (light_matter._expected_effect).
+
+        The music mode takes no direction: it starts in the lamp's own, so
+        the direction chosen, as the effect sends it (effect_direction_sent),
+        follows over Matter (setDirection) once the music mode runs: at the
+        lamp's microphone-on report, or PALETTE_MUSIC_DIRECTION_DELAY without
+        one; nothing when it is the one it starts in. Never with
+        update_fx_effect: the lamp stops the microphone a few seconds later
+        and shows its saved effect. Without a Matter server the music runs
+        in the lamp's own direction."""
+        if claim := getattr(self, "_claim_display", None):
+            claim()
+        await self._leave_direct_mode()
+        # The microphone starts only once the fx-mode flag is clear.
+        await self._clear_fx_mode_flag()
+        if note_music := getattr(self, "_expect_lamp_music", None):
+            note_music(True)
+        if note_power := getattr(self, "_expect_lamp_power", None):
+            note_power(True)
+        direction = await self._music_direction_due()
+        if direction is not None and (
+            expect := getattr(self, "_expect_lamp_music_on", None)
+        ):
+            expect()
+        try:
+            result = await self._cube_matrix.send_command_with_recovery(
+                "set_ps",
+                ["mic_music_mode", _build_music_flow_payload(True, flow, self._text_colors)],
+            )
+            if result is None:
+                raise CubeConnectionError(
+                    "Music mode command was skipped during connection cooldown"
+                )
+            if direction is not None:
+                await self._send_music_direction(direction)
+        finally:
+            self._cube_matrix.close_command_socket()
+        # No set_fx_effect runs: the next effect is set in full.
+        self._cube_matrix.forget_running_effect()
+        self._native_renderer_shown()
+
+    async def _music_direction_due(self) -> int | None:
+        """The lamp direction a music mode is turned to once it runs
+        (_send_palette_music): None for an effect without directions, the
+        direction it starts in (MUSIC_MODE_START_DIRECTION), or without a
+        Matter server."""
+        spec = ALL_NATIVE_EFFECTS.get(self._native_effect, {})
+        channel = getattr(self, "matter_commands", None)
+        if not spec.get("directions") or channel is None:
+            return None
+        direction = effect_direction_sent(self, spec)
+        if direction == MUSIC_MODE_START_DIRECTION:
+            return None
+        try:
+            available = await channel.async_available()
+        except Exception:  # noqa: BLE001 -- as without a server
+            return None
+        return direction if available else None
+
+    async def _send_music_direction(self, direction: int) -> None:
+        """Turn the running music mode to ``direction`` (Matter setDirection,
+        _send_palette_music). A failure leaves the music running in the
+        lamp's own direction."""
+        channel = self.matter_commands
+        try:
+            if wait := getattr(self, "_await_lamp_music_on", None):
+                await wait(PALETTE_MUSIC_DIRECTION_DELAY)
+            else:
+                await asyncio.sleep(PALETTE_MUSIC_DIRECTION_DELAY)
+            await channel.async_command(
+                EFFECTS_CLUSTER, "setDirection", {"direction": direction}
+            )
+        except Exception as err:  # noqa: BLE001 -- the music still runs
+            _LOGGER.debug(
+                "[NATIVE] [%s] Music mode direction not sent (%s)", self._ip, err,
+            )
 
     async def _send_native(self, params: list, *, clock: bool = False) -> None:
         """Show the lamp's own renderer: a native effect, or the clock.
@@ -412,6 +611,10 @@ class NativeModesMixin:
         if note_restore := getattr(self, "_note_fx_restore", None):
             note_restore()
         return True
+
+    def _palette_music(self) -> str | None:
+        """palette_music for this light (light_matter reads it)."""
+        return palette_music(self)
 
     def _shows_lamp_music(self) -> bool:
         """Whether the lamp shows a music effect, or a clock over one, of
@@ -490,10 +693,18 @@ class NativeModesMixin:
         color = self._native_effect_color
         if color is not None and color_mode == "normal" and effect_supports_color_override(self._native_effect):
             effect_config["color"] = [rgb_to_argb(color), *colors[1:]]
+        if color_mode == PALETTE_COLOR_MODE and effect_supports_color_mode(self._native_effect, color_mode):
+            # The palette's colors (without a palette, the effect's own).
+            words = palette_words(self._native_effect, getattr(self, "_text_colors", None))
+            if words:
+                effect_config["color"] = [0x01000000 | word for word in words]
 
         return [
             spec["effect_id"] if palette_id is None else palette_id,
-            0,
+            # An animation: the Yeelight app's tile it stands for, which the
+            # app then shows as playing (const.LAMP_ANIMATION_EFFECTS); the
+            # stored GIF: the tile of the animation it holds, when known.
+            spec.get("app_tile") or stored_gif_tile(self),
             NATIVE_EFFECT_APPLY,
             effect_config,
         ]

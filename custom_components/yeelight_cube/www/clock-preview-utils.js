@@ -24,6 +24,7 @@ import {
   chosenSpeed,
   effectDisplayFrame,
   lampClockSettings,
+  clockPaletteWords,
   lampEffectFrame,
   isLampRendered,
 } from "./lamp-renderers.js";
@@ -57,6 +58,13 @@ export const CLOCK_COLOR_MODES = [
     label: "Violet & Gold",
     icon: "mdi:palette-swatch",
   },
+];
+// The Clock and Native Effects cards' color modes (const.py
+// NATIVE_COLOR_MODES): the lamp's presets and Palette, the lamp's palette
+// (its text_colors).
+export const NATIVE_COLOR_MODES = [
+  ...CLOCK_COLOR_MODES,
+  { value: "palette", label: "Palette", icon: "mdi:palette" },
 ];
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -205,8 +213,8 @@ export const CLOCK_STYLE_MIXER = {
 
 // ── Full clock-style registry (mirrors const.py NATIVE_CLOCK_STYLES) ────────
 // Base styles 1-15 plus generated experimental styles (every native-effect
-// mode not already used as a base mixer). style_id > 10 is experimental and
-// requires the "Experimental Features" switch. Solid styles (mixer 0) render a
+// mode not already used as a base mixer). style_id > 10 is experimental (the
+// cards' badge); all are offered. Solid styles (mixer 0) render a
 // fixed color; effect styles render their mixer effect masked to the glyphs.
 const _BASE_CLOCK_STYLES = [
   { id: 1, name: "Rainbow", mixer: 39 },
@@ -348,21 +356,25 @@ const _CARD_ORDER = [...CLOCK_STYLES].sort(
   (first, second) =>
     _cardRank(first) - _cardRank(second) || first.id - second.id,
 );
-const _BASE_CARD_ORDER = _CARD_ORDER.filter((s) => !s.experimental);
-
-/** Return the base (non-experimental) clock styles, or all of them, in the
- * cards' order. */
-export function getClockStyles(includeExperimental) {
-  return includeExperimental ? _CARD_ORDER : _BASE_CARD_ORDER;
+/** Every clock style, in the cards' order. */
+export function getClockStyles() {
+  return _CARD_ORDER;
 }
 
 export function clockStyleColorModeState(style, mode, override = null) {
-  if (!style || !CLOCK_COLOR_MODES.some((option) => option.value === mode))
+  if (!style || !NATIVE_COLOR_MODES.some((option) => option.value === mode))
     return "unknown";
   if (mode === "normal") return "unchanged";
   const known =
     _CLOCK_STYLE_BY_ID.get(style.id) || _CLOCK_STYLE_BY_NAME.get(style.name);
   if (!known && !style.presetId) return "unknown";
+  // The palette: a plain style takes its first color, a background that
+  // takes a color its colors (clockPaletteWords). Saved presets keep theirs,
+  // as under Custom.
+  if (mode === "palette") {
+    if (style.presetId) return "unchanged";
+    if (known.mixer === 0) return "responds";
+  }
   const mixer = style.presetId ? 0 : known.mixer;
   if (mixer === 0) {
     if (mode !== "bw") return "unchanged";
@@ -595,8 +607,17 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
         ]
       : null;
   // A palette color mode (e.g. B&W) takes precedence over the custom override.
-  const colorMode = attrs.clock_color_mode || "normal";
-  const modeActive = colorMode !== "normal";
+  let colorMode = attrs.clock_color_mode || "normal";
+  let paletteColor = null;
+  if (colorMode === "palette") {
+    // The palette's first color on a plain style; its colors on a background
+    // that takes them (lampClockSettings); else as the normal mode (camera.py).
+    const words = clockPaletteWords(effectName, attrs.text_colors);
+    if (!effectName && words.length)
+      paletteColor = [(words[0] >> 16) & 255, (words[0] >> 8) & 255, words[0] & 255];
+    if (!words.length) colorMode = "normal";
+  }
+  const modeActive = colorMode !== "normal" && colorMode !== "palette";
   // The mixer's renderer behind the clock overlay, on the command the lamp gets
   // (light_native): it takes the color or not as on the lamp. Styles with no
   // effect fall back to the flat override color.
@@ -605,13 +626,15 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
     ? effectDisplayFrame(
         effectName,
         lampEffectFrame(
-          lampClockSettings(effectName, rate, override, colorMode, chosenIntensity(attrs)),
+          lampClockSettings(
+            effectName, rate, override, colorMode, chosenIntensity(attrs), attrs.text_colors,
+          ),
           phase / (0.25 + rate / 55),
         ),
       )
     : null;
   // A palette mode overrides the custom color, so don't flat-fill with it.
-  const flatOverride = modeActive ? null : override;
+  const flatOverride = modeActive ? null : paletteColor || override;
   // Solid styles (no mixer effect) have no animated renderer to remap for B&W;
   // the backend achieves it by omitting their color, which the lamp
   // renders as plain white.

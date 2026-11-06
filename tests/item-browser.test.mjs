@@ -9,7 +9,7 @@ import {
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import { clockStylesWithPresets } from "../custom_components/yeelight_cube/www/clock-preset-utils.js";
 
-const styles = clockStylesWithPresets(getClockStyles(true), [
+const styles = clockStylesWithPresets(getClockStyles(), [
   { id: "amber", name: "Amber", color: [255, 120, 0] },
 ]);
 const style = (name) => styles.find((item) => item.name === name);
@@ -162,5 +162,14 @@ test("clock responses distinguish palettes, B&W, solids, presets and unknowns", 
   );
   assert.equal(clockStyleColorModeState({ name: "Unknown" }, "bw"), "unknown");
   assert.equal(clockStyleColorModeState(style("Rainbow"), "future"), "unknown");
+});
+
+test("the clock's palette mode lists the styles that take a color", () => {
+  // Plain styles take its first color, backgrounds that take a color its
+  // colors; the others and the saved presets (their own color) are left out.
+  for (const name of ["White", "Red", "Rainbow", "Waves", "Rotating colour bands"])
+    assert.equal(clockStyleColorModeState(style(name), "palette"), "responds", name);
+  assert.equal(clockStyleColorModeState(style("Rainbow noise"), "palette"), "unchanged");
+  assert.equal(clockStyleColorModeState(style("Amber"), "palette"), "unchanged");
 });
 

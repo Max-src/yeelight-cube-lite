@@ -14,6 +14,21 @@ module.exports = async (t) => {
       card.hass = hass;
     }
   });
+  // Palette, the lamp's palette: on both cards.
+  const palette = await page.evaluate(async () => {
+    for (const card of [clock, native]) {
+      card.setConfig(baseConfig);
+      card.hass = hass;
+      await card.updateComplete;
+    }
+    const values = (card) =>
+      [...card.shadowRoot.querySelectorAll(".unified-color-modes button")].map(
+        (button) => button.title || button.textContent.trim(),
+      );
+    return { clock: values(clock), native: values(native) };
+  });
+  assert.ok(palette.native.some((value) => /Palette/.test(value)), palette.native.join());
+  assert.ok(palette.clock.some((value) => /Palette/.test(value)), palette.clock.join());
   let comparisons = 0;
   for (const width of [288, 358, 560]) {
     for (const style of [

@@ -58,54 +58,6 @@ export const SPACING_CHOICES = [
   { value: "normal", label: "Normal" },
 ];
 
-export function renderExperimentalAvailability(
-  hass,
-  targets,
-  config,
-  native = false,
-) {
-  if (!targets.length) return "";
-  const disabled = [];
-  const unknown = [];
-  for (const entityId of targets) {
-    const state = hass?.states?.[entityId];
-    const name = state?.attributes?.friendly_name || entityId;
-    const enabled = state?.attributes?.extended_effects_enabled;
-    if (
-      !state ||
-      ["unavailable", "unknown"].includes(state.state) ||
-      typeof enabled !== "boolean"
-    ) {
-      unknown.push(name);
-    } else if (!enabled) {
-      disabled.push(name);
-    }
-  }
-  return html`<div class="experimental-availability" role="status">
-    <strong>Experimental Features</strong>
-    ${disabled.length
-      ? html`<p>
-          Off: ${disabled.join(", ")}. Experimental styles and effects are
-          unavailable for these lamps. Enable Experimental Features in each
-          lamp's device controls.
-        </p>`
-      : ""}
-    ${unknown.length
-      ? html`<p>
-          Status unavailable: ${unknown.join(", ")}. Availability cannot be
-          verified until these entities report their settings.
-        </p>`
-      : ""}
-    ${!disabled.length && !unknown.length
-      ? html`<p>On for all selected lamps.</p>`
-      : ""}
-    <p>
-      Saved visibility and order are retained when experimental items are
-      unavailable.
-    </p>
-  </div>`;
-}
-
 export function renderMatrixAppearanceSettings(
   config,
   onChange,
@@ -553,20 +505,6 @@ export const sharedEditorStyles = css`
   .yc-settings-box .yc-settings-box > .yc-settings-box-title {
     font-size: 0.95em;
     margin-bottom: 8px;
-  }
-  .experimental-availability {
-    border-left: 3px solid var(--primary-color, #03a9f4);
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    color: var(--secondary-text-color, #666);
-    font-size: 13px;
-    overflow-wrap: anywhere;
-  }
-  .experimental-availability strong {
-    color: var(--primary-text-color, #333);
-  }
-  .experimental-availability p {
-    margin: 6px 0 0;
   }
   /* What a setting is for, under its label (e.g. the lamp picker's). */
   .hint {

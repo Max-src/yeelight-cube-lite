@@ -23,10 +23,8 @@ from .const import (
     DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
-    EXPERIMENTAL_CLOCK_STYLE_IDS,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
-    EXTENDED_NATIVE_EFFECTS,
     canonical_clock_style_name,
     canonical_effect_name,
     MATRIX_DISPLAY_MODES,
@@ -35,7 +33,8 @@ from .const import (
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTIONS,
-    NATIVE_EFFECTS,
+    ANIMATION_LAYOUTS,
+    DEFAULT_ANIMATION_LAYOUT,
     DEFAULT_POWER_ON_STATE,
     POWER_ON_STATES,
 )
@@ -136,6 +135,14 @@ SETTING_SELECTS = (
         "font_select", "_font",
         {key: key.capitalize() for key in FONT_MAPS}, "basic",
         "set_font", "_font_select_entity", translation_key="font",
+    ),
+    # How the four animations are laid out in the GIF the lamp stores:
+    # upright, or as the Yeelight app sends its own (const.ANIMATION_LAYOUTS).
+    SettingSelect(
+        "animation_layout", "_animation_layout", dict(ANIMATION_LAYOUTS),
+        DEFAULT_ANIMATION_LAYOUT, "async_set_animation_layout",
+        "_animation_layout_select_entity", translation_key="animation_layout",
+        category=EntityCategory.CONFIG,
     ),
     # The 4-way physical mount (the official app's picker and the lamp
     # preview card's rotation); it replaced the "Flip Orientation" switch.
@@ -611,18 +618,11 @@ class YeelightCubeClockStyleSelect(CubeSelect):
 
     @property
     def options(self) -> list[str]:
-        if getattr(self._light_entity, "_extended_effects_enabled", False):
-            # Show every style sorted by mixer (the background mode).
-            style_ids = sorted(
-                NATIVE_CLOCK_STYLES,
-                key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"],
-            )
-        else:
-            style_ids = [
-                style_id
-                for style_id in NATIVE_CLOCK_STYLES
-                if style_id not in EXPERIMENTAL_CLOCK_STYLE_IDS
-            ]
+        # Every style, sorted by mixer (the background mode).
+        style_ids = sorted(
+            NATIVE_CLOCK_STYLES,
+            key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"],
+        )
         current = getattr(
             self._light_entity,
             "_native_clock_style",
@@ -652,11 +652,6 @@ class YeelightCubeClockStyleSelect(CubeSelect):
         if style_id is None:
             _LOGGER.error("[CLOCK STYLE] Unknown option: '%s'", option)
             return
-        if (
-            style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
-            and not getattr(self._light_entity, "_extended_effects_enabled", False)
-        ):
-            raise invalid("experimental_required", name=option)
 
         self._light_entity._native_clock_style = style_id
         # Speed and intensity follow the style's background.
@@ -681,17 +676,16 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
 
     @property
     def options(self) -> list:
-        # Extended (hidden) effects only appear when the switch is on; the
-        # currently-selected effect is always kept so HA never warns about an
-        # out-of-list value if the switch is toggled off while one is active.
-        if getattr(self._light_entity, "_extended_effects_enabled", False):
-            # Show the full catalogue sorted by built-in mode number.
-            names = sorted(
-                ALL_NATIVE_EFFECTS,
-                key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"],
-            )
-        else:
-            names = list(NATIVE_EFFECTS)
+        # Every effect, sorted by built-in mode number. The animations to
+        # upload only while a server delivers the Yeelight commands (the
+        # stored GIF itself always); the current effect is always kept so HA
+        # never warns about an out-of-list value.
+        animations = getattr(self._light_entity, "animations_available", False)
+        names = sorted(
+            (name for name, spec in ALL_NATIVE_EFFECTS.items()
+             if animations or not spec.get("animation")),
+            key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"],
+        )
         current = getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
         if current not in names:
             names.append(current)
@@ -713,11 +707,10 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
         option = canonical_effect_name(option)
         if option not in ALL_NATIVE_EFFECTS:
             raise ValueError(f"Unknown native effect: {option}")
-        if (
-            option in EXTENDED_NATIVE_EFFECTS
-            and not getattr(self._light_entity, "_extended_effects_enabled", False)
+        if ALL_NATIVE_EFFECTS[option].get("animation") and not getattr(
+            self._light_entity, "animations_available", False
         ):
-            raise invalid("experimental_required", name=option)
+            raise invalid("animation_needs_matter")
         self._light_entity._native_effect = option
         if self._light_entity._native_effect_direction_select_entity:
             self._light_entity._native_effect_direction_select_entity.async_update_from_light()

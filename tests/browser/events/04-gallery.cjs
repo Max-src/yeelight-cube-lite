@@ -669,7 +669,16 @@ module.exports = async (t) => {
     await page.locator(`yeelight-cube-clock-card .yc-gallery-tools [data-value="${value}"]`).click();
     await page.waitForTimeout(100);
   };
-  await clockGrid({ items_per_page: 0 });
+  // The lamp's 10 styles and the custom one, in the card's order: two
+  // families.
+  const lampStyles = {
+    custom_visible_styles: true,
+    visible_styles: [
+      "Spectrum", "Waves", "Rainbow", "White", "Mint", "Yellow", "Pink", "Red",
+      "Cyan", "Purple", "custom:mine",
+    ],
+  };
+  await clockGrid({ ...lampStyles, items_per_page: 0 });
   const all = await familyState();
   assert.deepEqual(all.toggles, ["all", "waves", "still"], "the families this card has");
   assert.ok(all.shown.includes("custom:mine"));
@@ -694,7 +703,7 @@ module.exports = async (t) => {
   assert.ok(state.shown.includes("White") && state.shown.includes("custom:mine"));
   assert.ok(!state.shown.includes("Rainbow"));
   // Remembered per kind of card, in this browser.
-  await clockGrid({ items_per_page: 0 });
+  await clockGrid({ ...lampStyles, items_per_page: 0 });
   assert.ok(!(await familyState()).shown.includes("Rainbow"), "the pick is remembered");
   assert.equal(
     await page.evaluate(() => localStorage.getItem("yeelight_cube_effect_family")),
@@ -715,7 +724,7 @@ module.exports = async (t) => {
     "all",
   );
   // Leaving a family turns to the page of the active style.
-  await clockGrid({ items_per_page: 2 });
+  await clockGrid({ ...lampStyles, items_per_page: 2 });
   await pick("waves");
   await pick("all");
   const activeShown = await page.evaluate(() => {
@@ -752,13 +761,13 @@ module.exports = async (t) => {
   assert.equal(await page.evaluate(() => card._searchQuery), "");
   // Off, or with no gallery to show it: every style, whatever was picked.
   await page.evaluate(() => localStorage.setItem("yeelight_cube_clock_family", "still"));
-  await clockGrid({ items_per_page: 0, show_family_filter: false });
+  await clockGrid({ ...lampStyles, items_per_page: 0, show_family_filter: false });
   state = await familyState();
   assert.deepEqual(state.toggles, []);
   assert.deepEqual(state.shown, all.shown);
-  await page.evaluate(() => {
-    card.setConfig({ ...card.config, show_family_filter: true, show_gallery: false });
-  });
+  await page.evaluate((lampStyles) => {
+    card.setConfig({ ...card.config, ...lampStyles, show_family_filter: true, show_gallery: false });
+  }, lampStyles);
   assert.equal(
     await page.evaluate(() => card._controls.adapter.navigationItems().length),
     all.next.length,

@@ -22,15 +22,16 @@ export const EFFECT_FAMILY_NAMES = {
     "Rotating colour bands", "Triangular palette pulses", "Sine wave",
     "Sunrise and sunset", "Scrolling bands", "Palette cross-fade", "Rainbow",
     "Waves", "Violet interference", "Night-amber waves", "Night-sky waves",
-    "Neon sine bands",
+    "Neon sine bands", "Daydream",
   ],
   glow: [
     "Aurora", "Heat fire", "Rising wisps", "Fire", "Rainbow noise", "Flower Sea",
     "Navy-white noise", "Magic", "Wonderland", "Kaleidoscope", "Palette",
+    "Halloween glow", "Moonlit clouds",
   ],
   sparkles: [
     "Starry Sky", "Particle path", "Fireworks", "Palette sparks", "Flicker sweep",
-    "Particle glows", "Centre bursts", "Violet twinkles",
+    "Particle glows", "Centre bursts", "Violet twinkles", "Snowfall",
   ],
   motion: [
     "Dual scan", "Palette trails", "Drop and bounce", "Stacking blocks",

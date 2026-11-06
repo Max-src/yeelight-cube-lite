@@ -113,7 +113,15 @@ def node_json(script: str):
 
 class EffectNameTableTests(unittest.TestCase):
     def test_every_slot_has_the_lamps_name_once(self):
-        self.assertEqual(LAMP_NAMES, {spec["mode"]: name for name, spec in ALL.items()})
+        # The animations to upload play as the stored GIF (slot 71): no slot's.
+        self.assertEqual(
+            LAMP_NAMES,
+            {spec["mode"]: name for name, spec in ALL.items() if not spec.get("animation")},
+        )
+        self.assertEqual(
+            set(CONSTANTS["LAMP_ANIMATION_EFFECTS"]),
+            {name for name, spec in ALL.items() if spec.get("animation")},
+        )
         self.assertEqual(len(LAMP_NAMES), len(set(LAMP_NAMES.values())))
         self.assertEqual("Ribbon", CONSTANTS["DEFAULT_NATIVE_EFFECT"])
 
@@ -189,9 +197,8 @@ class EffectNameTableTests(unittest.TestCase):
             name = LAMP_NAMES[slot]
             # Vivid's row (command id 64), as for Rainbow.
             self.assertEqual(12, clock(name, 128, None, "red_blue")["selector"], name)
-        # The cards list every one of them but the stored GIF, for now.
-        light = (ROOT / "light.py").read_text(encoding="utf-8")
-        self.assertIn('if spec["mode"] != LAMP_STORED_GIF_SLOT', light)
+        # The stored GIF is listed like the official effects.
+        self.assertFalse(ALL[LAMP_NAMES[CONSTANTS["LAMP_STORED_GIF_SLOT"]]].get("extended"))
 
 
 @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
@@ -258,7 +265,7 @@ class CardTableTests(unittest.TestCase):
         )
         for family, names in self.js["families"].items():
             for name in names:
-                self.assertEqual(family, CONSTANTS["EFFECT_FAMILY_OF_SLOT"][ALL[name]["mode"]], name)
+                self.assertEqual(family, CONSTANTS["effect_family"](ALL[name]), name)
         # Every effect has its family there, for the clock styles over it too.
         self.assertEqual(set(ALL), {name for names in self.js["families"].values() for name in names})
 
@@ -269,7 +276,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_set_native_effect_takes_a_former_name(self):
         target = SimpleNamespace(
             _native_effect="Ribbon", _native_effect_speed=128, _native_effect_direction="Right",
-            _extended_effects_enabled=True, _is_on=True, _mode="Clock",
+            _is_on=True, _mode="Clock",
             _custom_draw_active=False, _native_effect_speed_entity=None,
             _should_auto_turn_on=lambda: False, async_apply_display_mode=AsyncMock(),
             _refresh_linked_entities=Mock(), async_write_ha_state=Mock(),
@@ -280,6 +287,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": ALL,
              "canonical_effect_name": canonical_effect_name,
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
+             "NATIVE_COLOR_MODES": CONSTANTS["NATIVE_COLOR_MODES"],
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
              "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
              "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: [target],
@@ -295,7 +303,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_clock_style_takes_a_former_name_and_a_number_is_an_id(self):
         light = SimpleNamespace(
-            _is_on=True, _mode="Clock", _extended_effects_enabled=True,
+            _is_on=True, _mode="Clock",
             _native_clock_style=6, _refresh_linked_entities=Mock(),
             async_write_ha_state=Mock(), async_apply_display_mode=AsyncMock(),
             _should_auto_turn_on=lambda: True,
@@ -479,10 +487,16 @@ class SelectTests(unittest.TestCase):
             _native_effect_direction_select_entity=None,
             _native_effect_speed_entity=None, _is_on=True,
         )
-        self.light._extended_effects_enabled = True
 
     def test_the_effect_dropdown(self):
         select = self.select["YeelightCubeNativeEffectSelect"](self.light, None)
+        # The animations only while a server delivers the Yeelight commands.
+        self.light.animations_available = False
+        self.assertEqual(
+            sorted((n for n in ALL if not ALL[n].get("animation")), key=lambda n: ALL[n]["mode"]),
+            select.options,
+        )
+        self.light.animations_available = True
         self.assertEqual(sorted(ALL, key=lambda n: ALL[n]["mode"]), select.options)
         for alias, name in FORMER_NAMES.items():
             select._valid_option_or_raise(alias)
@@ -556,7 +570,7 @@ class StoredListTests(unittest.IsolatedAsyncioTestCase):
             [item["name"] for item in light._rotation_items],
         )
         light.stop_effect_rotation()
-        native = make_light(helpers, kind="native", extended=True)
+        native = make_light(helpers, kind="native")
         await native.start_effect_rotation(["Streamer", "Pulse", "7"], 604800)
         self.assertEqual(
             ["Ribbon", "Sunrise and sunset", "Dual scan"],

@@ -25,6 +25,8 @@ from .const import (
     LAN_PORT,
     clock_style_colors,
     DEFAULT_MATRIX_DISPLAY_MODE,
+    ANIMATION_LAYOUTS,
+    DEFAULT_ANIMATION_LAYOUT,
     DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
@@ -37,10 +39,9 @@ from .const import (
     clock_segment_modes,
     DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
-    EFFECT_FAMILY_OF_SLOT,
+    effect_family,
     NATIVE_EFFECTS,
     BUTTON_CLOCK_PREFIX,
-    LAMP_STORED_GIF_SLOT,
     canonical_button_effect_name,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
@@ -100,22 +101,24 @@ LAMP_POWER_SAMPLES = 6
 _ENTITY_REGISTRY = {}
 
 
-@functools.lru_cache(maxsize=8)
-def _native_effect_catalog(extended_enabled: bool, playing_extended: str | None) -> list:
+@functools.lru_cache(maxsize=16)
+def _native_effect_catalog(playing: str | None, animations: bool = False) -> list:
     """The native effects the cards list (11 KB): built once per
-    combination instead of on every state write. Shared, never modified."""
+    combination instead of on every state write. Shared, never modified.
+    Every effect is listed; ``extended`` only marks those the Yeelight app
+    does not offer (the cards' badge). ``animations``: whether the animations
+    to upload (LAMP_ANIMATION_EFFECTS) are offered, while a server delivers
+    the Yeelight commands; one that plays stays listed (``playing``)."""
     return [
         {"name": name, "speed": bool(spec.get("speed")),
          "intensity": bool(spec.get("intensity")),
          "directions": list(spec.get("directions", ())),
          "extended": bool(spec.get("extended")),
-         "family": EFFECT_FAMILY_OF_SLOT[spec["mode"]],
+         "family": effect_family(spec),
+         **({"animation": spec["animation"]} if spec.get("animation") else {}),
          "preview": True}
         for name, spec in ALL_NATIVE_EFFECTS.items()
-        # Not the stored GIF for now: nothing can read it back to preview (the
-        # effect selector still offers it).
-        if spec["mode"] != LAMP_STORED_GIF_SLOT
-        and (not spec.get("extended") or extended_enabled or name == playing_extended)
+        if not spec.get("animation") or animations or name == playing
     ]
 
 
@@ -305,10 +308,15 @@ class YeelightCubeLight(
         self._native_effect_color_mode = "normal"
         self._native_effect_color = None
         self._native_effect_direction = DEFAULT_NATIVE_EFFECT_DIRECTION
-        # Reveal built-in effects that the official app never exposed.
-        self._extended_effects_enabled = bool(config_entry.options.get("extended_effects_enabled", False))
         self._music_flow_enabled = False
         self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
+        # The GIF the lamp stores, when this integration put it there
+        # (light_native._store_animation): the animation, for which mount, and
+        # whether an upload was interrupted since (the next one goes twice).
+        self._stored_gif = {"animation": None, "upside_down": False, "interrupted": False}
+        # How the animations are laid out in that GIF (const.ANIMATION_LAYOUTS).
+        self._animation_layout = DEFAULT_ANIMATION_LAYOUT
+        self._animation_layout_select_entity = None
         self._music_flow_restore_power = None
         self._power_on_state = DEFAULT_POWER_ON_STATE
         self._button_effects = []
@@ -411,7 +419,6 @@ class YeelightCubeLight(
         self._native_effect_direction_select_entity = None
         self._native_effect_speed_entity = None
         self._native_effect_intensity_entity = None
-        self._extended_effects_switch_entity = None
         self._music_flow_effect_select_entity = None
         self._power_on_state_select_entity = None
         self._device_orientation_select_entity = None
@@ -620,6 +627,7 @@ class YeelightCubeLight(
         if orientation not in (ORIENTATION_NORMAL, ORIENTATION_FLIPPED):
             _LOGGER.error("Invalid orientation value: %s", orientation)
             return
+        self._turn_published_picture(orientation)
         self._orientation = orientation
         # Keep the 4-way device orientation consistent (normal->right,
         # flipped->left) so the Device Orientation select reflects legacy calls.
@@ -630,6 +638,18 @@ class YeelightCubeLight(
         await self.async_apply_display_mode(update_type='text_change')
         if self.hass is not None:
             self.async_schedule_update_ha_state()
+
+    def _turn_published_picture(self, flip: str) -> None:
+        """Publish the picture the integration draws (matrix_colors) as the
+        redraw for the ``flip`` about to be set will draw it: a half turn,
+        the reverse of the frame (light_render._flip_position). The state is
+        written before that redraw (the lamp's rotation report over Matter):
+        the new orientation with the old picture showed it a moment in the
+        wrong place on the cards and the camera."""
+        if flip == self._orientation or self.lamp_draws_matrix:
+            return
+        if self._base_matrix_colors:
+            self._base_matrix_colors = self._base_matrix_colors[::-1]
 
     @property
     def device_orientation(self):
@@ -653,6 +673,7 @@ class YeelightCubeLight(
         if orientation not in DEVICE_ORIENTATIONS:
             _LOGGER.error("Invalid device orientation value: %s", orientation)
             return
+        self._turn_published_picture(DEVICE_ORIENTATION_TO_FLIP[orientation])
         self._device_orientation = orientation
         # Drive the matrix/text/pixel flip (normal vs 180 deg).
         self._orientation = DEVICE_ORIENTATION_TO_FLIP[orientation]
@@ -821,13 +842,14 @@ class YeelightCubeLight(
             "native_effect_direction": self._native_effect_direction,
             "effect_direction_own": True,
             "native_effect_catalog": _native_effect_catalog(
-                self._extended_effects_enabled,
-                # An experimental effect still listed while it plays.
+                # An animation still listed while it plays.
                 self._native_effect
-                if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("extended")
+                if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
                 else None,
+                self.animations_available,
             ),
-            "extended_effects_enabled": self._extended_effects_enabled,
+            "stored_gif": self._stored_gif,
+            "animation_layout": self._animation_layout,
             "music_flow_enabled": self._music_flow_enabled,
             "music_flow_effect": self._music_flow_effect,
             "music_flow_restore_power": self._music_flow_restore_power,
@@ -944,14 +966,6 @@ class YeelightCubeLight(
         for module, rgb in zip(self._layout.device_layout, frame):
             module.data = [rgb_to_hex(rgb)]
 
-    def set_extended_effects_enabled(self, enabled: bool) -> None:
-        self._extended_effects_enabled = enabled
-        if self._config_entry.options.get("extended_effects_enabled") is not enabled:
-            self.hass.config_entries.async_update_entry(
-                self._config_entry,
-                options={**self._config_entry.options, "extended_effects_enabled": enabled},
-            )
-
 
     async def async_added_to_hass(self):
         _LOGGER.debug("[INIT] async_added_to_hass called for %s", self._lamp_name)
@@ -984,7 +998,7 @@ class YeelightCubeLight(
         
         _LOGGER.debug("[INIT] Initial state - custom_text: '%s', mode: '%s', is_on: %s, brightness: %s", self._custom_text, self._mode, self._is_on, self._brightness)
         old_state = await self.async_get_last_state()
-        self._restore_extended_effects(old_state)
+        self._drop_extended_effects_option()
         _LOGGER.debug("[RESTORE] old_state exists: %s", old_state is not None)
         if old_state:
             self._restore_state(old_state)
@@ -1000,8 +1014,7 @@ class YeelightCubeLight(
         self.async_schedule_update_ha_state()
         # Push freshly restored values to every linked helper entity. On a
         # reload (e.g. a DHCP IP change) a helper may have been added before
-        # this restore ran; without this its control shows the default — the
-        # cause of the Experimental Features switch reverting to off.
+        # this restore ran; without this its control shows the default.
         self._refresh_linked_entities()
         # The lamp's Matter node, when it has one (light_matter.py): after the
         # restore, so the lamp's reports apply to the restored state.
@@ -1462,6 +1475,25 @@ class YeelightCubeLight(
         # over TCP or UDP, for any property. The component's own state is the
         # only source of truth.
 
+    async def async_set_animation_layout(self, layout: str) -> None:
+        """Lay the animations out upright or as the Yeelight app sends its
+        GIFs (const.ANIMATION_LAYOUTS). An animation playing is uploaded
+        again in the new layout."""
+        if layout not in ANIMATION_LAYOUTS:
+            raise ValueError(f"Unsupported animation layout: {layout}")
+        if layout == self._animation_layout:
+            return
+        self._animation_layout = layout
+        if self.hass is not None:
+            self.async_write_ha_state()
+        if (
+            self._mode == MODE_NATIVE_EFFECT
+            and ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
+        ):
+            await self.async_apply_display_mode(update_type="color_change")
+            if self.hass is not None:
+                self.async_write_ha_state()
+
     async def async_set_power_on_state(self, option: str) -> None:
         """Set the Cube Lite's power recovery behavior."""
         if option not in POWER_ON_STATES:
@@ -1544,9 +1576,9 @@ class YeelightCubeLight(
 
     def _refresh_linked_entities(self):
         """Push the current state out to the lamp's controls (every
-        CubeControlEntity registers in _control_entities) and the
-        Experimental Features switch, so they reflect restored values."""
-        for ref in (*self._control_entities, self._extended_effects_switch_entity):
+        CubeControlEntity registers in _control_entities), so they reflect
+        restored values."""
+        for ref in self._control_entities:
             if ref is not None and getattr(ref, "hass", None) is not None:
                 update = getattr(ref, "async_update_from_light", None)
                 if update:
