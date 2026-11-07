@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] - 2026-11-07
 
 ### Fixed
 - **Lamp mounted answers at once:** choosing it waited for the lamp's own
@@ -88,6 +88,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Breathing, Blossom, Note and Impact were marked Experimental; the app offers
   them. (The clock styles over them stay Experimental: the app's clock offers
   none of them.)
+- The physical button's playlist sends an effect's direction the way activating
+  it does: effects with their own direction mapping (Fire, Rainbow and
+  others) ran differently from the button than from Home Assistant.
+- Experimental effects 28 and 51 stay under the speed that would crash them
+  (254 and 239), as effects and as clock backgrounds.
+- The Lamp Preview card no longer fades Fireworks' pixels: the 0.2 s fade could
+  not keep up, so they showed old colors, partly see-through (pale on a white
+  background, dim on black). Other pictures and effects keep the fade.
+- After a power cut or a restart, a lamp Matter saw another app or a button
+  change (a color, an effect) keeps what it restored itself instead of being
+  redrawn with Home Assistant's content; the next command from Home Assistant
+  takes it back.
 
 ### Added
 - **Palette color mode for effects and the clock:** the Native Effects and
@@ -187,10 +199,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Stored GIF, ...) were only in the effect dropdown. The Native Effects and
   Clock cards now list them and the clock styles over them, with a preview,
   a category, favourites, rotation and custom colors, like the other
-  experimental effects: 70 effects and 72 clock styles in all with
-  Experimental Features on. Stored GIF, which plays the GIF kept in the lamp,
-  is not listed yet: nothing can read it back to preview, and the effect and
-  clock style dropdowns still offer it. Which of them take
+  experimental effects. Which of them take
   a custom color, B&W or a palette was not checked
   on a lamp yet. A clock over one of them now takes the clock's
   palette like any other, except over the five that draw their own colors,
@@ -385,20 +394,6 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   keep their ids, and a lamp left on one of these comes back on the default.
 - The raw debug action `send_fx_effect` refuses a slot past 81, and a speed above
   a slot's limit, both of which crash the lamp.
-
-### Fixed
-- The physical button's playlist sends an effect's direction the way activating
-  it does: effects with their own direction mapping (Fire, Rainbow and
-  others) ran differently from the button than from Home Assistant.
-- Experimental effects 28 and 51 stay under the speed that would crash them
-  (254 and 239), as effects and as clock backgrounds.
-- The Lamp Preview card no longer fades Fireworks' pixels: the 0.2 s fade could
-  not keep up, so they showed old colors, partly see-through (pale on a white
-  background, dim on black). Other pictures and effects keep the fade.
-- After a power cut or a restart, a lamp Matter saw another app or a button
-  change (a color, an effect) keeps what it restored itself instead of being
-  redrawn with Home Assistant's content; the next command from Home Assistant
-  takes it back.
 
 ## [1.4.0] - 2026-10-30
 
