@@ -157,7 +157,7 @@ export function actionButtonModel({
     : action;
   return {
     ...options,
-    className: `${getActionButtonClass(resolvedAction, options.buttonStyle)} shared-action-button${stateful ? " action-state" : ""}${compact ? " action-compact" : ""}${busy ? " action-busy" : ""}${fill ? " btn-fill" : ""}`,
+    className: `${getActionButtonClass(resolvedAction, options.buttonStyle)} shared-action-button${stateful ? " action-state" : ""}${currentValue ? " action-value" : ""}${compact ? " action-compact" : ""}${busy ? " action-busy" : ""}${fill ? " btn-fill" : ""}`,
     icon: busy ? "mdi:loading" : state?.icon || icon,
     label: busy ? busyLabel : state?.label || label,
     title: busy ? busyLabel : state?.title || title || state?.label || label,
@@ -893,11 +893,16 @@ export const actionButtonStyles = `
       0 0 0 2px var(--card-background-color, #fff),
       0 0 0 4px var(--primary-color, #1976d2) !important;
   }
-  /* Stateful group buttons reuse the shared tool/tool-active look (see the
-     .tool-btn rules above) so every style keeps its identity. Neutralise the
-     tool-active scale AND outer ring so selected/unselected stay the same box
-     size - only the fill changes. */
-  .shared-button-group .tool-btn.tool-active {
+  /* Stateful group buttons (color modes, families, sort, the clock's
+     content) reuse the shared tool/tool-active look (the .tool-btn rules
+     above), halo included, like the direction and Lamp mounted buttons. A
+     switch that shows its value (12-hour / 24-hour) is no choice among
+     others: no halo. A group's selected button keeps its size (no scale). */
+  .shared-button-group .tool-btn.tool-active,
+  .gc-selector .shared-action-button.tool-active {
+    transform: none;
+  }
+  .shared-action-button.action-value.tool-active {
     transform: none;
     box-shadow: none;
   }

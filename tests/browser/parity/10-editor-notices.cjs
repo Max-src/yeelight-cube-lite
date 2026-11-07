@@ -36,6 +36,9 @@ module.exports = async (t) => {
       editor._open = { effects: true };
       editor.requestUpdate();
       await editor.updateComplete;
+      // The list opens with Customize (folded to one line).
+      editor.shadowRoot.querySelector(".yc-item-list-summary button")?.click();
+      await editor.updateComplete;
       // Rows are rename fields: the built-in label is their placeholder.
       const placeholders = [
         ...editor.shadowRoot.querySelectorAll(".orderable-list-rename"),

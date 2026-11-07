@@ -208,13 +208,8 @@ export const selectorSharedStyles = `
     border-radius: 999px !important;
   }
 
-  /* Text selector buttons reuse the shared action-button look. Match the
-     color-mode radio group: neutralise the tool-active ring/scale so only the
-     fill changes when selected. */
-  .gc-selector .shared-action-button.tool-active {
-    transform: none;
-    box-shadow: none;
-  }
+  /* Text selector buttons reuse the shared action-button look, the
+     selected one's halo included (like the color modes). */
   .gc-preview-shell[data-shape="square"] .gallery-item,
   .gc-preview-shell[data-shape="square"] .gallery-item:hover,
   .gc-preview-shell[data-shape="square"] .wheel-item,

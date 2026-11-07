@@ -82,6 +82,7 @@ import {
   isLampRendered,
 } from "./lamp-renderers.js";
 import { FamilyFilter, GallerySort, familyBadge } from "./effect-families.js";
+import { ITEM_BADGES } from "./item-badges.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { itemLabel, normalizeCardOptions } from "./card-config.js";
 
@@ -537,9 +538,13 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._apply(name);
   }
 
-  _effectBadge(item) {
-    const kind = item.extended ? "Experimental" : "Official";
-    return item.directions?.length ? `${kind} · Directional` : kind;
+  // What an effect is, as icons (item-badges.js): Official or Experimental,
+  // and Directional when its direction can be chosen.
+  _effectBadges(item) {
+    return [
+      item.extended ? ITEM_BADGES.experimental : ITEM_BADGES.official,
+      ...(item.directions?.length ? [ITEM_BADGES.directional] : []),
+    ];
   }
 
   _matrix(effect, current = false) {
@@ -964,7 +969,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ...item,
         dataMode: item.name,
         title: item.name,
-        badge: this._effectBadge(item),
+        badges: this._effectBadges(item),
         // Its family's icon under the preview (a flame, a sparkle...).
         badgeIcon: this.config.show_family_icons === false ? null : familyBadge(item.family),
         colorData: nativeEffectFrame(item, attrs, 0),

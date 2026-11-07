@@ -63,6 +63,12 @@ module.exports = async (t) => {
           section.click();
           await editor.updateComplete;
         }
+        // Folded to one line until Customize opens it.
+        const folded = !editor.shadowRoot.querySelector(".collection-thumb");
+        for (const button of editor.shadowRoot.querySelectorAll(".yc-item-list-summary button")) {
+          button.click();
+          await editor.updateComplete;
+        }
         const rows = () =>
           [
             ...editor.shadowRoot.querySelectorAll(".orderable-list-row"),
@@ -86,8 +92,9 @@ module.exports = async (t) => {
           injected: !!editor.shadowRoot.querySelector(
             ".orderable-list-row b",
           ),
-          // Every row shown (the editor scrolls, not the list).
-          full: getComputedStyle(list).maxHeight === "none",
+          folded,
+          // Opened, a long list scrolls instead of stretching the editor.
+          capped: getComputedStyle(list).maxHeight !== "none",
         };
         rows()[0]
           .querySelector(`button[title="${config.button || "Move down"}"]`)
@@ -112,8 +119,8 @@ module.exports = async (t) => {
   );
   assert.deepEqual(
     paletteArrange.shape,
-    { remove: false, add: false, matrix: 0, injected: false, full: true },
-    "arrange: order only, names as text, every row shown",
+    { remove: false, add: false, matrix: 0, injected: false, folded: true, capped: true },
+    "arrange: order only, names as text, folded until Customize, then scrolling",
   );
   assert.deepEqual(
     paletteArrange.after,

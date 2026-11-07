@@ -84,6 +84,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   colors now updates the previews of effects and clocks in the Palette color
   mode straight away, without waiting for the lamp (which can take a moment,
   or refuse).
+- **The Yeelight app's music effects are Official:** Music Spectrum, Gather,
+  Breathing, Blossom, Note and Impact were marked Experimental; the app offers
+  them. (The clock styles over them stay Experimental: the app's clock offers
+  none of them.)
 
 ### Added
 - **Palette color mode for effects and the clock:** the Native Effects and
@@ -135,7 +139,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   name (🌊 🔥 ✨ ▶️ 🎵 🖼️). Two switches named **Show effect family icon**
   turn them off: the browser's (`show_family_icons`) and the Favourites
   section's (`favourites_show_family_icons`; without animated previews the
-  icon is the favourite button's own).
+  icon is the favourite button's own). The Clock card shows them the same
+  way for its styles (the family of the effect behind the digits; solid
+  colors and custom styles are Still), with the same two switches, named
+  **Show style family icon**.
 - **Lamp mounted on the Clock card:** the same Right / Down / Left / Up
   buttons as the Native Effects card, shown when a Matter server that sends
   Yeelight commands lets them reach the clock of one of the card's lamps
@@ -213,6 +220,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   card's choice. The editor can hide it.
 
 ### Changed
+- **Type icons instead of labels:** Official, Experimental, Directional and
+  Custom are small icons next to the family icon, named when you hover them,
+  in every gallery layout (the Experimental 🧪 and Custom ✏️ emojis in the
+  dropdown and text buttons). `show_badges` (**Show effect / style type
+  icons**) hides them. In the Original grid and list and in the carousel they
+  sit on the name's line when there is room.
+- **Favourites show their color mode:** an icon (or the custom color's
+  swatch) after the name, named when you hover it, instead of "(Normal)".
+- **Normal is now Default** in the color modes.
+- **Selected buttons look the same everywhere:** color modes, families, sort
+  and the clock's content buttons get the selected halo the direction and
+  Lamp mounted buttons have.
+- **Effect direction and Lamp mounted are titled like the sliders:** the
+  title above, on the left.
+- **Shorter settings hints:** one sentence each.
+- **The editors' long lists are folded:** effects, clock styles, official
+  pixel arts, and the Arrange lists of your pixel arts and palettes show one
+  line ("All 89 styles shown"); Customize opens the list, which scrolls
+  instead of stretching the editor.
+- The Clock card's gallery no longer has its own "Clock style" title, like
+  the Native Effects card's.
 - **No more Experimental Features switch:** every effect and clock style is
   offered, on the cards, in the dropdowns, in the services and in rotations.
   The switch is removed from each lamp's controls, with its setting and its

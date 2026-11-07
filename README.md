@@ -1503,7 +1503,7 @@ native-effect favourites. Both rotations share the same server-side lifecycle.
 Enable `show_color_modes` on the Native Effects Card for **Color Modes &
 Controls**. Its button/dropdown presentation and settings are shared with the
 Clock Card. Only hardware-confirmed palettes for the selected effect are offered:
-Normal, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
+Default, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
 supported.
 
 **Palette** gives an effect the colors of the lamp's palette, the one loaded

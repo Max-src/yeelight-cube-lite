@@ -313,6 +313,10 @@ DEFAULT_CLOCK_COLOR_MODE = "normal"
 # is no lamp preset: the colors are sent (lamp_renderers.palette_words).
 PALETTE_COLOR_MODE = "palette"
 NATIVE_COLOR_MODES = (*CLOCK_COLOR_MODES, PALETTE_COLOR_MODE)
+# The slots the Yeelight app offers as its music modes (Spectrum, Gather,
+# Breathing, Blossom, Music Note, Impact: PALETTE_MUSIC_FLOWS): started like
+# the other slots, but official (not ``extended``: the cards' badge).
+APP_MUSIC_SLOTS = frozenset({41, 43, 44, 45, 73, 74})
 EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES[mode]: {
         "effect_id": _EXTENDED_EFFECT_IDS.get(mode, EXTENDED_EFFECT_COMMAND_ID),
@@ -321,7 +325,7 @@ EXTENDED_NATIVE_EFFECTS = {
         **({"intensity": True} if mode in LAMP_INTENSITY_SLOTS else {}),
         **({} if mode in _EXTENDED_EFFECT_NO_DIRECTION else {"directions": NATIVE_EFFECT_DIRECTIONS}),
         **({"colors": _EXTENDED_EFFECT_COLORS[mode]} if mode in _EXTENDED_EFFECT_COLORS else {}),
-        "extended": True,
+        "extended": mode not in APP_MUSIC_SLOTS,
     }
     for mode in range(1, LAMP_ANIMATION_SLOTS)
     if mode not in _OFFICIAL_EFFECT_MODES and mode not in LAMP_DEAD_END_SLOTS

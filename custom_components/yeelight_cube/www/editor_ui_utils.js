@@ -9,7 +9,7 @@ import {
   createYeelightCubeEntityPicker,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
-import { html, css } from "./lib/lit-all.js";
+import { html, css, nothing } from "./lib/lit-all.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -29,6 +29,10 @@ import {
 } from "./user-collections.js";
 import { withItemLabel } from "./card-config.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
+
+// A folded list (YeelightEditorMixin._foldedList), opened, scrolls past this
+// height (px).
+const FOLDED_LIST_HEIGHT = 360;
 
 /**
  * Canonical shape option triad shared by every shape selector in the editors
@@ -55,7 +59,7 @@ export const BG_COLOR_CHOICES = [
 export const SPACING_CHOICES = [
   { value: "none", label: "None" },
   { value: "subtle", label: "Subtle" },
-  { value: "normal", label: "Normal" },
+  { value: "normal", label: "Default" },
 ];
 
 export function renderMatrixAppearanceSettings(
@@ -338,11 +342,12 @@ export const YeelightEditorMixin = (Base) =>
     }) {
       return renderSettingsBox(
         title || `${noun.charAt(0).toUpperCase()}${noun.slice(1)}s`,
-        html`<div class="hint">
-            Shown in this order. Edit a name to rename it on this card;
-            "${resetLabel}" brings the list back.
-          </div>
+        this._foldedList(
+          noun,
+          `${items.length === all.length ? `All ${all.length}` : `${items.length} of ${all.length}`} ${noun}s shown`,
+          () => html`<div class="hint">Shown in this order; edit a name to rename it on this card.</div>
           ${renderOrderableList({
+            maxHeight: FOLDED_LIST_HEIGHT,
             items,
             available: all.filter((key) => !items.includes(key)),
             labelFor,
@@ -354,7 +359,28 @@ export const YeelightEditorMixin = (Base) =>
             addPlaceholder: `Add a ${noun}…`,
             resetLabel,
           })}`,
+        ),
       );
+    }
+
+    /**
+     * A long list folded to one line (`summary`) until Customize opens it
+     * (`content()`, scrolling past FOLDED_LIST_HEIGHT): the order and
+     * visibility of effects, clock styles, pixel arts and palettes. `id`
+     * keeps each list's own open state.
+     */
+    _foldedList(id, summary, content) {
+      const open = (this._openItemLists ||= new Set()).has(id);
+      const toggle = () => {
+        open ? this._openItemLists.delete(id) : this._openItemLists.add(id);
+        this.requestUpdate();
+      };
+      return html`<div class="yc-item-list-summary">
+          <span>${summary}</span>
+          <button type="button" class="orderable-reset-btn" aria-expanded=${String(open)} @click=${toggle}>
+            ${open ? "Done" : "Customize"}
+          </button>
+        </div>${open ? content() : nothing}`;
     }
 
     /**
@@ -380,13 +406,13 @@ export const YeelightEditorMixin = (Base) =>
       const items = store.items(this._hass, this._config);
       return renderSettingsBox(
         `Arrange ${noun}s`,
-        html`<div class="hint">
-            The order of your ${noun}s on every card and lamp. Drag a ${noun},
-            or use ▲ ▼ (one step) and ⤒ ⤓ (to the top or the bottom): each
-            move is saved at once.
-          </div>
-          ${items.length
-            ? renderOrderableList({
+        items.length
+          ? this._foldedList(
+              `arrange ${kind}`,
+              `${items.length} ${noun}${items.length === 1 ? "" : "s"}, in your order`,
+              () => html`<div class="hint">Drag a ${noun} or use the arrows: each move is saved at once.</div>
+              ${renderOrderableList({
+                maxHeight: FOLDED_LIST_HEIGHT,
                 items: items.map((_, index) => String(index)),
                 available: [],
                 addable: false,
@@ -395,8 +421,9 @@ export const YeelightEditorMixin = (Base) =>
                 thumbFor: (key) => collectionThumbnail(kind, items[key]),
                 onUpdate: (keys) =>
                   this._moveCollectionItem(kind, keys.map(Number), items),
-              })
-            : html`<div class="hint">No ${noun}s yet.</div>`}`,
+              })}`,
+            )
+          : html`<div class="hint">No ${noun}s yet.</div>`,
       );
     }
 
@@ -507,6 +534,12 @@ export const sharedEditorStyles = css`
     margin-bottom: 8px;
   }
   /* What a setting is for, under its label (e.g. the lamp picker's). */
+  .yc-item-list-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
   .hint {
     font-size: 0.9em;
     color: var(--secondary-text-color, #666);

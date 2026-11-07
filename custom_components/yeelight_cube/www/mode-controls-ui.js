@@ -29,6 +29,7 @@ import {
   renderMatrixPreview,
 } from "./gallery-display-utils.js";
 import { isVerticalMount } from "./matrix-view.js";
+import { colorModeBadge, itemIconTemplate } from "./item-badges.js";
 import {
   favouriteId,
   nextRotationMode,
@@ -47,7 +48,7 @@ import {
 // can be saved once per mode. The manage list works on these synthetic ids so
 // duplicate keys never collapse into a single row.
 const FAVOURITE_MODE_LABELS = {
-  normal: "Normal",
+  normal: "Default",
   bw: "B&W",
   red_blue: "Vivid",
   white_orange: "Retro Orange",
@@ -237,22 +238,22 @@ class YeelightModeControls extends LitElement {
       this.model.setDirection(button.dataset.value[0].toUpperCase() + button.dataset.value.slice(1));
   }
 
-  // A favourite's name, with its family's icon at the end of the line (an
-  // effect's, as in the gallery: adapter.familyBadge), the family in its
-  // tooltip.
-  _favouriteName(favourite, label) {
-    const badge = this.model.adapter.familyBadge?.(favourite.key);
-    if (!badge?.icon) return html`<span>${label}</span>`;
+  // A favourite's name, then its icons (item-badges.js), each named in its
+  // tooltip: its color mode (or custom color) and its family (an effect's, as
+  // in the gallery: adapter.familyBadge).
+  _favouriteName(favourite, name) {
+    const look = this.model.config.buttons_style;
+    const family = this.model.adapter.familyBadge?.(favourite.key);
     return html`<span class="favourite-name"
-      ><span>${label}</span
-      ><span
-        class="yc-family-icon"
-        data-look=${this.model.config.buttons_style || "modern"}
-        title=${badge.title}
-        aria-label=${badge.title}
-        role="img"
-        ><ha-icon icon=${badge.icon}></ha-icon></span
-    ></span>`;
+      ><span>${name}</span
+      ><span class="yc-item-icons"
+        >${itemIconTemplate(colorModeBadge(favourite.colorMode, favourite.color), look, "color-mode")}${itemIconTemplate(
+          family,
+          look,
+          "family",
+        )}</span
+      ></span
+    >`;
   }
 
   _preview(favourite) {
@@ -580,10 +581,7 @@ class YeelightModeControls extends LitElement {
                       >
                         ${items.some((item) => item.key === favourite.key)
                           ? this._preview(favourite)
-                          : ""}${this._favouriteName(
-                          favourite,
-                          favouriteLabel(favourite, title),
-                        )}${!playable.includes(favourite)
+                          : ""}${this._favouriteName(favourite, title(favourite.key))}${!playable.includes(favourite)
                           ? html`<small>Unavailable</small>`
                           : ""}
                       </button>`,
@@ -772,15 +770,19 @@ class YeelightModeControls extends LitElement {
       .mode[aria-pressed="true"] {
         border-color: var(--primary-color);
       }
-      /* The name centred, the family icon at the end of its line. */
+      /* As in the gallery's tiles: the name on the left, its icons (color
+         mode, family) at the end of its line, below it on the right when
+         they don't fit. */
       .favourite-name {
-        display: grid;
-        grid-template-columns: 22px minmax(0, 1fr) 22px;
+        display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 4px;
+        align-self: stretch;
+        text-align: left;
       }
-      .favourite-name > span:first-child {
-        grid-column: 2;
+      .favourite-name > .yc-item-icons {
+        margin-left: auto;
       }
       .mode:disabled {
         opacity: 0.45;

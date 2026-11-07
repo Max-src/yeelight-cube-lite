@@ -253,37 +253,28 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                     config.show_family_filter !== false,
                     (event) => change("show_family_filter", event.target.checked),
                   )}
-                  <div class="hint">
-                    The filter (All, Waves, Glow, Sparkles, Motion, Music, Still)
-                    beside the search field shows one family of effects, among
-                    those this card has; this browser remembers its choice.
-                  </div>
+                  <div class="hint">Shows one family of effects; this browser remembers the choice.</div>
                   ${createToggleRow(
                     "Show effect family icon",
                     "show_family_icons",
                     config.show_family_icons !== false,
                     (event) => change("show_family_icons", event.target.checked),
                   )}
-                  <div class="hint">
-                    A small icon at the bottom right of each effect in the
-                    gallery (the favourites have their own switch): its family (a flame for Glow, a
-                    sparkle for Sparkles, a note for Music...), named when you
-                    hover it. Chips show it after the name; the dropdown and
-                    text buttons its emoji (🌊 🔥 ✨ ▶️ 🎵 🖼️).
-                  </div>
+                  <div class="hint">Each effect's family (🔥 Glow, ✨ Sparkles, 🎵 Music...), named when you hover it.</div>
+                  ${createToggleRow(
+                    "Show effect type icons",
+                    "show_badges",
+                    config.show_badges !== false,
+                    (event) => change("show_badges", event.target.checked),
+                  )}
+                  <div class="hint">Official or Experimental (🧪), and Directional, named when you hover them.</div>
                   ${createToggleRow(
                     "Sort toggle",
                     "show_sort",
                     config.show_sort !== false,
                     (event) => change("show_sort", event.target.checked),
                   )}
-                  <div class="hint">
-                    Default, A → Z or By family, beside the filter; this
-                    browser remembers its choice. Until one is picked, the
-                    Order above. Default is your list, else the official
-                    effects as the Yeelight app lists them, then the others,
-                    as on the clock card.
-                  </div>
+                  <div class="hint">Default, A → Z or By family; this browser remembers the choice.</div>
                 `,
               )
             : ""}

@@ -1477,8 +1477,12 @@ class NativeFeatureTests(unittest.TestCase):
             # others: 63, no effect of the app's (3 showed Ribbon there).
             self.assertEqual(71 if name in ("Fireworks", "Stored GIF") else 63, spec["effect_id"])
             self.assertNotIn(spec["effect_id"], APP_EFFECT_IDS)
-            # The stored GIF is offered like the official effects.
-            self.assertEqual(name != "Stored GIF", spec.get("extended"))
+            # The stored GIF and the Yeelight app's music modes are offered
+            # like the official effects.
+            self.assertEqual(
+                name != "Stored GIF" and spec["mode"] not in CONSTANTS["APP_MUSIC_SLOTS"],
+                spec.get("extended"),
+            )
             self.assertEqual(
                 spec["mode"] not in CONSTANTS["_EXTENDED_EFFECT_NO_SPEED"], spec.get("speed")
             )

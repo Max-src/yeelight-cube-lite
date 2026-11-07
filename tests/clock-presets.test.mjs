@@ -262,7 +262,7 @@ test("inline preset saves only request a name and do not generate a preview", ()
 
 test("all color modes share ordering and hiding without deleting defaults or losing new saves", () => {
   const builtins = [
-    { value: "normal", label: "Normal" },
+    { value: "normal", label: "Default" },
     { value: "bw", label: "Black & White" },
   ];
   const presets = [

@@ -74,7 +74,7 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
               placeholder: "Palettes",
               lamps: "multiple",
               lampsHint:
-                "Optional: the lamps that receive applied palettes. Leave empty to affect all lights.",
+                "The lamps that receive applied palettes (empty: every lamp).",
             })}
         `)}
 

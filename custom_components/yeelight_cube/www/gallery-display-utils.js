@@ -184,10 +184,18 @@ export const matrixPreviewStyles = `
   .gallery-matrix-preview.matrix-surface-holes > div {
     box-shadow: none !important;
   }
-  /* An item's family (effect-families.js familyBadge): a small icon, its
-     name in the tooltip, colored like the card's buttons (data-look, the
-     card's buttons_style: modern and pill the same), never their size. */
-  .yc-family-icon {
+  /* The icons an item is described by (item-badges.js): its family, what it
+     is, a favourite's color mode; named in the tooltip, colored like the
+     card's buttons (data-look, the card's buttons_style: modern and pill the
+     same), never their size. */
+  .yc-item-icons {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    line-height: 0;
+  }
+  .yc-item-icon {
     display: inline-flex;
     flex: none;
     align-items: center;
@@ -198,46 +206,61 @@ export const matrixPreviewStyles = `
     border-radius: 50%;
     --mdc-icon-size: 14px;
     vertical-align: middle;
-  }
-  .yc-family-icon {
     background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     color: var(--primary-color, #0077cc);
   }
-  .yc-family-icon[data-look="classic"] {
+  .yc-item-icon[data-look="classic"] {
     background: var(--primary-color, #03a9f4);
     color: var(--text-primary-color, #fff);
   }
-  .yc-family-icon[data-look="outline"] {
+  .yc-item-icon[data-look="outline"] {
     background: transparent;
     border: 1px solid var(--primary-color, #03a9f4);
   }
-  .yc-family-icon[data-look="gradient"] {
+  .yc-item-icon[data-look="gradient"] {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: var(--text-primary-color, #fff);
   }
-  /* In a chip, after its name. */
-  .mode-chip-family {
-    display: inline-flex;
-    margin-left: 2px;
-    line-height: 0;
-  }
-  .mode-chip-family .yc-family-icon {
-    width: 18px;
-    height: 18px;
-    --mdc-icon-size: 12px;
-  }
-  /* At the bottom right of a preview tile, below its picture. */
-  .gallery-item-footer {
+  .yc-item-icon ha-icon {
     display: flex;
-    flex: none;
-    justify-content: flex-end;
-    align-self: stretch;
+  }
+  .yc-item-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  }
+  /* In a chip, after its name. */
+  .mode-chip-family {
+    display: inline-flex;
+    margin-left: 2px;
+    line-height: 0;
+  }
+  .mode-chip-family .yc-item-icon {
+    width: 18px;
+    height: 18px;
+    --mdc-icon-size: 12px;
+  }
+  /* The carousel's title centred, its icons at the end of its line. */
+  .yc-carousel-title-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 6px;
     width: 100%;
-    margin-top: 4px;
-    line-height: 0;
   }
-  .yc-family-icon ha-icon {
-    display: flex;
+  .yc-carousel-title-row > .yc-item-icons {
+    justify-self: end;
+  }
+  /* At the bottom right of a preview tile, below its picture. */
+  .gallery-item-footer {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    align-self: stretch;
+    width: 100%;
+    margin-top: 4px;
+    line-height: 0;
   }
 `;
 
@@ -459,15 +482,24 @@ export const galleryDisplayStyles =
     font-size: 14px;
     overflow-wrap: anywhere;
   }
-  .original-item-badge {
-    font-size: 12px;
-    color: var(--secondary-text-color, #666);
+  /* The name, then its icons (what it is, its family) at the end of its
+     line; below it, on the right, when they don't fit. */
+  .original-item-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
-  /* The badge, and the family icon at the end of its line. */
+  .original-item-row .original-item-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .original-item-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
+    margin-left: auto;
     gap: 6px;
     min-width: 0;
   }

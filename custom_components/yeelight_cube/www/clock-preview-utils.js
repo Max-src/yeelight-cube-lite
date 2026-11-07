@@ -47,7 +47,7 @@ export { canonicalClockStyleName };
 // palette; "normal" keeps each effect's own colors. Which effects respond is
 // verified on hardware (previews are adjusted per effect separately).
 export const CLOCK_COLOR_MODES = [
-  { value: "normal", label: "Normal", icon: "mdi:palette-outline" },
+  { value: "normal", label: "Default", icon: "mdi:palette-outline" },
   { value: "bw", label: "Black & White", icon: "mdi:invert-colors" },
   { value: "red_blue", label: "Vivid", icon: "mdi:palette-swatch" },
   {

@@ -97,11 +97,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
           this._config.pixel_art_orientation_filter !== false,
           (e) => this._onSwitchChange(e, "pixel_art_orientation_filter"),
         )}
-        <div class="hint">
-          Vertical pixel arts are drawn for a lamp standing on its end. The
-          filter (All, Horizontal, Vertical) beside the search field changes
-          what shows; this browser remembers its choice.
-        </div>`,
+        <div class="hint">All, Horizontal or Vertical pixel arts; this browser remembers the choice.</div>`,
     );
   }
 

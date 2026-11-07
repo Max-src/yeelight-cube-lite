@@ -15,6 +15,7 @@
 import { html, nothing, unsafeHTML } from "./lib/lit-all.js";
 import { matrixCellLook, matrixPreviewLayout } from "./gallery-display-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
+import { itemEmojis, itemIcons, itemIconsTemplate } from "./item-badges.js";
 import { renderCarousel } from "./carousel-utils.js";
 import "./wheel-picker.js";
 import { tileColumns, tileColumnsFixed, tileSpan } from "./tile-grid.js";
@@ -58,26 +59,11 @@ export function itemPreviewTemplate(item, options = {}) {
   >${unsafeHTML(item.previewHtml)}</div>`;
 }
 
-/** An item's family icon (`badgeIcon`, { icon, title }: effect-families.js
- * familyBadge), the family in its tooltip, colored like the card's buttons
- * (`buttonsStyle`, the card's buttons_style). */
-export function familyIconTemplate(badge, buttonsStyle) {
-  if (!badge?.icon) return nothing;
-  // Only the style's colors (data-look), never its size or padding.
-  return html`<span
-    class="yc-family-icon"
-    data-look=${buttonsStyle || "modern"}
-    title=${badge.title}
-    aria-label=${badge.title}
-    role="img"
-    ><ha-icon icon=${badge.icon}></ha-icon
-  ></span>`;
-}
-
-// The family icon's row at the bottom of a preview tile, on the right.
-function familyFooter(g, item) {
-  if (!item.badgeIcon?.icon) return nothing;
-  return html`<div class="gallery-item-footer">${familyIconTemplate(item.badgeIcon, g.config.buttons_style)}</div>`;
+// An item's icons (item-badges.js: what it is, its family) in a row at the
+// bottom of a preview tile, on the right.
+function iconFooter(g, item) {
+  const icons = itemIconsTemplate(item, g.config);
+  return icons === nothing ? nothing : html`<div class="gallery-item-footer">${icons}</div>`;
 }
 
 // ── What every item shares ─────────────────────────────────────────────────
@@ -182,7 +168,7 @@ export function textLayout(g, style) {
               ? g.favourites.has(item.dataMode)
               : item.favourite)
               ? "★ "
-              : ""}${item.name}${item.badgeIcon?.emoji ? ` ${item.badgeIcon.emoji}` : ""}</option>`,
+              : ""}${item.name}${itemEmojis(item, config)}</option>`,
         )}
       </select>
     </div>`;
@@ -209,8 +195,8 @@ export function textLayout(g, style) {
           @click=${() => g.select(item.dataMode)}
         >
           ${chipSwatch(item)}
-          <span class="mode-chip-label">${item.label || item.name}</span>${item.badgeIcon?.icon
-            ? html`<span class="mode-chip-family">${familyIconTemplate(item.badgeIcon, config.buttons_style)}</span>`
+          <span class="mode-chip-label">${item.label || item.name}</span>${itemIcons(item, config).length
+            ? html`<span class="mode-chip-family">${itemIconsTemplate(item, config)}</span>`
             : nothing}
         </button>`;
       })}
@@ -228,8 +214,8 @@ export function textLayout(g, style) {
         action: "tool",
         buttonStyle: config.buttons_style,
         contentMode: "text",
-        // Its family's emoji after the name (text only).
-        label: `${item.label || item.name}${item.badgeIcon?.emoji ? ` ${item.badgeIcon.emoji}` : ""}`,
+        // Its emojis after the name (text only: its family, Experimental...).
+        label: `${item.label || item.name}${itemEmojis(item, config)}`,
         title: item.name,
         selected: item.dataMode === active,
         role: "radio",
@@ -279,7 +265,7 @@ function previewItem(g, item, look, strip = false) {
         title=${state.title}
         style=${`cursor: pointer; border-radius: 6px; background: ${background};`}
         @click=${() => g.select(item.dataMode)}
-      >${preview}${title}${familyFooter(g, item)}${controls}</div>`
+      >${preview}${title}${iconFooter(g, item)}${controls}</div>`
     : html`<div
         class="gallery-item gallery-item-plain${vertical}${controls === nothing ? "" : " yc-editable"}${state.pending}"
         data-mode=${item.dataMode}
@@ -296,7 +282,7 @@ function previewItem(g, item, look, strip = false) {
         <div class="gallery-item-body">${preview}</div>
         ${item.meta
           ? html`<div class="gallery-item-metadata" style=${`font-size: ${metaFontSize(size)}px;`}>${item.meta}</div>`
-          : nothing}${familyFooter(g, item)}${controls}</div>`;
+          : nothing}${iconFooter(g, item)}${controls}</div>`;
 }
 
 // The columns of the packed layouts (tile-grid.js): List stretches tiles at
@@ -378,12 +364,17 @@ function carouselItem(g, item, look) {
   >
     ${preview}
     ${look.showTitles
-      ? html`<div
-          class="gallery-item-title"
-          style=${`font-size:13px;font-weight:500;${look.bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}`}
-        >${item.title}</div>`
+      ? html`<div class="yc-carousel-title-row"
+          ><span></span
+          ><div
+            class="gallery-item-title"
+            style=${`font-size:13px;font-weight:500;${look.bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}`}
+          >${item.title}</div
+          >${itemIconsTemplate(item, g.config)}</div>`
       : nothing}
-    ${item.meta ? html`<div class="gallery-item-metadata">${item.meta}</div>` : nothing}${familyFooter(g, item)}${controls}
+    ${item.meta ? html`<div class="gallery-item-metadata">${item.meta}</div>` : nothing}${look.showTitles
+      ? nothing
+      : iconFooter(g, item)}${controls}
   </div>`;
 }
 
@@ -398,9 +389,9 @@ function wheelGeometry(config, items = []) {
   const compact = !look.showTitles;
   const height = config.wheel_height || 300;
   const previewSize = look.previewSize;
-  // An item's height around its preview: title and padding, and the family
-  // icon's row (familyFooter) when items have one.
-  const chrome = (compact ? 40 : 55) + (items.some((item) => item.badgeIcon?.icon) ? 26 : 0);
+  // An item's height around its preview: title and padding, and the icons'
+  // row (iconFooter) when items have one.
+  const chrome = (compact ? 40 : 55) + (items.some((item) => itemIcons(item, config).length) ? 26 : 0);
   const itemHeight = Math.max(compact ? 68 : 95, Math.round(previewSize * 0.25) + chrome);
   const verticalPreview = Math.max(
     Math.round(previewSize * 0.25),
@@ -488,7 +479,7 @@ export function wheelLayout(g) {
               ...look.matrix,
               previewSize: geometry.previewSizeOf(item),
             })}
-          </div>${familyFooter(g, item)}
+          </div>${iconFooter(g, item)}
         </div>`;
       }}
     ></yc-wheel>
@@ -538,7 +529,7 @@ export function albumLayout(g, prefix, { width, radius, buttonShape }) {
         >
           ${look.showTitles ? html`<div class="gallery-item-title">${item.title}</div>` : nothing}
           ${itemPreviewTemplate(item, matrixOf(item))}
-          ${item.meta ? html`<div class="gallery-item-metadata">${item.meta}</div>` : nothing}${familyFooter(g, item)}${controls}
+          ${item.meta ? html`<div class="gallery-item-metadata">${item.meta}</div>` : nothing}${iconFooter(g, item)}${controls}
         </div>`;
       }}
     ></yc-album>
@@ -548,14 +539,11 @@ export function albumLayout(g, prefix, { width, radius, buttonShape }) {
 // ── Original ───────────────────────────────────────────────────────────────
 
 /** The Original browser: a grid or list of preview tiles with a name and
- * an optional capability badge (Clock and Native Effects). An item's
- * `badgeIcon` ({ icon, title }) shows at the end of the badge's line
- * (familyIconTemplate); in the preview layouts, at the bottom right of the
- * tile (familyFooter). */
+ * its icons (item-badges.js: what it is, its family) at the end of the
+ * name's line, below it on the right when they don't fit. */
 export function originalLayout(g) {
   const { config } = g;
   const view = config.effect_view === "list" ? "list" : "grid";
-  const showBadges = config.show_badges !== false;
   const highlight = config.highlight_active_mode !== false;
   // Packed tiles like the List and Grid (tile-grid.js): a vertical item (the
   // lamp standing on its end) takes half a tile's place.
@@ -586,12 +574,12 @@ export function originalLayout(g) {
                 data-preview=${item.dataMode}
                 style=${`width:${g.matrixWidth}%;margin-inline:auto;`}
               >${itemPreviewTemplate(item, g.matrix)}</div>`}
-          <span class="original-item-name">${item.title}</span>
-          ${(showBadges && item.badge) || item.badgeIcon
-            ? html`<span class="original-item-footer"
-                ><span class="original-item-badge">${showBadges ? item.badge || "" : ""}</span
-                >${familyIconTemplate(item.badgeIcon, config.buttons_style)}</span>`
-            : nothing}${controls}
+          <span class="original-item-row"
+            ><span class="original-item-name">${item.title}</span
+            >${itemIcons(item, config).length
+              ? html`<span class="original-item-footer">${itemIconsTemplate(item, config)}</span>`
+              : nothing}</span
+          >${controls}
         </button>`;
       })}
     </yc-tile-grid>${paginationTemplate(g)}`;

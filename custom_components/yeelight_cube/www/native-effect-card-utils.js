@@ -60,6 +60,15 @@ export function nativeEffectItems(attrs = {}, config = {}) {
 }
 
 const previewDirections = ["Up", "Down", "Left", "Right"];
+// The Yeelight app's music modes (const.py APP_MUSIC_SLOTS): official.
+const APP_MUSIC_EFFECTS = new Set([
+  "Music Spectrum",
+  "Music Gather",
+  "Music Breathing",
+  "Music Blossom",
+  "Music Note",
+  "Music Impact",
+]);
 // Without a lamp, in the lamp's order (effect-names.js effectSlotRank).
 export const nativePreviewCatalogue = [
   ...[
@@ -152,7 +161,8 @@ export const nativePreviewCatalogue = [
         family: effectFamilyOfName(name),
         speed: !!spec.speed,
         intensity: !!spec.intensity,
-        extended: true,
+        // The Yeelight app's music modes are official (const.py APP_MUSIC_SLOTS).
+        extended: !APP_MUSIC_EFFECTS.has(name),
         preview: true,
         directions: spec.directions ? [...spec.directions] : [],
       };

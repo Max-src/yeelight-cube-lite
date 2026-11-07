@@ -63,6 +63,13 @@ module.exports = async (t) => {
       out[`${style} line`] = [...card.shadowRoot.querySelectorAll("yc-collection-gallery .yc-family-icon")].every(
         (icon) => icon.closest(".original-item-footer, .gallery-item-footer"),
       );
+      // Original: on the name's line when it fits (a short name: Fire).
+      if (style === "original") {
+        const fire = card.shadowRoot.querySelector("yc-collection-gallery .original-item[data-mode='Fire']");
+        const name = fire.querySelector(".original-item-name").getBoundingClientRect();
+        const icon = fire.querySelector(".yc-family-icon").getBoundingClientRect();
+        out["original same line"] = icon.top < name.bottom && icon.bottom > name.top;
+      }
       // Painted on a canvas that changes as the effect runs.
       const canvases = () =>
         [...card.shadowRoot.querySelectorAll("yc-collection-gallery canvas")].map((c) => c.toDataURL()).join();
@@ -141,6 +148,7 @@ module.exports = async (t) => {
     assert.equal(result[`${style} over preview`], 0, `${style}: nothing over the preview`);
     assert.ok(result[`${style} line`], `${style}: below the preview, on the right`);
   }
+  assert.ok(result["original same line"], "original: the icons on the name's line when they fit");
   assert.deepEqual(result.chips, expected, "chips: the icon after the name");
   const named = ["Fire 🔥", "Starry Sky ✨", "Music Spectrum 🎵", "Snowfall ✨"];
   // Fire and Music Spectrum are favourites: their star before the name.
@@ -155,7 +163,7 @@ module.exports = async (t) => {
   assert.equal(result.tooltip, "Glow: fire, clouds and soft light", "the family in the tooltip");
   assert.deepEqual(
     result.favourites,
-    { "Fire (Normal)": "mdi:fire", "Music Spectrum (Normal)": "mdi:music-note" },
+    { Fire: "mdi:fire", "Music Spectrum": "mdi:music-note" },
     "favourites show their family's icon",
   );
   assert.deepEqual(result.off, { gallery: 0, favourites: 2 }, "show_family_icons: false: the gallery's only");

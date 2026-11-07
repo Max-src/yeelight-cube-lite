@@ -195,10 +195,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
           "orientation",
           "Device Orientation",
           html`${renderModeControlSettings("orientation", config, change)}
-            <div class="hint">
-              Shown when the lamp's own clock follows it: the lamp then turns
-              the digits for the mount (its background stays where it is).
-            </div>`,
+            <div class="hint">Shown only when the lamp turns its clock's digits for the mount.</div>`,
         )}
         ${this._section(
           "display",
@@ -297,25 +294,28 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                       config.show_family_filter !== false,
                       (event) => change("show_family_filter", event.target.checked),
                     )}
-                    <div class="hint">
-                      The filter (All, Waves, Glow, Sparkles, Motion, Still)
-                      beside the search field shows one family of styles, among
-                      those this card has; this browser remembers its choice.
-                      Solid colors and your custom styles are under Still.
-                    </div>
+                    <div class="hint">Shows one family of styles; this browser remembers the choice.</div>
+                    ${createToggleRow(
+                      "Show style family icon",
+                      "show_family_icons",
+                      config.show_family_icons !== false,
+                      (event) => change("show_family_icons", event.target.checked),
+                    )}
+                    <div class="hint">The family of the effect behind the digits (🔥 Glow, ✨ Sparkles, 🎵 Music...), named when you hover it.</div>
+                    ${createToggleRow(
+                      "Show style type icons",
+                      "show_badges",
+                      config.show_badges !== false,
+                      (event) => change("show_badges", event.target.checked),
+                    )}
+                    <div class="hint">Official, Experimental (🧪) or Custom (✏️), named when you hover them.</div>
                     ${createToggleRow(
                       "Sort toggle",
                       "show_sort",
                       config.show_sort !== false,
                       (event) => change("show_sort", event.target.checked),
                     )}
-                    <div class="hint">
-                      Default, A → Z or By family, beside the filter; this
-                      browser remembers its choice. Until one is picked, the
-                      Order above. Default is your list, else the effect
-                      card's order: the styles in the order of their effect,
-                      then solid colors and your custom styles.
-                    </div>
+                    <div class="hint">Default, A → Z or By family; this browser remembers the choice.</div>
                   `,
                 )
               : ""}

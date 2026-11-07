@@ -94,7 +94,8 @@ import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
 import { chosenIntensity, chosenSpeed } from "./lamp-renderers.js";
-import { FamilyFilter, GallerySort, matchesEffectFamily } from "./effect-families.js";
+import { FamilyFilter, GallerySort, familyBadge, matchesEffectFamily } from "./effect-families.js";
+import { ITEM_BADGES } from "./item-badges.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
 import { rgbToHex } from "./color-utils.js";
 import { itemLabel, itemMatchesQuery, normalizeCardOptions } from "./card-config.js";
@@ -228,6 +229,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       show_gallery: true,
       show_device_orientation: true,
       show_family_filter: true,
+      show_family_icons: true,
+      favourites_show_family_icons: true,
       show_sort: true,
       selector_shape: "rounded", // square | rounded | round
       preview_size: 55, // % -> px (same size axis as the gradient card)
@@ -1112,7 +1115,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       .filter=${this._families.gallery(this._availableStyles())}
       .sort=${this._sort.gallery()}
       .revealKey=${revealKey}
-      heading="Clock style"
       searchLabel="Search clock modes"
       actionLabel="Show on the lamp"
       .onSelect=${(name) => this._controls.choose(name)}
@@ -1199,6 +1201,9 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       title: s.name,
       name: s.name,
       family: s.family,
+      // Its effect's family icon under the preview, as on the Native Effects
+      // card (a flame, a sparkle...).
+      badgeIcon: this.config.show_family_icons === false ? null : familyBadge(s.family),
       colorData: viewerFrame(
         renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
         orientation,
@@ -1207,7 +1212,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       dataMode: clockPresetKey(s),
       // Custom styles are the user's own: renamed and deleted in the gallery.
       editable: !!s.presetId,
-      badge: this._clockStyleBadge(s),
+      badges: this._clockStyleBadges(s),
       favourite: this._controls?.hasFavourite(
         clockPresetKey(s),
         this._currentColorMode(this._attrs()),
@@ -1216,9 +1221,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     }));
   }
 
-  _clockStyleBadge(style) {
-    if (style.presetId) return "Custom";
-    return style.experimental ? "Experimental" : "Official";
+  // What a style is, as an icon (item-badges.js): Custom, Experimental or
+  // Official.
+  _clockStyleBadges(style) {
+    if (style.presetId) return [ITEM_BADGES.custom];
+    return [style.experimental ? ITEM_BADGES.experimental : ITEM_BADGES.official];
   }
 
   _controlGroup(options, onChange) {

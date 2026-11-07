@@ -107,7 +107,7 @@ def _native_effect_catalog(playing: str | None, animations: bool = False) -> lis
     """The native effects the cards list (11 KB): built once per
     combination instead of on every state write. Shared, never modified.
     Every effect is listed; ``extended`` only marks those the Yeelight app
-    does not offer (the cards' badge). ``animations``: whether the animations
+    does not offer (the cards' badge; its music modes are offered). ``animations``: whether the animations
     to upload (LAMP_ANIMATION_EFFECTS) are offered, while a server delivers
     the Yeelight commands. A hidden effect (the stored GIF) is not listed. One
     that plays stays listed (``playing``)."""

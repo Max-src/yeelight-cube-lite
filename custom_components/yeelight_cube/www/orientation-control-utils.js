@@ -4,9 +4,10 @@ import { cardSpacing } from "./card-layout-utils.js";
 
 export const ORIENTATION_ORDER = ["right", "down", "left", "up"];
 export const orientationControlStyles = `
+  /* Titled like the sliders (slider-control-utils .brightness-control-label):
+     the caption above, on the left, the buttons below. */
   .device-orientation-row {
-    display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-    gap: ${cardSpacing.control};
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
   }
   .orientation-buttons {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
@@ -16,7 +17,7 @@ export const orientationControlStyles = `
     min-height: 40px; max-width: 100%; white-space: normal;
   }
   .orientation-caption {
-    color: var(--secondary-text-color, #727272); font-size: 0.85rem;
+    color: var(--secondary-text-color, #9aa); font-size: 0.82em; text-align: left;
   }
   .orientation-error {
     color: var(--error-color, #db4437); text-align: center;

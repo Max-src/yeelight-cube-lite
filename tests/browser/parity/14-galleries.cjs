@@ -81,7 +81,7 @@ module.exports = async (t) => {
     results.clockBadges = items.every(
       (item) =>
         item.querySelector(".original-item-name") &&
-        item.querySelector(".original-item-badge"),
+        item.querySelector(".original-item-footer .yc-badge-icon"),
     );
     results.clockActive =
       items.filter((item) => item.getAttribute("aria-pressed") === "true")
@@ -118,7 +118,7 @@ module.exports = async (t) => {
     document.body.append(native);
     await native.updateComplete;
     results.nativeGallery = !!native.shadowRoot.querySelector(
-      ".original-gallery .original-item .original-item-badge",
+      ".original-gallery .original-item .yc-badge-icon",
     );
     native.remove();
 
@@ -139,7 +139,7 @@ module.exports = async (t) => {
       !!editor.shadowRoot.querySelector('[data-value="grid"]') &&
       !!editor.shadowRoot.querySelector('[data-value="list"]');
     results.editorAppearance = text.includes("Gallery Appearance");
-    results.editorBadges = text.includes("Capability Labels");
+    results.editorBadges = text.includes("Show style type icons");
     results.editorHighlight = text.includes("Highlight Active Style");
     results.editorPerPage = text.includes("Items Per Page");
     results.editorNoExperimental = !text.includes("Experimental Effects");

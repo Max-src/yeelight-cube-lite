@@ -855,7 +855,7 @@
                 },
                 "color_mode": {
                     "name": "Color mode",
-                    "description": "Palette for compatible effects. Normal restores the effect's own colors. Palette uses the lamp's palette (load_palette or set_text_colors) and follows it when it changes. Independent of clock palettes."
+                    "description": "Palette for compatible effects. Default restores the effect's own colors. Palette uses the lamp's palette (load_palette or set_text_colors) and follows it when it changes. Independent of clock palettes."
                 },
                 "activate": {
                     "name": "Activate",

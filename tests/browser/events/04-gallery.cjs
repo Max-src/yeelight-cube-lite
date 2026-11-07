@@ -87,7 +87,8 @@ module.exports = async (t) => {
         ?.textContent.trim(),
     }));
   assert.deepEqual(await clockLabels(), {
-    button: "Arc-en-ciel",
+    // Its family's emoji after the name (Rainbow runs a Waves effect).
+    button: "Arc-en-ciel 🌊",
     active: "Arc-en-ciel",
   });
   const search = page.locator("yeelight-cube-clock-card .yc-gallery-search");
@@ -187,6 +188,11 @@ module.exports = async (t) => {
       ".editor-card-header",
     )) {
       section.click();
+      await editor.updateComplete;
+    }
+    // The list opens with Customize (folded to one line).
+    for (const button of editor.shadowRoot.querySelectorAll(".yc-item-list-summary button")) {
+      button.click();
       await editor.updateComplete;
     }
     const changes = [];

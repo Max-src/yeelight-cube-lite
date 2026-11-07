@@ -22,6 +22,7 @@ import {
 import { lampTakesMount, viewerFrame } from "./matrix-view.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
 import { itemLabel, sortGalleryItems } from "./card-config.js";
+import { familyBadge } from "./effect-families.js";
 
 /** Clock domain bridge. Preset-owned RGB stays distinct from free overrides.
  * No DOM bindings or queue state belong here; callbacks use the card's domain
@@ -50,6 +51,14 @@ export function createClockCardAdapter(card) {
         card._sort.value(),
       ),
     current: () => clockPresetKey(card._currentStyle()),
+    // The family icon a favourite shows (its effect's, as in the gallery):
+    // the favourites' own setting (favourites_show_family_icons).
+    familyBadge: (key) =>
+      card.config.favourites_show_family_icons === false
+        ? null
+        : familyBadge(
+            card._styleList().find((style) => clockPresetKey(style) === key)?.family,
+          ),
     available: (name) =>
       previewOnly(card)
         ? card._controlStyles().some((style) => clockPresetKey(style) === name)

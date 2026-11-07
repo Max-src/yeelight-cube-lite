@@ -301,11 +301,7 @@ export function renderStyleSelectorSettings(
       ? renderSettingsBox(
           `Your ${manage}`,
           html`
-            <div class="hint">
-              Rename or delete your ${manage} from the gallery's cards (list,
-              grid, mosaic, strip, carousel, album, Original). A delete always asks
-              for confirmation.
-            </div>
+            <div class="hint">Rename or delete your ${manage} from their cards in the gallery.</div>
             ${createToggleRow(
               "Allow Rename",
               "allow_rename",
@@ -452,12 +448,6 @@ function renderOriginalSelectorSettings(
     ${renderSettingsBox(
       "Gallery Appearance",
       html`
-        ${createToggleRow(
-          "Capability Labels",
-          "show_badges",
-          config.show_badges !== false,
-          (event) => onChange("show_badges", event.target.checked),
-        )}
         ${sizeRow()}${renderAppearance(config, onChange)}
       `,
     )}

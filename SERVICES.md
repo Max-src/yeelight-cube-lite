@@ -39,12 +39,12 @@ while direct service calls use `entity_id`.
 | `show_effect_direction` | Native Effects | The arrows that choose the effect's direction, shown for an effect that has one |
 | `show_gallery`, `show_search` | Both | Show the style/effect browser and its text search |
 | `show_family_filter` | Both | The family filter beside the search field (on by default); it shows when the card has at least two families |
-| `show_family_icons` | Native Effects | Each effect's family icon at the bottom right of its tile in the browser (its tooltip names the family; on by default) |
-| `favourites_show_family_icons` | Native Effects | The same icon for each favourite, after its name (as its button's icon without previews; on by default) |
+| `show_family_icons` | Both | Each effect's (style's: the effect behind its digits) family icon at the bottom right of its tile in the browser (its tooltip names the family; on by default) |
+| `favourites_show_family_icons` | Both | The same icon for each favourite, after its name (as its button's icon without previews; on by default) |
 | `style_selector_style` | Both | `filled`, `dropdown`, `preview-list`, `preview-grid`, `preview-strip`, `preview-carousel`, `preview-wheel`, or `original` |
 | `effect_view` | Both | `grid` or `list` for the Original browser |
 | `items_per_page` | Both | Pagination for Original and Live Preview list/grid browsers; editor range 0-16, with 0 meaning no pagination |
-| `show_badges` | Both | Capability labels in the Original browser |
+| `show_badges` | Both | Each effect's or style's type icons in the browser: Official or Experimental, Directional, Custom (named in their tooltips; on by default) |
 | `visible_styles` / `visible_effects` | Clock / Native Effects | The styles / effects shown, in order (unset: all). Set by the editor's list, with `hidden_styles` / `hidden_effects`: the items left out when it was saved. A style preset saved later shows after the list; older `custom_visible_styles` / `hidden_clock_styles` settings are read in these names |
 | `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and color combinations, the gold star badges, and animated favourite previews |
 | `show_rotation` | Both | Show backend rotation status and commands |
