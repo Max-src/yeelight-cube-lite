@@ -32,12 +32,56 @@ async function serveRepository() {
   return server;
 }
 
+/**
+ * No native color chooser in a check's page: a headless browser cannot show
+ * it, and one left open makes Chromium close the page a moment later, in a
+ * later check ("Execution context was destroyed"). showPicker only records
+ * the input's type (window.__pickersShown), and a click on a color input
+ * keeps its handlers but not the chooser. The checks set the picked color
+ * themselves (a change or cancel event on the input).
+ */
+function noNativePickers() {
+  const proto = HTMLInputElement.prototype;
+  if (proto.__noNativePickers) return;
+  Object.defineProperty(proto, "__noNativePickers", { value: true });
+  proto.showPicker = function showPicker() {
+    (window.__pickersShown ||= []).push(this.type);
+  };
+  document.addEventListener(
+    "click",
+    (event) => {
+      const input = event.composedPath()[0];
+      if (input instanceof HTMLInputElement && input.type === "color") event.preventDefault();
+    },
+    true,
+  );
+}
+
+/** Every page of `browser` (its own contexts' too) gets noNativePickers. */
+function withoutNativePickers(browser) {
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...args) => {
+    const context = await newContext(...args);
+    await context.addInitScript(noNativePickers);
+    return context;
+  };
+  const newPage = browser.newPage.bind(browser);
+  browser.newPage = async (...args) => {
+    const page = await newPage(...args);
+    await page.addInitScript(noNativePickers);
+    return page;
+  };
+  return browser;
+}
+
 /** Edge by default; BROWSER_CHANNEL=chromium on Linux and CI. */
-const launchBrowser = () =>
-  chromium.launch({
-    channel: process.env.BROWSER_CHANNEL || "msedge",
-    headless: true,
-  });
+const launchBrowser = async () =>
+  withoutNativePickers(
+    await chromium.launch({
+      channel: process.env.BROWSER_CHANNEL || "msedge",
+      headless: true,
+    }),
+  );
 
 /**
  * Runs the section files of `dir` in name order, each `async (t) => {}`

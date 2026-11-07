@@ -49,6 +49,10 @@ module.exports = async (t) => {
             } else {
               row.querySelector(".color-add button")?.click();
             }
+            // The harness records showPicker instead of a native chooser,
+            // which a headless browser cannot show (tests/browser/harness.cjs).
+            const recorded = (window.__pickersShown || []).includes("color");
+            window.__pickersShown = [];
             await new Promise((resolve) => setTimeout(resolve, 50));
             const picker = document.querySelector('input[type="color"][aria-label="Choose color"]');
             const shownMode = row.querySelector(".colormode-select")?.value ?? null;
@@ -59,7 +63,7 @@ module.exports = async (t) => {
             await new Promise((resolve) => setTimeout(resolve, 100));
             const sent = calls.find((call) => call.service === service)?.data ?? null;
             picker.dispatchEvent(new Event("cancel"));
-            return { row: true, picker: true, shownMode, color: sent?.color ?? null };
+            return { row: true, picker: true, recorded, shownMode, color: sent?.color ?? null };
           } finally {
             hass = saved;
           }
@@ -69,6 +73,7 @@ module.exports = async (t) => {
       const name = `${tag.replace("yeelight-cube-", "")} ${selector}`;
       assert.equal(result.row, true, `${name}: color modes shown`);
       assert.equal(result.picker, true, `${name}: Add opens the picker`);
+      assert.equal(result.recorded, true, `${name}: no native color chooser in a check's page`);
       if (selector === "dropdown")
         assert.notEqual(result.shownMode, "__pick__", `${name}: the dropdown shows a mode again`);
       assert.deepEqual(result.color, [0x12, 0x34, 0x56], `${name}: the chosen color is sent`);
