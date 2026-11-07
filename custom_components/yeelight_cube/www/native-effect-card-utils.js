@@ -1,4 +1,5 @@
 import { renderNativeEffect } from "./native-effect-preview.js";
+import { adjustmentsOf } from "./color-adjustments.js";
 import {
   LAMP_EFFECTS,
   chosenIntensity,
@@ -206,6 +207,7 @@ export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
         attrs.text_colors,
         attrs.stored_gif,
         attrs.animation_layout,
+        adjustmentsOf(attrs),
       ),
     ),
     deviceOrientation(attrs),

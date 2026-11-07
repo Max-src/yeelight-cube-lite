@@ -180,6 +180,14 @@ export function renderModeControlSettings(
           "Favourite Controls",
           html`
             ${toggle("Animated Previews", "favourites_show_previews")}
+            ${noun === "effect"
+              ? html`${toggle("Show effect family icon", "favourites_show_family_icons")}
+                  <div class="hint">
+                    Each favourite's family (a flame for Glow, a sparkle for
+                    Sparkles, a note for Music...) after its name, named when
+                    you hover it; without previews, as its button's icon.
+                  </div>`
+              : ""}
             ${config.favourites_show_previews === false
               ? renderActionButtonSettings(config, change, {
                   styleKey: "collection_buttons_style",

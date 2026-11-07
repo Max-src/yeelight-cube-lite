@@ -22,6 +22,7 @@ import {
   paletteSpan,
   placeStrip,
   readBackFlags,
+  HANDOVER_FLAGS,
   sin16Unsigned,
   sourceWord,
   stripBlur,
@@ -235,9 +236,9 @@ function chaseStep(state, settings, clockMs, render) {
 }
 
 // ── Slot 22: Mirrored comets ──────────────────────────────────────────
-// lamp_effects_sparks.py tells how it runs.
+// lamp_effects_sparks.py tells how it runs, and behind the clock
+// (`handover`): no mirror, all 100 pixels, 17 comets.
 const PRISM_PIXELS = 50;
-const PRISM_COMETS = Math.floor(PRISM_PIXELS / 6) + 1;
 // The lamp's 1/99.
 const PRISM_SCALE = (() => {
   const view = new DataView(new ArrayBuffer(8));
@@ -246,26 +247,29 @@ const PRISM_SCALE = (() => {
   return view.getFloat64(0);
 })();
 
-function prismTiming(x) {
+function prismTiming(x, pixels) {
   const speed = f32(x * PRISM_SCALE);
-  return [speed, f32(f32(PRISM_PIXELS / speed) / PRISM_COMETS)];
+  return [speed, f32(f32(pixels / speed) / (Math.floor(pixels / 6) + 1))];
 }
 
 function prismInit(settings) {
-  const mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings.direction];
-  const flags = readBackFlags(22, mapped) | 0x0a;
+  const handover = !!settings.handover;
+  const mapped = handover ? 0 : DIRECTION_TABLE[REFERENCE_PROFILE][settings.direction];
+  const flags = handover ? HANDOVER_FLAGS : readBackFlags(22, mapped) | 0x0a;
+  const pixels = handover ? LENGTH : PRISM_PIXELS;
   const { rate } = settings;
   return {
     reads: 0,
     timer: 0,
     cursor: 0,
+    pixels,
     palette: effectColours(settings).palette,
-    // A comet's two pixels reach past the 50.
-    targets: Array.from({ length: PRISM_PIXELS + 2 }, (_, pixel) =>
+    // A comet's two pixels reach past the strip.
+    targets: Array.from({ length: pixels + 2 }, (_, pixel) =>
       flaggedTargets(pixel, LENGTH, mapped, flags).map((index) => 3 * index),
     ),
-    timing: rate ? prismTiming((rate >> 2) + 1) : null,
-    comets: Array.from({ length: PRISM_COMETS }, () => ({
+    timing: rate ? prismTiming((rate >> 2) + 1, pixels) : null,
+    comets: Array.from({ length: Math.floor(pixels / 6) + 1 }, () => ({
       active: false,
       position: 0,
       speed: 0,
@@ -276,8 +280,8 @@ function prismInit(settings) {
 }
 
 function prismStep(state, settings, clockMs, render) {
-  const timing = state.timing ?? prismTiming((((read(state) & 255) * 58) >> 8) + 6);
-  const { panel, comets, targets } = state;
+  const { panel, comets, targets, pixels } = state;
+  const timing = state.timing ?? prismTiming((((read(state) & 255) * 58) >> 8) + 6, pixels);
   panel.fill(0);
   if (!render) {
     state.timer = 1;
@@ -291,12 +295,12 @@ function prismStep(state, settings, clockMs, render) {
       comet.active = true;
       comet.position = 0;
       comet.speed = speed;
-      comet.colour = scanColour(state, PRISM_PIXELS);
+      comet.colour = scanColour(state, pixels);
     }
   }
   for (const comet of comets) {
     if (!comet.active) continue;
-    if (comet.position <= PRISM_PIXELS) {
+    if (comet.position <= pixels) {
       const at = Math.trunc(comet.position);
       const { colour } = comet;
       for (let pixel = at; pixel <= at + 1; pixel += 1)

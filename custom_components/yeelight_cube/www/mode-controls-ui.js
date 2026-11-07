@@ -237,6 +237,24 @@ class YeelightModeControls extends LitElement {
       this.model.setDirection(button.dataset.value[0].toUpperCase() + button.dataset.value.slice(1));
   }
 
+  // A favourite's name, with its family's icon at the end of the line (an
+  // effect's, as in the gallery: adapter.familyBadge), the family in its
+  // tooltip.
+  _favouriteName(favourite, label) {
+    const badge = this.model.adapter.familyBadge?.(favourite.key);
+    if (!badge?.icon) return html`<span>${label}</span>`;
+    return html`<span class="favourite-name"
+      ><span>${label}</span
+      ><span
+        class="yc-family-icon"
+        data-look=${this.model.config.buttons_style || "modern"}
+        title=${badge.title}
+        aria-label=${badge.title}
+        role="img"
+        ><ha-icon icon=${badge.icon}></ha-icon></span
+    ></span>`;
+  }
+
   _preview(favourite) {
     const config = this.model.config;
     // Render at the animation loop's CURRENT time, not phase 0: every Lit
@@ -423,6 +441,9 @@ class YeelightModeControls extends LitElement {
         model.busy || adapter.disabled(),
         (event) => this.handleDirectionControl(event),
       );
+    // Only where it changes what the lamp shows (the card's adapter says).
+    if (this.area === "orientation" && adapter.orientationApplies?.() === false)
+      return "";
     if (this.area === "orientation")
       return renderOrientationControls(
         config,
@@ -559,10 +580,10 @@ class YeelightModeControls extends LitElement {
                       >
                         ${items.some((item) => item.key === favourite.key)
                           ? this._preview(favourite)
-                          : ""}<span>${favouriteLabel(
+                          : ""}${this._favouriteName(
                           favourite,
-                          title,
-                        )}</span>${!playable.includes(favourite)
+                          favouriteLabel(favourite, title),
+                        )}${!playable.includes(favourite)
                           ? html`<small>Unavailable</small>`
                           : ""}
                       </button>`,
@@ -572,9 +593,11 @@ class YeelightModeControls extends LitElement {
                   html`${model.favourites.map((favourite) =>
                     this._button(
                       favouriteLabel(favourite, title),
-                      adapter.kind === "clock"
-                        ? "mdi:clock-outline"
-                        : "mdi:creation",
+                      // An effect's family icon, when shown.
+                      adapter.familyBadge?.(favourite.key)?.icon ||
+                        (adapter.kind === "clock"
+                          ? "mdi:clock-outline"
+                          : "mdi:creation"),
                       () => model.chooseFavourite(favourite),
                       {
                         buttonStyle:
@@ -748,6 +771,16 @@ class YeelightModeControls extends LitElement {
       }
       .mode[aria-pressed="true"] {
         border-color: var(--primary-color);
+      }
+      /* The name centred, the family icon at the end of its line. */
+      .favourite-name {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) 22px;
+        align-items: center;
+        gap: 4px;
+      }
+      .favourite-name > span:first-child {
+        grid-column: 2;
       }
       .mode:disabled {
         opacity: 0.45;

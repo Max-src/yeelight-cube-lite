@@ -99,6 +99,9 @@ FORMER_STYLE_NAMES = {
     "Blue White": "Night-sky waves", "Ice Blue": "Navy-white noise",
     "Carousel": "Violet interference", "Streamer": "Ribbon", "Ember": "Palette sparks",
     "Twinkle": "Violet twinkles", "7": "Dual scan",
+    # A background with a style in each form: its former name keeps the style
+    # it meant, over the hand-over.
+    "Prism": "Comet stream", "51": "Music flipped equalizer",
 }
 STYLE_ID = {style["name"]: style_id for style_id, style in STYLES.items()}
 
@@ -162,12 +165,18 @@ class EffectNameTableTests(unittest.TestCase):
         # The ids of the others: the sequence that counts every slot from 1
         # that is not a base mixer, the clock or a slot that cannot back it.
         base_mixers = {mixer for _, mixer in BASE_STYLES.values()}
+        twins = CONSTANTS["CLOCK_FORM_TWINS"]
         expected, style_id = {}, 16
         for mode in range(1, 82):
             if mode in base_mixers or mode == 40 or mode in {60, 46, 47, 49, 81}:
                 continue
             if mode not in CONSTANTS["LAMP_DEAD_END_SLOTS"]:
-                expected[style_id] = (LAMP_NAMES[mode], mode)
+                # A background with a style in each form: the handed-over one
+                # is named for its look, the direct one comes last.
+                expected[style_id] = (twins[mode][0] if mode in twins else LAMP_NAMES[mode], mode)
+            style_id += 1
+        for mode, (_, name) in twins.items():
+            expected[style_id] = (name, mode)
             style_id += 1
         self.assertEqual(expected, {
             i: (s["name"], s["mixer"]) for i, s in STYLES.items() if i > 15
@@ -177,10 +186,11 @@ class EffectNameTableTests(unittest.TestCase):
         for alias, name in FORMER_STYLE_NAMES.items():
             self.assertEqual(name, canonical_clock_style_name(alias))
         aliases = CONSTANTS["CLOCK_STYLE_ALIASES"]
+        handover = {direct: name for name, direct in CONSTANTS["CLOCK_FORM_TWINS"].values()}
         for alias, name in aliases.items():
             self.assertIn(name, STYLE_ID, alias)
             self.assertNotIn(alias, STYLE_ID, alias)
-            self.assertEqual(ALIASES[alias], name)
+            self.assertEqual(handover.get(ALIASES[alias], ALIASES[alias]), name)
         # An effect no style is named after has no style alias.
         self.assertNotIn("Shooting Star", aliases)
         for name in STYLE_ID:
@@ -244,7 +254,14 @@ class CardTableTests(unittest.TestCase):
         styles = self.js["cardStyles"]
         solid = [solid for _, solid in styles]
         self.assertEqual(sorted(solid), solid)
-        over_effects = [name for name, solid in styles if not solid]
+        # A background's style in each form: the handed-over one named for its
+        # look, next to the direct one.
+        looks = {handover: name for handover, name in CONSTANTS["CLOCK_FORM_TWINS"].values()}
+        over_effects = []
+        for name, solid in styles:
+            name = looks.get(name, name)
+            if not solid and name not in over_effects:
+                over_effects.append(name)
         self.assertEqual([name for name in catalogue if name in over_effects], over_effects)
 
     def test_the_cards_use_todays_names(self):
@@ -490,14 +507,19 @@ class SelectTests(unittest.TestCase):
 
     def test_the_effect_dropdown(self):
         select = self.select["YeelightCubeNativeEffectSelect"](self.light, None)
-        # The animations only while a server delivers the Yeelight commands.
+        # The animations only while a server delivers the Yeelight commands;
+        # never the stored GIF (hidden: the animations are chosen instead).
         self.light.animations_available = False
         self.assertEqual(
-            sorted((n for n in ALL if not ALL[n].get("animation")), key=lambda n: ALL[n]["mode"]),
+            sorted((n for n in ALL if not ALL[n].get("animation") and n != "Stored GIF"),
+                   key=lambda n: ALL[n]["mode"]),
             select.options,
         )
         self.light.animations_available = True
-        self.assertEqual(sorted(ALL, key=lambda n: ALL[n]["mode"]), select.options)
+        self.assertEqual(
+            sorted((n for n in ALL if n != "Stored GIF"), key=lambda n: ALL[n]["mode"]),
+            select.options,
+        )
         for alias, name in FORMER_NAMES.items():
             select._valid_option_or_raise(alias)
             asyncio.run(select.async_select_option(alias))

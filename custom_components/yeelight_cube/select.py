@@ -677,13 +677,13 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
     @property
     def options(self) -> list:
         # Every effect, sorted by built-in mode number. The animations to
-        # upload only while a server delivers the Yeelight commands (the
-        # stored GIF itself always); the current effect is always kept so HA
-        # never warns about an out-of-list value.
+        # upload only while a server delivers the Yeelight commands; not the
+        # stored GIF (hidden: the animations are chosen instead). The current
+        # effect is always kept so HA never warns about an out-of-list value.
         animations = getattr(self._light_entity, "animations_available", False)
         names = sorted(
             (name for name, spec in ALL_NATIVE_EFFECTS.items()
-             if animations or not spec.get("animation")),
+             if not spec.get("hidden") and (animations or not spec.get("animation"))),
             key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"],
         )
         current = getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
@@ -697,10 +697,14 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
 
     def _valid_option_or_raise(self, option: str) -> None:
         # Home Assistant checks the option against the list before
-        # async_select_option: a former name is checked as today's.
+        # async_select_option: a former name is checked as today's. A hidden
+        # effect (the stored GIF) is not listed but still taken by name.
+        option = canonical_effect_name(option)
+        if ALL_NATIVE_EFFECTS.get(option, {}).get("hidden"):
+            return
         check = getattr(super(), "_valid_option_or_raise", None)
         if check is not None:
-            check(canonical_effect_name(option))
+            check(option)
 
     async def async_select_option(self, option: str) -> None:
         # A former name (e.g. "Ocean Waves") is today's.

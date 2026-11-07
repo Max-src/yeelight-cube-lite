@@ -19,7 +19,7 @@ import {
   clockUsesLampRenderer,
   renderClockFrame,
 } from "./clock-preview-utils.js";
-import { lampClockFrame, viewerFrame } from "./matrix-view.js";
+import { lampTakesMount, viewerFrame } from "./matrix-view.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
 import { itemLabel, sortGalleryItems } from "./card-config.js";
 
@@ -69,6 +69,14 @@ export function createClockCardAdapter(card) {
     disabled: () => !availableTargets(card._hass, card.config).length,
     on: () => card._stateObj()?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
+    // The clock follows the Lamp mounted setting only where it reaches a lamp
+    // (its digits turn with the mount profile): any of the card's lamps.
+    orientationApplies: () =>
+      availableTargets(card._hass, card.config).some((entity) =>
+        lampTakesMount(card._hass.states[entity]?.attributes),
+      ),
+    // The previews follow an orientation being set: layout included.
+    orientationShown: () => card.requestUpdate(),
     apply: (name) => card._applyStyle(name, true),
     applyFavourite: (favourite) => card._applyFavourite(favourite),
     currentColorMode: () => card._currentColorMode(card._attrs()),
@@ -157,7 +165,7 @@ export function createClockCardAdapter(card) {
           : card._previewAttrs(style);
       const phase = clockPhase(elapsed, card._animationSpeed());
       return viewerFrame(
-        lampClockFrame(renderClockFrame(attrs, fontMap, metrics, phase), card._attrs()),
+        renderClockFrame(attrs, fontMap, metrics, phase),
         card._previewOrientation(),
       );
     },

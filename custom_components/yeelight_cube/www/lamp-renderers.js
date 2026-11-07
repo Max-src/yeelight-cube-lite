@@ -57,6 +57,7 @@ import { FORMERLY_NUMBERED_EFFECT_NAMES } from "./effect-names.js";
 export {
   LENGTH,
   RENDER_SECONDS,
+  clockDigitTargets,
   frameIndex,
   hueColour,
   inoise8Raw,
@@ -244,8 +245,8 @@ export const hasRenderer = (mode) => REGISTRY.has(mode);
 
 /** The run of `settings`, the most recently used last. */
 export function timelineFor(settings) {
-  const { mode, selector, intensity, rate, direction, primary, coloured, colours } = settings;
-  const key = `${mode},${selector},${intensity},${rate},${direction},${primary},${Boolean(coloured)},${colours ?? ""}`;
+  const { mode, selector, intensity, rate, direction, primary, coloured, colours, handover } = settings;
+  const key = `${mode},${selector},${intensity},${rate},${direction},${primary},${Boolean(coloured)},${colours ?? ""},${Boolean(handover)}`;
   const timeline = effectTimelines.get(key) ?? new Timeline(REGISTRY.get(mode), settings);
   effectTimelines.delete(key);
   effectTimelines.set(key, timeline);
@@ -980,8 +981,25 @@ export function lampSettings(
   return settings;
 }
 
+// const.py CLOCK_SETUP_FLAGS: the flags these backgrounds set in their first
+// render, which the clock's digits go through when they are started directly.
+export const CLOCK_SETUP_FLAGS = Object.freeze({ 22: 0x0a, 51: 0x42 });
+
+/** The flags the clock's digits are drawn on (lamp_renderers.py
+ * clock_digit_flags). */
+export function clockDigitFlags(mixer, direct) {
+  return 0x05 | (direct ? CLOCK_SETUP_FLAGS[mixer] ?? 0 : 0);
+}
+
+// const.py CLOCK_DIRECT_BACKGROUNDS: sent as themselves under the clock
+// overlay; mode 40 hands over to every other background.
+export const CLOCK_DIRECT_BACKGROUNDS = new Set([24, 33, 46, 47, 49, 60, 66, 69, 71, 72, 81]);
+
 /** What the lamp runs behind the clock when `effect` is its mixer
- * (lamp_renderers.py). */
+ * (lamp_renderers.py); `handover` when mode 40 hands over to it (it starts
+ * past its first render, on the hand-over's flags). `direct`: the style runs
+ * it as itself under the clock overlay (by default the
+ * CLOCK_DIRECT_BACKGROUNDS do). */
 export function lampClockSettings(
   effect,
   speed,
@@ -989,7 +1007,14 @@ export function lampClockSettings(
   colorMode = null,
   intensity = null,
   lampPalette = null,
+  direct = null,
 ) {
+  const settings = clockSettings(effect, speed, colorOverride, colorMode, intensity, lampPalette);
+  if (!(direct ?? CLOCK_DIRECT_BACKGROUNDS.has(settings.mode))) settings.handover = true;
+  return settings;
+}
+
+function clockSettings(effect, speed, colorOverride, colorMode, intensity, lampPalette) {
   const spec = LAMP_EFFECTS[effect];
   // The palette color mode: the palette's colours to a background that takes
   // them, else as the normal mode (lamp_renderers.py).

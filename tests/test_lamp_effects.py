@@ -29,6 +29,8 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent / "custom_components" / "yeelight_cube"
 FIXTURE = TESTS / "fixtures" / "lamp_effects.json.gz"
+# Slot 51 (Music noise equalizer) is stored placed through the flags the lamp
+# runs it with: 0x47 / 0x57 with its first render, 0x05 behind the clock.
 CHECK = TESTS / "lamp_effects_check.mjs"
 LAMP = runpy.run_path(str(ROOT / "lamp_renderers.py"))
 CORE = runpy.run_path(str(ROOT / "lamp_core.py"))
@@ -807,6 +809,112 @@ class WhatTheLampRunsTests(unittest.TestCase):
             # colors.
             self.assertEqual(custom, settings(name, 128, (255, 80, 20), "red_blue"))
             self.assertFalse(settings(name, 128, (255, 80, 20), "bw")["coloured"])
+
+    def test_a_clock_background_runs_past_its_first_render(self):
+        # Mode 40 hands over to a background in that render and skips it, on
+        # its own flags (0x05): what a renderer sets up there is lost. The
+        # direct backgrounds run it.
+        settings = LAMP["lamp_clock_settings"]
+        for mode, name in CONST["CLOCK_MIXER_EFFECTS"].items():
+            handover = mode not in CONST["CLOCK_DIRECT_BACKGROUNDS"]
+            self.assertEqual(handover, bool(settings(name, 128).get("handover")), name)
+        self.assertFalse(LAMP["lamp_settings"]("Mirrored comets", "Right", 128).get("handover"))
+        script = (
+            f"const m = await import({json.dumps((ROOT / 'www' / 'lamp-renderers.js').as_uri())});"
+            "process.stdout.write(JSON.stringify([...m.CLOCK_DIRECT_BACKGROUNDS].sort((a, b) => a - b)));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual(sorted(CONST["CLOCK_DIRECT_BACKGROUNDS"]), json.loads(result.stdout))
+
+    def test_mirrored_comets_has_no_mirror_behind_the_clock(self):
+        # On its own, its first render sets the mirror (each comet drawn twice,
+        # point-symmetric, over half the strip). Behind the clock that render
+        # is skipped: 17 comets cross all 100 pixels, the same way.
+        def lit(frame):
+            return {pixel for pixel in range(100) if any(frame[3 * pixel:3 * pixel + 3])}
+
+        effect = list(LAMP["exact_frames"](LAMP["lamp_settings"]("Mirrored comets", "Right", 128), 0, 400))
+        clock = list(LAMP["exact_frames"](LAMP["lamp_clock_settings"]("Mirrored comets", 128), 0, 400))
+        for frame in effect:
+            shown = lit(frame)
+            self.assertEqual(shown, {99 - pixel for pixel in shown})
+        self.assertTrue(any(lit(frame) != {99 - pixel for pixel in lit(frame)} for frame in clock))
+        self.assertGreater(max(len(lit(frame)) for frame in clock), 2 * 9)
+        # The cards draw the same frames.
+        script = (
+            f"const m = await import({json.dumps((ROOT / 'www' / 'lamp-renderers.js').as_uri())});"
+            "const s = m.lampClockSettings('Mirrored comets', 128);"
+            "process.stdout.write(JSON.stringify([...m.exactFrames(s, 0, 400)].map((f) => Array.from(f))));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual([list(frame) for frame in clock], json.loads(result.stdout))
+
+    def test_the_noise_equalizer_is_mirrored_behind_the_clock(self):
+        # Its first render adds 0x42 to its flags; behind the clock that
+        # render is skipped and the picture comes out mirrored left to right.
+        clock = LAMP["lamp_clock_settings"](SLOT_NAME[51], 128)
+        plain = {key: value for key, value in clock.items() if key != "handover"}
+        mirrored = list(LAMP["exact_frames"](clock, 0, 300))
+        for ours, theirs in zip(mirrored, LAMP["exact_frames"](plain, 0, 300)):
+            for row in range(5):
+                line = ours[60 * row:60 * row + 60]
+                other = theirs[60 * row:60 * row + 60]
+                self.assertEqual(
+                    [line[3 * c:3 * c + 3] for c in range(20)],
+                    [other[3 * c:3 * c + 3] for c in reversed(range(20))],
+                )
+        self.assertTrue(any(any(frame) for frame in mirrored))
+        script = (
+            f"const m = await import({json.dumps((ROOT / 'www' / 'lamp-renderers.js').as_uri())});"
+            f"const s = m.lampClockSettings({json.dumps(SLOT_NAME[51])}, 128);"
+            "process.stdout.write(JSON.stringify([...m.exactFrames(s, 0, 300)].map((f) => Array.from(f))));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual([list(frame) for frame in mirrored], json.loads(result.stdout))
+
+    def test_a_background_started_directly_moves_the_digits(self):
+        # The clock's digits go through the same writer as the background:
+        # on the clock's own flags they stay; Mirrored comets started directly
+        # draws only the first half (the hour and colon), flipped, and mirrors
+        # it ("08:40" shows "08::80"); the Music noise equalizer started
+        # directly mirrors them left to right.
+        core = runpy.run_path(str(ROOT / "lamp_core.py"))
+        targets, flags = core["clock_digit_targets"], LAMP["clock_digit_flags"]
+        self.assertEqual(0x05, flags(22, False))
+        self.assertEqual(0x0F, flags(22, True))
+        self.assertEqual(0x47, flags(51, True))
+        self.assertEqual(0x05, flags(39, True))
+        for index in range(100):
+            row, column = divmod(index, 20)
+            self.assertEqual([index], targets(index, flags(22, False)))
+            self.assertEqual([row * 20 + 19 - column], targets(index, flags(51, True)))
+            mirrored = targets(index, flags(22, True))
+            if column < 10:
+                self.assertEqual({(4 - row) * 20 + column, row * 20 + 19 - column}, set(mirrored))
+            else:
+                self.assertEqual([], mirrored)
+        script = (
+            f"const m = await import({json.dumps((ROOT / 'www' / 'lamp-renderers.js').as_uri())});"
+            "const out = {};"
+            "for (const f of [0x05, 0x0f, 0x47]) out[f] = Array.from({ length: 100 }, (_, i) => m.clockDigitTargets(i, f));"
+            "process.stdout.write(JSON.stringify(out));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        js = json.loads(result.stdout)
+        for value in (0x05, 0x0F, 0x47):
+            self.assertEqual([targets(i, value) for i in range(100)], js[str(value)])
 
     def test_the_js_clock_background_is_too(self):
         self.assertEqual([], node()["clockFailures"][:5])

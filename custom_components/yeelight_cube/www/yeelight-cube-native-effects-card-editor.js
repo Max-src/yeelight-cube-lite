@@ -259,6 +259,19 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                     those this card has; this browser remembers its choice.
                   </div>
                   ${createToggleRow(
+                    "Show effect family icon",
+                    "show_family_icons",
+                    config.show_family_icons !== false,
+                    (event) => change("show_family_icons", event.target.checked),
+                  )}
+                  <div class="hint">
+                    A small icon at the bottom right of each effect in the
+                    gallery (the favourites have their own switch): its family (a flame for Glow, a
+                    sparkle for Sparkles, a note for Music...), named when you
+                    hover it. Chips show it after the name; the dropdown and
+                    text buttons its emoji (🌊 🔥 ✨ ▶️ 🎵 🖼️).
+                  </div>
+                  ${createToggleRow(
                     "Sort toggle",
                     "show_sort",
                     config.show_sort !== false,

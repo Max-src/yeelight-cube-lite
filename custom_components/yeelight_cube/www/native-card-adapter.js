@@ -6,7 +6,7 @@ import {
 } from "./native-effect-card-utils.js";
 import { everyAvailable, getTargetEntities } from "./service-call-utils.js";
 import { isLampRendered } from "./lamp-renderers.js";
-import { matchesEffectFamily } from "./effect-families.js";
+import { effectFamilyOfName, familyBadge, matchesEffectFamily } from "./effect-families.js";
 import { previewOnly } from "./offline-preview-state.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
 import {
@@ -59,6 +59,15 @@ export function createNativeCardAdapter(card) {
       );
     },
     current: () => card._effect()?.name,
+    // The family icon a favourite shows: the favourites' own setting
+    // (favourites_show_family_icons), not the gallery's.
+    familyBadge: (name) =>
+      card.config.favourites_show_family_icons === false
+        ? null
+        : familyBadge(
+            nativeEffectItems(card._attrs()).find((item) => item.name === name)?.family ??
+              effectFamilyOfName(name),
+          ),
     available: (name) => card._effectAvailable(name),
     ready: () => card._rotationTargetsReady(),
     // Only lamp availability: a running card request must not disable the
@@ -69,6 +78,8 @@ export function createNativeCardAdapter(card) {
     disabled: () => card._disabled(),
     on: () => card._state?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
+    // The previews follow an orientation being set: layout included.
+    orientationShown: () => card.requestUpdate(),
     directions: () => card._effect()?.directions || [],
     direction: () => nativeEffectDirection(card._effect(), card._attrs()),
     setDirection: (direction) =>

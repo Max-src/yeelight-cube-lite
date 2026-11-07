@@ -55,6 +55,8 @@ try:
     from .const import (
         ALL_NATIVE_EFFECTS,
         CLOCK_COLOR_MODES,
+        CLOCK_DIRECT_BACKGROUNDS,
+        CLOCK_SETUP_FLAGS,
         CLOCK_MIXER_COMMAND_IDS,
         DEFAULT_NATIVE_EFFECT_SPEED,
         MUSIC_PALETTE_SIZE,
@@ -75,6 +77,7 @@ try:
     from .lamp_core import (
         COLS,
         DIRECTION_TABLE,
+        HANDOVER_FLAGS,
         LENGTH,
         REFERENCE_PROFILE,
         RENDER_SECONDS,
@@ -105,6 +108,8 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     from const import (
         ALL_NATIVE_EFFECTS,
         CLOCK_COLOR_MODES,
+        CLOCK_DIRECT_BACKGROUNDS,
+        CLOCK_SETUP_FLAGS,
         CLOCK_MIXER_COMMAND_IDS,
         DEFAULT_NATIVE_EFFECT_SPEED,
         MUSIC_PALETTE_SIZE,
@@ -125,6 +130,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     from lamp_core import (
         COLS,
         DIRECTION_TABLE,
+        HANDOVER_FLAGS,
         LENGTH,
         REFERENCE_PROFILE,
         RENDER_SECONDS,
@@ -305,7 +311,7 @@ def timeline_for(settings) -> Timeline:
     key = (
         settings["mode"], settings["selector"], settings["intensity"], settings["rate"],
         settings["direction"], tuple(settings["primary"]), bool(settings["coloured"]),
-        tuple(map(tuple, settings.get("colours", ()))),
+        tuple(map(tuple, settings.get("colours", ()))), bool(settings.get("handover")),
     )
     with _EFFECT_TIMELINES_LOCK:
         timeline = _EFFECT_TIMELINES.pop(key, None)
@@ -923,7 +929,7 @@ def lamp_effect_frame(settings, seconds: float) -> list:
 
 def lamp_clock_settings(
     effect: str, speed: int, color_override=None, color_mode=None, intensity=None,
-    palette=None,
+    palette=None, direct: bool | None = None,
 ) -> dict:
     """What the lamp runs behind the clock when ``effect`` is its mixer: mode 40
     hands over to it under the clock overlay (light_native._native_clock_params
@@ -934,7 +940,27 @@ def lamp_clock_settings(
     A mixer with no speed reads no rate, so its timeline stays the effect's;
     the same for the intensity. In the palette color mode a background that
     takes it is sent the palette's colours (clock_palette_words, ``palette``);
-    without them it runs as in the normal mode."""
+    without them it runs as in the normal mode. A background mode 40 hands
+    over to is marked ``handover``: it starts past its first render, on the
+    hand-over's flags. ``direct``: the style runs it as itself under the
+    clock overlay (const.clock_style_direct); by default
+    CLOCK_DIRECT_BACKGROUNDS do."""
+    settings = _clock_settings(effect, speed, color_override, color_mode, intensity, palette)
+    if direct is None:
+        direct = settings["mode"] in CLOCK_DIRECT_BACKGROUNDS
+    if not direct:
+        settings["handover"] = True
+    return settings
+
+
+def clock_digit_flags(mixer: int, direct: bool) -> int:
+    """The flags the clock's digits are drawn on (lamp_core.clock_digit_targets):
+    the clock's own, plus what a background started directly sets in its first
+    render (CLOCK_SETUP_FLAGS)."""
+    return HANDOVER_FLAGS | (CLOCK_SETUP_FLAGS.get(mixer, 0) if direct else 0)
+
+
+def _clock_settings(effect, speed, color_override, color_mode, intensity, palette) -> dict:
     spec = ALL_NATIVE_EFFECTS[effect]
     mode = spec["mode"]
     if color_mode == PALETTE_COLOR_MODE:

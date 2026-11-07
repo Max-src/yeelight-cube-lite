@@ -81,7 +81,7 @@ import {
   chosenSpeed,
   isLampRendered,
 } from "./lamp-renderers.js";
-import { FamilyFilter, GallerySort } from "./effect-families.js";
+import { FamilyFilter, GallerySort, familyBadge } from "./effect-families.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { itemLabel, normalizeCardOptions } from "./card-config.js";
 
@@ -246,6 +246,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       show_actions: true,
       show_search: true,
       show_family_filter: true,
+      show_family_icons: true,
+      favourites_show_family_icons: true,
       show_sort: true,
       show_device_orientation: true,
       show_effect_direction: true,
@@ -963,6 +965,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         dataMode: item.name,
         title: item.name,
         badge: this._effectBadge(item),
+        // Its family's icon under the preview (a flame, a sparkle...).
+        badgeIcon: this.config.show_family_icons === false ? null : familyBadge(item.family),
         colorData: nativeEffectFrame(item, attrs, 0),
         vertical,
         favourite: this._controls.hasFavourite(item.name, this._colorModeKey()),

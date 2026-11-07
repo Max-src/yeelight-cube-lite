@@ -27,6 +27,7 @@ class ClockPreviewTests(unittest.TestCase):
             **CONSTANTS, **NATIVE_PREVIEW, **LAMP,
             "dt_util": SimpleNamespace(now=lambda: datetime(2026, 9, 17, 21, 53)),
             "_time": self.timer, "COLS": 20, "ROWS": 5,
+            "clock_digit_targets": runpy.run_path(str(ROOT / "lamp_core.py"))["clock_digit_targets"],
             "FONT_MAPS": {"native": self.font},
             "char_advance": lambda font, char, glyph: 2 if char in ":." else 4,
         }
@@ -58,15 +59,21 @@ class ClockPreviewTests(unittest.TestCase):
                 for mode, override in (("normal", None), ("normal", 0x01B4143C), ("bw", None), ("red_blue", None)):
                     self.clock._native_clock_color_mode = mode
                     self.clock._native_clock_color = override
+                    # Handed over or direct, as the style is sent.
                     settings = LAMP["lamp_clock_settings"](
-                        effect, 50, (180, 20, 60) if override else None, mode,
+                        effect, 50, (180, 20, 60) if override else None, mode, None, None,
+                        CONSTANTS["clock_style_direct"](style),
                     )
                     # Computed ahead: a replay's time limit would show a frame earlier.
                     if LAMP["has_renderer"](settings["mode"]):
                         timeline = LAMP["timeline_for"](settings)
                         timeline.frame_at(timeline.first_shown() + int(elapsed / 0.04), True)
                     background = LAMP["lamp_effect_frame"](settings, elapsed)
-                    expected = [background[index] if any(pixel) else (0, 0, 0) for index, pixel in enumerate(mask)]
+                    # The digits where the lamp draws them for this style.
+                    flags = LAMP["clock_digit_flags"](style["mixer"], CONSTANTS["clock_style_direct"](style))
+                    targets = runpy.run_path(str(ROOT / "lamp_core.py"))["clock_digit_targets"]
+                    shown = {t for index, pixel in enumerate(mask) if any(pixel) for t in targets(index, flags)}
+                    expected = [background[index] if index in shown else (0, 0, 0) for index in range(100)]
                     for direction in (None, "Up", "Down", "Left", "Right"):
                         self.clock._native_effect_direction = direction
                         with self.subTest(style=style_id, mode=mode, override=override, direction=direction, elapsed=elapsed):
@@ -100,6 +107,35 @@ class ClockPreviewTests(unittest.TestCase):
                 self.clock._native_clock_style = style_id
                 self.camera._frozen_background_seconds = None
                 self.assertGreater(sum(map(any, self.render(self.camera))), 5, style["name"])
+
+    def test_a_mount_that_turns_the_clock_turns_only_the_digits(self):
+        # On profiles 0 and 1 the lamp lays the text out a half turn round;
+        # the background stays where it is on the panel (Fire still lights
+        # the same side).
+        lit = lambda frame: {i for i, pixel in enumerate(frame) if any(pixel)}
+        self.clock._native_clock_color_mode, self.clock._native_clock_color = "normal", None
+
+        def frames(name):
+            self.clock._native_clock_style = next(
+                i for i, s in CONSTANTS["NATIVE_CLOCK_STYLES"].items() if s["name"] == name
+            )
+            self.clock.lamp_turns_clock = False
+            upright = self.render(self.camera)
+            self.clock.lamp_turns_clock = True
+            return upright, self.render(self.camera)
+
+        # The digits (a plain color lights all of them) turn a half turn.
+        digits, digits_turned = (lit(frame) for frame in frames("Yellow"))
+        self.assertEqual({99 - i for i in digits}, digits_turned)
+        # The background shows through them where it is.
+        upright, turned = frames("Fire")
+        self.assertLessEqual(lit(upright), digits)
+        self.assertLessEqual(lit(turned), digits_turned)
+        background = LAMP["lamp_effect_frame"](LAMP["lamp_clock_settings"]("Fire", 50), 0.75)
+        self.assertTrue(lit(turned))
+        for frame in (upright, turned):
+            for index in lit(frame):
+                self.assertEqual(background[index], frame[index])
 
     def test_a_frozen_clock_holds_its_background_and_resumes_there(self):
         seconds = lambda: self.camera._clock_background_seconds()

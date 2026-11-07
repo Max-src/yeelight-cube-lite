@@ -23,6 +23,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 
 from .errors import failed
 from .storage import async_save_data
+from .color_adjustments import ADJUSTMENT_DEFAULTS, active_adjustments
 from .const import (
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -32,11 +33,13 @@ from .const import (
     CLOCK_MIXER_EFFECTS,
     LAMP_MUSIC_SLOTS,
     clock_segment_modes,
+    clock_style_direct,
     clock_style_colors,
     clock_style_default_color,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DEFAULT_NATIVE_EFFECT_INTENSITY,
+    DEFAULT_NATIVE_EFFECT_SPEED,
     DEVICE_ORIENTATION_TO_FLIP,
     DOMAIN,
     ORIENTATION_FLIPPED,
@@ -92,6 +95,20 @@ def effect_direction_sent(light, spec: dict) -> int:
         direction if direction in directions else directions[0],
         light._device_orientation,
     ))
+
+
+def animation_look(light) -> dict:
+    """What an animation's GIF is drawn with besides its frames
+    (lamp_animations.lamp_gif): the effect speed, which the lamp plays a GIF
+    at only through its frame delays, and the color adjustments, as for the
+    pixels the integration sends."""
+    return {
+        "speed": getattr(light, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED),
+        "adjustments": active_adjustments({
+            name: getattr(light, f"_preview_{name}", default)
+            for name, default in ADJUSTMENT_DEFAULTS.items()
+        }),
+    }
 
 
 def stored_gif_tile(light) -> int:
@@ -342,7 +359,7 @@ class NativeModesMixin:
         )
         clock_data = self._native_clock_data_bytes()
         effect_config = {
-            **clock_segment_modes(style["mixer"]),
+            **clock_segment_modes(style["mixer"], clock_style_direct(style)),
             "rate": lamp_rate(style["mixer"], self._native_effect_speed),
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
@@ -428,7 +445,8 @@ class NativeModesMixin:
 
     async def _store_animation(self, key: str) -> None:
         """Put the animation ``key`` (lamp_animations) in the lamp's stored
-        GIF, laid out for its mount, unless it is there already: over Matter
+        GIF, laid out for its mount, at the effect speed and with the color
+        adjustments, unless it is there already: over Matter
         (sendGifDataFragment), as the Yeelight app uploads its GIFs. The lamp
         writes its flash each time, so never more often than needed.
 
@@ -441,22 +459,30 @@ class NativeModesMixin:
         upside_down = layout != ANIMATION_LAYOUT_APP and (
             DEVICE_ORIENTATION_TO_FLIP.get(self._device_orientation) == ORIENTATION_FLIPPED
         )
+        # The pace and the colors are in the GIF (the lamp plays it at its
+        # own pace whatever the rate).
+        look = animation_look(self)
         stored = self._stored_gif
         if (
             stored.get("animation") == key
             and stored.get("upside_down") == upside_down
             and stored.get("layout", ANIMATION_LAYOUT_UPRIGHT) == layout
+            and stored.get("speed", DEFAULT_NATIVE_EFFECT_SPEED) == look["speed"]
+            and stored.get("adjustments", {}) == look["adjustments"]
             and not stored.get("interrupted")
         ):
             return
         channel = self.matter_commands
         if channel is None or not await channel.async_available():
             raise failed("animation_needs_matter")
-        packets = gif_packets(lamp_gif(key, self._device_orientation, layout))
+        packets = gif_packets(lamp_gif(
+            key, self._device_orientation, layout, look["speed"], look["adjustments"],
+        ))
         copies = 2 if stored.get("interrupted") else 1
         # Until the end marker is acknowledged, the lamp's GIF is unknown.
         self._stored_gif = {
-            "animation": None, "upside_down": upside_down, "layout": layout, "interrupted": True,
+            "animation": None, "upside_down": upside_down, "layout": layout, **look,
+            "interrupted": True,
         }
         for _ in range(copies):
             for packet in packets:
@@ -475,7 +501,8 @@ class NativeModesMixin:
                     )
                     raise failed("animation_upload_failed", status=str(status))
         self._stored_gif = {
-            "animation": key, "upside_down": upside_down, "layout": layout, "interrupted": False,
+            "animation": key, "upside_down": upside_down, "layout": layout, **look,
+            "interrupted": False,
         }
         _LOGGER.debug("[ANIMATION] [%s] %s stored (%d packets)", self._ip, key, len(packets) * copies)
 
@@ -673,7 +700,9 @@ class NativeModesMixin:
             self._native_effect, ALL_NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
         )
         effect_config = {"mode": spec["mode"], "onoff": 1}
-        if spec.get("speed"):
+        if spec.get("animation"):
+            pass  # its speed is in the GIF (_store_animation)
+        elif spec.get("speed"):
             effect_config["rate"] = lamp_rate(spec["mode"], self._native_effect_speed)
         elif spec.get("rate") is not None:
             effect_config["rate"] = spec["rate"]

@@ -537,7 +537,7 @@ export class ModeControlsController {
     this.syncInterval();
     this.selection.observe(this.captureFavourite());
     if (this.pendingOrientation === this.adapter.orientation?.()) {
-      this.pendingOrientation = null;
+      this._setPendingOrientation(null);
       clearTimeout(this.orientationTimer);
     }
     // Switching to a different mode resumes playback, so the freeze indicator
@@ -836,22 +836,32 @@ export class ModeControlsController {
     this.notify();
   }
 
+  // The orientation being set, which the card's previews follow at once:
+  // their layout too (a lamp standing on its end draws them upright), so the
+  // card renders again (adapter.orientationShown) whenever it changes, never
+  // a picture turned for one orientation in the other's layout.
+  _setPendingOrientation(value) {
+    if (this.pendingOrientation === value) return;
+    this.pendingOrientation = value;
+    this.adapter.orientationShown?.();
+  }
+
   async orient(target) {
     if (!target || this.busy) return;
     const context = this.context;
-    this.pendingOrientation = target;
+    this._setPendingOrientation(target);
     const success = await this.command(() =>
       this.adapter.command("set_device_orientation", { orientation: target }),
     );
     if (context !== this.context) return;
-    if (!success) this.pendingOrientation = null;
+    if (!success) this._setPendingOrientation(null);
     clearTimeout(this.orientationTimer);
     this.orientationTimer = setTimeout(
       () => {
         if (context !== this.context) return;
         if (this.adapter.orientation() !== target)
           this.error = "Orientation was not confirmed. Try again.";
-        this.pendingOrientation = null;
+        this._setPendingOrientation(null);
         this.notify();
       },
       success ? 8000 : 0,

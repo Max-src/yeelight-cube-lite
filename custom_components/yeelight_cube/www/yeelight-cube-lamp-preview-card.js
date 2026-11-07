@@ -353,8 +353,9 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     super.updated?.(changedProperties);
     const stateObj = this._hass?.states?.[this._primaryEntity()];
     if (!stateObj) return;
-    const freshDots = this._paintedGeneration !== this._dotGeneration;
-    this._paintedGeneration = this._dotGeneration;
+    // New dots (a new look or orientation, _matrixTemplate) are painted at once.
+    const freshDots = this._paintedDots !== this._dotsKey;
+    this._paintedDots = this._dotsKey;
     // Built-in Native Effect and Clock modes run animations the plugin can't
     // read back (their matrix_colors are stale): client-side loops draw them.
     const preview = this.config.show_lamp_preview !== false;

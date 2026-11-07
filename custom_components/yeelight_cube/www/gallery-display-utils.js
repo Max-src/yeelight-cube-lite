@@ -184,6 +184,61 @@ export const matrixPreviewStyles = `
   .gallery-matrix-preview.matrix-surface-holes > div {
     box-shadow: none !important;
   }
+  /* An item's family (effect-families.js familyBadge): a small icon, its
+     name in the tooltip, colored like the card's buttons (data-look, the
+     card's buttons_style: modern and pill the same), never their size. */
+  .yc-family-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    --mdc-icon-size: 14px;
+    vertical-align: middle;
+  }
+  .yc-family-icon {
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
+  }
+  .yc-family-icon[data-look="classic"] {
+    background: var(--primary-color, #03a9f4);
+    color: var(--text-primary-color, #fff);
+  }
+  .yc-family-icon[data-look="outline"] {
+    background: transparent;
+    border: 1px solid var(--primary-color, #03a9f4);
+  }
+  .yc-family-icon[data-look="gradient"] {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: var(--text-primary-color, #fff);
+  }
+  /* In a chip, after its name. */
+  .mode-chip-family {
+    display: inline-flex;
+    margin-left: 2px;
+    line-height: 0;
+  }
+  .mode-chip-family .yc-family-icon {
+    width: 18px;
+    height: 18px;
+    --mdc-icon-size: 12px;
+  }
+  /* At the bottom right of a preview tile, below its picture. */
+  .gallery-item-footer {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    align-self: stretch;
+    width: 100%;
+    margin-top: 4px;
+    line-height: 0;
+  }
+  .yc-family-icon ha-icon {
+    display: flex;
+  }
 `;
 
 /**
@@ -407,6 +462,14 @@ export const galleryDisplayStyles =
   .original-item-badge {
     font-size: 12px;
     color: var(--secondary-text-color, #666);
+  }
+  /* The badge, and the family icon at the end of its line. */
+  .original-item-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
   }
 
   /* ========================================

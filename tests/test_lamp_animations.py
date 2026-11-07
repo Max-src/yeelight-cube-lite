@@ -13,11 +13,12 @@ from types import SimpleNamespace
 
 from tests import test_live_effect as live
 from tests.test_matter_link import MATTER, FakeLight
-from tests.test_native_features import CONSTANTS, ROOT, TranslatedError
+from tests.test_native_features import CONSTANTS, ROOT, TranslatedError, _load_standalone_functions
 
 import runpy
 
 ANIMATIONS = runpy.run_path(str(ROOT / "lamp_animations.py"))
+ADJUSTMENTS = runpy.run_path(str(ROOT / "color_adjustments.py"))
 EFFECTS = CONSTANTS["LAMP_ANIMATION_EFFECTS"]
 TOOL = ROOT.parents[1] / "tools" / "generate_lamp_animations.py"
 
@@ -35,7 +36,9 @@ class AnimationDataTests(unittest.TestCase):
         )
         for spec in EFFECTS.values():
             self.assertEqual(spec["mode"], CONSTANTS["LAMP_STORED_GIF_SLOT"])
-            self.assertFalse(spec.get("speed") or spec.get("intensity") or spec.get("directions"))
+            # The speed is in the GIF (its delays): the speed slider applies.
+            self.assertTrue(spec.get("speed"))
+            self.assertFalse(spec.get("intensity") or spec.get("directions"))
 
     def test_each_stands_for_one_of_the_app_s_gif_tiles(self):
         # Winter, Dream, Halloween, Moonlight (light_matter.APP_GIF_TILES).
@@ -154,6 +157,45 @@ class GifTests(unittest.TestCase):
                 gif = ANIMATIONS["lamp_gif"](key, "up", layout)
                 self.assertTrue(all(gif[stop - 1] != 0x1A for stop in range(end, len(gif) + 1, end)), (key, layout))
 
+    def test_the_speed_is_in_the_frame_delays(self):
+        delays = ANIMATIONS["animation_delays"]
+        drawn = ANIMATIONS["_animations"]()["snowfall"]["delays"]
+        default = CONSTANTS["DEFAULT_NATIVE_EFFECT_SPEED"]
+        self.assertEqual(drawn, delays("snowfall", default))
+        self.assertEqual(drawn, delays("snowfall", None))
+        # Twice as fast a doubling above, half as fast one below; whole
+        # hundredths, never under two.
+        self.assertEqual([70, 60], list(delays("snowfall", default + 64)[:2]))
+        self.assertEqual([260, 240], list(delays("snowfall", default - 64)[:2]))
+        self.assertEqual({30}, set(delays("snowfall", 255)))
+        self.assertTrue(all(delay % 10 == 0 for delay in delays("daydream", 0)))
+        image = Image.open(io.BytesIO(ANIMATIONS["lamp_gif"]("snowfall", speed=0)))
+        shown = []
+        for frame in ImageSequence.Iterator(image):
+            shown.append(frame.info["duration"])
+        self.assertEqual(list(delays("snowfall", 0)), shown)
+        # The preview's frame at a time follows the same delays.
+        frame_at = ANIMATIONS["animation_frame_at"]
+        frames = ANIMATIONS["_animations"]()["snowfall"]["frames"]
+        self.assertEqual(frames[1], frame_at("snowfall", 0.13, 128))
+        self.assertEqual(frames[0], frame_at("snowfall", 0.13, 0))
+        self.assertEqual(frames[4], frame_at("snowfall", 0.13, 255))
+
+    def test_the_color_adjustments_are_in_the_gif(self):
+        look = {"hue_shift": 120, "saturation": 60, "tint_strength": 20, "tint_hue": 300}
+        drawn = ANIMATIONS["_animations"]()["halloween_glow"]["frames"]
+        _, frames = self.decode(ANIMATIONS["lamp_gif"]("halloween_glow", None, "app", None, look))
+        adjust = ADJUSTMENTS["adjust_color"]
+        self.assertEqual([[adjust(pixel, look) for pixel in frame] for frame in drawn], [
+            [tuple(pixel) for pixel in frame] for frame in frames
+        ])
+        self.assertNotEqual([list(frame) for frame in drawn], frames)
+        # The previews draw them too.
+        self.assertEqual(
+            [adjust(pixel, look) for pixel in ANIMATIONS["animation_frame_at"]("halloween_glow", 0.37)],
+            list(ANIMATIONS["animation_frame_at"]("halloween_glow", 0.37, None, look)),
+        )
+
     def test_the_encoder_round_trips_long_runs(self):
         frames = [[(index * 37 % 256, index, 255 - index) for index in range(100)]] * 2
         _, decoded = self.decode(ANIMATIONS["encode_gif"](frames, [100, 100]))
@@ -208,11 +250,38 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.lamp._store_animation = live.FNS["_store_animation"].__get__(self.lamp)
         self.packets = len(ANIMATIONS["gif_packets"](ANIMATIONS["lamp_gif"]("snowfall")))
 
+    def look(self, **adjustments):
+        return {"speed": self.lamp._native_effect_speed, "adjustments": adjustments}
+
+    async def test_a_new_speed_or_color_adjustment_uploads_it_again(self):
+        await self.lamp._activate_native_effect()
+        uploads = self.channel.sent.count(b"")
+        # Another speed: its delays are in the GIF, no rate is sent (the lamp
+        # plays a GIF at its own pace whatever the rate).
+        self.sent.clear()
+        self.lamp._native_effect_speed = 200
+        await self.lamp._activate_native_effect()
+        self.assertEqual(uploads + 1, self.channel.sent.count(b""))
+        (_, params), = [sent for sent in self.sent if sent[0] == "set_fx_effect"]
+        self.assertNotIn("rate", params[3])
+        self.assertEqual(200, self.lamp._stored_gif["speed"])
+        # A color adjustment: uploaded with it.
+        self.lamp._preview_hue_shift = 45
+        await self.lamp._activate_native_effect()
+        self.assertEqual(uploads + 2, self.channel.sent.count(b""))
+        self.assertEqual({"hue_shift": 45}, self.lamp._stored_gif["adjustments"])
+        sent_gif = ANIMATIONS["lamp_gif"]("snowfall", "right", "upright", 200, {"hue_shift": 45})
+        self.assertIn(ANIMATIONS["gif_packets"](sent_gif)[0], self.channel.sent)
+        # One that changes nothing (a tint hue without its strength): no upload.
+        self.lamp._preview_tint_hue = 200
+        await self.lamp._activate_native_effect()
+        self.assertEqual(uploads + 2, self.channel.sent.count(b""))
+
     async def test_an_animation_is_uploaded_once_then_played(self):
         await self.lamp._activate_native_effect()
         self.assertEqual(self.packets, len(self.channel.sent))
         self.assertEqual(b"\x04", self.channel.sent[-1])
-        self.assertEqual({"animation": "snowfall", "upside_down": False, "layout": "upright", "interrupted": False}, self.lamp._stored_gif)
+        self.assertEqual({"animation": "snowfall", "upside_down": False, "layout": "upright", **self.look(), "interrupted": False}, self.lamp._stored_gif)
         (command, params), = [sent for sent in self.sent if sent[0] == "set_fx_effect"]
         self.assertEqual(params[0], EFFECTS["Snowfall"]["effect_id"])
         # Effect 71, as the Yeelight app plays a GIF: only then does the app
@@ -248,7 +317,7 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         await self.lamp._activate_native_effect()
         app = len(ANIMATIONS["gif_packets"](ANIMATIONS["lamp_gif"]("snowfall", None, "app")))
         self.assertEqual(app, len(self.channel.sent))
-        self.assertEqual({"animation": "snowfall", "upside_down": False, "layout": "app", "interrupted": False}, self.lamp._stored_gif)
+        self.assertEqual({"animation": "snowfall", "upside_down": False, "layout": "app", **self.look(), "interrupted": False}, self.lamp._stored_gif)
         # Another mount: the same file, not uploaded again.
         self.lamp._device_orientation = "up"
         await self.lamp._activate_native_effect()
@@ -268,7 +337,7 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(3, len(self.channel.sent))
         self.assertNotIn(b"\x04", self.channel.sent)
         self.assertNotIn("set_fx_effect", [command for command, _ in self.sent])
-        self.assertEqual({"animation": None, "upside_down": False, "layout": "upright", "interrupted": True}, self.lamp._stored_gif)
+        self.assertEqual({"animation": None, "upside_down": False, "layout": "upright", **self.look(), "interrupted": True}, self.lamp._stored_gif)
         self.channel.refuse_at = None
         self.channel.sent.clear()
         await self.lamp._activate_native_effect()
@@ -286,6 +355,30 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.lamp._native_effect = "Stored GIF"
         await self.lamp._activate_native_effect()
         self.assertEqual(["set_fx_effect"], self.commands())
+
+
+class RestoreTests(unittest.TestCase):
+    def test_the_stored_gif_keeps_its_speed_and_colors_over_a_restart(self):
+        invalid = object()
+        stored_gif = _load_standalone_functions(
+            (ROOT / "light_restore.py").read_text(encoding="utf-8"), {"_stored_gif"},
+            {
+                **{name: CONSTANTS[name] for name in ("LAMP_ANIMATION_EFFECTS", "ANIMATION_LAYOUTS", "SPEED_RANGE")},
+                "active_adjustments": ADJUSTMENTS["active_adjustments"], "_INVALID": invalid,
+            },
+        )["_stored_gif"]
+        saved = {
+            "animation": "daydream", "upside_down": False, "layout": "app", "speed": 40,
+            "adjustments": {"hue_shift": 30, "saturation": 100}, "interrupted": False,
+        }
+        self.assertEqual(
+            {**saved, "adjustments": {"hue_shift": 30}}, stored_gif(saved),
+        )
+        # Saved before they were in it, or wrong: the default speed and no
+        # adjustment (_store_animation reads them so).
+        restored = stored_gif({**saved, "speed": 999, "adjustments": {"hue_shift": "x"}})
+        self.assertNotIn("speed", restored)
+        self.assertNotIn("adjustments", restored)
 
 
 class AppGifTests(unittest.TestCase):
@@ -307,16 +400,22 @@ class AnimationParityTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node is required for the cards")
     def test_the_cards_draw_the_camera_s_frames(self):
         frames_js = (ROOT / "www" / "lamp-animation-frames.js").as_uri()
+        looks = (
+            (None, None), (0, {"hue_shift": -90, "contrast": 160}),
+            (255, {"saturation": 30, "tint_strength": 40, "tint_hue": 120, "invert": 25}),
+        )
         cases = [
-            [key, seconds, mount, layout]
+            [key, seconds, mount, layout, speed, look]
             for key in ANIMATIONS["animation_names"]()
             for seconds, mount in ((0.0, "right"), (2.7, "up"), (5.95, "down"))
             for layout in (None, "app")
+            for speed, look in looks
         ]
         script = (
+            "globalThis.atob ??= (b) => Buffer.from(b, 'base64').toString('binary');"
             f"const m = await import({json.dumps(frames_js)});"
             f"process.stdout.write(JSON.stringify({{ names: m.ANIMATION_EFFECTS, frames: {json.dumps(cases)}"
-            ".map(([key, seconds, mount, layout]) => m.animationFrame(key, seconds, mount, layout)) }));"
+            ".map((args) => m.animationFrame(...args)) }));"
         )
         result = subprocess.run(
             [shutil.which("node"), "--input-type=module", "-e", script],
@@ -328,6 +427,48 @@ class AnimationParityTests(unittest.TestCase):
             [[list(pixel) for pixel in ANIMATIONS["animation_frame"](*case)] for case in cases],
             out["frames"],
         )
+
+
+class ColorAdjustmentParityTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the cards")
+    def test_the_cards_adjust_colors_as_the_integration_does(self):
+        import random
+
+        rng = random.Random(7)
+        ranges = {
+            "hue_shift": (-180, 180), "temperature": (-100, 100), "saturation": (0, 200),
+            "vibrance": (0, 200), "contrast": (0, 200), "glow": (0, 100), "grayscale": (0, 100),
+            "tint_hue": (0, 360), "tint_strength": (0, 100), "invert": (0, 100),
+        }
+        cases = []
+        for _ in range(1500):
+            values = {name: rng.randint(*ranges[name]) for name in rng.sample(list(ranges), rng.randint(1, 5))}
+            rgb = [rng.choice((0, 1, 127, 128, 255, rng.randint(0, 255))) for _ in range(3)]
+            cases.append([rgb, values])
+        script_js = (ROOT / "www" / "color-adjustments.js").as_uri()
+        # The cases go in on stdin: too long for a command line.
+        script = (
+            f"const m = await import({json.dumps(script_js)});"
+            "let text = ''; for await (const chunk of process.stdin) text += chunk;"
+            "process.stdout.write(JSON.stringify(JSON.parse(text)"
+            ".map(([rgb, values]) => m.adjustColor(rgb, m.activeAdjustments(values)))));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            input=json.dumps(cases), text=True, capture_output=True, check=True,
+        )
+        adjust, active = ADJUSTMENTS["adjust_color"], ADJUSTMENTS["active_adjustments"]
+        self.assertEqual(
+            [list(adjust(rgb, active(values))) for rgb, values in cases],
+            json.loads(result.stdout),
+        )
+
+    def test_only_adjustments_that_change_a_color_count(self):
+        active = ADJUSTMENTS["active_adjustments"]
+        self.assertEqual({}, active(ADJUSTMENTS["ADJUSTMENT_DEFAULTS"]))
+        self.assertEqual({}, active({"tint_hue": 200, "saturation": 100}))
+        self.assertEqual({"tint_hue": 200, "tint_strength": 10}, active({"tint_hue": 200, "tint_strength": 10}))
+        self.assertEqual((0, 0, 0), ADJUSTMENTS["adjust_color"]((0, 0, 0), {"invert": 100}))
 
 
 if __name__ == "__main__":

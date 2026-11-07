@@ -110,6 +110,15 @@ def make_light(**state):
 
 
 class ControlEntityTests(unittest.TestCase):
+    def test_the_effect_dropdown_leaves_the_stored_gif_out_but_while_it_plays(self):
+        light = make_light()
+        light.animations_available = True
+        select = SELECT["YeelightCubeNativeEffectSelect"](light, None)
+        self.assertNotIn("Stored GIF", select.options)
+        self.assertIn("Snowfall", select.options)
+        light._native_effect = "Stored GIF"
+        self.assertIn("Stored GIF", select.options)
+
     def test_every_dropdown_keeps_its_id_and_name(self):
         light = make_light()
         hass = types.SimpleNamespace(data={})

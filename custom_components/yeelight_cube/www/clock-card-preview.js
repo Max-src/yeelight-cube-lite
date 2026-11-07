@@ -16,7 +16,6 @@ import {
 import { RENDER_SECONDS, chosenIntensity } from "./lamp-renderers.js";
 import {
   MATRIX_SIZE,
-  lampClockFrame,
   isVerticalMount,
   viewerFrame,
 } from "./matrix-view.js";
@@ -265,11 +264,9 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     // renderClockFrame is bottom-origin (row 0 = physical bottom): shown as
     // the viewer sees the lamp, top row first (matrix-view.js).
     const frame = viewerFrame(
-      // As the lamp draws it: its direction setting may turn it (Matter).
-      lampClockFrame(
-        renderClockFrame(attrs, fontMap, metrics, phase),
-        this._attrs(),
-      ),
+      // As the lamp draws it: its mount profile may turn the digits
+      // (renderClockFrame).
+      renderClockFrame(attrs, fontMap, metrics, phase),
       this._previewOrientation(),
     );
     const brightnessScale = isCurrent

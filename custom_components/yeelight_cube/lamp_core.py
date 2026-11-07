@@ -832,6 +832,9 @@ def strip_frame(draws, direction: int, profile: int = REFERENCE_PROFILE) -> list
 
 
 _INSTALL_FLAGS = (0x05, 0x45, 0x55, 0x15)  # segment flags by mapped direction
+# A clock background's flags: mode 40 hands over to it with these, whatever
+# direction is sent, and skips its first render, where some set their own.
+HANDOVER_FLAGS = 0x05
 
 
 def read_back_flags(mode: int, mapped: int, mixer: int = 0) -> int:
@@ -840,6 +843,20 @@ def read_back_flags(mode: int, mapped: int, mixer: int = 0) -> int:
         return 0x45 if mapped == 1 else 0x05
     flags = 0x05 if mixer == 1 else _INSTALL_FLAGS[mapped]
     return flags | 0x42 if mode == 51 else flags
+
+
+def clock_digit_targets(index: int, flags: int) -> list:
+    """Where the lamp draws the clock digits' pixel at frame ``index`` (lamp
+    order) on the flags its clock runs with: the writer turns them like any
+    pixel, and on the mirror bit draws only the first half of the strip (and
+    its mirror). On the clock's own 0x05: where it is."""
+    if flags == HANDOVER_FLAGS:
+        return [index]
+    row, column = divmod(index, COLS)
+    pixel = column * ROWS + row
+    if flags & 0x08 and pixel >= LENGTH // 2:
+        return []
+    return [frame_index(target) for target in flagged_targets(pixel, LENGTH, 0, flags)]
 
 
 def flags_index(pixel: int, length: int, flags: int) -> int:

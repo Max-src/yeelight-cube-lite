@@ -14,7 +14,10 @@ import math
 
 try:
     from .lamp_core import (
+        DIRECTION_TABLE,
+        HANDOVER_FLAGS,
         LENGTH,
+        REFERENCE_PROFILE,
         blend_grid,
         blur_columns,
         demo_sound,
@@ -23,6 +26,7 @@ try:
         f32,
         fade_grid,
         fade_towards,
+        flagged_targets,
         inoise8_raw,
         lround,
         new_grid,
@@ -30,6 +34,7 @@ try:
         palette_span,
         pixel_map,
         place_strip,
+        read_back_flags,
         row_blur_grid,
         source_word,
         sx8,
@@ -40,7 +45,10 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from lamp_core import (
+        DIRECTION_TABLE,
+        HANDOVER_FLAGS,
         LENGTH,
+        REFERENCE_PROFILE,
         blend_grid,
         blur_columns,
         demo_sound,
@@ -49,6 +57,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         f32,
         fade_grid,
         fade_towards,
+        flagged_targets,
         inoise8_raw,
         lround,
         new_grid,
@@ -56,6 +65,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         palette_span,
         pixel_map,
         place_strip,
+        read_back_flags,
         row_blur_grid,
         source_word,
         sx8,
@@ -325,8 +335,11 @@ def blossom_step(state, settings, clock_ms, render) -> bytes:
 
 
 # ── Slot 51: noise equalizer ────────────────────────────────────────────
-# The mapper on the flags 51 runs with (0x47, 0x57) is a permutation and the
-# read-back undoes it: the buffer by logical cell is the same picture.
+# Its grid reaches the panel through the mapper on the flags it runs with:
+# its first render adds 0x42 (0x47 on directions mapped 0 and 1, which then
+# look the same, 0x57 on the turned ones). Behind the clock (``handover``)
+# that render is skipped and the flags stay 0x05: the picture is flipped left
+# to right (_equalizer_placement).
 # noise51 only ever reads x < 384, so three hashes of Perlin's table.
 # The warmup is over the 768 renders of the beat and the noise's step together.
 _EQUALIZER_WARMUP = 218  # at low intensity a peak waits for the next tall bar
@@ -412,7 +425,26 @@ def equalizer_step(state, settings, clock_ms, render) -> bytes:
             row = lround(peak)
             cell = 3 * ((0 if height <= row else row) * width + column)
             work[cell:cell + 3] = first
-    return place_strip(work, state["direction"])
+    return bytes(map(work.__getitem__, _equalizer_placement(settings)))
+
+
+_PLACEMENTS_51: dict = {}
+
+
+def _equalizer_placement(settings) -> tuple:
+    """Panel byte -> grid byte: each grid cell through the mapper on the
+    flags slot 51 runs with (0x05 behind the clock), one panel pixel each."""
+    mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings["direction"]]
+    flags = HANDOVER_FLAGS if settings.get("handover") else read_back_flags(51, mapped)
+    key = (mapped, flags)
+    if key not in _PLACEMENTS_51:
+        table = [0] * (3 * LENGTH)
+        for pixel in range(LENGTH):
+            (index,) = flagged_targets(pixel, LENGTH, mapped, flags)
+            for channel in range(3):
+                table[3 * index + channel] = 3 * pixel + channel
+        _PLACEMENTS_51[key] = tuple(table)
+    return _PLACEMENTS_51[key]
 
 
 # ── Slot 73: Note ───────────────────────────────────────────────────────

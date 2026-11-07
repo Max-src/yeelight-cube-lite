@@ -359,6 +359,7 @@ for layouts, offline editing and multi-lamp rotation.
 | **Sliders** | Brightness, speed and intensity with selectable slider styles, labels and values; speed and intensity are shown only when the style's background uses them, or greyed out in place with **Grey out unused sliders** |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
 | **Actions** | Previous, next, random, freeze, refresh and power controls |
+| **Lamp mounted** | Right / Down / Left / Up, shown when a Matter server that sends Yeelight commands lets it reach the lamp's clock: the lamp then turns the digits for the mount, the background stays where it is on the panel, and the previews show it so |
 | **Favourites & rotation** | Save style-and-color combinations on the lamp (the same on every dashboard and device); rotate at a configurable interval, even after closing the dashboard |
 | **Multiple lamps & offline editing** | Target several lamps; previews and color choices remain available while lamps are unavailable |
 
@@ -452,7 +453,7 @@ available where supported.
 | Feature | Description |
 | :-- | :-- |
 | **Live previews** | Preview built-in animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) A **family filter** beside the search field (All, Waves, Glow, Sparkles, Motion, Music, Still) shows one kind of effect; it offers the families the card has, this browser remembers the choice, and the editor can hide it. |
+| **Effect browser** | Search effects using text styles (Filled, Dropdown, or Chips with a live mini preview), live-preview layouts (List, Grid, Mosaic, Strip, Carousel, Wheel or Album) or the Original grid or list, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) A **family filter** beside the search field (All, Waves, Glow, Sparkles, Motion, Music, Still) shows one kind of effect; it offers the families the card has, this browser remembers the choice, and the editor can hide it. Each effect, in the browser and the favourites, shows its family's icon at the bottom right, never over its preview (a flame for Glow, a sparkle for Sparkles, a note for Music, waves, a play arrow for Motion, a picture for Still), colored like the card's buttons; hovering it names the family. Chips show it after the name, the dropdown and text buttons the family's emoji (🌊 🔥 ✨ ▶️ 🎵 🖼️). The editor's **Show effect family icon** turns them off in the browser, the Favourites section's own **Show effect family icon** for the favourites. |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness, effect speed and intensity with selectable slider styles; speed and intensity are shown only for effects that use them, or greyed out in place with **Grey out unused sliders** |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -1390,16 +1391,25 @@ hear the lamp's microphone: the preview shows how the effect moves, not what the
 lamp shows now.
 
 **Stored GIF and animations.** A lamp keeps one GIF and plays it as the
-**Stored GIF** effect, over LAN, without Matter. Its picture cannot be read back,
+**Stored GIF** effect, over LAN, without Matter. The cards and the effect
+dropdown do not list it (the four animations below are chosen instead), but
+`set_native_effect` and the dropdown's `select_option` still take it by name,
+and it shows while it plays. Its picture cannot be read back,
 so its preview is a placeholder unless the GIF is one of the integration's
-animations. Four animations come with the integration, drawn for it: **Snowfall**,
+animations. Snowfall is in the Sparkles family, Daydream in Waves, Halloween
+glow and Moonlit clouds in Glow. Four animations come with the integration, drawn for it: **Snowfall**,
 **Daydream**, **Halloween glow** and **Moonlit clouds**. Starting one uploads
 it to the lamp as its stored GIF, then plays it. The upload needs a Matter
 server that delivers the Yeelight commands
 ([docs/MATTER_COMMANDS.md](docs/MATTER_COMMANDS.md)): without one, the
 animations are not listed. The lamp writes the GIF to its memory, so the
 integration uploads only when the lamp does not hold that animation yet (it
-remembers which one it stored, for which mount). Each animation stands for one
+remembers which one it stored, for which mount, speed and colors). The lamp
+plays a GIF at its own pace and in its own colors, so the **effect speed**
+(about a quarter to four times as fast) and the Lamp Preview card's **color
+adjustments** are put in the GIF itself: changing one while an animation
+plays uploads it again, which takes a few seconds; the previews show them at
+once. Each animation stands for one
 of the Yeelight app's four: Snowfall for Winter, Daydream for Dream, Halloween
 glow for Halloween and Moonlit clouds for Moonlight. It is played under that
 animation's id, so the app shows it as the one playing (Stored GIF too, while

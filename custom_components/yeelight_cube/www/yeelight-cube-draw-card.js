@@ -1,5 +1,5 @@
 import { resolvePreviewAppearance } from "./preview-appearance.js";
-import { LitElement, html } from "./lib/lit-all.js";
+import { LitElement, html, repeat } from "./lib/lit-all.js";
 
 import { parseConfig } from "./draw_card_state.js";
 import { drawCardStyles } from "./draw_card_styles.js";
@@ -600,7 +600,13 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
           @touchcancel=${(e) => endDraw(this, e)}
           @touchmove=${(e) => drawMove(this, e)}
         >
-          ${view.source.map((idx) => {
+          ${repeat(
+            view.source,
+            // Keyed by the view: a pixel fades to a new color (0.1 s), so one
+            // kept from the other layout would show the drawing a moment in
+            // the wrong place; the new layout's are new, drawn in place.
+            (idx) => `${view.vertical ? "v" : "l"}:${idx}`,
+            (idx) => {
             const color = this.matrix[idx];
             let previewStyle = "";
             const shadowParts = [];

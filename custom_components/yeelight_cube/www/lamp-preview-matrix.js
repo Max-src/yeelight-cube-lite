@@ -21,9 +21,9 @@ import {
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
+import { adjustmentsOf } from "./color-adjustments.js";
 import { matrixFrame } from "./matrix-frame.js";
 import {
-  lampClockFrame,
   deviceOrientation,
   isVerticalMount,
   matrixView,
@@ -205,12 +205,10 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     if (this._sameRender(seconds, due)) return;
     const speed = clockSpeed(st.attributes);
     const { fontMap, metrics } = this._getNativeClockFont();
-    // As the lamp draws it: its mount profile may turn it (lampClockFrame).
-    const pix = lampClockFrame(
-      renderClockFrame(
-        st.attributes, fontMap, metrics, clockPhase(seconds, speed), speed,
-      ),
-      st.attributes,
+    // As the lamp draws it: its mount profile may turn the digits
+    // (renderClockFrame).
+    const pix = renderClockFrame(
+      st.attributes, fontMap, metrics, clockPhase(seconds, speed), speed,
     );
     const grid = this._matrixColorsToGridColors(pix, st);
     this._updateMatrixColors(grid, st);
@@ -286,6 +284,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
         st.attributes.text_colors,
         st.attributes.stored_gif,
         st.attributes.animation_layout,
+        adjustmentsOf(st.attributes),
       ),
     );
     const grid = this._matrixColorsToGridColors(raw, st);
@@ -414,13 +413,17 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   }
 
   // Lit matrix preview. The dots are keyed by the configuration generation
-  // (fresh nodes for a new look: _paintDots skips colors a dot already has)
-  // and carry no bindings: _paintDots and the animation loops own their
-  // colors.
+  // and the lamp's orientation (fresh nodes for a new look: _paintDots skips
+  // colors a dot already has) and carry no bindings: _paintDots and the
+  // animation loops own their colors. A dot fades to a new color (0.2 s):
+  // kept across an orientation change, each would fade from what it showed
+  // in the old layout, the picture seen a moment in the wrong place; fresh
+  // dots are painted in place at once.
   _matrixTemplate(stateObj) {
     const { layout, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);
-    const generation = this._dotGeneration;
+    const generation = (this._dotsKey =
+      `${this._dotGeneration}:${deviceOrientation(stateObj?.attributes)}`);
     const indices = Array.from(
       { length: layout.rows * layout.cols },
       (_, index) => index,

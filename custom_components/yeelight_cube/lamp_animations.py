@@ -12,22 +12,36 @@ writes the frames in that order, turned for the lamp's mount, so the viewer
 sees them as drawn. In the app's layout (ANIMATION_LAYOUT_APP) it writes them
 as the Yeelight app sends its own GIFs, a plain 20 x 5 picture, which the lamp
 shows rearranged the same way as the app's.
+
+The lamp plays a GIF at the pace of its frame delays (the effect's rate does
+not change it), so the effect speed is in the GIF: animation_delays. So are
+the Lamp Preview card's color adjustments (color_adjustments), as for the
+pixels the integration sends.
 """
 from __future__ import annotations
 
 import base64
 import functools
 import json
+import math
 from pathlib import Path
 
 try:
-    from .const import ANIMATION_LAYOUT_APP, DEVICE_ORIENTATION_TO_FLIP, ORIENTATION_FLIPPED
+    from .color_adjustments import adjust_color
+    from .const import (
+        ANIMATION_LAYOUT_APP, DEFAULT_NATIVE_EFFECT_SPEED, DEVICE_ORIENTATION_TO_FLIP,
+        ORIENTATION_FLIPPED,
+    )
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
     import sys
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from const import ANIMATION_LAYOUT_APP, DEVICE_ORIENTATION_TO_FLIP, ORIENTATION_FLIPPED
+    from color_adjustments import adjust_color
+    from const import (
+        ANIMATION_LAYOUT_APP, DEFAULT_NATIVE_EFFECT_SPEED, DEVICE_ORIENTATION_TO_FLIP,
+        ORIENTATION_FLIPPED,
+    )
 
 COLS, ROWS = 20, 5
 DATA_FILE = Path(__file__).with_name("www") / "lamp-animations.js"
@@ -38,6 +52,12 @@ GIF_CHUNK = 504
 GIF_PACKET_SOH = 0x01
 GIF_PACKET_EOT = 0x04
 GIF_PAD = 0x1A
+# The effect speed (0-255) an animation plays at as drawn; each SPEED_DOUBLING
+# above it plays it twice as fast, each below half as fast (0: about a quarter,
+# 255: about four times). A GIF delay is in hundredths of a second, at least
+# MIN_DELAY_HUNDREDTHS.
+SPEED_DOUBLING = 64
+MIN_DELAY_HUNDREDTHS = 2
 
 
 @functools.lru_cache(maxsize=1)
@@ -65,16 +85,52 @@ def animation_names() -> dict[str, str]:
     return {key: entry["name"] for key, entry in _animations().items()}
 
 
-def animation_frame_at(key: str, seconds: float) -> tuple:
-    """The top-first frame an animation shows ``seconds`` after it started."""
-    entry = _animations()[key]
-    delays = entry["delays"]
+def animation_delays(key: str, speed: int | None = None) -> tuple:
+    """An animation's frame delays (ms) at the effect ``speed`` (as drawn at
+    DEFAULT_NATIVE_EFFECT_SPEED or None), as its GIF holds them: whole
+    hundredths of a second."""
+    delays = _animations()[key]["delays"]
+    if speed is None or speed == DEFAULT_NATIVE_EFFECT_SPEED:
+        return delays
+    pace = 2 ** ((speed - DEFAULT_NATIVE_EFFECT_SPEED) / SPEED_DOUBLING)
+    # Halves round up, as on the cards (Math.floor(x + 0.5)).
+    return tuple(
+        10 * max(MIN_DELAY_HUNDREDTHS, math.floor(delay / 10 / pace + 0.5)) for delay in delays
+    )
+
+
+@functools.lru_cache(maxsize=8)
+def _adjusted_frames(key: str, adjustments: tuple) -> tuple:
+    """An animation's top-first frames with the color ``adjustments``
+    (sorted items of color_adjustments values) applied."""
+    frames = _animations()[key]["frames"]
+    if not adjustments:
+        return frames
+    settings = dict(adjustments)
+    colors = {pixel for frame in frames for pixel in frame}
+    adjusted = {color: adjust_color(color, settings) for color in colors}
+    return tuple(tuple(adjusted[pixel] for pixel in frame) for frame in frames)
+
+
+def animation_frames(key: str, adjustments: dict | None = None) -> tuple:
+    """An animation's top-first frames, with the color ``adjustments``
+    (color_adjustments.active_adjustments) applied."""
+    return _adjusted_frames(key, tuple(sorted((adjustments or {}).items())))
+
+
+def animation_frame_at(
+    key: str, seconds: float, speed: int | None = None, adjustments: dict | None = None,
+) -> tuple:
+    """The top-first frame an animation shows ``seconds`` after it started,
+    at the effect ``speed`` with the color ``adjustments``."""
+    frames = animation_frames(key, adjustments)
+    delays = animation_delays(key, speed)
     elapsed = int(max(0.0, seconds) * 1000) % sum(delays)
     for index, delay in enumerate(delays):
         if elapsed < delay:
-            return entry["frames"][index]
+            return frames[index]
         elapsed -= delay
-    return entry["frames"][-1]
+    return frames[-1]
 
 
 def lamp_order(frame, orientation: str | None) -> list:
@@ -103,12 +159,15 @@ def app_layout_order(frame) -> list:
 
 def animation_frame(
     key: str, seconds: float, orientation: str | None = None, layout: str | None = None,
+    speed: int | None = None, adjustments: dict | None = None,
 ) -> list:
     """The frame in lamp order, as the previews draw it, in ``layout``
-    (ANIMATION_LAYOUTS; the upright one when None)."""
+    (ANIMATION_LAYOUTS; the upright one when None), at the effect ``speed``
+    with the color ``adjustments``."""
+    shown = animation_frame_at(key, seconds, speed, adjustments)
     if layout == ANIMATION_LAYOUT_APP:
-        return app_layout_order(animation_frame_at(key, seconds))
-    return lamp_order(animation_frame_at(key, seconds), orientation)
+        return app_layout_order(shown)
+    return lamp_order(shown, orientation)
 
 
 def gif_order(frame) -> list:
@@ -120,15 +179,19 @@ def gif_order(frame) -> list:
     ]
 
 
-def lamp_gif(key: str, orientation: str | None = None, layout: str | None = None) -> bytes:
+def lamp_gif(
+    key: str, orientation: str | None = None, layout: str | None = None,
+    speed: int | None = None, adjustments: dict | None = None,
+) -> bytes:
     """The GIF a lamp stores for an animation: laid out for it and its
-    mount (upright), or the picture as it is (the app's layout)."""
-    entry = _animations()[key]
+    mount (upright), or the picture as it is (the app's layout); at the
+    effect ``speed``, with the color ``adjustments``."""
+    drawn = animation_frames(key, adjustments)
     if layout == ANIMATION_LAYOUT_APP:
-        frames = [list(frame) for frame in entry["frames"]]
+        frames = [list(frame) for frame in drawn]
     else:
-        frames = [gif_order(lamp_order(frame, orientation)) for frame in entry["frames"]]
-    return lamp_safe(encode_gif(frames, entry["delays"]))
+        frames = [gif_order(lamp_order(frame, orientation)) for frame in drawn]
+    return lamp_safe(encode_gif(frames, animation_delays(key, speed)))
 
 
 def lamp_safe(data: bytes) -> bytes:

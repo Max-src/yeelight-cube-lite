@@ -45,18 +45,39 @@ export const deviceOrientation = (attributes) =>
  * Whether the lamp draws its clock turned a half turn: the mount
  * profile it runs (the Yeelight app's orientation, the light's
  * `mount_profile.in_use`; the lamp's default 3 when none is known) is 0
- * or 1. Native effects never are (the integration compensates their
- * direction). Mirrors light_mount_profile.lamp_turns_clock.
+ * or 1. Only the digits turn: the background stays where it is on the
+ * panel (renderClockFrame). Native effects never are (the integration
+ * compensates their direction). Mirrors light_mount_profile.lamp_turns_clock.
  */
+/** Whether the Lamp mounted setting reaches the lamp's own clock: it is
+ * written to the lamp's mount profile, which takes a server that delivers the
+ * Yeelight commands (the light's `matter.commands`). Without one the lamp's
+ * clock stays as it is (light.set_device_orientation). */
+export const lampTakesMount = (attributes) => Boolean(attributes?.matter?.commands);
+
 export const lampTurnsClock = (attributes) => {
   const profile = attributes?.mount_profile;
-  return [0, 1].includes(profile?.in_use ?? profile?.profile);
+  return [0, 1].includes(profile?.pending ?? profile?.in_use ?? profile?.profile);
 };
 
-/** A frame of the lamp's clock (renderClockFrame: lamp order) as the lamp
- * draws it, turned with its mount profile (lampTurnsClock). */
-export const lampClockFrame = (frame, attributes) =>
-  lampTurnsClock(attributes) ? [...frame].reverse() : frame;
+// The lamp's mount profile for each Device Orientation (matter_link.py
+// ROTATION_ORIENTATIONS).
+const ORIENTATION_PROFILES = Object.freeze({ left: 0, up: 1, right: 2, down: 3 });
+
+/** `attributes` with the mount profile a Device Orientation being set
+ * (`pending`, a card's own pick) is about to give the lamp, when it reaches
+ * the lamp (lampTakesMount): a preview turned for the new orientation then
+ * shows the clock as the lamp will, never the old profile in the new
+ * orientation (light_mount_profile.lamp_turns_clock does the same). */
+export function withPendingMount(attributes, pending) {
+  if (!pending || pending === deviceOrientation(attributes) || !lampTakesMount(attributes))
+    return attributes;
+  return {
+    ...attributes,
+    mount_profile: { ...attributes?.mount_profile, pending: ORIENTATION_PROFILES[pending] },
+  };
+}
+
 
 /** Reverse the row order of a row-major frame (lamp order <-> top-first). */
 export function flipMatrixVertical(pixels, cols = MATRIX_COLS, rows = MATRIX_ROWS) {

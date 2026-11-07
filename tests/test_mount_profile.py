@@ -319,6 +319,60 @@ class MatterProfileTests(unittest.TestCase):
         self.assertEqual([], light.pending)  # nothing turned again
 
 
+class PendingProfileTests(unittest.TestCase):
+    """While a Device Orientation is written, the previews follow the
+    profile the lamp is about to run, never the new orientation with the
+    old profile (the clock's digits would show turned the wrong way)."""
+
+    def test_the_profile_being_written_is_what_the_previews_follow(self):
+        light = ProfileLight()
+        light._device_orientation = "right"
+        seen = []
+
+        class Watching(Channel):
+            async def async_write(self, path, value):
+                seen.append((light.lamp_turns_clock, light._mount_profile_summary().get("pending")))
+                await super().async_write(path, value)
+
+        light.link(7, 2, Watching())
+        light._store_mount_profile(2, "matter", 7)
+        self.assertFalse(light.lamp_turns_clock)
+        self.assertTrue(asyncio.run(light._sync_lamp_rotation("left")))
+        self.assertEqual([(True, 0)], seen)  # during the write: profile 0's turn
+        self.assertNotIn("pending", light._mount_profile_summary())
+        self.assertTrue(light.lamp_turns_clock)  # then the lamp's own
+
+    def test_only_a_lamp_whose_server_delivers_expects_a_new_profile(self):
+        # Published with the new orientation, before the write; a lamp no
+        # server delivers to gets none, so its previews never turn for a
+        # write that will fail.
+        light = ProfileLight()
+        working = Channel(backend="matter")
+        light.link(7, 2, working)
+        light._expect_lamp_rotation("left")
+        self.assertEqual(0, light._mount_profile_summary()["pending"])
+        self.assertTrue(light.lamp_turns_clock)
+        light._mount_profile_pending = None
+        light._expect_lamp_rotation("right")  # what it runs already
+        self.assertNotIn("pending", light._mount_profile_summary())
+        down = Channel(backend=None)
+        light.link(7, 2, down)
+        light._expect_lamp_rotation("left")
+        self.assertNotIn("pending", light._mount_profile_summary())
+        self.assertFalse(light.lamp_turns_clock)
+
+    def test_a_refused_write_leaves_the_old_profile(self):
+        light = ProfileLight()
+        light._device_orientation = "right"
+        channel = Channel()
+        channel.error = RuntimeError("refused")
+        light.link(7, 2, channel)
+        light._store_mount_profile(2, "matter", 7)
+        self.assertFalse(asyncio.run(light._sync_lamp_rotation("left")))
+        self.assertNotIn("pending", light._mount_profile_summary())
+        self.assertFalse(light.lamp_turns_clock)
+
+
 def native_lamp(profile=None, effect="Rainbow", direction="Up"):
     """What _native_effect_params reads, with the profile in use."""
     return SimpleNamespace(

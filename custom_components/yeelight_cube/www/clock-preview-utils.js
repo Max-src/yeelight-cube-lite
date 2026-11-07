@@ -25,10 +25,13 @@ import {
   effectDisplayFrame,
   lampClockSettings,
   clockPaletteWords,
+  clockDigitFlags,
+  clockDigitTargets,
+  CLOCK_DIRECT_BACKGROUNDS,
   lampEffectFrame,
   isLampRendered,
 } from "./lamp-renderers.js";
-import { flipMatrixVertical } from "./matrix-view.js";
+import { flipMatrixVertical, lampTurnsClock } from "./matrix-view.js";
 import { effectFamilyOfName } from "./effect-families.js";
 import {
   FORMERLY_NUMBERED_EFFECT_NAMES,
@@ -285,7 +288,15 @@ const _MODE_TO_EFFECT_NAME = {
 const _BASE_CLOCK_MIXERS = new Set(_BASE_CLOCK_STYLES.map((s) => s.mixer));
 // A style shows its effect through the digits, so it has that effect's family;
 // a solid style is a fixed color.
-const _clockFamily = (name, mixer) => (mixer ? effectFamilyOfName(name) : "still");
+const _clockFamily = (name, mixer) =>
+  mixer ? effectFamilyOfName(_MODE_TO_EFFECT_NAME[mixer] ?? name) : "still";
+// const.py CLOCK_FORM_TWINS: a background that looks different in each form.
+// Its style over the hand-over is named for that look; a style over the
+// direct form, added after the others, shows the effect.
+const _CLOCK_FORM_TWINS = {
+  22: ["Comet stream", "Mirrored comets"],
+  51: ["Music flipped equalizer", "Music noise equalizer"],
+};
 // Modes the lamp rejects as a clock mixer (mirrors _NON_CLOCK_EFFECT_MODES).
 const _NON_CLOCK_EFFECT_MODES = new Set([60, 46, 47, 49, 81]);
 const _NATIVE_CLOCK_EFFECT_ID = 40;
@@ -314,13 +325,27 @@ function _buildClockStyles() {
       nextId += 1;
       continue;
     }
+    const twin = _CLOCK_FORM_TWINS[mode];
     styles.push({
       id: nextId,
-      name,
+      name: twin ? twin[0] : name,
       mixer: mode,
       family: _clockFamily(name, mode),
       solid: false,
       experimental: true,
+      ...(twin ? { direct: false } : {}),
+    });
+    nextId += 1;
+  }
+  for (const [mode, [, name]] of Object.entries(_CLOCK_FORM_TWINS)) {
+    styles.push({
+      id: nextId,
+      name,
+      mixer: Number(mode),
+      family: _clockFamily(name, Number(mode)),
+      solid: false,
+      experimental: true,
+      direct: true,
     });
     nextId += 1;
   }
@@ -409,6 +434,19 @@ export function clockStyleRespondsToCustomColor(style) {
 
 // What a preview draws behind the clock: CLOCK_MIXER_EFFECTS's effect.
 export const clockPreviewEffect = (mixer) => CLOCK_MIXER_EFFECTS[mixer];
+
+/** Whether the style of `attrs` runs its background as itself under the clock
+ * overlay (const.py clock_style_direct): its own `direct`, else null (by its
+ * background, lampClockSettings). */
+export function clockStyleDirect(attrs) {
+  const id = attrs.clock_style_id;
+  const style =
+    (typeof id === "number" && _CLOCK_STYLE_BY_ID.get(id)) ||
+    (typeof attrs.clock_style === "string" &&
+      _CLOCK_STYLE_BY_NAME.get(canonicalClockStyleName(attrs.clock_style))) ||
+    (typeof attrs.clock_style?.name === "string" && _CLOCK_STYLE_BY_NAME.get(attrs.clock_style.name));
+  return style?.direct ?? null;
+}
 
 // Resolve the lamp's mixer for a set of light attributes (or a style object).
 // Whether a clock style's background is an effect the lamp draws itself.
@@ -628,6 +666,7 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
         lampEffectFrame(
           lampClockSettings(
             effectName, rate, override, colorMode, chosenIntensity(attrs), attrs.text_colors,
+            clockStyleDirect(attrs),
           ),
           phase / (0.25 + rate / 55),
         ),
@@ -639,6 +678,13 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   // the backend achieves it by omitting their color, which the lamp
   // renders as plain white.
   const soloBwFallback = !effectFrame && colorMode === "bw";
+  const digitFlags = clockDigitFlags(
+    mixer,
+    clockStyleDirect(attrs) ?? CLOCK_DIRECT_BACKGROUNDS.has(mixer),
+  );
+  // On a mount profile that turns the clock, the lamp lays the text out a
+  // half turn round; the background stays where it is on the panel.
+  const turned = lampTurnsClock(attrs);
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];
   const font = fontMap || _CLOCK_FONT;
@@ -660,13 +706,18 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
       const col = (pos % COLS) + offset;
       const row = Math.floor(pos / COLS);
       if (col >= 0 && col < COLS && row >= 0 && row < 5) {
-        matrix[row * COLS + col] = effectFrame
-          ? effectFrame[row * COLS + col]
-          : soloBwFallback
-            ? [255, 255, 255]
-            : flatOverride
-              ? flatOverride
-              : _clockPixelColor(styleId, i, col);
+        // Where the lamp draws it: a background started directly may turn or
+        // mirror the digits (clockDigitFlags).
+        const at = row * COLS + col;
+        for (const index of clockDigitTargets(turned ? 99 - at : at, digitFlags)) {
+          matrix[index] = effectFrame
+            ? effectFrame[index]
+            : soloBwFallback
+              ? [255, 255, 255]
+              : flatOverride
+                ? flatOverride
+                : _clockPixelColor(styleId, i, col);
+        }
       }
     }
     offset += advance;

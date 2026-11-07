@@ -131,6 +131,12 @@ class YcWheel extends LitElement {
     this.requestUpdate();
   }
 
+  // Its items are drawn in its own update, after the gallery's
+  // gallery-updated: a card that animates its previews collects them again.
+  updated() {
+    this.dispatchEvent(new CustomEvent("gallery-updated", { bubbles: true }));
+  }
+
   render() {
     const geometry = this.geometry;
     if (!geometry) return nothing;

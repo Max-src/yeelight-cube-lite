@@ -236,7 +236,7 @@ test("every preview's frame: a vertical one keeps the landscape look", async () 
 
 test("the lamp's clock as it draws it: turned by its mount profile", () => {
   return import(`${www}matrix-view.js`).then(
-    ({ lampClockFrame, lampTurnsClock }) => {
+    ({ lampTakesMount, lampTurnsClock, withPendingMount }) => {
       assert.equal(lampTurnsClock({}), false); // unknown: the default 270°, upright
       assert.equal(lampTurnsClock({ mount_profile: { profile: null, in_use: 3 } }), false);
       assert.equal(lampTurnsClock({ mount_profile: { profile: 0, in_use: 0 } }), true);
@@ -247,15 +247,26 @@ test("the lamp's clock as it draws it: turned by its mount profile", () => {
       assert.equal(lampTurnsClock({ mount_profile: { profile: 3 } }), false); // 270°
       // The Matter value alone is not trusted (light_mount_profile).
       assert.equal(lampTurnsClock({ matter: { rotation: 0 } }), false);
-      assert.deepEqual(
-        lampClockFrame([1, 2, 3], { mount_profile: { profile: 0 } }),
-        [3, 2, 1],
-      );
-      const frame = [1, 2, 3];
-      assert.equal(
-        lampClockFrame(frame, { mount_profile: { profile: 2 } }),
-        frame,
-      );
+      // The Lamp mounted setting reaches the lamp's clock only through a
+      // server that delivers the Yeelight commands.
+      assert.equal(lampTakesMount({}), false);
+      assert.equal(lampTakesMount({ matter: { node_id: 6 } }), false);
+      assert.equal(lampTakesMount({ matter: { commands: "matter" } }), true);
+      // The profile being written wins (the light publishes it, or a card's
+      // own pick fills it in): never the new orientation with the old one.
+      assert.equal(lampTurnsClock({ mount_profile: { in_use: 2, pending: 0 } }), true);
+      const lamp = {
+        device_orientation: "right",
+        matter: { commands: "matter" },
+        mount_profile: { profile: 2, in_use: 2 },
+      };
+      assert.equal(lampTurnsClock(withPendingMount(lamp, "left")), true);
+      assert.equal(lampTurnsClock(withPendingMount(lamp, "down")), false);
+      assert.equal(withPendingMount(lamp, "right"), lamp); // nothing pending
+      assert.equal(withPendingMount(lamp, null), lamp);
+      // Without a server the lamp's clock does not follow the pick.
+      const lan = { ...lamp, matter: null };
+      assert.equal(withPendingMount(lan, "left"), lan);
     },
   );
 });

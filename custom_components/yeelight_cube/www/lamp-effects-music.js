@@ -10,7 +10,10 @@
  */
 
 import {
+  DIRECTION_TABLE,
+  HANDOVER_FLAGS,
   LENGTH,
+  REFERENCE_PROFILE,
   blendGrid,
   blurColumns,
   demoSound,
@@ -19,6 +22,7 @@ import {
   f32,
   fadeGrid,
   fadeTowards,
+  flaggedTargets,
   inoise8Raw,
   lround,
   newGrid,
@@ -26,6 +30,7 @@ import {
   paletteSpan,
   pixelMap,
   placeStrip,
+  readBackFlags,
   rowBlurGrid,
   sourceWord,
   sx8,
@@ -399,7 +404,30 @@ function equalizerStep(state, settings, clockMs, render) {
       work[cell + 2] = state.blue;
     }
   }
-  return placeStrip(work, state.direction, state.panel);
+  // Through the mapper on the flags it runs with (lamp_effects_music.py).
+  const placement = equalizerPlacement(settings);
+  const { panel } = state;
+  for (let byte = 0; byte < panel.length; byte++) panel[byte] = work[placement[byte]];
+  return panel;
+}
+
+const PLACEMENTS_51 = new Map();
+
+// Panel byte -> grid byte: each grid cell through the mapper on the flags slot
+// 51 runs with (0x05 behind the clock), one panel pixel each.
+function equalizerPlacement(settings) {
+  const mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings.direction];
+  const flags = settings.handover ? HANDOVER_FLAGS : readBackFlags(51, mapped);
+  const key = `${mapped},${flags}`;
+  if (!PLACEMENTS_51.has(key)) {
+    const table = new Uint16Array(3 * LENGTH);
+    for (let pixel = 0; pixel < LENGTH; pixel++) {
+      const [index] = flaggedTargets(pixel, LENGTH, mapped, flags);
+      for (let channel = 0; channel < 3; channel++) table[3 * index + channel] = 3 * pixel + channel;
+    }
+    PLACEMENTS_51.set(key, table);
+  }
+  return PLACEMENTS_51.get(key);
 }
 
 // ── Slot 73: Note ─────────────────────────────────────────────────────

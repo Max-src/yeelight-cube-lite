@@ -32,7 +32,9 @@ from .const import (
     ORIENTATION_NORMAL,
     LEGACY_POWER_ON_STATES,
     POWER_ON_STATES,
+    SPEED_RANGE,
 )
+from .color_adjustments import active_adjustments
 from .layout import FONT_MAPS
 from .pixel_art_storage import expand_pixels, group_pixels
 from .storage import async_schedule_save
@@ -110,6 +112,19 @@ def _stored_gif(value):
     # Its layout (const.ANIMATION_LAYOUTS); none before layouts existed: upright.
     if value.get("layout") in ANIMATION_LAYOUTS:
         stored["layout"] = value["layout"]
+    # Its speed and color adjustments; none before they were in it: the
+    # default speed, no adjustment.
+    speed = value.get("speed")
+    if isinstance(speed, int) and not isinstance(speed, bool) and (
+        SPEED_RANGE[0] <= speed <= SPEED_RANGE[1]
+    ):
+        stored["speed"] = speed
+    adjustments = value.get("adjustments")
+    if isinstance(adjustments, dict) and all(
+        isinstance(number, int) and not isinstance(number, bool)
+        for number in adjustments.values()
+    ):
+        stored["adjustments"] = active_adjustments(adjustments)
     return stored
 
 

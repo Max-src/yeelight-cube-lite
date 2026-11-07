@@ -85,10 +85,10 @@ import {
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import {
-  lampClockFrame,
   deviceOrientation,
   isVerticalMount,
   viewerFrame,
+  withPendingMount,
 } from "./matrix-view.js";
 import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
@@ -226,6 +226,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       //   Original: grid | list badge gallery (shared with the native card)
       style_selector_style: "preview-grid",
       show_gallery: true,
+      show_device_orientation: true,
       show_family_filter: true,
       show_sort: true,
       selector_shape: "rounded", // square | rounded | round
@@ -662,9 +663,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // Build the attrs object a preview needs, mixing the current format settings
   // with a specific style. Non-preset styles reflect an active custom override
   // so the whole gallery shows what picking each style would look like.
-  _previewAttrs(style) {
-    const a = this._attrs();
-    const attrs = {
+  // What every preview of a style takes from the lamp: its clock settings,
+  // palette, speed and mount profile (which turns the digits, not the
+  // background: renderClockFrame).
+  _lampPreviewAttrs(style, a) {
+    return {
       clock_style_id: style.id,
       clock_style: style.name,
       clock_content: a.clock_content,
@@ -677,7 +680,14 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       native_effect_direction: a.native_effect_direction,
       native_effect_speed: this._animationSpeed(),
       native_effect_intensity: this._animationIntensity(),
+      // The one a Lamp mounted pick is about to give it (withPendingMount).
+      mount_profile: withPendingMount(a, this._controls?.pendingOrientation).mount_profile,
     };
+  }
+
+  _previewAttrs(style) {
+    const a = this._attrs();
+    const attrs = this._lampPreviewAttrs(style, a);
     if (style.presetId) {
       // A preset previews its OWN saved color, not the active override.
       attrs.clock_style = "White";
@@ -699,20 +709,10 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // Like _previewAttrs, but renders a favourite under its recorded color mode
   // (and custom color) instead of the card's currently selected mode.
   _previewAttrsFor(style, colorMode, color) {
-    const a = this._attrs();
     const attrs = {
-      clock_style_id: style.id,
-      clock_style: style.name,
-      clock_content: a.clock_content,
-      clock_show_date: a.clock_show_date,
-      clock_12_hour: a.clock_12_hour,
-      clock_colon_blink: a.clock_colon_blink,
+      ...this._lampPreviewAttrs(style, this._attrs()),
       clock_color_mode:
         colorMode === "custom" ? "normal" : colorMode || "normal",
-      text_colors: a.text_colors,
-      native_effect_direction: a.native_effect_direction,
-      native_effect_speed: this._animationSpeed(),
-      native_effect_intensity: this._animationIntensity(),
     };
     if (style.presetId) {
       attrs.clock_style = "White";
@@ -1077,7 +1077,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         area="actions"
         .model=${this._controls}
       ></yeelight-mode-controls>
-      ${sliders}${toggles}${config.show_color_modes
+      ${sliders}
+      <yeelight-mode-controls
+        area="orientation"
+        .model=${this._controls}
+      ></yeelight-mode-controls>
+      ${toggles}${config.show_color_modes
         ? this._renderColorMode(a)
         : ""}
       ${config.show_gallery !== false
@@ -1195,10 +1200,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       name: s.name,
       family: s.family,
       colorData: viewerFrame(
-        lampClockFrame(
-          renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
-          this._attrs(),
-        ),
+        renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
         orientation,
       ),
       vertical,

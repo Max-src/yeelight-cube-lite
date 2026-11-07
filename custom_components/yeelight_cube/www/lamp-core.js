@@ -708,6 +708,9 @@ export function stripFrame(draws, direction, profile = REFERENCE_PROFILE) {
 }
 
 const INSTALL_FLAGS = [0x05, 0x45, 0x55, 0x15]; // segment flags by mapped direction
+// A clock background's flags: mode 40 hands over to it with these, whatever
+// direction is sent, and skips its first render, where some set their own.
+export const HANDOVER_FLAGS = 0x05;
 
 /** The flags a read-back pass runs with. */
 export function readBackFlags(mode, mapped, mixer = 0) {
@@ -727,6 +730,16 @@ export function flagsIndex(pixel, length, flags) {
 }
 
 /** The pixel writer and the mapper on any flags: the indices written. */
+/** Where the lamp draws the clock digits' pixel at frame `index` (lamp order)
+ * on the flags its clock runs with (lamp_core.py clock_digit_targets). */
+export function clockDigitTargets(index, flags) {
+  if (flags === HANDOVER_FLAGS) return [index];
+  const row = Math.floor(index / COLS);
+  const pixel = (index % COLS) * ROWS + row;
+  if (flags & 0x08 && pixel >= LENGTH / 2) return [];
+  return flaggedTargets(pixel, LENGTH, 0, flags).map(frameIndex);
+}
+
 export function flaggedTargets(pixel, length, mapped, flags) {
   if (length < 1) return [];
   const [width, height] = segmentGeometry(length, mapped);

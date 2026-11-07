@@ -192,6 +192,15 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
           `,
         )}
         ${this._section(
+          "orientation",
+          "Device Orientation",
+          html`${renderModeControlSettings("orientation", config, change)}
+            <div class="hint">
+              Shown when the lamp's own clock follows it: the lamp then turns
+              the digits for the mount (its background stays where it is).
+            </div>`,
+        )}
+        ${this._section(
           "display",
           "Content & Controls",
           html`

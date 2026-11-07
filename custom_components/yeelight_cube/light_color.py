@@ -6,9 +6,9 @@ read per-instance state via ``self`` (initialised in ``YeelightCubeLight.__init_
 and the calibration attributes) and the matrix geometry constants imported below.
 Mixed into ``YeelightCubeLight``; not usable on its own.
 """
-import colorsys
 import logging
 
+from .color_adjustments import ADJUSTMENT_DEFAULTS, active_adjustments, adjust_color
 from .lamp_power import estimated_power, limit_frame_power
 
 _LOGGER = logging.getLogger(__name__)
@@ -98,168 +98,20 @@ class ColorPipelineMixin:
             return min(255, max(0, round(start + (end - start) * f)))
         return tuple(interpolate(s, e, factor) for s, e in zip(start_color, end_color))
 
+    def color_adjustments(self) -> dict:
+        """The color adjustments that change a color (the Lamp Preview card's:
+        color_adjustments.active_adjustments)."""
+        return active_adjustments({
+            name: getattr(self, f"_preview_{name}") for name in ADJUSTMENT_DEFAULTS
+        })
+
     def apply_color_adjustments(self, rgb_color):
-        """
-        Apply all color effects to an RGB color tuple.
-        Effects are applied in a specific order for best visual results.
-        
-        IMPORTANT: Black pixels (0,0,0) are treated as background/off pixels
-        and should NOT have effects applied.
-        
-        NOTE: Brightness/darkness is NO LONGER applied in this function!
-        It's now applied as the FINAL step in apply() before encoding to hardware.
-        This preserves color precision and prevents rounding errors in gradients.
-        
-        Effect Application Order:
-        1. Color Adjustments (Hue Shift, Temperature)
-        2. Saturation & Intensity (Saturation, Vibrance)
-        3. Tone & Contrast (Contrast, Glow)
-        4. Special Effects (Grayscale, Tint, Invert)
-        5. Brightness/Darkness - Applied separately in apply() as final step
-        """
-        r, g, b = rgb_color
-        is_black = r == 0 and g == 0 and b == 0
-        
-        # If the pixel is black (background/off), don't apply any effects
-        # Black pixels should remain black regardless of tint, grayscale, etc.
-        if is_black:
-            return (0, 0, 0)
-        
-        # === COLOR ADJUSTMENTS ===
-        # 1. Hue Shift (-180 to +180 degrees)
-        if self._preview_hue_shift != 0:
-            r, g, b = self._apply_hue_shift(r, g, b, self._preview_hue_shift)
-        
-        # 2. Temperature (-100 to +100: cool to warm)
-        if self._preview_temperature != 0:
-            r, g, b = self._apply_temperature(r, g, b, self._preview_temperature)
-        
-        # === SATURATION & INTENSITY ===
-        # 3. Saturation (0-200: 0=grayscale, 100=normal, 200=hyper-saturated)
-        if self._preview_saturation != 100:
-            r, g, b = self._apply_saturation(r, g, b, self._preview_saturation)
-        
-        # 4. Vibrance (0-200: smart saturation)
-        if self._preview_vibrance != 100:
-            r, g, b = self._apply_vibrance(r, g, b, self._preview_vibrance)
-        
-        # === TONE & CONTRAST ===
-        # 5. Contrast (0-200: 0=flat gray, 100=normal, 200=high contrast)
-        if self._preview_contrast != 100:
-            r, g, b = self._apply_contrast(r, g, b, self._preview_contrast)
-        
-        # 6. Glow (0-100: boost bright pixels)
-        if self._preview_glow > 0:
-            r, g, b = self._apply_glow(r, g, b, self._preview_glow)
-        
-        # === SPECIAL EFFECTS ===
-        # 7. Grayscale (0-100: convert to black & white)
-        if self._preview_grayscale > 0:
-            r, g, b = self._apply_grayscale(r, g, b, self._preview_grayscale)
-        
-        # 8. Tint (hue 0-360, strength 0-100)
-        if self._preview_tint_strength > 0:
-            r, g, b = self._apply_tint(r, g, b, self._preview_tint_hue, self._preview_tint_strength)
-        
-        # 9. Invert (0-100: blend with inverted color)
-        if self._preview_invert > 0:
-            invert_factor = self._preview_invert / 100
-            r = round(r * (1 - invert_factor) + (255 - r) * invert_factor)
-            g = round(g * (1 - invert_factor) + (255 - g) * invert_factor)
-            b = round(b * (1 - invert_factor) + (255 - b) * invert_factor)
-        
-        # Clamp to valid range
-        r = max(0, min(255, r))
-        g = max(0, min(255, g))
-        b = max(0, min(255, b))
-        
-        return (r, g, b)
-
-    def _apply_hue_shift(self, r, g, b, shift_degrees):
-        """Shift hue by degrees (-180 to +180)"""
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        h = (h + shift_degrees / 360) % 1.0
-        r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        return round(r * 255), round(g * 255), round(b * 255)
-
-    def _apply_temperature(self, r, g, b, temp):
-        """Apply color temperature (-100=cool/blue, +100=warm/orange)"""
-        if temp > 0:  # Warm
-            factor = temp / 100
-            r = round(r + (255 - r) * factor * 0.3)
-            g = round(g + (255 - g) * factor * 0.1)
-            b = round(b * (1 - factor * 0.3))
-        else:  # Cool
-            factor = abs(temp) / 100
-            r = round(r * (1 - factor * 0.3))
-            g = round(g * (1 - factor * 0.1))
-            b = round(b + (255 - b) * factor * 0.3)
-        return r, g, b
-
-    def _apply_saturation(self, r, g, b, saturation):
-        """Adjust saturation (0=grayscale, 100=normal, 200=hyper)"""
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        s = s * (saturation / 100)
-        s = max(0, min(1, s))
-        r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        return round(r * 255), round(g * 255), round(b * 255)
-
-    def _apply_vibrance(self, r, g, b, vibrance):
-        """Smart saturation that protects already-saturated colors"""
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        # Vibrance affects low-saturation colors more than high-saturation
-        # Uses a non-linear curve: the less saturated a color, the more vibrance affects it
-        if s > 0:
-            factor = vibrance / 100
-            # Weight the adjustment inversely by current saturation
-            # Low saturation (s=0.2) gets big boost, high saturation (s=0.9) gets small boost
-            weight = (1 - s) ** 0.5  # Square root for smoother curve
-            s = s * (1 + (factor - 1) * weight)
-            s = max(0, min(1, s))
-        r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        return round(r * 255), round(g * 255), round(b * 255)
-
-    def _apply_contrast(self, r, g, b, contrast):
-        """Adjust contrast (0=flat, 100=normal, 200=high)"""
-        factor = contrast / 100
-        r = round(((r / 255 - 0.5) * factor + 0.5) * 255)
-        g = round(((g / 255 - 0.5) * factor + 0.5) * 255)
-        b = round(((b / 255 - 0.5) * factor + 0.5) * 255)
-        return max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))
-
-    def _apply_glow(self, r, g, b, glow):
-        """Boost luminosity of bright pixels"""
-        luminosity = (r + g + b) / 3
-        if luminosity > 127:
-            factor = (luminosity / 255) * (glow / 100)
-            r = round(r + (255 - r) * factor)
-            g = round(g + (255 - g) * factor)
-            b = round(b + (255 - b) * factor)
-        return r, g, b
-
-    def _apply_grayscale(self, r, g, b, grayscale):
-        """Convert to grayscale (desaturate to black & white)
-        Uses luminosity method for perceptually accurate grayscale"""
-        factor = grayscale / 100
-        # Luminosity method: weighted average based on human perception
-        gray = round(0.299 * r + 0.587 * g + 0.114 * b)
-        # Blend between original and grayscale
-        r = round(r * (1 - factor) + gray * factor)
-        g = round(g * (1 - factor) + gray * factor)
-        b = round(b * (1 - factor) + gray * factor)
-        return max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))
-
-    def _apply_tint(self, r, g, b, tint_hue, strength):
-        """Apply a colored tint overlay"""
-        # Create tint color from hue
-        tint_r, tint_g, tint_b = colorsys.hsv_to_rgb(tint_hue / 360, 1.0, 1.0)
-        tint_r, tint_g, tint_b = round(tint_r * 255), round(tint_g * 255), round(tint_b * 255)
-        # Blend with tint
-        factor = strength / 100
-        r = round(r * (1 - factor) + tint_r * factor)
-        g = round(g * (1 - factor) + tint_g * factor)
-        b = round(b * (1 - factor) + tint_b * factor)
-        return r, g, b
+        """``rgb_color`` with the color adjustments applied
+        (color_adjustments.adjust_color, in its order: hue shift, temperature,
+        saturation, vibrance, contrast, glow, grayscale, tint, invert). Black
+        pixels are the background and stay black. The brightness is not
+        applied here: it is the hardware's (hardware_brightness_for)."""
+        return adjust_color(rgb_color, self.color_adjustments())
 
     def _brightness_stages(self, colors):
         """The stages that depend on the lamp's brightness, last before

@@ -1185,6 +1185,19 @@ class MatterMixin:
         self._last_hardware_brightness = None
         self._followed_lamp()
 
+    def _expect_lamp_rotation(self, orientation: str) -> None:
+        """Before ``orientation`` is published: the profile the lamp is about
+        to run (_mount_profile_pending), when a server known to deliver will
+        write it (_sync_lamp_rotation clears it). A lamp no server delivers to
+        gets none, so its previews never turn for a write that fails."""
+        rotation = ORIENTATION_ROTATIONS.get(orientation)
+        link, channel = self._matter, self._matter_commands
+        if (
+            rotation is not None and channel is not None and channel.backend is not None
+            and link is not None and link.linked and link.values.get("rotation") != rotation
+        ):
+            self._mount_profile_pending = rotation
+
     async def _sync_lamp_rotation(self, orientation: str, *, force: bool = False) -> bool:
         """Set the lamp's own direction setting (its mount profile,
         mount_profile.py) to the Device Orientation over Matter
@@ -1202,6 +1215,9 @@ class MatterMixin:
         if link.values.get("rotation") == rotation and not force:
             return False
         node = link.node_id
+        # While it is written, the previews follow the profile the lamp is
+        # about to run (light_mount_profile.lamp_turns_clock), not the old one.
+        self._mount_profile_pending = rotation
         try:
             await asyncio.wait_for(channel.async_write(ROTATION, rotation), ROTATION_WRITE_TIMEOUT)
         except MatterCommandsUnavailable:
@@ -1209,6 +1225,8 @@ class MatterMixin:
         except Exception as err:  # noqa: BLE001 -- the lamp keeps its direction
             _LOGGER.warning("[MATTER] [%s] Could not set the lamp's direction: %s", self._ip, err)
             return False
+        finally:
+            self._mount_profile_pending = None
         _LOGGER.info("[MATTER] [%s] Lamp direction set to %s", self._ip, orientation)
         # As the lamp will report it: previews turn now, its echo is no change.
         link.values["rotation"] = rotation

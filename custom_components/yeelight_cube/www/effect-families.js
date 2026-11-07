@@ -50,6 +50,30 @@ export const EFFECT_FAMILY_NAMES = {
   still: ["Spectrum", "Solid red", "Palette stripes", "Stored GIF", "Random scatter"],
 };
 
+// Each family's emoji: its icon where only text can show (a dropdown's
+// options, text buttons).
+const FAMILY_EMOJI = {
+  waves: "🌊",
+  glow: "🔥",
+  sparkles: "✨",
+  motion: "▶️",
+  music: "🎵",
+  still: "🖼️",
+};
+
+const FAMILY_BADGES = new Map(
+  EFFECT_FAMILIES.filter((family) => family.value !== "all").map((family) => [
+    family.value,
+    Object.freeze({ icon: family.icon, title: family.title, emoji: FAMILY_EMOJI[family.value] }),
+  ]),
+);
+
+/** The small icon an effect shows its family by (a flame for Glow, a
+ * sparkle, a music note...): { icon, title, emoji }, the filter's own, the
+ * title ("Glow: fire, clouds and soft light") its tooltip, the emoji for
+ * text-only places; null for none. */
+export const familyBadge = (family) => FAMILY_BADGES.get(family) ?? null;
+
 const FAMILY_OF_NAME = new Map(
   Object.entries(EFFECT_FAMILY_NAMES).flatMap(([family, names]) =>
     names.map((name) => [name, family]),

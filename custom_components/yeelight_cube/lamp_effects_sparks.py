@@ -29,6 +29,7 @@ try:
         palette_span,
         place_strip,
         read_back_flags,
+        HANDOVER_FLAGS,
         sin16_unsigned,
         source_word,
         strip_blur,
@@ -53,6 +54,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         palette_span,
         place_strip,
         read_back_flags,
+        HANDOVER_FLAGS,
         sin16_unsigned,
         source_word,
         strip_blur,
@@ -233,39 +235,45 @@ def chase_step(state, settings, clock_ms, render) -> bytes:
 # Its first render draws nothing and sets the mirror and reverse flags: from
 # there it runs on 50 pixels, 9 comets, every write mirrored. Those 50 black
 # writes and their mirrors are the whole panel, which it keeps by panel index.
+# Behind the clock (``handover``: mode 40 hands over to it and skips that
+# render) the flags stay the hand-over's 0x05: no mirror, all 100 pixels, 17
+# comets, every one crossing the panel the same way.
 _PRISM_PIXELS = 50
-_PRISM_COMETS = _PRISM_PIXELS // 6 + 1
 _PRISM_SCALE = float.fromhex("0x1.4af4f0d844d01p-7")  # the lamp's 1/99
 
 
-def _prism_timing(x: int) -> tuple[float, float]:
+def _prism_timing(x: int, pixels: int) -> tuple[float, float]:
     speed = f32(x * _PRISM_SCALE)
-    return speed, f32(f32(_PRISM_PIXELS / speed) / _PRISM_COMETS)
+    return speed, f32(f32(pixels / speed) / (pixels // 6 + 1))
 
 
 def prism_init(settings) -> dict:
-    mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings["direction"]]
-    flags = read_back_flags(22, mapped) | 0x0A
+    if settings.get("handover"):
+        mapped, flags, pixels = 0, HANDOVER_FLAGS, LENGTH
+    else:
+        mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings["direction"]]
+        flags, pixels = read_back_flags(22, mapped) | 0x0A, _PRISM_PIXELS
     rate = settings["rate"]
     return {
         "reads": 0,
         "timer": 0,
         "cursor": 0,
+        "pixels": pixels,
         "palette": [bytes(colour) for colour in effect_colours(settings)["palette"]],
-        # A comet's two pixels reach past the 50.
+        # A comet's two pixels reach past the strip.
         "targets": [
             [3 * index for index in flagged_targets(pixel, LENGTH, mapped, flags)]
-            for pixel in range(_PRISM_PIXELS + 2)
+            for pixel in range(pixels + 2)
         ],
-        "timing": _prism_timing((rate >> 2) + 1) if rate else None,
-        "comets": [[False, 0.0, 0.0, b""] for _ in range(_PRISM_COMETS)],
+        "timing": _prism_timing((rate >> 2) + 1, pixels) if rate else None,
+        "comets": [[False, 0.0, 0.0, b""] for _ in range(pixels // 6 + 1)],
     }
 
 
 def prism_step(state, settings, clock_ms, render) -> bytes:
-    timing = state["timing"]
+    timing, pixels = state["timing"], state["pixels"]
     if timing is None:
-        timing = _prism_timing(((_read(state) & 255) * 58 >> 8) + 6)
+        timing = _prism_timing(((_read(state) & 255) * 58 >> 8) + 6, pixels)
     if not render:
         state["timer"] = 1
         return bytes(3 * LENGTH)
@@ -276,13 +284,13 @@ def prism_step(state, settings, clock_ms, render) -> bytes:
         state["timer"] = 0
         for comet in comets:
             if not comet[0]:
-                comet[0], comet[1], comet[2], comet[3] = True, 0.0, speed, _scan_colour(state, _PRISM_PIXELS)
+                comet[0], comet[1], comet[2], comet[3] = True, 0.0, speed, _scan_colour(state, pixels)
                 break
     for comet in comets:
         if not comet[0]:
             continue
         position = comet[1]
-        if position <= _PRISM_PIXELS:
+        if position <= pixels:
             at, colour = int(position), comet[3]
             for target in targets[at]:
                 panel[target:target + 3] = colour

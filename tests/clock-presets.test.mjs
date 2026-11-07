@@ -4,6 +4,9 @@ import {
   lampEffectFrame,
   hasRenderer,
   timelineFor,
+  clockDigitFlags,
+  clockDigitTargets,
+  CLOCK_DIRECT_BACKGROUNDS,
 } from "../custom_components/yeelight_cube/www/lamp-renderers.js";
 import { matchingColorOption } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 
@@ -18,6 +21,7 @@ import {
   withAllItems,
 } from "../custom_components/yeelight_cube/www/visible-items.js";
 import { readFileSync } from "node:fs";
+import { withPendingMount } from "../custom_components/yeelight_cube/www/matrix-view.js";
 import { PreviewVisibility } from "../custom_components/yeelight_cube/www/preview-visibility.js";
 import {
   actionButtonGroupModel,
@@ -75,7 +79,10 @@ test("all clock styles display the lamp's background whatever the native directi
         ["red_blue", null],
       ]) {
         // The lamp reports no speed here: the preview takes the default.
-        const settings = lampClockSettings(effect, DEFAULT_CLOCK_SPEED, override, mode);
+        // Handed over or direct, as the style is sent.
+        const settings = lampClockSettings(
+          effect, DEFAULT_CLOCK_SPEED, override, mode, null, null, style.direct ?? null,
+        );
         // Computed ahead: a replay's time limit would show a frame earlier.
         if (hasRenderer(settings.mode))
           timelineFor(settings).frameAt(
@@ -86,9 +93,18 @@ test("all clock styles display the lamp's background whatever the native directi
         const background = flipMatrixVertical(
           effectDisplayFrame(effect, lampEffectFrame(settings, seconds)),
         );
-        const expected = mask.map((pixel, index) =>
-          pixel.some((value) => value > 0) ? background[index] : [0, 0, 0],
+        // The digits where the lamp draws them for this style (lamp order,
+        // row 0 at the bottom; the mask and background here are top first).
+        const flags = clockDigitFlags(
+          style.mixer, style.direct ?? CLOCK_DIRECT_BACKGROUNDS.has(style.mixer),
         );
+        const turn = (index) => (4 - Math.floor(index / 20)) * 20 + (index % 20);
+        const shown = new Set();
+        mask.forEach((pixel, index) => {
+          if (pixel.some((value) => value > 0))
+            for (const target of clockDigitTargets(turn(index), flags)) shown.add(turn(target));
+        });
+        const expected = background.map((pixel, index) => (shown.has(index) ? pixel : [0, 0, 0]));
         for (const direction of [undefined, "Up", "Down", "Left", "Right"]) {
           const attrs = {
             clock_style_id: style.id,
@@ -634,6 +650,7 @@ test("Custom stays selectable and built-in selections respect the active color m
         "_activeStylePreset",
         "_currentStyle",
         "_onPresetSaved",
+        "_lampPreviewAttrs",
         "_previewAttrs",
       ],
       {
@@ -644,6 +661,7 @@ test("Custom stays selectable and built-in selections respect the active color m
         clockStyleAction,
         clockStyleByName,
         getClockStyles,
+        withPendingMount,
         clockColorToRgb: (packed) =>
           typeof packed === "number"
             ? [(packed >> 16) & 255, (packed >> 8) & 255, packed & 255]
@@ -1216,6 +1234,30 @@ test("clock preset renames and deletes show at once on every card and are put ba
   }
 });
 
+test("a mount that turns the clock turns only the digits, not the background", () => {
+  // Profiles 0 and 1: the lamp lays the text out a half turn round; the
+  // background (Fire here) stays where it is on the panel.
+  const lit = (frame) => new Set(frame.flatMap((pixel, i) => (pixel.some(Boolean) ? [i] : [])));
+  const frames = (name) => {
+    const style = getClockStyles().find((candidate) => candidate.name === name);
+    const attrs = { clock_style_id: style.id, native_effect_speed: 128 };
+    return [
+      renderClockFrame(attrs, null, null, clockPhase(3, 128), 128),
+      renderClockFrame({ ...attrs, mount_profile: { profile: 0 } }, null, null, clockPhase(3, 128), 128),
+    ];
+  };
+  // The digits (a plain color lights all of them) turn a half turn.
+  const [digits, digitsTurned] = frames("Yellow").map(lit);
+  assert.deepEqual(digitsTurned, new Set([...digits].map((i) => 99 - i)));
+  // The background shows through them where it is.
+  const [upright, turned] = frames("Fire");
+  for (const i of lit(upright)) assert.ok(digits.has(i));
+  for (const i of lit(turned)) assert.ok(digitsTurned.has(i));
+  const both = [...lit(upright)].filter((i) => lit(turned).has(i));
+  assert.ok(both.length);
+  for (const index of both) assert.deepEqual(turned[index], upright[index]);
+});
+
 test("the card offers a style over every slot, a formerly numbered one too, not the stored GIF yet", () => {
   assert.equal(clockPreviewEffect(1), "Two-colour alternation");
   assert.equal(clockPreviewEffect(39), "Rainbow");
@@ -1223,9 +1265,19 @@ test("the card offers a style over every slot, a formerly numbered one too, not 
   assert.equal(clockPreviewEffect(71), undefined); // the GIF stored in the lamp
   assert.equal(clockPreviewEffect(0), undefined);
   const styles = getClockStyles();
-  assert.equal(styles.length, 72);
+  assert.equal(styles.length, 74);
   assert.ok(!styles.some((style) => style.mixer === 71));
   // The ids after it keep the backend's: Random scatter (72) is style 74.
   assert.equal(styles.find((style) => style.mixer === 72)?.id, 74);
   assert.equal(styles.find((style) => style.mixer === 41)?.family, "music");
+  // Two backgrounds have a style in each form, the direct ones last.
+  const twins = styles
+    .filter((style) => [22, 51].includes(style.mixer))
+    .map(({ id, name, direct, family }) => [id, name, direct, family]);
+  assert.deepEqual(twins.sort((a, b) => a[0] - b[0]), [
+    [36, "Comet stream", false, "motion"],
+    [59, "Music flipped equalizer", false, "music"],
+    [83, "Mirrored comets", true, "motion"],
+    [84, "Music noise equalizer", true, "music"],
+  ]);
 });

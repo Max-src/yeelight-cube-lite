@@ -6,6 +6,39 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **Lamp mounted answers at once:** choosing it waited for the lamp's own
+  direction to be written over Matter, up to its whole timeout when no server
+  could deliver it (on every lamp of the card), so the buttons seemed stuck.
+  The choice now applies and shows at once; the lamp's direction is written in
+  the background, the clock started again once it is set, and the last choice
+  always wins.
+- **No blink when Lamp mounted changes:** the previews showed, for a moment,
+  the picture turned for the new orientation in the old layout (the Native
+  Effects and Clock cards, while the choice was being sent), or the clock's
+  digits on the lamp's old mount profile (every clock preview, while the new
+  one was written to the lamp). They now take the new layout and the profile
+  the lamp is about to run at once.
+- **A turned clock keeps its background in place:** when the lamp's mount
+  turns its clock (Lamp mounted on Left or Up, through Matter), the lamp turns
+  only the digits: the effect behind them stays where it is on the panel, so
+  Fire still lights the same side. The previews turned the whole picture;
+  they now turn only the digits, for every clock style.
+- **Mirrored comets behind the clock looks like the lamp:** behind the clock
+  the lamp ran it without its mirror: up to 17 comets cross the whole panel
+  the same way, instead of each one and its twin meeting in the middle. The
+  clock previews (Clock card, Lamp Preview, camera) now draw it so, and the
+  style is renamed **Comet stream** for that look. The same goes for the
+  Music noise equalizer clock, which the lamp shows mirrored left to right:
+  it is now **Music flipped equalizer**. Every other clock background was
+  checked: none differs that way. Both keep their id, and their former names
+  (`Prism`, `51`) still select them.
+- **Music noise equalizer previews the right way round:** its bars grew from
+  the wrong edge or in the wrong row order in some directions (Left drew them
+  mirrored, Right upside down). Every preview of it, effect or clock, now
+  places them as the lamp does: Left and Right look the same on the lamp.
+- **Album and Wheel previews move again:** in the Native Effects and Clock
+  cards, the Live Preview Album and Wheel layouts showed still pictures; they
+  are animated like the other layouts.
 - **The music effects hear the lamp's microphone again:** after a drawing, text
   or picture (anything shown pixel by pixel), the lamp keeps a flag
   that makes a music effect switch the microphone off instead of on, until it
@@ -38,7 +71,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **No more flash when the lamp's orientation changes:** a drawing, text or
   pixel art showed for a split second in the wrong place on the Lamp Preview
   card and the preview camera, then turned to where it belongs. The new
-  orientation now comes with the picture turned for it.
+  orientation now comes with the picture turned for it, and the Lamp Preview
+  card and the Draw card's drawing area draw it in place at once, also
+  between a landscape and a standing mount (each dot used to fade from where
+  it was in the other layout).
 - **The Yeelight app no longer shows Ribbon for effects it does not have:**
   every effect that is not in the app (Violet twinkles, the music bars and
   the others) made the app show Ribbon as playing. They now run under an id
@@ -78,7 +114,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   as playing (Stored GIF too, while the lamp holds one of them). The new
   **Native effect: Animation layout** select sends them upright (as drawn,
   the default) or as the Yeelight app sends its own GIFs, which the lamp
-  shows rearranged; the previews follow it.
+  shows rearranged; the previews follow it. The speed slider sets how fast
+  they play (from about a quarter to four times as fast), and the Lamp
+  Preview card's color adjustments (hue shift, temperature, saturation,
+  vibrance, contrast, glow, grayscale, tint, invert) apply to them as to pixel
+  art. The lamp plays a GIF at its own pace and in its own colors, so both are
+  in the GIF: changing one uploads it again (a few seconds), and every
+  preview shows them. Stored GIF itself is no longer listed on the cards or
+  in the effect dropdown, as the four animations are picked instead; it
+  still shows while it plays, and `set_native_effect` and the dropdown's
+  `select_option` still take it by name.
+- **Family icons on the effects:** each effect, in the Native Effects card's
+  browser and in its favourites, shows its family's icon (a flame for Glow, a
+  sparkle for Sparkles, a note for Music, waves, a play arrow for Motion, a
+  picture for Still), the same icons as the family filter, colored like the
+  card's buttons. It sits at the bottom right of each tile, below the preview
+  (on the Official / Experimental line in the Original layout, after the name
+  in the favourites, after the name in chips), and hovering it names the
+  family. The dropdown and text buttons show the family's emoji after the
+  name (🌊 🔥 ✨ ▶️ 🎵 🖼️). Two switches named **Show effect family icon**
+  turn them off: the browser's (`show_family_icons`) and the Favourites
+  section's (`favourites_show_family_icons`; without animated previews the
+  icon is the favourite button's own).
+- **Lamp mounted on the Clock card:** the same Right / Down / Left / Up
+  buttons as the Native Effects card, shown when a Matter server that sends
+  Yeelight commands lets them reach the clock of one of the card's lamps
+  (`show_device_orientation` hides them).
+- **Two clock styles started the other way:** **Mirrored comets** (style 83)
+  and **Music noise equalizer** (style 84) run their effect as itself under
+  the clock, so the clock shows it as the effect does: comets and their twins
+  meeting in the middle, the equalizer the right way round. The effect's own
+  set-up reaches the digits too: Mirrored comets shows only the hour and the
+  colon, flipped and mirrored onto the other half (08:40 reads "08::80"), and
+  the Music noise equalizer shows the time mirrored left to right. Comet
+  stream and Music flipped equalizer remain for the other look, with the time
+  as usual. Every preview draws each style, digits included, as the lamp
+  shows it.
 - **Intensity for effects and clock styles:** a new slider on the Native
   Effects and Clock cards, an **Effect intensity** number entity and an
   `intensity` field in `set_native_effect` and `set_clock_style`. What it

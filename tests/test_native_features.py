@@ -24,6 +24,7 @@ PIXEL_ART = runpy.run_path(ROOT / "builtin_pixel_art.py")
 NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
 LAMP_RENDERERS = runpy.run_path(ROOT / "lamp_renderers.py")
 LAMP_ANIMATIONS_MODULE = runpy.run_path(ROOT / "lamp_animations.py")
+COLOR_ADJUSTMENTS = runpy.run_path(ROOT / "color_adjustments.py")
 # The built-in effect / clock activation (light_native.py) as tests load it on
 # its own: the activations and the helpers they call. live_effect_changes is a
 # module function; the others are methods (NATIVE_ACTIVATION_METHODS).
@@ -36,10 +37,11 @@ NATIVE_ACTIVATION = frozenset({
     "runs_lamp_music", "_clear_fx_mode_flag", "intensity_config",
     "palette_music", "_send_palette_music", "_build_music_flow_payload",
     "_store_animation", "_send_music_direction", "_music_direction_due", "stored_gif_tile",
+    "animation_look",
 })
 NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {
     "live_effect_changes", "effect_direction_sent", "lamp_direction", "stored_gif_tile",
-    "runs_lamp_music", "intensity_config", "palette_music",
+    "animation_look", "runs_lamp_music", "intensity_config", "palette_music",
     "_build_music_flow_payload",
 }
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
@@ -91,7 +93,10 @@ _DEFAULT_NAMESPACE = {
         "MODE_CLOCK", "MODE_NATIVE_EFFECT", "LAMP_MODES", "ROTATION_KIND_MODES",
         "lamp_rate", "lamp_intensity", "DEFAULT_NATIVE_EFFECT_INTENSITY",
         "PALETTE_COLOR_MODE", "MUSIC_FLOW_EFFECTS", "MUSIC_FLOW_DEFAULT_PALETTE",
+        "DEFAULT_NATIVE_EFFECT_SPEED",
     )},
+    # What an animation's GIF is drawn with (light_native.animation_look).
+    **{name: COLOR_ADJUSTMENTS[name] for name in ("ADJUSTMENT_DEFAULTS", "active_adjustments")},
     # The palette color mode's rule (light_native imports it).
     **{name: LAMP_RENDERERS[name] for name in (
         "palette_music_flow", "palette_words", "music_palette", "clock_palette_words",
@@ -396,6 +401,7 @@ class NativeFeatureTests(unittest.TestCase):
                 "CLOCK_MIXER_EFFECTS": CONSTANTS["CLOCK_MIXER_EFFECTS"],
                 "LAMP_MUSIC_SLOTS": CONSTANTS["LAMP_MUSIC_SLOTS"],
                 "clock_segment_modes": CONSTANTS["clock_segment_modes"],
+                "clock_style_direct": CONSTANTS["clock_style_direct"],
                 "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
                 "clock_style_default_color": CONSTANTS["clock_style_default_color"],
                 "clock_style_colors": CONSTANTS["clock_style_colors"],
@@ -481,7 +487,7 @@ class NativeFeatureTests(unittest.TestCase):
                 params = asyncio.run(run(style_id, "normal"))
                 expected = (
                     (style["mixer"], 1)
-                    if style["mixer"] in CONSTANTS["CLOCK_DIRECT_BACKGROUNDS"]
+                    if CONSTANTS["clock_style_direct"](style)
                     else (CONSTANTS["NATIVE_CLOCK_EFFECT_ID"], style["mixer"])
                 )
                 self.assertEqual(expected, (params[3]["mode"], params[3]["mixer"]))
@@ -1071,11 +1077,13 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertEqual(name, CONSTANTS["CLOCK_MIXER_EFFECTS"][mixer])
                 self.assertIn(f'{mixer}: "{name}"', CLOCK_CARD_SOURCE)
                 self.assertEqual(mixer, CONSTANTS["ALL_NATIVE_EFFECTS"][name]["mode"])
-                style = next(
+                # The style named like the effect (over the direct form for a
+                # background with a style in each form, CLOCK_FORM_TWINS).
+                styles = [
                     style for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
                     if style["mixer"] == mixer
-                )
-                self.assertEqual(name, style["name"])
+                ]
+                self.assertIn(name, [style["name"] for style in styles])
         self.assertEqual(
             {"name": "Violet interference", "mixer": 56}, CONSTANTS["NATIVE_CLOCK_STYLES"][15],
         )
@@ -1293,7 +1301,8 @@ class NativeFeatureTests(unittest.TestCase):
         # Mixer-effect styles render the effect and mask it to the glyph pixels.
         self.assertIn("CLOCK_MIXER_EFFECTS", clock)
         self.assertIn("lamp_clock_settings(", clock)
-        self.assertIn("effect_frame[row * COLS + col]", clock)
+        self.assertIn("effect_frame[index]", clock)
+        self.assertIn("clock_digit_targets(99 - at if turned else at, digit_flags)", clock)
         # Colon blink, date/12h/offset handling stay intact.
         self.assertIn('char == ":"', clock)
         self.assertIn("colon_visible", clock)
@@ -1301,7 +1310,8 @@ class NativeFeatureTests(unittest.TestCase):
         # The JS card mirrors the same masking and colon-blink behaviour.
         self.assertIn("CLOCK_MIXER_EFFECTS", CLOCK_CARD_SOURCE)
         self.assertIn("lampClockSettings(", CLOCK_CARD_SOURCE)
-        self.assertIn("effectFrame[row * COLS + col]", CLOCK_CARD_SOURCE)
+        self.assertIn("effectFrame[index]", CLOCK_CARD_SOURCE)
+        self.assertIn("clockDigitTargets(turned ? 99 - at : at, digitFlags)", CLOCK_CARD_SOURCE)
         self.assertIn("colonVisible", CLOCK_CARD_SOURCE)
 
     def test_clock_style_sends_and_previews_mixer_direction(self):
@@ -1561,7 +1571,14 @@ class NativeFeatureTests(unittest.TestCase):
     def test_a_clock_style_keeps_its_id(self):
         # Saved clock styles are ids: the styles left must not move.
         styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
-        self.assertEqual(82, max(styles))
+        # The two styles over the direct form come last (CLOCK_FORM_TWINS).
+        self.assertEqual(84, max(styles))
+        self.assertEqual(
+            {36: ("Comet stream", 22, False), 59: ("Music flipped equalizer", 51, False),
+             83: ("Mirrored comets", 22, True), 84: ("Music noise equalizer", 51, True)},
+            {i: (s["name"], s["mixer"], CONSTANTS["clock_style_direct"](s))
+             for i, s in styles.items() if s["mixer"] in (22, 51)},
+        )
         self.assertEqual(
             {70: 72, 71: 73, 72: 74, 79: 81, 80: 82},
             {s["mixer"]: i for i, s in styles.items() if s["mixer"] in (79, 80, 72, 71, 70)},
@@ -1651,7 +1668,10 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertNotIn(clock_mode, style_mixers)
 
         # Styles beyond the lamp's 10 built-ins are experimental, each maps to
-        # a distinct mixer, and named modes never appear as a bare number.
+        # a distinct mixer (but a background with a style in each form,
+        # CLOCK_FORM_TWINS: its handed-over style is named for its look), and
+        # named modes never appear as a bare number.
+        twins = CONSTANTS["CLOCK_FORM_TWINS"]
         mode_to_name = {
             spec["mode"]: name for name, spec in all_effects.items() if not spec.get("animation")
         }
@@ -1661,9 +1681,12 @@ class NativeFeatureTests(unittest.TestCase):
                 continue
             self.assertIn(style_id, experimental)
             mixer = style["mixer"]
-            self.assertNotIn(mixer, seen_mixers)
-            seen_mixers.add(mixer)
-            if style_id > 15 and mixer in mode_to_name:
+            direct = style.get("direct", False)
+            self.assertNotIn((mixer, direct), seen_mixers)
+            seen_mixers.add((mixer, direct))
+            if mixer in twins:
+                self.assertEqual(twins[mixer][1 if direct else 0], style["name"])
+            elif style_id > 15 and mixer in mode_to_name:
                 self.assertEqual(mode_to_name[mixer], style["name"])
         # Labels stay unique so the reverse label -> id map never collapses.
         labels = [style["name"] for style in clock_styles.values()]
@@ -1729,17 +1752,20 @@ class NativeEffectCatalogTests(unittest.TestCase):
         animations = set(CONSTANTS["LAMP_ANIMATION_EFFECTS"])
         names = lambda items: [item["name"] for item in items]
         # Every effect, experimental ones too (marked for the cards' badge),
-        # with a preview; the stored GIF always.
-        self.assertEqual(set(effects) - animations, set(names(catalog(None))))
+        # with a preview; not the stored GIF (the animations are chosen
+        # instead), but while it plays.
+        stored = {"Stored GIF"}
+        self.assertEqual(set(effects) - animations - stored, set(names(catalog(None))))
+        self.assertIn("Stored GIF", names(catalog("Stored GIF")))
         self.assertTrue(any(item["extended"] for item in catalog(None)))
         self.assertTrue(all(item["preview"] for item in catalog(None)))
         self.assertIs(catalog(None), catalog(None))
         # The animations to upload only while a server delivers the Yeelight
         # commands, or while one plays.
-        self.assertEqual(set(effects), set(names(catalog(None, True))))
+        self.assertEqual(set(effects) - stored, set(names(catalog(None, True))))
         self.assertIn("Snowfall", names(catalog("Snowfall")))
         snowfall = next(item for item in catalog(None, True) if item["name"] == "Snowfall")
-        self.assertEqual((snowfall["animation"], snowfall["family"], snowfall["speed"]), ("snowfall", "sparkles", False))
+        self.assertEqual((snowfall["animation"], snowfall["family"], snowfall["speed"]), ("snowfall", "sparkles", True))
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,7 @@ from .const import (
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     clock_segment_modes,
+    clock_style_direct,
     DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
     effect_family,
@@ -108,7 +109,8 @@ def _native_effect_catalog(playing: str | None, animations: bool = False) -> lis
     Every effect is listed; ``extended`` only marks those the Yeelight app
     does not offer (the cards' badge). ``animations``: whether the animations
     to upload (LAMP_ANIMATION_EFFECTS) are offered, while a server delivers
-    the Yeelight commands; one that plays stays listed (``playing``)."""
+    the Yeelight commands. A hidden effect (the stored GIF) is not listed. One
+    that plays stays listed (``playing``)."""
     return [
         {"name": name, "speed": bool(spec.get("speed")),
          "intensity": bool(spec.get("intensity")),
@@ -118,7 +120,8 @@ def _native_effect_catalog(playing: str | None, animations: bool = False) -> lis
          **({"animation": spec["animation"]} if spec.get("animation") else {}),
          "preview": True}
         for name, spec in ALL_NATIVE_EFFECTS.items()
-        if not spec.get("animation") or animations or name == playing
+        if name == playing
+        or not (spec.get("hidden") or (spec.get("animation") and not animations))
     ]
 
 
@@ -677,28 +680,47 @@ class YeelightCubeLight(
         self._device_orientation = orientation
         # Drive the matrix/text/pixel flip (normal vs 180 deg).
         self._orientation = DEVICE_ORIENTATION_TO_FLIP[orientation]
-        # Over Matter, the lamp's own direction setting turns its own
-        # content (clock, native effects) for the mount; it applies when that
-        # content starts again (light_matter._sync_lamp_rotation).
-        lamp_direction_set = await self._sync_lamp_rotation(orientation)
-        if lamp_direction_set:
-            self._cube_matrix.forget_running_effect()
-
-        # Whether we need to re-render/re-send to the lamp for this mode.
-        reapply = True
-
-        if self._mode == MODE_CLOCK:
-            # Re-activating the clock briefly drops it: only when the lamp's
-            # own direction was just set over Matter (it turns the clock when
-            # the clock starts). Otherwise the clock stays as it is and the
-            # preview turns, as the lamp shows it.
-            reapply = lamp_direction_set
-
+        # The profile the lamp is about to run, published with it: previews
+        # never show the new orientation on the old profile.
+        self._expect_lamp_rotation(orientation)
         self._notify_camera_preview()
-        if reapply:
+        # Everything but the clock follows at once (a native effect is
+        # compensated for the profile the lamp runs now). The clock stays as
+        # it is until the lamp's own direction is set (_follow_lamp_rotation):
+        # re-activating it briefly drops it.
+        if self._mode != MODE_CLOCK:
             await self.async_apply_display_mode(update_type='text_change')
         if self._device_orientation_select_entity:
             self._device_orientation_select_entity.async_update_from_light()
+        if self.hass is not None:
+            self.async_schedule_update_ha_state()
+        # Over Matter, the lamp's own direction setting turns its own content
+        # (clock, native effects) for the mount. Written in the background, so
+        # the choice never waits for the lamp or a server that is not there
+        # (a write may take its whole timeout).
+        self._create_tracked_task(
+            self._follow_lamp_rotation(orientation),
+            name=f"yeelight_cube_lamp_rotation_{self._ip}",
+        )
+
+    async def _follow_lamp_rotation(self, orientation: str) -> None:
+        """Set the lamp's own direction for ``orientation``
+        (light_matter._sync_lamp_rotation), one write at a time; once set, the
+        clock or effect it shows starts again so the lamp applies it. A later
+        choice wins: an earlier one that ends after it changes nothing."""
+        lock = self.__dict__.setdefault("_rotation_write_lock", asyncio.Lock())
+        async with lock:
+            if orientation != self._device_orientation:
+                return  # another choice came since (it set its own profile)
+            if not await self._sync_lamp_rotation(orientation):
+                self._mount_profile_pending = None  # not written: the old one stays
+                if self.hass is not None:
+                    self.async_schedule_update_ha_state()
+                return
+        self._cube_matrix.forget_running_effect()
+        if orientation == self._device_orientation and self._mode in (MODE_CLOCK, MODE_NATIVE_EFFECT):
+            await self.async_apply_display_mode(update_type='text_change')
+        self._notify_camera_preview()
         if self.hass is not None:
             self.async_schedule_update_ha_state()
 
@@ -842,9 +864,10 @@ class YeelightCubeLight(
             "native_effect_direction": self._native_effect_direction,
             "effect_direction_own": True,
             "native_effect_catalog": _native_effect_catalog(
-                # An animation still listed while it plays.
+                # An animation, or a hidden effect, still listed while it plays.
                 self._native_effect
                 if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
+                or ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("hidden")
                 else None,
                 self.animations_available,
             ),
@@ -1520,7 +1543,7 @@ class YeelightCubeLight(
             style_name = name.removeprefix(BUTTON_CLOCK_PREFIX)
             for style_id, style in NATIVE_CLOCK_STYLES.items():
                 if style["name"] == style_name:
-                    config = clock_segment_modes(style["mixer"])
+                    config = clock_segment_modes(style["mixer"], clock_style_direct(style))
                     # The style's default color (clock_style_default_color),
                     # or every colour its background draws.
                     colors = clock_style_colors(style)

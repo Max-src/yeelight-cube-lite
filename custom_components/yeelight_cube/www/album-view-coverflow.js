@@ -268,6 +268,12 @@ class YcAlbum extends LitElement {
     this.current = Math.max(0, Math.min(this.target ?? this.current, this.items.length - 1));
   }
 
+  // Its items are drawn in its own update, after the gallery's
+  // gallery-updated: a card that animates its previews collects them again.
+  updated() {
+    this.dispatchEvent(new CustomEvent("gallery-updated", { bubbles: true }));
+  }
+
   // The card `step` places away; past the ends only when wrapping.
   _turn(step) {
     const count = this.items.length;

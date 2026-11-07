@@ -32,13 +32,16 @@ from .const import (
     DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
     NATIVE_CLOCK_STYLES,
+    clock_style_direct,
     PALETTE_COLOR_MODE,
 )
 from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
+from .lamp_core import clock_digit_targets
 from .lamp_renderers import (
     LAMP_RENDERED_EFFECTS,
     RENDER_SECONDS,
+    clock_digit_flags,
     clock_palette_words,
     lamp_clock_settings,
     lamp_effect_frame,
@@ -380,7 +383,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         if getattr(le, "_music_flow_enabled", False):
             base = self._get_music_flow_preview()
         elif mode == MODE_CLOCK:
-            base = self._lamp_clock_frame(self._get_clock_preview())
+            base = self._get_clock_preview()
         elif mode == MODE_NATIVE_EFFECT:
             # Compensated for the lamp's mount profile (light_native): drawn
             # as calibrated, whatever the lamp's own direction setting.
@@ -446,14 +449,6 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             return self._get_native_effect_preview()
         return None
 
-    def _lamp_clock_frame(self, frame: list) -> list:
-        """The lamp's clock (lamp order) as the lamp draws it: its saved
-        mount profile turns it a half turn on 0 and 1
-        (light_mount_profile.lamp_turns_clock)."""
-        if getattr(self._light_entity, "lamp_turns_clock", False):
-            return frame[::-1]
-        return frame
-
     def _preview_speed(self) -> int:
         """The rate the lamp gets (1-255), which previews take as it is."""
         return max(0, min(255, int(getattr(self._light_entity, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED))))
@@ -495,6 +490,8 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             palette=getattr(le, "_text_colors", None),
             stored=getattr(le, "_stored_gif", None),
             layout=getattr(le, "_animation_layout", None),
+            # An animation is uploaded with them (light_native._store_animation).
+            adjustments=le.color_adjustments() if hasattr(le, "color_adjustments") else None,
         )
         # Lamp order (row 0 = physical bottom), like every frame: _view_frame
         # turns it the way the viewer sees it, once.
@@ -590,6 +587,8 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                 lamp_clock_settings(
                     effect_name, self._preview_speed(), override_rgb, color_mode,
                     _chosen_intensity(self._light_entity), palette,
+                    # Handed over or direct: the style's form, as light_native sends it.
+                    clock_style_direct(style),
                 ),
                 self._clock_background_seconds(),
             )
@@ -599,6 +598,13 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # B&W; the backend achieves it by omitting their color, which the
         # lamp renders as plain white.
         solo_bw_fallback = effect_frame is None and color_mode == "bw"
+        # Where the lamp draws each digit pixel: a background started directly
+        # may turn or mirror them (lamp_renderers.clock_digit_flags).
+        digit_flags = clock_digit_flags(style.get("mixer", 0), clock_style_direct(style))
+        # On a mount profile that turns the clock (light_mount_profile.
+        # lamp_turns_clock), the lamp lays the text out a half turn round;
+        # the background stays where it is on the panel.
+        turned = bool(getattr(le, "lamp_turns_clock", False))
 
         for char_index, (char, glyph, advance) in enumerate(
             zip(text, glyphs, advances)
@@ -610,22 +616,23 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                 col = position % COLS + offset
                 row = position // COLS
                 if 0 <= col < COLS and 0 <= row < ROWS:
-                    if effect_frame is not None:
-                        matrix[row * COLS + col] = effect_frame[row * COLS + col]
-                    elif solo_bw_fallback:
-                        matrix[row * COLS + col] = (255, 255, 255)
-                    elif flat_override is not None:
-                        matrix[row * COLS + col] = flat_override
-                    else:
-                        matrix[row * COLS + col] = self._clock_pixel_color(
-                            style_id,
-                            char_index,
-                            col,
-                        )
+                    at = row * COLS + col
+                    for index in clock_digit_targets(99 - at if turned else at, digit_flags):
+                        if effect_frame is not None:
+                            matrix[index] = effect_frame[index]
+                        elif solo_bw_fallback:
+                            matrix[index] = (255, 255, 255)
+                        elif flat_override is not None:
+                            matrix[index] = flat_override
+                        else:
+                            matrix[index] = self._clock_pixel_color(
+                                style_id,
+                                char_index,
+                                col,
+                            )
             offset += advance
 
-        # Lamp order, like every frame: the lamp's clock cannot turn, so on
-        # an upside-down mount the viewer sees it upside down (_view_frame).
+        # Lamp order, like every frame (_view_frame turns it for the viewer).
         return matrix
 
     def _clock_background_seconds(self) -> float:

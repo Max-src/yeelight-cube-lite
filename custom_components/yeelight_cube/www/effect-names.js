@@ -145,11 +145,18 @@ const NON_CLOCK_EFFECT_NAMES = new Set([
 // const.py CLOCK_STYLE_ALIASES: a clock style is named after the effect behind
 // it, so it was renamed with it. A clock style's key in a card config is a name
 // ("custom:<id>" for a saved preset), never a style id.
+// A former name of a background with a style in each form (const.py
+// CLOCK_FORM_TWINS) keeps meaning the style it named: the one over the
+// hand-over.
+const TWIN_HANDOVER_NAMES = {
+  "Mirrored comets": "Comet stream",
+  "Music noise equalizer": "Music flipped equalizer",
+};
 export const CLOCK_STYLE_ALIASES = Object.freeze(
   Object.fromEntries(
-    Object.entries(NATIVE_EFFECT_ALIASES).filter(
-      ([, name]) => !NON_CLOCK_EFFECT_NAMES.has(name),
-    ),
+    Object.entries(NATIVE_EFFECT_ALIASES)
+      .filter(([, name]) => !NON_CLOCK_EFFECT_NAMES.has(name))
+      .map(([alias, name]) => [alias, TWIN_HANDOVER_NAMES[name] ?? name]),
   ),
 );
 

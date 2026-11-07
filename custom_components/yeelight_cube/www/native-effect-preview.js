@@ -141,19 +141,32 @@ export function renderNativeEffect(
   palette = null,
   stored = null,
   layout = null,
+  adjustments = null,
 ) {
   const rate = speed ?? DEFAULT_PREVIEW_SPEED;
   // An animation, or the stored GIF when it is one of them (`stored`, the
-  // stored_gif attribute or its animation): its frames as drawn, at their own
-  // pace, laid out as sent (`layout`, the animation_layout attribute; the
-  // stored GIF's own).
+  // stored_gif attribute or its animation): its frames as sent, laid out
+  // (`layout`, the animation_layout attribute), timed (the speed) and
+  // colored (`adjustments`, color-adjustments.js adjustmentsOf) in the GIF;
+  // the stored GIF's own.
   let animation = ANIMATION_EFFECTS[effect];
+  let pace = rate;
   if (effect === STORED_GIF_EFFECT) {
-    animation = typeof stored === "string" ? stored : stored?.animation;
-    layout = typeof stored === "string" ? null : stored?.layout ?? null;
+    const held = typeof stored === "string" ? {} : stored ?? {};
+    animation = typeof stored === "string" ? stored : held.animation;
+    layout = held.layout ?? null;
+    pace = held.speed ?? null;
+    adjustments = held.adjustments ?? null;
   }
   if (isAnimation(animation))
-    return animationFrame(animation, phase / (0.25 + rate / 55), orientation, layout);
+    return animationFrame(
+      animation,
+      phase / (0.25 + rate / 55),
+      orientation,
+      layout,
+      pace,
+      adjustments,
+    );
   if (!isLampRendered(effect)) return renderGradient(phase, direction);
   return lampEffectFrame(
     lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity, palette),

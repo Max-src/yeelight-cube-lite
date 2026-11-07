@@ -3,6 +3,7 @@ www/matrix-view.js): the viewer's frame, the vertical view, the cameras'
 option and the pixel arts' orientation."""
 
 import io
+import runpy
 import json
 from pathlib import Path
 import shutil
@@ -99,19 +100,74 @@ class CameraOrientationTests(unittest.TestCase):
     def test_the_camera_clock_turns_with_the_lamps_mount_profile(self):
         source = (ROOT / "camera.py").read_text(encoding="utf-8")
         colors = function_source(source, "_get_matrix_colors")
-        self.assertIn("self._lamp_clock_frame(self._get_clock_preview())", colors)
+        self.assertIn("base = self._get_clock_preview()", colors)
         # Native effects are compensated on the lamp: never turned here.
         self.assertIn("base = self._get_native_effect_preview()", colors)
-        turn = function_source(source, "_lamp_clock_frame")
-        self.assertIn('getattr(self._light_entity, "lamp_turns_clock", False)', turn)
-        self.assertIn("return frame[::-1]", turn)
+        # Only the digits turn (test_clock_presets checks the frames).
+        clock = function_source(source, "_get_clock_preview")
+        self.assertIn('turned = bool(getattr(le, "lamp_turns_clock", False))', clock)
+        self.assertIn("99 - at if turned else at", clock)
 
     def test_the_clock_restarts_only_when_the_lamps_direction_was_set(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock
+
+        from tests.test_native_features import _load_standalone_functions
+
         source = (ROOT / "light.py").read_text(encoding="utf-8")
-        orientation = function_source(source, "set_device_orientation")
-        self.assertIn("lamp_direction_set = await self._sync_lamp_rotation(orientation)", orientation)
-        self.assertIn("reapply = lamp_direction_set", orientation)
-        self.assertIn("self._cube_matrix.forget_running_effect()", orientation)
+        consts = runpy.run_path(str(ROOT / "const.py"))
+        fns = _load_standalone_functions(
+            source, {"set_device_orientation", "_follow_lamp_rotation"},
+            {**consts, "asyncio": asyncio, "_LOGGER": Mock()},
+        )
+
+        async def scenario():
+            writes = []
+            release = asyncio.Event()
+
+            async def sync(orientation):  # a write that waits for the lamp
+                writes.append(orientation)
+                await release.wait()
+                return True
+
+            tasks = []
+            light = SimpleNamespace(
+                _mode="Clock", _device_orientation="right", _orientation="normal", hass=None,
+                _device_orientation_select_entity=None, _ip="1.2.3.4",
+                _turn_published_picture=Mock(), _notify_camera_preview=Mock(),
+                _expect_lamp_rotation=Mock(), _sync_lamp_rotation=sync,
+                _mount_profile_pending=None,
+                _cube_matrix=SimpleNamespace(forget_running_effect=Mock()),
+                async_apply_display_mode=AsyncMock(),
+                _create_tracked_task=lambda coro, name=None: tasks.append(asyncio.ensure_future(coro)),
+            )
+            for name in ("set_device_orientation", "_follow_lamp_rotation"):
+                setattr(light, name, fns[name].__get__(light))
+            # The choice returns at once, the lamp's write still running.
+            await asyncio.wait_for(light.set_device_orientation("left"), 0.5)
+            self.assertEqual("left", light._device_orientation)
+            light._expect_lamp_rotation.assert_called_once_with("left")
+            light.async_apply_display_mode.assert_not_called()  # the clock waits for the lamp
+            # Another choice while the first write runs: it ends, nothing
+            # follows it; the newer one is written and applied.
+            await asyncio.sleep(0)
+            self.assertEqual(["left"], writes)
+            await light.set_device_orientation("down")
+            release.set()
+            await asyncio.gather(*tasks)
+            self.assertEqual(["left", "down"], writes)
+            light.async_apply_display_mode.assert_awaited_once_with(update_type="text_change")
+            light._cube_matrix.forget_running_effect.assert_called()
+            # A choice superseded before its write started is never written.
+            release.clear()
+            await light.set_device_orientation("up")
+            await light.set_device_orientation("right")
+            release.set()
+            await asyncio.gather(*tasks)
+            self.assertEqual(["left", "down", "right"], writes)
+
+        asyncio.run(scenario())
 
     def test_cameras_render_sharp_anti_aliased_images(self):
         source = (ROOT / "camera.py").read_text(encoding="utf-8")

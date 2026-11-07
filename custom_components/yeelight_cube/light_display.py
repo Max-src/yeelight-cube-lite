@@ -13,6 +13,7 @@ import time
 from yeelight import BulbException  # type: ignore
 
 from .color_utils import rgb_to_hex
+from .color_adjustments import adjust_color
 from .const import LAMP_MODES, MODE_NATIVE_EFFECT, ROTATION_KIND_MODES
 from .cube_matrix import (
     trace_frame,
@@ -336,7 +337,8 @@ class DisplayMixin:
             frame = self._layout_colors()
             effects = self._has_color_effects
             if effects:
-                frame = [self.apply_color_adjustments(rgb) for rgb in frame]
+                adjustments = self.color_adjustments()
+                frame = [adjust_color(rgb, adjustments) for rgb in frame]
             self._base_matrix_colors = frame
             staged = self._brightness_stages(frame)
             if effects or staged is not frame:

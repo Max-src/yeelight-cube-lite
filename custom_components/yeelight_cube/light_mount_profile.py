@@ -59,15 +59,25 @@ class MountProfileMixin:
     @property
     def lamp_turns_clock(self) -> bool:
         """Whether the lamp draws its clock a half turn from the
-        calibration's (profiles 0 and 1): the previews turn it too. Native
-        effects are compensated (light_native), so they never are."""
-        return clock_turned(self.effect_profile)
+        calibration's (profiles 0 and 1): the previews turn it too, from the
+        profile being written (_mount_profile_pending) as soon as the Device
+        Orientation changes, so they never show the new orientation with
+        the old profile. Native effects are compensated (light_native), so
+        they never are."""
+        pending = getattr(self, "_mount_profile_pending", None)
+        return clock_turned(self.effect_profile if pending is None else pending)
 
     def _mount_profile_summary(self) -> dict:
         """The light's `mount_profile` attribute: the known profile (or
-        None), its source, and the one in use (the default when unknown)."""
+        None), its source, the one in use (the default when unknown) and,
+        while a Device Orientation is written to the lamp, the one it is
+        about to run ("pending", what the previews follow)."""
         profile, source = self.mount_profile
-        return {"profile": profile, "source": source, "in_use": effective_profile(profile)}
+        summary = {"profile": profile, "source": source, "in_use": effective_profile(profile)}
+        pending = getattr(self, "_mount_profile_pending", None)
+        if pending is not None:
+            summary["pending"] = pending
+        return summary
 
     def _store_mount_profile(self, profile: int, source: str, node: int | None = None) -> bool:
         """Keep the profile with the entry (and, from Matter, the node it was

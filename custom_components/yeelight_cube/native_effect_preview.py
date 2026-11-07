@@ -201,6 +201,7 @@ def render_native_effect(
     palette=None,
     stored=None,
     layout: str | None = None,
+    adjustments: dict | None = None,
 ) -> list[tuple[int, int, int]]:
     """One frame of a native effect, lamp order: what the lamp's renderer
     draws for the command sent, LED drive
@@ -210,16 +211,24 @@ def render_native_effect(
     ``intensity``: the one chosen (None: the effect's own). ``palette``: the
     lamp's, for the palette color mode. ``stored``: what the lamp stores
     (light._stored_gif, or the animation's key), which the stored GIF shows,
-    in its layout. ``layout``: the one an animation is sent in
-    (const.ANIMATION_LAYOUTS; upright when None)."""
+    in its layout, at its speed, with its color adjustments. ``layout``: the
+    one an animation is sent in (const.ANIMATION_LAYOUTS; upright when None).
+    ``adjustments``: the color adjustments an animation is sent with
+    (color_adjustments.active_adjustments; none when None)."""
     speed = DEFAULT_PREVIEW_SPEED if speed is None else speed
     animation = ALL_NATIVE_EFFECTS.get(effect, {}).get("animation")
+    pace = speed
     if effect == STORED_GIF_EFFECT:
-        animation = stored.get("animation") if isinstance(stored, dict) else stored
-        layout = stored.get("layout") if isinstance(stored, dict) else None
+        held = stored if isinstance(stored, dict) else {}
+        animation = held.get("animation") if isinstance(stored, dict) else stored
+        layout = held.get("layout")
+        pace = held.get("speed")
+        adjustments = held.get("adjustments")
     if animation:
-        # Its frames as drawn, at their own pace (no speed), laid out as sent.
-        return animation_frame(animation, phase / (0.25 + speed / 55.0), orientation, layout)
+        # Its frames as sent: laid out, timed and colored in the GIF.
+        return animation_frame(
+            animation, phase / (0.25 + speed / 55.0), orientation, layout, pace, adjustments,
+        )
     if effect not in LAMP_RENDERED_EFFECTS:
         return _render_gradient(phase, direction)
     settings = lamp_settings(

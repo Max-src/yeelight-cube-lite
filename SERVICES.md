@@ -35,10 +35,12 @@ while direct service calls use `entity_id`.
 | `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
 | `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-color selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
 | `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the color row |
-| `show_device_orientation` | Native Effects | Device orientation control (the lamp's clock cannot rotate, so the Clock card has none) |
+| `show_device_orientation` | Both | Device orientation control. The Clock card shows it only when a Matter server that sends Yeelight commands is linked: the lamp then turns its clock's digits for the mount (the background stays where it is) |
 | `show_effect_direction` | Native Effects | The arrows that choose the effect's direction, shown for an effect that has one |
 | `show_gallery`, `show_search` | Both | Show the style/effect browser and its text search |
 | `show_family_filter` | Both | The family filter beside the search field (on by default); it shows when the card has at least two families |
+| `show_family_icons` | Native Effects | Each effect's family icon at the bottom right of its tile in the browser (its tooltip names the family; on by default) |
+| `favourites_show_family_icons` | Native Effects | The same icon for each favourite, after its name (as its button's icon without previews; on by default) |
 | `style_selector_style` | Both | `filled`, `dropdown`, `preview-list`, `preview-grid`, `preview-strip`, `preview-carousel`, `preview-wheel`, or `original` |
 | `effect_view` | Both | `grid` or `list` for the Original browser |
 | `items_per_page` | Both | Pagination for Original and Live Preview list/grid browsers; editor range 0-16, with 0 meaning no pagination |
@@ -1036,14 +1038,25 @@ data:
 `Rainbow`, `Waves`, `Spectrum`, `White`, `Mint`, `Yellow`, `Pink`, `Red`,
 `Cyan`, `Purple`
 
-**Experimental (30):**
+**Experimental (31):**
 `Rainbow noise`, `Night-amber waves`, `Night-sky waves`, `Navy-white noise`,
 `Violet interference`, `Ribbon`, `Moving palette`, `Starry Sky`,
 `Particle path`, `Triangular palette pulses`, `Fireworks`, `Sine wave`,
-`Aurora`, `Sunrise and sunset`, `Heat fire`, `Mirrored comets`,
+`Aurora`, `Sunrise and sunset`, `Heat fire`, `Comet stream`, `Mirrored comets`,
 `Palette sparks`, `Waterfall`, `Fire`, `Tide (slot 35)`, `Bouncing Ball`,
 `Tide`, `Flower Sea`, `Particle glows`, `Palette stripes`, `Neon sine bands`,
 `Magic`, `Wonderland`, `Violet twinkles`, `Kaleidoscope`
+
+Two backgrounds have a style in each of the two ways the lamp starts a clock
+background, and look different in each: `Mirrored comets` (comets and their
+twins meeting in the middle, as the effect) and `Comet stream` (the same
+comets with no twin, streaming across the whole panel); `Music noise
+equalizer` (as the effect) and `Music flipped equalizer` (mirrored left to
+right). Started that way, the effect's set-up also reaches the digits:
+`Mirrored comets` shows only the hour and the colon, flipped and mirrored
+onto the other half, and `Music noise equalizer` shows the time mirrored left
+to right. A former name of these (`Prism`, `51`) is the style it named before:
+`Comet stream`, `Music flipped equalizer`.
 
 A clock style is named after the effect behind it, so a style renamed after 1.4.0
 (`Ocean Waves`, `Sunset`, `Blue Yellow`, `Blue White`, `Ice Blue`, `Carousel`

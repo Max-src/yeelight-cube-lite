@@ -378,11 +378,19 @@ _NON_CLOCK_EFFECT_MODES = {60, 46, 47, 49, 81}
 CLOCK_DIRECT_BACKGROUNDS = frozenset({24, 33, 46, 47, 49, 60, 66, 69, 71, 72, 81})
 
 
-def clock_segment_modes(background: int) -> dict:
-    """The mode and mixer bytes that run the clock over ``background``."""
-    if background in CLOCK_DIRECT_BACKGROUNDS:
+def clock_segment_modes(background: int, direct: bool | None = None) -> dict:
+    """The mode and mixer bytes that run the clock over ``background``: mode
+    40 hands over to it, or (``direct``; by default for
+    CLOCK_DIRECT_BACKGROUNDS) it runs as itself under the clock overlay."""
+    if background in CLOCK_DIRECT_BACKGROUNDS if direct is None else direct:
         return {"mode": background, "mixer": 1}
     return {"mode": NATIVE_CLOCK_EFFECT_ID, "mixer": background}
+
+
+def clock_style_direct(style: dict) -> bool:
+    """Whether a clock style runs its background as itself under the clock
+    overlay (clock_segment_modes) rather than handed over by mode 40."""
+    return style.get("direct", style["mixer"] in CLOCK_DIRECT_BACKGROUNDS)
 
 
 # Clock styles whose ``mixer`` is a standalone native effect: the lamp
@@ -419,6 +427,29 @@ for _clock_mode in range(1, LAMP_ANIMATION_SLOTS):
         }
     _next_clock_style_id += 1
 
+# Two backgrounds look different in each form: the hand-over skips the render
+# where they set themselves up. Mirrored comets then draws no twin, its comets
+# stream across the whole panel; the Music noise equalizer comes out flipped
+# left to right. Their style over the hand-over is named for that look; a style
+# over the direct form (added after the others, ids kept) shows the effect.
+# The flags those two set in their first render: the clock's digits go
+# through the same writer, so started directly the digits change too
+# (lamp_core.clock_digit_targets): 22 mirrors them over half the panel (the
+# hour and colon only, flipped, then mirrored), 51 mirrors them left to right.
+CLOCK_SETUP_FLAGS = {22: 0x0A, 51: 0x42}
+CLOCK_FORM_TWINS = {
+    22: ("Comet stream", "Mirrored comets"),
+    51: ("Music flipped equalizer", "Music noise equalizer"),
+}
+for _clock_mode, (_handover_name, _direct_name) in CLOCK_FORM_TWINS.items():
+    for _style in NATIVE_CLOCK_STYLES.values():
+        if _style["mixer"] == _clock_mode:
+            _style.update(name=_handover_name, direct=False)
+    NATIVE_CLOCK_STYLES[_next_clock_style_id] = {
+        "name": _direct_name, "mixer": _clock_mode, "direct": True,
+    }
+    _next_clock_style_id += 1
+
 # Every clock style beyond the lamp's 10 built-ins is experimental.
 EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset(
     style_id for style_id in NATIVE_CLOCK_STYLES if style_id > 10
@@ -430,10 +461,13 @@ EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset(
 # it: the lamp then reports 71, the one id for which the app reads the custom
 # id to show which of its GIFs plays (sent as 3 with slot 71, the lamp shows
 # the same GIF but reports 3).
+# Not listed (``hidden``: the cards and the effect select leave it out, but
+# while it plays): the four animations below are chosen instead. It is still
+# accepted by name (set_native_effect, rotations, the physical button's list).
 STORED_GIF_EFFECT = _MODE_TO_EFFECT_NAME[LAMP_STORED_GIF_SLOT]
 ALL_NATIVE_EFFECTS[STORED_GIF_EFFECT] = EXTENDED_NATIVE_EFFECTS[STORED_GIF_EFFECT] = {
     **EXTENDED_NATIVE_EFFECTS[STORED_GIF_EFFECT], "extended": False,
-    "effect_id": LAMP_STORED_GIF_SLOT,
+    "effect_id": LAMP_STORED_GIF_SLOT, "hidden": True,
 }
 # The animations this integration made (lamp_animations.py; their frames are
 # www/lamp-animations.js, the names there too): each plays as the stored GIF
@@ -457,10 +491,12 @@ ANIMATION_LAYOUTS = {
 }
 DEFAULT_ANIMATION_LAYOUT = ANIMATION_LAYOUT_UPRIGHT
 LAMP_ANIMATION_EFFECTS = {
-    # Drawn upright for the lamp's mount: no direction.
+    # Drawn upright for the lamp's mount: no direction. The speed is in the
+    # GIF (its frame delays, lamp_animations.animation_delays), not sent: the
+    # lamp plays a GIF at its own pace whatever the rate.
     name: {
         "effect_id": ALL_NATIVE_EFFECTS[STORED_GIF_EFFECT]["effect_id"],
-        "mode": LAMP_STORED_GIF_SLOT, "speed": False, "extended": False,
+        "mode": LAMP_STORED_GIF_SLOT, "speed": True, "extended": False,
         "animation": key, "family": family, "app_tile": app_tile,
     }
     for name, key, family, app_tile in (
@@ -713,8 +749,11 @@ def canonical_effect_name(name):
 # it was renamed with it: every former name of such a style -> its name today.
 # Its bare number (an unnamed slot's style) included: never use this table
 # where a number is a style id (set_clock_style reads a number as an id first).
+# A former name of a background with a style in each form (CLOCK_FORM_TWINS)
+# keeps meaning the style it named: the one over the hand-over.
+_TWIN_HANDOVER_NAMES = {direct: handover for handover, direct in CLOCK_FORM_TWINS.values()}
 CLOCK_STYLE_ALIASES = {
-    alias: name
+    alias: _TWIN_HANDOVER_NAMES.get(name, name)
     for alias, name in NATIVE_EFFECT_ALIASES.items()
     if name in {style["name"] for style in NATIVE_CLOCK_STYLES.values()}
 }
