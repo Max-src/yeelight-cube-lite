@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .native_effect_preview import (
-    effect_supports_color_mode,
+    effect_offers_color_mode,
     effect_supports_color_override,
 )
 from .color_utils import rgb_to_argb
@@ -229,7 +229,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 raise invalid("no_custom_color", effect=name)
             if color_mode is not None and (
                 color_mode not in NATIVE_COLOR_MODES
-                or (color_mode != "normal" and not effect_supports_color_mode(name, color_mode))
+                # Palette: also what is streamed or recolored (lamp_studio).
+                or (color_mode != "normal" and not effect_offers_color_mode(name, color_mode))
             ):
                 raise invalid("color_mode_unsupported", effect=name, color_mode=color_mode)
             if not target._is_on and not target._should_auto_turn_on():

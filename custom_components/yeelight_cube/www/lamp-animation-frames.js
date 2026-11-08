@@ -7,6 +7,7 @@
 // stores: the effect speed (animationDelays) and the color adjustments
 // (color-adjustments.js) are in it.
 import { LAMP_ANIMATIONS } from "./lamp-animations.js";
+import { studioAnimationFrames, studioLook, studioPalette } from "./lamp-studio.js";
 import { adjustColor, adjustmentsKey } from "./color-adjustments.js";
 import { MATRIX_COLS, MATRIX_ROWS, MATRIX_SIZE, isUpsideDownMount } from "./matrix-view.js";
 
@@ -59,14 +60,17 @@ export function animationDelays(key, speed = null) {
 // The frames with each set of color adjustments shown lately.
 const adjusted = new Map();
 
-/** An animation's top-first frames with the color `adjustments`
- * (lamp_animations.py animation_frames). */
-export function animationFrames(key, adjustments = null) {
-  const { frames } = animation(key);
+/** An animation's top-first frames in the Studio `palette` (null: its own
+ * colors) with the color `adjustments` (lamp_animations.py animation_frames). */
+export function animationFrames(key, adjustments = null, palette = null) {
+  let { frames } = animation(key);
+  const colours = studioPalette(palette);
   const look = adjustmentsKey(adjustments);
-  if (!look) return frames;
-  const cacheKey = `${key}|${look}`;
+  if (!look && !colours.length) return frames;
+  const cacheKey = `${key}|${look}|${colours.join(";")}`;
   if (!adjusted.has(cacheKey)) {
+    if (colours.length)
+      frames = studioAnimationFrames(frames, studioLook(LAMP_ANIMATIONS[key].name), colours);
     const colors = new Map();
     const color = (pixel) => {
       const id = pixel.join(",");
@@ -74,15 +78,16 @@ export function animationFrames(key, adjustments = null) {
       return colors.get(id);
     };
     if (adjusted.size >= 8) adjusted.delete(adjusted.keys().next().value);
-    adjusted.set(cacheKey, frames.map((frame) => frame.map(color)));
+    adjusted.set(cacheKey, look ? frames.map((frame) => frame.map(color)) : frames);
   }
   return adjusted.get(cacheKey);
 }
 
-/** The top-first frame `seconds` into an animation at the effect `speed`
- * with the color `adjustments` (lamp_animations.py animation_frame_at). */
-export function animationFrameAt(key, seconds, speed = null, adjustments = null) {
-  const frames = animationFrames(key, adjustments);
+/** The top-first frame `seconds` into an animation at the effect `speed`, in
+ * the Studio `palette`, with the color `adjustments` (lamp_animations.py
+ * animation_frame_at). */
+export function animationFrameAt(key, seconds, speed = null, adjustments = null, palette = null) {
+  const frames = animationFrames(key, adjustments, palette);
   const delays = animationDelays(key, speed);
   const loop = delays.reduce((a, b) => a + b, 0);
   let elapsed = Math.trunc(Math.max(0, seconds) * 1000) % loop;
@@ -112,8 +117,9 @@ export function animationFrame(
   layout = null,
   speed = null,
   adjustments = null,
+  palette = null,
 ) {
-  const shown = animationFrameAt(key, seconds, speed, adjustments);
+  const shown = animationFrameAt(key, seconds, speed, adjustments, palette);
   let byMount = lampFrames.get(shown);
   if (!byMount) lampFrames.set(shown, (byMount = new Map()));
   if (layout === ANIMATION_LAYOUT_APP) {

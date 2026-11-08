@@ -1506,21 +1506,41 @@ Clock Card. Only hardware-confirmed palettes for the selected effect are offered
 Default, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
 supported.
 
-**Palette** gives an effect the colors of the lamp's palette, the one loaded
-from the Palette card (`load_palette`) or set with `set_text_colors`, and
-follows it: load another palette and the effect changes with it. The Clock
-card has it too (`color_mode: palette` in `set_clock_style`): a plain style
-takes the palette's first color, a style over an effect what that effect would.
-The tab lists the effects and styles that take a color. An effect that draws one
-color takes the palette's first; the ones that draw several (Two-colour
-alternation, Rotating colour bands, Scrolling bands, Rising wisps, Random
-scatter) take as many as they draw, the palette repeated if it is shorter.
-Music Gather, Breathing, Blossom, Spectrum, Note and Impact take the whole
-palette: they run as the lamp's microphone music mode, spread over its 16
-colors (a shorter palette is repeated, as the lamp would otherwise fill it with
-black), and have no speed or intensity there. They run in the direction
-chosen when a Matter server sends Yeelight commands to the lamp (see
-[Matter commands](docs/MATTER_COMMANDS.md)), otherwise in the lamp's own.
+**Palette** shows effects and clock styles in the colors of the lamp's
+palette, the one loaded from the Palette card (`load_palette`) or set with
+`set_text_colors`, and follows it: load another palette and they change with
+it. It is the one color mode for the palette, on the Native Effects card
+(`color_mode: palette` in `set_native_effect`) and the Clock card (in
+`set_clock_style`). Each effect gets the whole palette in the best way it
+can:
+
+| The effect | How Palette shows it | Needs |
+| :-- | :-- | :-- |
+| Takes all the palette's colors itself: the six music modes (Music Gather, Breathing, Blossom, Spectrum, Note, Impact: up to 16 colors), an effect drawing as many colors as the palette has (Rotating colour bands: 4, Two-colour alternation: 2...), any effect taking a color when the palette has one | **On the lamp**: the colors are sent with the effect, as always | LAN |
+| Listens to the microphone (the music effects) | **On the lamp**, whatever it takes: the palette's colors it takes (the music modes all of them, the others the first), as the room is heard only there | LAN |
+| Any other effect: more palette colors than it takes, or none at all (Rainbow, Fire, Starry Sky, Hacking...) | **Streamed**: Home Assistant draws the effect as the lamp would, in the whole palette, and sends it 25 times a second (the lamp's own pace), like a drawing | LAN over UDP |
+| An animation (Snowfall, Daydream, Halloween glow, Moonlit clouds) | **Its GIF recolored**, stored and played by the lamp, in the layout chosen (upright or as the Yeelight app), uploaded again when the palette changes | Matter, as every animation |
+| A clock style over an effect the lamp cannot show in the whole palette | **Streamed**: the background recolored, shown through the digits for the current time, as the lamp's clock does | LAN over UDP |
+| A plain clock style | **On the lamp**, in the palette's first color | LAN |
+
+Streaming needs no Matter: only the animations do (their GIF is uploaded over
+Matter, see [Matter commands](docs/MATTER_COMMANDS.md)). Without Matter, every
+effect but the animations still takes the whole palette. A streamed effect
+needs the lamp reachable over UDP (it holds its last frame while the
+connection falls back to TCP; a network blocking UDP is reported in Repairs),
+keeps Home Assistant a little busy while it runs, and starts from its
+beginning (Building Blocks on an empty panel). Speed, direction, intensity,
+Lamp mounted, favourites, rotation and Freeze work as for any effect.
+
+In a streamed effect the colors move with it: an effect whose picture is in
+its colors (Rainbow, Magic, Wonderland...) maps them onto the palette; a field
+of light (Waves, Aurora, Fire, Sunrise and sunset...) takes them by the
+brightness around each pixel, followed smoothly (no pixel flickers between
+colors), the brightest the palette's first color; separate dots and shapes
+(Starry Sky, Building Blocks, Hacking's digits...) each keep one color for as
+long as they are lit; White fill-in and wipe-out take the first color. The
+music modes run in the direction chosen when a Matter server sends Yeelight
+commands to the lamp, otherwise in the lamp's own.
 
 The `set_native_effect` service accepts `color_mode`; this setting is
 independent of clock colors and persists with the lamp state. An incompatible

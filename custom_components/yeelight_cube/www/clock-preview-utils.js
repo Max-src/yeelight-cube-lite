@@ -14,9 +14,10 @@
 // Keep the mixer tables and glyph handling in sync with const.py.
 
 import {
+  effectOffersColorMode,
   effectSupportsColorOverride,
-  effectSupportsColorMode,
 } from "./native-effect-preview.js";
+import { clockStudioRuns, studioClockBackgroundAt, studioDrive, studioRender } from "./lamp-studio.js";
 import {
   DEFAULT_EFFECT_SPEED,
   LAMP_EFFECTS,
@@ -393,9 +394,9 @@ export function clockStyleColorModeState(style, mode, override = null) {
   const known =
     _CLOCK_STYLE_BY_ID.get(style.id) || _CLOCK_STYLE_BY_NAME.get(style.name);
   if (!known && !style.presetId) return "unknown";
-  // The palette: a plain style takes its first color, a background that
-  // takes a color its colors (clockPaletteWords). Saved presets keep theirs,
-  // as under Custom.
+  // The palette: a plain style takes its first color, a background its
+  // colors, on the lamp (clockPaletteWords) or streamed (lamp-studio.js).
+  // Saved presets keep theirs, as under Custom.
   if (mode === "palette") {
     if (style.presetId) return "unchanged";
     if (known.mixer === 0) return "responds";
@@ -411,7 +412,7 @@ export function clockStyleColorModeState(style, mode, override = null) {
   }
   const effect = CLOCK_MIXER_EFFECTS[mixer];
   return effect
-    ? effectSupportsColorMode(effect, mode)
+    ? effectOffersColorMode(effect, mode)
       ? "responds"
       : "unchanged"
     : "unknown";
@@ -647,7 +648,10 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   // A palette color mode (e.g. B&W) takes precedence over the custom override.
   let colorMode = attrs.clock_color_mode || "normal";
   let paletteColor = null;
-  if (colorMode === "palette") {
+  // Palette with more colors than the background takes on the lamp: streamed,
+  // the background recolored in the whole palette (camera.py, light_studio.py).
+  const streamed = clockStudioRuns(effectName, colorMode, attrs.text_colors);
+  if (colorMode === "palette" && !streamed) {
     // The palette's first color on a plain style; its colors on a background
     // that takes them (lampClockSettings); else as the normal mode (camera.py).
     const words = clockPaletteWords(effectName, attrs.text_colors);
@@ -660,7 +664,17 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   // (light_native): it takes the color or not as on the lamp. Styles with no
   // effect fall back to the flat override color.
   const rate = speed ?? clockSpeed(attrs);
-  const effectFrame = effectName
+  const effectFrame = streamed
+    ? effectDisplayFrame(
+        effectName,
+        studioDrive(
+          studioClockBackgroundAt(
+            effectName, studioRender(phase / (0.25 + rate / 55)), rate, chosenIntensity(attrs),
+            attrs.text_colors, clockStyleDirect(attrs),
+          ),
+        ),
+      )
+    : effectName
     ? effectDisplayFrame(
         effectName,
         lampEffectFrame(

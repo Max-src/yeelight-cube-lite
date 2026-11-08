@@ -63,6 +63,7 @@ from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin, hardware_brightness_for
 from .issues import lamp_problems, report_problems
 from .light_native import NativeModesMixin, effect_direction_sent
+from .light_studio import StudioStreamMixin
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
@@ -173,6 +174,8 @@ def cleanup_module_state(ip: str) -> None:
 #                        accuracy maths + the brightness mapping.
 #   light_native.py     (NativeModesMixin)    — built-in Clock + native-effect
 #                        activation (set_fx_effect payloads), Music Flow.
+#   light_studio.py     (StudioStreamMixin)   — the Studio color mode's
+#                        stream (an effect drawn here, sent frame by frame).
 #   light_render.py     (MatrixRenderMixin)   — mode router
 #                        (_apply_display_mode_internal), letter/pixel placement,
 #                        gradient/offset maths and orientation flips.
@@ -199,6 +202,7 @@ class YeelightCubeLight(
     BrightnessMixin,
     ColorPipelineMixin,
     NativeModesMixin,
+    StudioStreamMixin,
     MatrixRenderMixin,
     ConnectionMixin,
     StateRestoreMixin,
@@ -333,6 +337,7 @@ class YeelightCubeLight(
         self._init_brightness_state()
         self._init_color_state()
         self._init_saved_state()
+        self._init_studio_state()
 
         # FX mode tracking to avoid redundant mode changes
         self._fx_mode_is_direct = False  # Track if we're already in direct/music mode
@@ -1067,6 +1072,7 @@ class YeelightCubeLight(
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
         self.stop_scroll_timer()
+        self.stop_studio_stream()
         if self._lamp_power_unsub is not None:
             self._lamp_power_unsub()
             self._lamp_power_unsub = None

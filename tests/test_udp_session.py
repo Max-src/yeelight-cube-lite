@@ -73,6 +73,25 @@ class UdpSessionTests(unittest.IsolatedAsyncioTestCase):
     def methods(self):
         return [m["method"] for m in self.lamp.received]
 
+    async def test_a_command_waits_a_moment_after_frames(self):
+        await self.session.request("set_bright", [80])
+        await self.session.request("update_leds", ["AAAA"])
+        started = asyncio.get_running_loop().time()
+        await self.session.request("set_bright", [60])
+        # The lamp's command handling can stall for good on a command right
+        # after a run of frames (udp.FRAME_QUIET).
+        self.assertGreaterEqual(asyncio.get_running_loop().time() - started, udp.FRAME_QUIET * 0.9)
+        # The keep-alive, which the lamp's network chip answers, does not wait.
+        await self.session.request("update_leds", ["BBBB"])
+        started = asyncio.get_running_loop().time()
+        self.assertTrue(await self.session.ping())
+        self.assertLess(asyncio.get_running_loop().time() - started, udp.FRAME_QUIET / 2)
+        await asyncio.sleep(udp.FRAME_QUIET)
+        # Without frames before it, at once.
+        started = asyncio.get_running_loop().time()
+        await self.session.request("set_bright", [40])
+        self.assertLess(asyncio.get_running_loop().time() - started, udp.FRAME_QUIET / 2)
+
     async def test_a_command_opens_the_session_and_returns_the_answer(self):
         answer = await self.session.request("set_bright", [80])
         self.assertEqual(["ok"], answer["result"])

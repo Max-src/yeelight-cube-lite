@@ -20,6 +20,12 @@ import {
   isLampRendered,
 } from "./lamp-renderers.js";
 import { ANIMATION_EFFECTS, animationFrame, isAnimation } from "./lamp-animation-frames.js";
+import {
+  effectOffersColorMode,
+  studioPalette,
+  studioPreviewFrame,
+  studioRuns,
+} from "./lamp-studio.js";
 
 // const.py STORED_GIF_EFFECT: the lamp's stored GIF.
 export const STORED_GIF_EFFECT = "Stored GIF";
@@ -27,6 +33,7 @@ export const STORED_GIF_EFFECT = "Stored GIF";
 export {
   COLOR_MODE_BW_EFFECTS,
   COLOR_OVERRIDE_EFFECTS,
+  effectOffersColorMode,
   effectSupportsColorMode,
   effectSupportsColorOverride,
 };
@@ -144,6 +151,11 @@ export function renderNativeEffect(
   adjustments = null,
 ) {
   const rate = speed ?? DEFAULT_PREVIEW_SPEED;
+  const seconds = phase / (0.25 + rate / 55);
+  // Palette beyond what the lamp takes: drawn by Home Assistant in the whole
+  // palette and streamed; what the lamp shows of it (lamp-studio.js).
+  if (studioRuns(effect, colorMode, palette))
+    return studioPreviewFrame(effect, seconds, direction, rate, orientation, intensity, palette);
   // An animation, or the stored GIF when it is one of them (`stored`, the
   // stored_gif attribute or its animation): its frames as sent, laid out
   // (`layout`, the animation_layout attribute), timed (the speed) and
@@ -151,26 +163,30 @@ export function renderNativeEffect(
   // the stored GIF's own.
   let animation = ANIMATION_EFFECTS[effect];
   let pace = rate;
+  // An animation in the palette color mode: its GIF recolored in it.
+  let recolored = colorMode === "palette" ? studioPalette(palette) : null;
   if (effect === STORED_GIF_EFFECT) {
     const held = typeof stored === "string" ? {} : stored ?? {};
     animation = typeof stored === "string" ? stored : held.animation;
     layout = held.layout ?? null;
     pace = held.speed ?? null;
     adjustments = held.adjustments ?? null;
+    recolored = held.palette ?? null;
   }
   if (isAnimation(animation))
     return animationFrame(
       animation,
-      phase / (0.25 + rate / 55),
+      seconds,
       orientation,
       layout,
       pace,
       adjustments,
+      recolored?.length ? recolored : null,
     );
   if (!isLampRendered(effect)) return renderGradient(phase, direction);
   return lampEffectFrame(
     lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity, palette),
-    phase / (0.25 + rate / 55),
+    seconds,
   );
 }
 

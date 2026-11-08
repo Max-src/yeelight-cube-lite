@@ -106,7 +106,9 @@ class CameraOrientationTests(unittest.TestCase):
         # Only the digits turn (test_clock_presets checks the frames).
         clock = function_source(source, "_get_clock_preview")
         self.assertIn('turned = bool(getattr(le, "lamp_turns_clock", False))', clock)
-        self.assertIn("99 - at if turned else at", clock)
+        self.assertIn("clock_digit_pixels(text, colon_visible, digit_flags, turned)", clock)
+        face = (ROOT / "clock_face.py").read_text(encoding="utf-8")
+        self.assertIn("99 - at if turned else at", face)
 
     def test_the_clock_restarts_only_when_the_lamps_direction_was_set(self):
         import asyncio

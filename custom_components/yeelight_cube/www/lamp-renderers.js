@@ -299,7 +299,7 @@ const C_10000 = 10000.0;
 const C_M0_9 = -0.9;
 const C_0_99 = 0.99;
 const RECORD = 20;
-const FIREWORKS_MODE = 10;
+export const FIREWORKS_MODE = 10;
 // Renders from the burst to the pause: the burst's render, the 85 renders
 // that take spark 1's heat 341 -> 1 by 4, then the one that sees it cold.
 const FIREWORKS_BURN = 87;
@@ -842,6 +842,9 @@ export const effectSupportsColorOverride = (effect) =>
 // lamp's palette (its text_colors attribute).
 export const PALETTE_COLOR_MODE = "palette";
 
+/** Whether the lamp itself takes `mode` on `effect` (lamp_renderers.py): in
+ * the palette color mode, lamp-studio.js streams or recolors the others
+ * (effectOffersColorMode). */
 export const effectSupportsColorMode = (effect, mode) =>
   (COLOR_PALETTE_EFFECTS.has(effect) && COLOR_PALETTE_MODES.has(mode)) ||
   (mode === "bw" && COLOR_MODE_BW_EFFECTS.has(effect)) ||
@@ -897,6 +900,25 @@ export function musicPalette(palette) {
   return Array.from({ length: MUSIC_PALETTE_SIZE }, (_, index) =>
     colours[Math.floor((index * colours.length) / MUSIC_PALETTE_SIZE)].slice(0, 3),
   );
+}
+
+// lamp_renderers.py LAMP_MUSIC_EFFECTS: the effects that draw what the
+// microphone hears (lamp-effects-music.js; their previews run on the demo beat).
+const MUSIC_MODES = new Set(musicEffects.SLOTS.map((slot) => slot.mode));
+export const LAMP_MUSIC_EFFECTS = new Set(
+  Object.entries(LAMP_EFFECTS)
+    .filter(([, spec]) => MUSIC_MODES.has(spec.mode))
+    .map(([name]) => name),
+);
+
+/** Whether the lamp itself shows `effect` in the whole `palette`
+ * (lamp_renderers.py palette_fits): a music mode, or an effect that takes a
+ * color with at most as many palette colors as it draws. */
+export function paletteFits(effect, palette) {
+  const colours = paletteColours(palette);
+  if (!colours.length || Object.hasOwn(PALETTE_MUSIC_FLOWS, effect)) return true;
+  if (!effectSupportsColorMode(effect, PALETTE_COLOR_MODE)) return false;
+  return colours.length <= ((LAMP_EFFECTS[effect]?.colors ?? []).length || 1);
 }
 
 /** The microphone music mode an effect runs as in the palette color mode,

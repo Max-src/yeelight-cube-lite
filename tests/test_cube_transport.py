@@ -265,6 +265,36 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_probe_asks_the_session(self):
         self.assertTrue(await self.cube.probe(0.2))
         self.assertEqual(["udp_sess_new"], self.udp_methods())
+        self.assertEqual(self.cube.silent_for, 0)
+        # Recovering: a command the lamp itself answers, which changes nothing.
+        self.assertTrue(await self.cube.probe(0.2, answering=True))
+        self.assertEqual(["udp_sess_new", "set_scene"], self.udp_methods())
+        self.assertEqual(["keep"], self.lamp.received[-1]["params"])
+
+    async def test_a_lamp_accepting_connections_but_answering_nothing_is_stuck(self):
+        # Its network part accepts TCP, the lamp answers no command (UDP or
+        # TCP): not back online, and reported as stuck (silent_for).
+        self.lamp.silent = True
+        self.cube._udp_retry_at = float("inf")
+
+        async def accepts(*args):
+            return None
+
+        async def no_answer(*args):
+            raise OSError("timed out")
+
+        with patch.object(cube_matrix, "check_tcp", accepts), patch.object(cube_matrix, "send_once", no_answer):
+            # Its network part accepts: enough for a healthy lamp's probe...
+            self.assertTrue(await self.cube.probe(0.2))
+            # ...not for one recovering: the lamp itself must answer.
+            self.assertFalse(await self.cube.probe(0.2, answering=True))
+            self.assertGreaterEqual(self.cube.silent_for, 0)
+            self.assertIsNotNone(self.cube.connection_state()["silent_for"])
+        # It answers again (after a power cycle): no longer stuck.
+        with patch.object(cube_matrix, "check_tcp", accepts), patch.object(cube_matrix, "send_once", accepts):
+            self.assertTrue(await self.cube.probe(0.2, answering=True))
+        self.assertEqual(self.cube.silent_for, 0)
+        self.assertIsNone(self.cube.connection_state()["silent_for"])
 
     async def test_tcp_on_demand_then_udp_again(self):
         # diagnostics force_tcp: every command over TCP for a while, as when

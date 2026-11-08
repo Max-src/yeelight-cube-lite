@@ -325,6 +325,8 @@ class ConnectionMixin:
     # When the current outage was first logged (time.time()), or None: an
     # outage is logged once when it starts and once when it ends.
     _outage_since = None
+    # Whether this outage's "stuck, power-cycle it" was logged (probe).
+    _silence_logged = False
 
     # Calibration lock auto-release: if the wizard is abandoned (browser closed
     # without exiting), the lamp would stay frozen forever. The lock auto-releases
@@ -584,7 +586,9 @@ class ConnectionMixin:
                 # Normal commands use 0.5s, but a lamp rebooting may have
                 # slow TCP handshakes (RECOVERY_CONNECT_TIMEOUT).
                 probe_timeout = RECOVERY_CONNECT_TIMEOUT
-                if not await self._cube_matrix.probe(probe_timeout):
+                # Recovering: the lamp itself must answer, not only its
+                # network part (a stuck lamp still accepts connections).
+                if not await self._cube_matrix.probe(probe_timeout, answering=recovering):
                     # The lamp is not answering -- record it so the next
                     # successful probe knows to re-assert the mode. This is what
                     # lets a mains power cut, detected proactively in a silent
@@ -608,6 +612,15 @@ class ConnectionMixin:
                             "disconnected?) -- probing it every %ss until it "
                             "answers; further failures are logged at debug level",
                             self._ip, interval,
+                        )
+                    if self._cube_matrix.silent_for and not self._silence_logged:
+                        # Its network part answers, the lamp does not: stuck.
+                        self._silence_logged = True
+                        _LOGGER.warning(
+                            "[HEALTH] [%s] The lamp accepts connections but answers no "
+                            "command: it is stuck and needs a power cycle (unplug it "
+                            "for a few seconds); Force Refresh cannot fix this",
+                            self._ip,
                         )
                     _LOGGER.debug(
                         "[HEALTH] [%s] Probe failed -- still unreachable "
@@ -634,6 +647,7 @@ class ConnectionMixin:
                     else None
                 )
                 self._outage_since = None
+                self._silence_logged = False
                 if outage is not None:
                     _LOGGER.info(
                         "[HEALTH] [%s] Lamp back online after %s",

@@ -72,6 +72,9 @@ _USE_TCP = object()
 # picture again (watched tests, 6 times out of 13; frames alone never did, 0
 # of 6), so it must never be used as a no-op there.
 FRAME_SETTLE_DELAY = 0.3
+# The command a recovering lamp is probed with (CubeMatrix.probe): one the
+# lamp itself answers and that changes nothing (set_scene "keep").
+PROBE_COMMAND = ("set_scene", ["keep"])
 # About 10 ms after deactivate_fx_mode, the lamp puts back its last app
 # effect. An effect sent before it fires would be taken
 # down by it, so it is sent after this pause.
@@ -275,6 +278,8 @@ class CubeMatrix:
         # transient failures.  When the device was JUST working, a shorter initial
         # cooldown gives faster recovery (2s instead of 5s).
         self._last_success_time = 0.0
+        # Since when the lamp accepts connections but answers nothing (probe).
+        self._silent_since = 0.0
         
         # Persistent socket for send_command_fast — reused across commands.
         # The Cube accepts multiple commands on the same TCP connection in direct
@@ -695,16 +700,49 @@ class CubeMatrix:
         self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
         return previous
 
-    async def probe(self, timeout: float = CONNECT_TIMEOUT) -> bool:
+    async def probe(self, timeout: float = CONNECT_TIMEOUT, *, answering: bool = False) -> bool:
         """Whether the lamp answers: in its UDP session, else by accepting a
-        TCP connection within ``timeout``."""
-        if self._udp_usable() and await self._udp.ping():
+        TCP connection within ``timeout``. ``answering`` (a lamp recovering
+        from failed commands): whether the lamp itself answers a command
+        (PROBE_COMMAND), not only its network part. That part, a chip of its
+        own, accepts connections and answers keep-alives even while the
+        lamp's command handling has stalled for good (seen after a stream of
+        frames), which only a power cycle fixes: such a lamp is stuck
+        (silent_for), not back."""
+        if not answering:
+            if self._udp_usable() and await self._udp.ping():
+                return True
+            try:
+                await check_tcp(self._ip, self._port, timeout)
+            except OSError:
+                return False
             return True
+        if self._udp_usable():
+            try:
+                await self._udp.request(*PROBE_COMMAND)
+            except UdpUnavailable:
+                pass
+            else:
+                self._silent_since = 0.0
+                return True
         try:
             await check_tcp(self._ip, self._port, timeout)
         except OSError:
+            return False  # unreachable (off, or away from the network)
+        try:
+            await send_once(self._ip, self._port, *PROBE_COMMAND, timeout)
+        except OSError:
+            if not self._silent_since:
+                self._silent_since = time.time()
             return False
+        self._silent_since = 0.0
         return True
+
+    @property
+    def silent_for(self) -> float:
+        """Seconds the lamp has accepted connections without answering
+        (probe), 0 when it answers or is simply unreachable."""
+        return time.time() - self._silent_since if self._silent_since else 0.0
 
     def consume_reconnected_flag(self) -> bool:
         """
@@ -748,6 +786,7 @@ class CubeMatrix:
             "since_success": age(self._last_success_time),
             "commands_sent": self._total_commands_sent,
             "udp_failing_for": age(self._udp_failing_since),
+            "silent_for": age(getattr(self, "_silent_since", 0.0)),
             "tcp_forced_for": (
                 round(self._tcp_forced_until - time.monotonic(), 1)
                 if self._tcp_forced_until > time.monotonic() else None

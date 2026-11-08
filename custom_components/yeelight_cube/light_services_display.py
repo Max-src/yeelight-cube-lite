@@ -693,6 +693,15 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             # that exact frame; sampling later would freeze on a stale frame.
             target._display_frozen_at = time.time()
 
+            # Studio: the stream pauses (light_studio) and the lamp holds the
+            # frame it was last sent; no command.
+            studio = getattr(target, "studio_streaming", None)
+            if studio is not None and studio():
+                target._display_frozen = True
+                target.async_write_ha_state()
+                target._notify_camera_preview()
+                return
+
             async def _do_send():
                 target._cube_matrix.close_fast_socket()
                 # The clock activation is socket-timing sensitive; give the

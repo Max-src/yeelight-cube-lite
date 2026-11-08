@@ -251,7 +251,7 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.packets = len(ANIMATIONS["gif_packets"](ANIMATIONS["lamp_gif"]("snowfall")))
 
     def look(self, **adjustments):
-        return {"speed": self.lamp._native_effect_speed, "adjustments": adjustments}
+        return {"speed": self.lamp._native_effect_speed, "adjustments": adjustments, "palette": None}
 
     async def test_a_new_speed_or_color_adjustment_uploads_it_again(self):
         await self.lamp._activate_native_effect()

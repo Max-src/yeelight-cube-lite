@@ -56,6 +56,13 @@ KEEP_ALIVE = ["keeplive_interval", 10]
 _TOKEN_REFUSED = -1
 # Commands the lamp never answers: sent without waiting.
 _UNANSWERED = frozenset({"update_leds"})
+# A command the lamp answers waits until no frame was sent for this long. The
+# lamp handles its LAN commands one after another: a command it must answer
+# right after a run of frames can stall that handling for good (watched on a
+# lamp: frames every 40 ms, then a command, and no command answered again
+# until a power cycle; 8 Nov 2026 again during the Studio stream). The
+# keep-alive does not wait: the lamp's network chip answers it, not the lamp.
+FRAME_QUIET = 0.2
 
 
 class UdpUnavailable(Exception):
@@ -102,6 +109,8 @@ class UdpSession:
         self._lock = asyncio.Lock()
         self._last_send = 0.0
         self._last_answer = 0.0
+        # When the last frame (update_leds) was sent (FRAME_QUIET).
+        self._last_frame = 0.0
         # Sessions opened so far (a new one after the first: the lamp lost the
         # previous one, so what it was told in it, e.g. direct mode, is gone).
         self.sessions_opened = 0
@@ -159,10 +168,14 @@ class UdpSession:
         self._last_send = time.monotonic()
 
     async def _answer(
-        self, message: dict, timeout: float = REPLY_TIMEOUT, attempts: int = ATTEMPTS
+        self, message: dict, timeout: float = REPLY_TIMEOUT, attempts: int = ATTEMPTS,
     ) -> dict | None:
         """Send ``message`` (up to ``attempts`` times) and return its answer,
-        or None when none came."""
+        or None when none came; a command for the lamp not right after a
+        frame (FRAME_QUIET)."""
+        quiet = self._last_frame + FRAME_QUIET - time.monotonic()
+        if quiet > 0 and message.get("method") != "udp_sess_keep_alive":
+            await asyncio.sleep(quiet)
         future = asyncio.get_running_loop().create_future()
         self._waiting[message["id"]] = future
         try:
@@ -229,6 +242,7 @@ class UdpSession:
                     await self._confirm()
                     message["token"] = self._token
                 await self._send(message)
+                self._last_frame = time.monotonic()
                 return None
             answer = await self._answer(message)
             if answer is None:

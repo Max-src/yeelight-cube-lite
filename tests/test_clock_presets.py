@@ -31,6 +31,16 @@ class ClockPreviewTests(unittest.TestCase):
             "FONT_MAPS": {"native": self.font},
             "char_advance": lambda font, char, glyph: 2 if char in ":." else 4,
         }
+        # The face (clock_face.py), on the same font; the palette stream
+        # (lamp_studio.py).
+        namespace.update(_load_standalone_functions(
+            (ROOT / "clock_face.py").read_text(encoding="utf-8"),
+            {"clock_content", "clock_text", "clock_digit_pixels"}, dict(namespace),
+        ))
+        studio = runpy.run_path(str(ROOT / "lamp_studio.py"))
+        namespace.update({name: studio[name] for name in (
+            "clock_studio_runs", "studio_clock_background_at", "studio_drive", "studio_render",
+        )})
         methods = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
             {"_get_clock_preview", "_clock_background_seconds", "_preview_speed", "_chosen_intensity"}, namespace,

@@ -46,6 +46,7 @@ import {
 } from "../custom_components/yeelight_cube/www/native-effect-card-utils.js";
 import {
   renderNativeEffectOriented,
+  effectOffersColorMode,
   effectSupportsColorMode,
   effectSupportsColorOverride,
 } from "../custom_components/yeelight_cube/www/native-effect-preview.js";
@@ -109,7 +110,7 @@ test("native color choices retain configured order while effects respond to the 
     clockPresetLibrary,
   });
   card._respondsToColor = cardMethod("_respondsToColor", {
-    effectSupportsColorMode,
+    effectOffersColorMode,
     effectSupportsColorOverride,
   });
   card._effectForColor = cardMethod("_effectForColor", { nativeEffectItems });

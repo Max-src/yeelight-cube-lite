@@ -3,17 +3,11 @@
 Home Assistant's Matter server reads the lamp's Yeelight clusters
 (matter_link.py); it writes them and sends their commands from
 matterjs-server 1.5.4 (matter-js/matterjs-server#1203), and refuses them
-before. This module finds a server that can deliver them to the lamp, in
-this order:
-
-1. Home Assistant's own Matter server, once it knows the Yeelight clusters:
-   checked with a read-only command (getCurrentEffect), again after the
-   server changes;
-2. a local development server, only on a development install (its module,
-   matter_dev_server.py, is not committed);
-3. none: MatterCommandsUnavailable, caught to fall back to LAN
-   or to hide what needs it. Lamps without Matter, or with the official
-   server only, stay as they are.
+before. Whether it delivers them to the lamp is checked with a read-only
+command (getCurrentEffect), again after the server changes; when it does
+not (an older server, no Matter), MatterCommandsUnavailable is caught to
+fall back to LAN or to hide what needs it. Lamps without Matter stay as
+they are.
 """
 from __future__ import annotations
 
@@ -26,10 +20,7 @@ from typing import Any
 from .matter_link import (
     VENDOR_ENDPOINT,
     MatterLink,
-    _attributes,
     _vendor,
-    node_available,
-    node_matches,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,9 +30,11 @@ CUBE_CONTROL_CLUSTER = _vendor(0xFC02)
 EFFECTS_CLUSTER = _vendor(0xFC05)
 
 # Seconds the server check (getCurrentEffect) may take; a check that cannot
-# tell (no answer, an unknown error) is tried again after CHECK_RETRY.
+# tell (no answer, an unknown error) is tried again after CHECK_RETRY. It is
+# usually the lamp, not the server: rebooting after a power cycle (its Matter
+# session takes a few minutes to come back), or busy.
 CHECK_TIMEOUT = 5.0
-CHECK_RETRY = 600.0
+CHECK_RETRY = 60.0
 
 # How a server without the Yeelight clusters refuses a command or a write.
 _UNKNOWN_CLUSTER_MARKERS = ("unknown", "does not exist")
@@ -64,51 +57,12 @@ def _server_key(client) -> tuple[int, Any]:
     return id(client), getattr(info, "sdk_version", None)
 
 
-def _dev_server(hass):
-    """The local development server when its module is present (it is not
-    committed: matter_dev_server.py); None without it (every user)."""
-    try:
-        from .matter_dev_server import dev_server
-    except ImportError:
-        return None
-    return dev_server(hass)
-
-
-def dev_clients(hass) -> list:
-    """The development server's client while it is connected (none without
-    its module), for the link to read the lamp through it too."""
-    dev = _dev_server(hass)
-    return [dev.client] if dev is not None and dev.client is not None else []
-
-
-def has_dev_server(hass) -> bool:
-    """Whether a development server is set up (its module is present)."""
-    return _dev_server(hass) is not None
-
-
-async def async_connect_dev_server(hass) -> bool:
-    """Connect the development server (when present); True once connected."""
-    dev = _dev_server(hass)
-    return dev is not None and await dev.async_client() is not None
-
-
-async def async_close_dev_connections(hass) -> None:
-    """Close the development server's connection, if any (the last lamp
-    unloads)."""
-    try:
-        from .matter_dev_server import async_close_dev_servers
-    except ImportError:
-        return
-    await async_close_dev_servers(hass)
-
-
 class MatterCommands:
-    """Yeelight writes and commands to one lamp, through the first server
-    that delivers them (see the module docstring).
+    """Yeelight writes and commands to one lamp, through Home Assistant's
+    Matter server when it delivers them (see the module docstring).
 
-    ``backend``: "matter" (Home Assistant's server), "dev" (a local
-    development server) or None (none found yet); ``reason``: why none
-    delivers (each server's), None when one does.
+    ``backend``: "matter" (Home Assistant's server) or None (it does not
+    deliver them yet); ``reason``: why not, None when it does.
     """
 
     def __init__(
@@ -116,12 +70,10 @@ class MatterCommands:
         hass,
         link: MatterLink | None,
         ip: Callable[[], str | None],
-        dev: Callable[[Any], Any] = _dev_server,
     ) -> None:
         self._hass = hass
         self._link = link
         self._ip = ip
-        self._dev = dev
         # Servers checked: their key (_server_key) -> whether they deliver.
         self._checked: dict[tuple[int, Any], bool] = {}
         # Servers whose check could not tell: when to check them again.
@@ -131,7 +83,7 @@ class MatterCommands:
         self._check_error: str | None = None
 
     async def _route(self) -> tuple[str, Any, int]:
-        """(backend, client, node id) of the first server that delivers."""
+        """(backend, client, node id) of the server that delivers."""
         reasons: list[str] = []
         link = self._link
         if link is not None and link.linked and link.client is not None:
@@ -144,10 +96,7 @@ class MatterCommands:
                     self._checked[key] = delivers
             if self._checked.get(key):
                 self.reason = None
-                # The link may read the lamp through the development server.
-                dev = self._dev(self._hass)
-                backend = "dev" if dev is not None and link.client is dev.client else "matter"
-                return backend, link.client, link.node_id
+                return "matter", link.client, link.node_id
             reasons.append(
                 "Home Assistant's Matter server does not know the Yeelight clusters"
                 if key in self._checked
@@ -155,39 +104,11 @@ class MatterCommands:
             )
         else:
             reasons.append("the lamp is not linked to Home Assistant's Matter integration")
-        dev = self._dev(self._hass)
-        if dev is not None:
-            client = await dev.async_client()
-            if client is None:
-                error = getattr(dev, "last_error", None)
-                reasons.append(
-                    "the development server cannot be reached" + (f" ({error})" if error else "")
-                )
-            else:
-                node_id = self._node_on(client)
-                if node_id is not None:
-                    self.reason = None
-                    return "dev", client, node_id
-                reasons.append("the lamp is not shared to the development server")
         self.backend = None
         self.reason = "; ".join(reasons)
         raise MatterCommandsUnavailable(
             f"No Matter server can send Yeelight commands to this lamp: {self.reason}"
         )
-
-    def _node_on(self, client) -> int | None:
-        """The lamp's node on a server, by its IP or its remembered MAC."""
-        mac = self._link.mac if self._link is not None else None
-        try:
-            nodes = client.get_nodes()
-        except Exception:  # noqa: BLE001
-            return None
-        for node in nodes:
-            if not node_available(node):
-                continue  # a node left behind by a factory reset
-            if node_matches(_attributes(node), self._ip(), mac) is not None:
-                return node.node_id
-        return None
 
     async def _delivers(self, client, node_id: int) -> bool | None:
         """Whether a server knows the Yeelight clusters (a read-only

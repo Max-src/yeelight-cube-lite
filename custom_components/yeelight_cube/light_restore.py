@@ -125,6 +125,15 @@ def _stored_gif(value):
         for number in adjustments.values()
     ):
         stored["adjustments"] = active_adjustments(adjustments)
+    # The Studio palette its frames were recolored in (none: its own colors).
+    palette = value.get("palette")
+    if isinstance(palette, list) and palette and all(
+        isinstance(colour, list) and len(colour) == 3
+        and all(isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 255
+                for channel in colour)
+        for colour in palette
+    ):
+        stored["palette"] = palette
     return stored
 
 

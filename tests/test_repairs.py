@@ -7,7 +7,10 @@ from unittest.mock import Mock
 from tests.test_native_features import CONSTANTS, LIGHT_SOURCE, ROOT, _load_standalone_functions
 
 SOURCE = (ROOT / "issues.py").read_text(encoding="utf-8")
-CONSTANT_NAMES = ("UNREACHABLE_AFTER", "UDP_BLOCKED_AFTER", "ORIENTATION_UNKNOWN_AFTER", "ISSUES")
+CONSTANT_NAMES = (
+    "UNREACHABLE_AFTER", "NOT_RESPONDING_AFTER", "UDP_BLOCKED_AFTER", "ORIENTATION_UNKNOWN_AFTER",
+    "ISSUES",
+)
 NAMESPACE = {
     name: value for name, value in (
         line.split(" = ", 1) for line in SOURCE.splitlines()
@@ -27,6 +30,14 @@ def load(registry):
 class LampProblemTests(unittest.TestCase):
     def setUp(self):
         self.problems = load(Mock())["lamp_problems"]
+
+    def test_a_lamp_that_accepts_connections_but_answers_nothing_is_stuck(self):
+        after = NAMESPACE["NOT_RESPONDING_AFTER"]
+        stuck = {"since_success": 3600, "silent_for": after}
+        # Not "unreachable": its network part answers; a power cycle is what helps.
+        self.assertEqual(self.problems(stuck, False, 3600), {"lamp_not_responding"})
+        self.assertEqual(self.problems({**stuck, "silent_for": after - 1}, False, 3600), {"lamp_unreachable"})
+        self.assertEqual(self.problems({"since_success": 5, "silent_for": None}, True, 3600), set())
 
     def test_a_lamp_out_of_reach_for_half_an_hour(self):
         state = {"since_success": 29 * 60, "udp_failing_for": None}
@@ -72,7 +83,7 @@ class ReportProblemTests(unittest.TestCase):
     def test_only_changes_reach_the_registry(self):
         # First check (nothing known): every issue is set or cleared.
         reported = self.report(None, self.light, set(), None)
-        self.assertEqual(4, self.registry.async_delete_issue.call_count)
+        self.assertEqual(len(NAMESPACE["ISSUES"]), self.registry.async_delete_issue.call_count)
         self.registry.async_delete_issue.reset_mock()
         # Unchanged: nothing sent.
         reported = self.report(None, self.light, set(), reported)
@@ -94,6 +105,7 @@ class ReportProblemTests(unittest.TestCase):
         self.assertEqual(
             {
                 ("yeelight_cube", "lamp_unreachable_e1"),
+                ("yeelight_cube", "lamp_not_responding_e1"),
                 ("yeelight_cube", "udp_blocked_e1"),
                 ("yeelight_cube", "lan_control_off_e1"),
                 ("yeelight_cube", "orientation_unknown_e1"),

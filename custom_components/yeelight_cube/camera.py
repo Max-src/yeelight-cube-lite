@@ -37,7 +37,6 @@ from .const import (
 )
 from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
-from .lamp_core import clock_digit_targets
 from .lamp_renderers import (
     LAMP_RENDERED_EFFECTS,
     RENDER_SECONDS,
@@ -47,7 +46,8 @@ from .lamp_renderers import (
     lamp_effect_frame,
     led_appearance,
 )
-from .layout import FONT_MAPS, char_advance
+from .clock_face import clock_content, clock_digit_pixels, clock_text
+from .lamp_studio import clock_studio_runs, studio_clock_background_at, studio_drive, studio_render
 from .matrix_view import display_cell, is_vertical_mount, view_size, viewer_frame
 from .native_effect_preview import (
     render_music_flow_effect,
@@ -504,47 +504,15 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         )
 
     def _get_clock_preview(self) -> list[tuple[int, int, int]]:
-        """Render the active built-in clock face into a 20x5 matrix."""
+        """Render the active built-in clock face into a 20x5 matrix: its
+        digits (clock_face, as the lamp lays them out) showing the style's
+        color, or its background effect through them."""
         le = self._light_entity
-        now = dt_util.now()
-        # 3-way clock content (byte 0): time | time_date (alternate) | date.
-        # Fall back to the legacy show_date boolean for older state.
-        content = getattr(le, "_native_clock_content", None)
-        if content not in ("time", "time_date", "date"):
-            content = "time_date" if getattr(le, "_native_clock_show_date", False) else "time"
-        if content == "date":
-            date_phase = True
-        elif content == "time_date":
-            date_phase = int(now.timestamp() // 5) % 2 == 1
-        else:
-            date_phase = False
-        if date_phase:
-            text = now.strftime("%m.%d")
-        else:
-            clock_format = (
-                "%I:%M"
-                if bool(getattr(le, "_native_clock_12_hour", False))
-                else "%H:%M"
-            )
-            text = now.strftime(clock_format)
-        colon_visible = not (
-            not date_phase
-            and bool(getattr(le, "_native_clock_colon_blink", False))
-            and now.second % 2 == 1
+        text, colon_visible = clock_text(
+            dt_util.now(), clock_content(le),
+            bool(getattr(le, "_native_clock_12_hour", False)),
+            bool(getattr(le, "_native_clock_colon_blink", False)),
         )
-
-        # The lamp's clock uses the bundled "native" font (monospace: every
-        # digit occupies a fixed cell, colon/period are narrow) so the preview
-        # matches the hardware exactly.
-        font_key = "native"
-        font = FONT_MAPS[font_key]
-        glyphs = [font.get(char, []) for char in text]
-        advances = [
-            char_advance(font_key, char, glyph)
-            for char, glyph in zip(text, glyphs)
-        ]
-        total_width = (sum(advances) - 1) if advances else 0
-        offset = max(0, (COLS - total_width) // 2)
         style_id = int(getattr(le, "_native_clock_style", 6))
         matrix = [(0, 0, 0)] * 100
 
@@ -570,7 +538,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # A palette color mode (e.g. B&W) takes precedence over the override.
         color_mode = getattr(le, "_native_clock_color_mode", "normal") or "normal"
         palette = getattr(le, "_text_colors", None)
-        if color_mode == PALETTE_COLOR_MODE:
+        # Palette with more colors than the background takes on the lamp:
+        # streamed, the background recolored in the whole palette (light_studio).
+        streamed = clock_studio_runs(effect_name, color_mode, palette)
+        if color_mode == PALETTE_COLOR_MODE and not streamed:
             # The palette's first color on a plain style; its colors on a
             # background that takes them (lamp_clock_settings); else normal.
             words = clock_palette_words(effect_name, palette)
@@ -580,7 +551,13 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                 color_mode = "normal"
         mode_active = color_mode not in ("normal", PALETTE_COLOR_MODE)
         effect_frame = None
-        if effect_name is not None:
+        if streamed:
+            effect_frame = studio_drive(studio_clock_background_at(
+                effect_name, studio_render(self._clock_background_seconds()),
+                self._preview_speed(), _chosen_intensity(le), palette,
+                clock_style_direct(style),
+            ))
+        elif effect_name is not None:
             # The mixer's renderer behind the clock overlay, on the command
             # light_native sends: the user's speed, the mode 40 direction.
             effect_frame = lamp_effect_frame(
@@ -599,38 +576,21 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # lamp renders as plain white.
         solo_bw_fallback = effect_frame is None and color_mode == "bw"
         # Where the lamp draws each digit pixel: a background started directly
-        # may turn or mirror them (lamp_renderers.clock_digit_flags).
+        # may turn or mirror them (lamp_renderers.clock_digit_flags); on a
+        # mount profile that turns the clock (light_mount_profile.
+        # lamp_turns_clock), the lamp lays the text out a half turn round; the
+        # background stays where it is on the panel.
         digit_flags = clock_digit_flags(style.get("mixer", 0), clock_style_direct(style))
-        # On a mount profile that turns the clock (light_mount_profile.
-        # lamp_turns_clock), the lamp lays the text out a half turn round;
-        # the background stays where it is on the panel.
         turned = bool(getattr(le, "lamp_turns_clock", False))
-
-        for char_index, (char, glyph, advance) in enumerate(
-            zip(text, glyphs, advances)
-        ):
-            if char == ":" and not colon_visible:
-                offset += advance
-                continue
-            for position in glyph:
-                col = position % COLS + offset
-                row = position // COLS
-                if 0 <= col < COLS and 0 <= row < ROWS:
-                    at = row * COLS + col
-                    for index in clock_digit_targets(99 - at if turned else at, digit_flags):
-                        if effect_frame is not None:
-                            matrix[index] = effect_frame[index]
-                        elif solo_bw_fallback:
-                            matrix[index] = (255, 255, 255)
-                        elif flat_override is not None:
-                            matrix[index] = flat_override
-                        else:
-                            matrix[index] = self._clock_pixel_color(
-                                style_id,
-                                char_index,
-                                col,
-                            )
-            offset += advance
+        for index, char_index, col in clock_digit_pixels(text, colon_visible, digit_flags, turned):
+            if effect_frame is not None:
+                matrix[index] = effect_frame[index]
+            elif solo_bw_fallback:
+                matrix[index] = (255, 255, 255)
+            elif flat_override is not None:
+                matrix[index] = flat_override
+            else:
+                matrix[index] = self._clock_pixel_color(style_id, char_index, col)
 
         # Lamp order, like every frame (_view_frame turns it for the viewer).
         return matrix

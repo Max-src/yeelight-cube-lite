@@ -3,6 +3,43 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Palette shows every effect in the whole palette:** an effect the lamp
+  cannot show in all the palette's colors itself (more colors than it takes,
+  or none at all) is drawn by Home Assistant as the lamp would, in the
+  palette, and streamed to the lamp 25 times a second over the LAN (UDP; no
+  Matter needed), one frame per render, like a drawing. The colors move with
+  the effect: an effect whose picture is in its colors maps them onto the
+  palette, a field of light takes them from the brightness around each pixel,
+  followed smoothly (no pixel flickers between colors), separate dots and
+  shapes (stars, blocks, Hacking's digits) each keep one color while lit,
+  White fill-in and wipe-out take the first. The lamp starts each effect from
+  its beginning. Effects the lamp takes the palette for (the music modes, an
+  effect drawing as many colors) and those that listen to the microphone stay
+  the lamp's. The animations are recolored into the GIF the lamp stores and
+  plays itself, in the layout chosen (Matter, as every animation). A clock
+  style under Palette over such an effect streams its background recolored
+  through the digits. The previews, the camera and the estimated power show
+  the same frames. Speed, direction, intensity, Lamp mounted, favourites,
+  rotation and Freeze work as for any effect; over TCP the lamp holds its
+  last frame until UDP answers again.
+
+### Fixed
+- **A lamp that stops answering is told apart:** the lamp's network part
+  keeps accepting connections when the lamp itself has stopped handling
+  commands, which only a power cycle fixes. Home Assistant took it for back
+  online and kept redrawing; it now checks that the lamp answers, and a
+  Repair (**stopped answering**) asks to turn its power off and on.
+- **Animations and other Matter features come back sooner:** when a lamp
+  did not answer the check of Home Assistant's Matter server (rebooting, or
+  busy), it was checked again only 10 minutes later, and the animations stayed
+  hidden meanwhile; now a minute later.
+- **Fewer such stops:** a command the lamp must answer now waits until no
+  frame was sent for 0.2 s (a command right after a run of frames is what
+  stalls the lamp).
+
 ## [1.5.0] - 2026-11-07
 
 ### Fixed

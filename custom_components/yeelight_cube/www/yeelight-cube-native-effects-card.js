@@ -17,7 +17,7 @@ import { cardLayoutStyles } from "./card-layout-utils.js";
 import { NATIVE_COLOR_MODES } from "./clock-preview-utils.js";
 import { paletteMusicFlow } from "./lamp-renderers.js";
 import {
-  effectSupportsColorMode,
+  effectOffersColorMode,
   effectSupportsColorOverride,
 } from "./native-effect-preview.js";
 import {
@@ -384,7 +384,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
 
   _respondsToColor(name, mode, color) {
     return mode !== "normal"
-      ? effectSupportsColorMode(name, mode)
+      ? effectOffersColorMode(name, mode)
       : !color || effectSupportsColorOverride(name);
   }
 

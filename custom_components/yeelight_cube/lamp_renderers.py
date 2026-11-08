@@ -770,7 +770,8 @@ def effect_supports_color_mode(effect: str, mode: str) -> bool:
     return (
         (effect in _COLOR_PALETTE_EFFECTS and mode in _COLOR_PALETTE_MODES)
         or (mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS)
-        # The palette's colors reach every effect that takes a color.
+        # The palette's colors reach every effect that takes a color (on
+        # the lamp itself; lamp_studio streams the others in the palette).
         or (mode == PALETTE_COLOR_MODE and effect in _COLOR_OVERRIDE_EFFECTS)
     )
 
@@ -814,6 +815,22 @@ def music_palette(palette) -> list[tuple]:
         colours[index * len(colours) // MUSIC_PALETTE_SIZE]
         for index in range(MUSIC_PALETTE_SIZE)
     ]
+
+
+def palette_fits(effect: str, palette) -> bool:
+    """Whether the lamp itself shows ``effect`` in the whole ``palette``: a
+    music mode of PALETTE_MUSIC_FLOWS (16 colors), or an effect that takes a
+    color with at most as many palette colors as it draws (palette_words: one,
+    or its colour words). Otherwise the palette color mode streams it
+    (lamp_studio), when it can."""
+    colours = [colour for colour in palette or () if isinstance(colour, (list, tuple))]
+    if not colours:
+        return True
+    if effect in PALETTE_MUSIC_FLOWS:
+        return True
+    if not effect_supports_color_mode(effect, PALETTE_COLOR_MODE):
+        return False
+    return len(colours) <= (len(ALL_NATIVE_EFFECTS[effect].get("colors", ())) or 1)
 
 
 def palette_music_flow(effect: str, color_mode, palette) -> str | None:
@@ -874,7 +891,9 @@ def lamp_settings(
     through the effect's remap and is turned for the mount; an effect offered none
     has its fixed one. ``intensity``: the one chosen (None: the row's).
     ``palette``: the lamp's palette ([r, g, b] each), for the palette color
-    mode; without one that mode sends what the normal one does."""
+    mode; without one that mode sends what the normal one does. (An effect
+    the palette color mode streams is drawn by lamp_studio from the normal
+    mode's settings.)"""
     spec = ALL_NATIVE_EFFECTS[effect]
     preset = (
         CLOCK_COLOR_MODES.get(color_mode)
@@ -1011,4 +1030,10 @@ register_family(lamp_effects_music)
 LAMP_RENDERED_EFFECTS = frozenset(
     name for name, spec in ALL_NATIVE_EFFECTS.items()
     if spec["mode"] in REGISTRY or spec["mode"] == FIREWORKS_MODE
+)
+# The effects that draw what the microphone hears (lamp_effects_music; their
+# previews run on the demo beat).
+LAMP_MUSIC_EFFECTS = frozenset(
+    name for name, spec in ALL_NATIVE_EFFECTS.items()
+    if spec["mode"] in {slot["mode"] for slot in lamp_effects_music.SLOTS}
 )

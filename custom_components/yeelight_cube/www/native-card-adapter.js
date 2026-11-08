@@ -6,6 +6,7 @@ import {
 } from "./native-effect-card-utils.js";
 import { everyAvailable, getTargetEntities } from "./service-call-utils.js";
 import { isLampRendered } from "./lamp-renderers.js";
+import { studioRuns } from "./lamp-studio.js";
 import { effectFamilyOfName, familyBadge, matchesEffectFamily } from "./effect-families.js";
 import { previewOnly } from "./offline-preview-state.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
@@ -108,7 +109,11 @@ export function createNativeCardAdapter(card) {
       saveSharedRotationInterval(card, "native", seconds),
     refresh: () =>
       card._commands.execute(card._hass, card.config, "force_refresh"),
-    freezable: () => effectSupportsFreeze(card._effect()?.name),
+    // A streamed palette effect: the stream pauses and the lamp holds its
+    // last frame, any effect.
+    freezable: () =>
+      effectSupportsFreeze(card._effect()?.name) ||
+      studioRuns(card._effect()?.name, card._attrs().native_effect_color_mode, card._attrs().text_colors),
     startRotation: (items, intervalSeconds) =>
       card._command(
         "start_effect_rotation",

@@ -310,7 +310,10 @@ CLOCK_COLOR_MODES = {
 DEFAULT_CLOCK_COLOR_MODE = "normal"
 # The native effects' own color mode: the lamp's palette (its text colors,
 # chosen with load_palette or set_text_colors), followed when it changes. It
-# is no lamp preset: the colors are sent (lamp_renderers.palette_words).
+# is no lamp preset: the colors are sent (lamp_renderers.palette_words) when
+# the lamp takes them all (lamp_renderers.palette_fits); otherwise the effect
+# is drawn here in the whole palette and streamed over the LAN, or an
+# animation's GIF recolored (lamp_studio).
 PALETTE_COLOR_MODE = "palette"
 NATIVE_COLOR_MODES = (*CLOCK_COLOR_MODES, PALETTE_COLOR_MODE)
 # The slots the Yeelight app offers as its music modes (Spectrum, Gather,

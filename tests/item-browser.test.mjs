@@ -165,11 +165,11 @@ test("clock responses distinguish palettes, B&W, solids, presets and unknowns", 
 });
 
 test("the clock's palette mode lists the styles that take a color", () => {
-  // Plain styles take its first color, backgrounds that take a color its
-  // colors; the others and the saved presets (their own color) are left out.
-  for (const name of ["White", "Red", "Rainbow", "Waves", "Rotating colour bands"])
+  // Plain styles take its first color, backgrounds its colors: on the lamp
+  // when it takes them, else streamed (Rainbow noise takes none on the lamp).
+  // The saved presets (their own color) are left out.
+  for (const name of ["White", "Red", "Rainbow", "Waves", "Rotating colour bands", "Rainbow noise"])
     assert.equal(clockStyleColorModeState(style(name), "palette"), "responds", name);
-  assert.equal(clockStyleColorModeState(style("Rainbow noise"), "palette"), "unchanged");
   assert.equal(clockStyleColorModeState(style("Amber"), "palette"), "unchanged");
 });
 

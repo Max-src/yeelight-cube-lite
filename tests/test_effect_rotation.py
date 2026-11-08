@@ -130,7 +130,10 @@ class FakeCubeMatrix:
         self.close_fast_socket = Mock()
         self._reachable = reachable
 
-    async def probe(self, timeout=None):
+    # Not stuck: when it is reachable, the lamp itself answers too.
+    silent_for = 0.0
+
+    async def probe(self, timeout=None, *, answering=False):
         return self._reachable
 
     def mark_unreachable(self):

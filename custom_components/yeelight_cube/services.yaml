@@ -635,7 +635,9 @@ set_native_effect:
         Palette for compatible effects. Normal restores the effect's own
         colors. Palette uses the lamp's palette (the one loaded with
         load_palette or set with set_text_colors) and follows it when it
-        changes. Independent of clock palettes.
+        changes; an effect the lamp cannot show in the whole palette itself is
+        drawn by Home Assistant and streamed to it (LAN, UDP), an animation's
+        GIF recolored (Matter). Independent of clock palettes.
       selector:
         select:
           options:

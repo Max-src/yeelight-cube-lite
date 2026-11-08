@@ -16,19 +16,22 @@ Older servers refuse them.
 ## In the integration: `matter_commands.py`
 
 Each light has `light.matter_commands`, a `MatterCommands` channel, or `None`
-before its Matter link starts. The channel finds a server that delivers the
-commands to the lamp, in this order:
-
-1. **Home Assistant's own Matter server**, once it knows the Yeelight
-   clusters. The channel checks once with `getCurrentEffect`, a read-only
-   command, and checks again when the server's version changes. A check
-   the lamp doesn't answer is tried again 10 minutes later.
-2. **A local development server**, only on a development install. Its module
-   is not part of the repository.
-3. **None.** The channel raises `MatterCommandsUnavailable`.
+before its Matter link starts. The commands go through **Home Assistant's own
+Matter server**, which knows the Yeelight clusters from matterjs-server 1.5.4.
+The channel checks once with `getCurrentEffect`, a read-only command, and
+checks again when the server's version changes. A check the lamp doesn't
+answer (it is rebooting, or busy) is tried again a minute later. When the
+server doesn't deliver them (an older version, no Matter), the channel raises
+`MatterCommandsUnavailable`.
 
 The light's `matter` attribute shows the server in use, as `"commands"`:
-`"matter"`, `"dev"` or `null`.
+`"matter"` or `null`.
+
+What needs it, and what does not: the animations (their GIF is uploaded over
+Matter, also when the Palette color mode recolors it), the music modes'
+direction, the lamp's orientation, LAN Control and the remote buttons'
+playlist. The Palette color mode's streamed effects and clocks need no Matter:
+they go over the LAN (UDP), like drawings.
 
 **Rule for every feature built on it:** it must work, or stay out of the way,
 when no server delivers. Users without Matter, and users of the official

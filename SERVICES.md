@@ -929,7 +929,7 @@ mode).
 | `speed` | No | Speed 0–255 (only for effects that support it) |
 | `intensity` | No | Intensity 0–255 (only for effects that support it): the number of glows or meteors, how often stars or drops appear, a wave's size... One setting shared by all effects, like the speed |
 | `direction` | No | `Up`, `Down`, `Left` or `Right`: the way the effect flows as you see it, however the lamp is mounted. One setting shared by all effects (only for effects that offer that direction) |
-| `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it, or `palette`: the lamp's palette (`load_palette`, `set_text_colors`), followed when it changes, for every effect that takes a color |
+| `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it, or `palette`: the lamp's palette (`load_palette`, `set_text_colors`), followed when it changes: sent with the effect when the lamp takes all its colors (the music modes, an effect drawing as many colors); any other effect drawn by Home Assistant in the whole palette and streamed to the lamp (LAN, UDP); an animation's GIF recolored (Matter); the effects that listen to the microphone stay the lamp's |
 | `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom color |
 | `activate` | No | Switch to Native Effect mode immediately (default `true`) |
 | `entity_id` | Yes | Target lamp entity (list supported) |
@@ -1068,7 +1068,9 @@ attribute); a number is always an id, never a name. The styles over the 33
 other slots (named like those effects, e.g. `Dual scan`) are
 experimental. Solid-color styles (`White`, `Mint`, `Yellow`, …) ignore
 `color_mode` except `palette`, which gives them the palette's first color;
-animated styles honour it.
+animated styles honour it. Under `palette`, a style over an effect the lamp
+cannot show in the whole palette is streamed: its background recolored in the
+whole palette, through the digits (LAN, UDP).
 
 </details>
 

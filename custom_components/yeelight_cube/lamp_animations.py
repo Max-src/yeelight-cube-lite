@@ -32,6 +32,7 @@ try:
         ANIMATION_LAYOUT_APP, DEFAULT_NATIVE_EFFECT_SPEED, DEVICE_ORIENTATION_TO_FLIP,
         ORIENTATION_FLIPPED,
     )
+    from .lamp_studio import studio_animation_frames, studio_look, studio_palette
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
     import sys
@@ -42,6 +43,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         ANIMATION_LAYOUT_APP, DEFAULT_NATIVE_EFFECT_SPEED, DEVICE_ORIENTATION_TO_FLIP,
         ORIENTATION_FLIPPED,
     )
+    from lamp_studio import studio_animation_frames, studio_look, studio_palette
 
 COLS, ROWS = 20, 5
 DATA_FILE = Path(__file__).with_name("www") / "lamp-animations.js"
@@ -100,10 +102,14 @@ def animation_delays(key: str, speed: int | None = None) -> tuple:
 
 
 @functools.lru_cache(maxsize=8)
-def _adjusted_frames(key: str, adjustments: tuple) -> tuple:
-    """An animation's top-first frames with the color ``adjustments``
-    (sorted items of color_adjustments values) applied."""
+def _adjusted_frames(key: str, adjustments: tuple, palette: tuple = ()) -> tuple:
+    """An animation's top-first frames in the Studio ``palette`` (none: its
+    own colors; lamp_studio.studio_animation_frames), with the color
+    ``adjustments`` (sorted items of color_adjustments values) applied."""
     frames = _animations()[key]["frames"]
+    if palette:
+        name = _animations()[key]["name"]
+        frames = studio_animation_frames(frames, studio_look(name), palette)
     if not adjustments:
         return frames
     settings = dict(adjustments)
@@ -112,18 +118,23 @@ def _adjusted_frames(key: str, adjustments: tuple) -> tuple:
     return tuple(tuple(adjusted[pixel] for pixel in frame) for frame in frames)
 
 
-def animation_frames(key: str, adjustments: dict | None = None) -> tuple:
-    """An animation's top-first frames, with the color ``adjustments``
+def animation_frames(key: str, adjustments: dict | None = None, palette=None) -> tuple:
+    """An animation's top-first frames, in the Studio ``palette`` ([r, g, b]
+    each; None: its own colors), with the color ``adjustments``
     (color_adjustments.active_adjustments) applied."""
-    return _adjusted_frames(key, tuple(sorted((adjustments or {}).items())))
+    return _adjusted_frames(
+        key, tuple(sorted((adjustments or {}).items())), tuple(studio_palette(palette)),
+    )
 
 
 def animation_frame_at(
     key: str, seconds: float, speed: int | None = None, adjustments: dict | None = None,
+    palette=None,
 ) -> tuple:
     """The top-first frame an animation shows ``seconds`` after it started,
-    at the effect ``speed`` with the color ``adjustments``."""
-    frames = animation_frames(key, adjustments)
+    at the effect ``speed``, in the Studio ``palette``, with the color
+    ``adjustments``."""
+    frames = animation_frames(key, adjustments, palette)
     delays = animation_delays(key, speed)
     elapsed = int(max(0.0, seconds) * 1000) % sum(delays)
     for index, delay in enumerate(delays):
@@ -159,12 +170,12 @@ def app_layout_order(frame) -> list:
 
 def animation_frame(
     key: str, seconds: float, orientation: str | None = None, layout: str | None = None,
-    speed: int | None = None, adjustments: dict | None = None,
+    speed: int | None = None, adjustments: dict | None = None, palette=None,
 ) -> list:
     """The frame in lamp order, as the previews draw it, in ``layout``
-    (ANIMATION_LAYOUTS; the upright one when None), at the effect ``speed``
-    with the color ``adjustments``."""
-    shown = animation_frame_at(key, seconds, speed, adjustments)
+    (ANIMATION_LAYOUTS; the upright one when None), at the effect ``speed``,
+    in the Studio ``palette``, with the color ``adjustments``."""
+    shown = animation_frame_at(key, seconds, speed, adjustments, palette)
     if layout == ANIMATION_LAYOUT_APP:
         return app_layout_order(shown)
     return lamp_order(shown, orientation)
@@ -181,17 +192,39 @@ def gif_order(frame) -> list:
 
 def lamp_gif(
     key: str, orientation: str | None = None, layout: str | None = None,
-    speed: int | None = None, adjustments: dict | None = None,
+    speed: int | None = None, adjustments: dict | None = None, palette=None,
 ) -> bytes:
     """The GIF a lamp stores for an animation: laid out for it and its
     mount (upright), or the picture as it is (the app's layout); at the
-    effect ``speed``, with the color ``adjustments``."""
-    drawn = animation_frames(key, adjustments)
+    effect ``speed``, in the Studio ``palette`` (None: its own colors), with
+    the color ``adjustments``."""
+    drawn = animation_frames(key, adjustments, palette)
     if layout == ANIMATION_LAYOUT_APP:
         frames = [list(frame) for frame in drawn]
     else:
         frames = [gif_order(lamp_order(frame, orientation)) for frame in drawn]
-    return lamp_safe(encode_gif(frames, animation_delays(key, speed)))
+    return lamp_safe(encode_gif(fit_colours(frames), animation_delays(key, speed)))
+
+
+def fit_colours(frames) -> list:
+    """``frames`` in at most the 256 colours a GIF holds: the most used
+    ones, each other one as the nearest of them (a palette's colours at many
+    brightnesses can make more)."""
+    counts: dict[tuple, int] = {}
+    for frame in frames:
+        for pixel in frame:
+            colour = tuple(pixel)
+            counts[colour] = counts.get(colour, 0) + 1
+    if len(counts) <= 256:
+        return frames
+    kept = sorted(counts, key=lambda colour: (-counts[colour], colour))[:256]
+    nearest = {colour: colour for colour in kept}
+    for colour in counts:
+        if colour not in nearest:
+            nearest[colour] = min(
+                kept, key=lambda other: sum((a - b) ** 2 for a, b in zip(colour, other)),
+            )
+    return [[nearest[tuple(pixel)] for pixel in frame] for frame in frames]
 
 
 def lamp_safe(data: bytes) -> bytes:

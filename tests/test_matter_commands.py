@@ -46,20 +46,12 @@ class FakeServer:
         return [{"Status": 0}]
 
 
-class FakeDev:
-    def __init__(self, client):
-        self.client = client
-
-    async def async_client(self):
-        return self.client
-
-
 def link_to(client, node_id=2):
     return types.SimpleNamespace(linked=True, client=client, node_id=node_id, mac=None)
 
 
-def commands(link=None, dev=None):
-    return COMMANDS.MatterCommands(object(), link, lambda: LAMP_IP, dev=lambda hass: dev)
+def commands(link=None):
+    return COMMANDS.MatterCommands(object(), link, lambda: LAMP_IP)
 
 
 def run(coroutine):
@@ -92,60 +84,23 @@ class MatterCommandsTests(unittest.TestCase):
         result = run(channel.async_command(COMMANDS.EFFECTS_CLUSTER, "setRate", {"rate": 20}))
         self.assertEqual({"ok": "setRate"}, result)
 
-    def test_the_dev_server_when_the_official_one_refuses(self):
-        official = FakeServer(knows_yeelight=False)
-        dev = FakeServer(knows_yeelight=True, nodes=[node(1, dict(CUBE_ATTRIBUTES))])
-        channel = commands(link_to(official), FakeDev(dev))
-        run(channel.async_write("2/320011266/319946753", 2))
-        self.assertEqual("dev", channel.backend)
-        self.assertEqual([("write", "2/320011266/319946753", 2)], dev.sent)
-
     def test_why_no_server_delivers(self):
-        official = FakeServer(knows_yeelight=False)
-        unreachable = types.SimpleNamespace(async_client=FakeDev(None).async_client, last_error="refused")
-        channel = COMMANDS.MatterCommands(object(), link_to(official), lambda: LAMP_IP, dev=lambda hass: unreachable)
+        channel = commands(link_to(FakeServer(knows_yeelight=False)))
         self.assertFalse(run(channel.async_available()))
-        self.assertEqual(
-            "Home Assistant's Matter server does not know the Yeelight clusters; "
-            "the development server cannot be reached (refused)",
-            channel.reason,
-        )
-        lamp_elsewhere = FakeServer(knows_yeelight=True, nodes=[node(1, {"0/40/2": 0x117C})])
-        channel = commands(dev=FakeDev(lamp_elsewhere))
+        self.assertEqual("Home Assistant's Matter server does not know the Yeelight clusters", channel.reason)
+        channel = commands()
         self.assertFalse(run(channel.async_available()))
-        self.assertEqual(
-            "the lamp is not linked to Home Assistant's Matter integration; "
-            "the lamp is not shared to the development server",
-            channel.reason,
-        )
-        channel = commands(dev=FakeDev(FakeServer(knows_yeelight=True, nodes=[node(1, dict(CUBE_ATTRIBUTES))])))
+        self.assertEqual("the lamp is not linked to Home Assistant's Matter integration", channel.reason)
+        channel = commands(link_to(FakeServer(knows_yeelight=True)))
         self.assertTrue(run(channel.async_available()))
         self.assertIsNone(channel.reason)
 
-    def test_a_dev_server_without_this_lamp_is_not_used(self):
-        dev = FakeServer(knows_yeelight=True, nodes=[node(1, {"0/40/2": 0x117C})])
-        self.assertFalse(run(commands(dev=FakeDev(dev)).async_available()))
-        unreachable = FakeDev(None)
-        self.assertFalse(run(commands(dev=unreachable).async_available()))
-
-    def test_a_dev_node_left_behind_by_a_factory_reset_is_not_used(self):
-        # Its old attributes still match the lamp; writing to it is aborted.
-        dead = node(1, dict(CUBE_ATTRIBUTES))
-        dead.available = False
-        dev = FakeServer(knows_yeelight=True, nodes=[dead])
-        channel = commands(dev=FakeDev(dev))
-        self.assertFalse(run(channel.async_available()))
-        self.assertIn("the lamp is not shared to the development server", channel.reason)
-        # Paired again: its new node is.
-        dev.nodes.append(node(4, dict(CUBE_ATTRIBUTES)))
-        run(channel.async_write("2/320011266/319946753", 2))
-        self.assertEqual("dev", channel.backend)
-
-    def test_a_link_read_through_the_dev_server_reports_it(self):
-        dev = FakeServer(knows_yeelight=True, nodes=[node(1, dict(CUBE_ATTRIBUTES))])
-        channel = commands(link_to(dev, node_id=1), FakeDev(dev))
-        self.assertTrue(run(channel.async_available()))
-        self.assertEqual("dev", channel.backend)
+    def test_only_home_assistant_s_server_is_used(self):
+        # The development server is gone: Home Assistant's own delivers the
+        # Yeelight commands (matterjs-server 1.5.4 and later).
+        source = Path(COMMANDS.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("matter_dev_server", source)
+        self.assertNotIn("dev", COMMANDS.MatterCommands.__init__.__code__.co_varnames)
 
     def test_a_lamp_that_does_not_answer_is_checked_again_later(self):
         official = FakeServer(knows_yeelight=True, error=TimeoutError("no answer"))
@@ -153,7 +108,8 @@ class MatterCommandsTests(unittest.TestCase):
         self.assertFalse(run(channel.async_available()))
         self.assertIn("could not be checked (no answer)", channel.reason)
         official.error = None
-        # Not every minute: after CHECK_RETRY.
+        # Not for every command: after CHECK_RETRY (a minute: usually the
+        # lamp rebooting or busy, not the server).
         self.assertFalse(run(channel.async_available()))
         self.assertEqual(1, len(official.sent))
         channel._check_again_at = {key: 0.0 for key in channel._check_again_at}
@@ -181,16 +137,6 @@ class MatterCommandsTests(unittest.TestCase):
         self.assertTrue(COMMANDS.refuses_yeelight(REFUSED))
         self.assertTrue(COMMANDS.refuses_yeelight(Exception('Command "setRate" does not exist on cluster')))
         self.assertFalse(COMMANDS.refuses_yeelight(TimeoutError("no answer")))
-
-    def test_a_users_install_has_no_development_server(self):
-        # matter_dev_server.py is not committed: without it, that step is
-        # skipped and nothing else changes.
-        with patch.dict(sys.modules, {"yeelight_cube.matter_dev_server": None}):
-            self.assertIsNone(COMMANDS._dev_server(object()))
-            run(COMMANDS.async_close_dev_connections(object()))
-            official = FakeServer(knows_yeelight=False)
-            channel = COMMANDS.MatterCommands(object(), link_to(official), lambda: LAMP_IP)
-            self.assertFalse(run(channel.async_available()))
 
 
 if __name__ == "__main__":

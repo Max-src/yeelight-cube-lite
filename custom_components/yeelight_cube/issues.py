@@ -18,8 +18,11 @@ UDP_BLOCKED_AFTER = 15 * 60
 # A lamp whose orientation is still unknown after this long (s) is reported:
 # time for a Matter link to read it first.
 ORIENTATION_UNKNOWN_AFTER = 10 * 60
+# A lamp that accepts connections but has answered nothing this long (s) is
+# stuck (cube_matrix.CubeMatrix.probe): only a power cycle helps.
+NOT_RESPONDING_AFTER = 60
 # The issues, by translation key (strings.json "issues").
-ISSUES = ("lamp_unreachable", "udp_blocked", "lan_control_off", "orientation_unknown")
+ISSUES = ("lamp_unreachable", "lamp_not_responding", "udp_blocked", "lan_control_off", "orientation_unknown")
 
 
 def lamp_problems(
@@ -43,7 +46,9 @@ def lamp_problems(
     if orientation_unknown and since_added >= ORIENTATION_UNKNOWN_AFTER:
         problems.add("orientation_unknown")
     since_success = state.get("since_success")
-    if not available and (since_added if since_success is None else since_success) >= UNREACHABLE_AFTER:
+    if (state.get("silent_for") or 0) >= NOT_RESPONDING_AFTER:
+        problems.add("lamp_not_responding")
+    elif not available and (since_added if since_success is None else since_success) >= UNREACHABLE_AFTER:
         problems.add("lamp_unreachable")
     if available and (state.get("udp_failing_for") or 0) >= UDP_BLOCKED_AFTER:
         problems.add("udp_blocked")

@@ -306,6 +306,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
              "NATIVE_COLOR_MODES": CONSTANTS["NATIVE_COLOR_MODES"],
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
+             "effect_offers_color_mode": NATIVE_PREVIEW["effect_offers_color_mode"],
              "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
              "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: [target],
              "run_on_lamps": lambda label, lamps, apply: scheduled.extend(apply(lamp) for lamp in lamps),

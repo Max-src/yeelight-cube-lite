@@ -1302,9 +1302,12 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("CLOCK_MIXER_EFFECTS", clock)
         self.assertIn("lamp_clock_settings(", clock)
         self.assertIn("effect_frame[index]", clock)
-        self.assertIn("clock_digit_targets(99 - at if turned else at, digit_flags)", clock)
-        # Colon blink, date/12h/offset handling stay intact.
-        self.assertIn('char == ":"', clock)
+        self.assertIn("clock_digit_pixels(text, colon_visible, digit_flags, turned)", clock)
+        # Colon blink, date/12h/offset handling stay intact (clock_face.py,
+        # shared with the palette clock streamed to the lamp).
+        face = (ROOT / "clock_face.py").read_text(encoding="utf-8")
+        self.assertIn("clock_digit_targets(99 - at if turned else at, digit_flags)", face)
+        self.assertIn('char == ":"', face)
         self.assertIn("colon_visible", clock)
         self.assertIn("_native_clock_12_hour", clock)
         # The JS card mirrors the same masking and colon-blink behaviour.

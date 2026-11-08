@@ -38,9 +38,6 @@ from .matter_commands import (
     EFFECTS_CLUSTER,
     MatterCommands,
     MatterCommandsUnavailable,
-    async_connect_dev_server,
-    dev_clients,
-    has_dev_server,
 )
 from .matter_discovery import async_offer_matter_lamps
 from .matter_link import ROTATION, ROTATION_ORIENTATIONS, MatterLink
@@ -182,15 +179,11 @@ class MatterMixin:
         # yet (_check_mount_profile), and the (node, server) it was tried with.
         self._mount_profile_write = None
         self._mount_profile_tried: tuple | None = None
-        # Connecting the other Matter servers (_connect_other_matter_servers).
-        self._matter_connect = None
 
     # ── The link ────────────────────────────────────────────────────────
     def _start_matter_link(self) -> None:
         """From async_added_to_hass: follow the lamp's Matter node, if any."""
-        self._matter = MatterLink(
-            self.hass, self._on_matter_report, lambda: dev_clients(self.hass)
-        )
+        self._matter = MatterLink(self.hass, self._on_matter_report)
         self.async_on_remove(self._matter.release)
         self._matter_commands = MatterCommands(self.hass, self._matter, lambda: self._ip)
         self._refresh_matter_link()
@@ -206,8 +199,6 @@ class MatterMixin:
         entry = self._config_entry
         remembered = entry.data.get(CONF_MATTER_MAC) if entry is not None else None
         changed = self._matter.refresh(self._ip, remembered)
-        if not self._matter.linked:
-            self._connect_other_matter_servers()
         self._check_matter_commands()
         self._sync_remote_playlist()
         self._check_mount_profile()
@@ -220,28 +211,6 @@ class MatterMixin:
         if self.hass is not None:
             self.async_write_ha_state()
         self._matter_status_changed()
-
-    def _connect_other_matter_servers(self) -> None:
-        """Not linked: connect the other Matter servers (the development
-        one, when present), then look for the lamp's node on them too."""
-        if (
-            self._matter_connect is not None
-            or not has_dev_server(self.hass)
-            or dev_clients(self.hass)
-        ):
-            return
-
-        async def connect() -> None:
-            try:
-                connected = await async_connect_dev_server(self.hass)
-            finally:
-                self._matter_connect = None
-            if connected:
-                self._refresh_matter_link()
-
-        self._matter_connect = self._create_tracked_task(
-            connect(), name=f"yeelight_cube_matter_connect_{self._ip}"
-        )
 
     @property
     def matter_link_state(self) -> str:
@@ -318,8 +287,8 @@ class MatterMixin:
 
     def _matter_summary(self) -> dict | None:
         """The light's `matter` attribute: the node and what it reports, and
-        which server delivers Yeelight commands ("commands": "matter", "dev"
-        or None), and the Yeelight app's content a remote press shows again
+        which server delivers Yeelight commands ("commands": "matter" or
+        None), and the Yeelight app's content a remote press shows again
         ("app_content": the command's method, effect and custom id, or
         hue and saturation, _app_content); None without a node."""
         if not self._matter:
@@ -348,7 +317,7 @@ class MatterMixin:
     def _expected_effect(self) -> int | None:
         """The effect the lamp reports for the light's state: Music Flow's,
         the native effect's, the clock command's outer id, or DRAWING_EFFECT
-        when this integration draws; the Yeelight app's content's when it is
+        when this integration draws (a streamed palette effect or clock too); the Yeelight app's content's when it is
         shown again (_replay_app_content); while off, DRAWING_EFFECT (the
         black picture that keeps a lamp powered, light._internal_turn_off);
         None when unknown."""
@@ -358,6 +327,10 @@ class MatterMixin:
             return self._app_content_effect()
         if self._music_flow_enabled:
             return MUSIC_FLOW_EFFECTS.get(self._music_flow_effect)
+        # A streamed palette effect or clock: direct mode (light_studio).
+        studio = getattr(self, "studio_selected", None)
+        if studio is not None and studio():
+            return DRAWING_EFFECT
         if self._mode == MODE_NATIVE_EFFECT:
             # A music effect in the palette color mode runs as its music mode.
             palette_music = getattr(self, "_palette_music", None)  # light_native

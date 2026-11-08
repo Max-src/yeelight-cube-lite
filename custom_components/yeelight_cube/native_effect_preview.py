@@ -21,7 +21,14 @@ try:
         lamp_settings,
     )
     from .lamp_animations import animation_frame
-    from .const import ALL_NATIVE_EFFECTS, STORED_GIF_EFFECT
+    from .lamp_studio import (
+        effect_offers_color_mode,
+        studio_drive,
+        studio_frame,
+        studio_palette,
+        studio_runs,
+    )
+    from .const import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE, STORED_GIF_EFFECT
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
     import sys
@@ -36,7 +43,14 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         lamp_settings,
     )
     from lamp_animations import animation_frame
-    from const import ALL_NATIVE_EFFECTS, STORED_GIF_EFFECT
+    from lamp_studio import (
+        effect_offers_color_mode,
+        studio_drive,
+        studio_frame,
+        studio_palette,
+        studio_runs,
+    )
+    from const import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE, STORED_GIF_EFFECT
 
 COLS = 20
 ROWS = 5
@@ -209,25 +223,35 @@ def render_native_effect(
     the rate the lamp gets (DEFAULT_PREVIEW_SPEED when omitted). ``orientation``:
     how the lamp is mounted, which the direction sent is turned for.
     ``intensity``: the one chosen (None: the effect's own). ``palette``: the
-    lamp's, for the palette color mode. ``stored``: what the lamp stores
+    lamp's, for the palette and Studio color modes. ``stored``: what the lamp stores
     (light._stored_gif, or the animation's key), which the stored GIF shows,
     in its layout, at its speed, with its color adjustments. ``layout``: the
     one an animation is sent in (const.ANIMATION_LAYOUTS; upright when None).
     ``adjustments``: the color adjustments an animation is sent with
     (color_adjustments.active_adjustments; none when None)."""
     speed = DEFAULT_PREVIEW_SPEED if speed is None else speed
+    seconds = phase / (0.25 + speed / 55.0)
+    if studio_runs(effect, color_mode, palette):
+        # Palette beyond what the lamp takes: drawn here and streamed
+        # (light_studio); what the lamp shows of it.
+        return studio_drive(
+            studio_frame(effect, seconds, direction, speed, orientation, intensity, palette)
+        )
     animation = ALL_NATIVE_EFFECTS.get(effect, {}).get("animation")
     pace = speed
+    # An animation in the palette color mode: its GIF recolored in it.
+    recolored = studio_palette(palette) if color_mode == PALETTE_COLOR_MODE else None
     if effect == STORED_GIF_EFFECT:
         held = stored if isinstance(stored, dict) else {}
         animation = held.get("animation") if isinstance(stored, dict) else stored
         layout = held.get("layout")
         pace = held.get("speed")
         adjustments = held.get("adjustments")
+        recolored = held.get("palette")
     if animation:
         # Its frames as sent: laid out, timed and colored in the GIF.
         return animation_frame(
-            animation, phase / (0.25 + speed / 55.0), orientation, layout, pace, adjustments,
+            animation, seconds, orientation, layout, pace, adjustments, recolored or None,
         )
     if effect not in LAMP_RENDERED_EFFECTS:
         return _render_gradient(phase, direction)
@@ -235,7 +259,7 @@ def render_native_effect(
         effect, direction, speed, color_override, color_mode, orientation, intensity,
         palette,
     )
-    return lamp_effect_frame(settings, phase / (0.25 + speed / 55.0))
+    return lamp_effect_frame(settings, seconds)
 
 
 # Kept for the code that imports it: the lamp's renderers place every direction as the

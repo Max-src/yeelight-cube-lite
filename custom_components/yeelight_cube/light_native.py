@@ -12,6 +12,7 @@ import logging
 from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
 from .lamp_renderers import clock_palette_words, music_palette, palette_music_flow, palette_words
 from .lamp_animations import gif_packets, lamp_gif
+from .lamp_studio import studio_palette
 from .matter_commands import EFFECTS_CLUSTER, MatterCommandsUnavailable
 from .color_utils import rgb_to_argb
 from .light_color import hardware_brightness_for
@@ -100,14 +101,19 @@ def effect_direction_sent(light, spec: dict) -> int:
 def animation_look(light) -> dict:
     """What an animation's GIF is drawn with besides its frames
     (lamp_animations.lamp_gif): the effect speed, which the lamp plays a GIF
-    at only through its frame delays, and the color adjustments, as for the
-    pixels the integration sends."""
+    at only through its frame delays, the color adjustments, as for the
+    pixels the integration sends, and in the palette color mode the palette
+    its frames are recolored in (None otherwise: its own colors)."""
+    palette = None
+    if getattr(light, "_native_effect_color_mode", None) == PALETTE_COLOR_MODE:
+        palette = [list(colour) for colour in studio_palette(getattr(light, "_text_colors", None))] or None
     return {
         "speed": getattr(light, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED),
         "adjustments": active_adjustments({
             name: getattr(light, f"_preview_{name}", default)
             for name, default in ADJUSTMENT_DEFAULTS.items()
         }),
+        "palette": palette,
     }
 
 
@@ -338,7 +344,13 @@ class NativeModesMixin:
 
     async def _activate_native_clock(self) -> None:
         """Activate the Cube Lite clock through Yeelight LAN control,
-        always in full (no live update: it left the clock dark)."""
+        always in full (no live update: it left the clock dark); in the
+        palette color mode over a background the lamp cannot show in the
+        whole palette, streamed (light_studio)."""
+        studio = getattr(self, "studio_selected", None)  # light_studio
+        if studio is not None and studio():
+            await self._start_studio_stream()
+            return
         timezone_hours = self._native_clock_timezone_hours()
         await self._send_native(self._native_clock_params(), clock=True)
         self._native_clock_timezone_offset = timezone_hours
@@ -434,7 +446,12 @@ class NativeModesMixin:
     async def _activate_native_effect(self) -> None:
         """Activate one of the Cube Lite's built-in animations (live
         when only its speed or direction changed: _send_native); a music
-        effect in the palette color mode as its microphone music mode."""
+        effect in the palette color mode as its microphone music mode; one
+        the lamp cannot show in the whole palette, streamed (light_studio)."""
+        studio = getattr(self, "studio_selected", None)  # light_studio
+        if studio is not None and studio():
+            await self._start_studio_stream()
+            return
         if flow := palette_music(self):
             await self._send_palette_music(flow)
             return
@@ -445,8 +462,9 @@ class NativeModesMixin:
 
     async def _store_animation(self, key: str) -> None:
         """Put the animation ``key`` (lamp_animations) in the lamp's stored
-        GIF, laid out for its mount, at the effect speed and with the color
-        adjustments, unless it is there already: over Matter
+        GIF, laid out for its mount, at the effect speed, with the color
+        adjustments and in the Studio palette (animation_look), unless it is
+        there already: over Matter
         (sendGifDataFragment), as the Yeelight app uploads its GIFs. The lamp
         writes its flash each time, so never more often than needed.
 
@@ -469,6 +487,7 @@ class NativeModesMixin:
             and stored.get("layout", ANIMATION_LAYOUT_UPRIGHT) == layout
             and stored.get("speed", DEFAULT_NATIVE_EFFECT_SPEED) == look["speed"]
             and stored.get("adjustments", {}) == look["adjustments"]
+            and stored.get("palette") == look["palette"]
             and not stored.get("interrupted")
         ):
             return
@@ -477,6 +496,7 @@ class NativeModesMixin:
             raise failed("animation_needs_matter")
         packets = gif_packets(lamp_gif(
             key, self._device_orientation, layout, look["speed"], look["adjustments"],
+            look["palette"],
         ))
         copies = 2 if stored.get("interrupted") else 1
         # Until the end marker is acknowledged, the lamp's GIF is unknown.
@@ -647,6 +667,10 @@ class NativeModesMixin:
         """Whether the lamp shows a music effect, or a clock over one, of
         this integration (it reports the microphone on)."""
         if not self._is_on or getattr(self, "_external_display", False):
+            return False
+        # Streamed (light_studio): the lamp's microphone is not used.
+        studio = getattr(self, "studio_selected", None)
+        if studio is not None and studio():
             return False
         if self._mode == MODE_NATIVE_EFFECT:
             return runs_lamp_music(self._native_effect_params())

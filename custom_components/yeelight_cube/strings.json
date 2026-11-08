@@ -284,6 +284,10 @@
             "title": "{name} is unreachable",
             "description": "{name} ({ip}) has not answered for over 30 minutes. Check that it is plugged in, on the same network as Home Assistant, and that LAN Control is on in the Yeelight app. If its IP address changed, choose **Reconfigure** in its entry's menu (Settings → Devices & services → Yeelight Cube Lite).\n\nThis message goes away by itself once the lamp answers again."
         },
+        "lamp_not_responding": {
+            "title": "{name} stopped answering",
+            "description": "{name} ({ip}) is on the network (it accepts connections) but has not answered a command for over a minute: the lamp itself is stuck, and only turning its power off and on again fixes it. Unplug it (or switch it off at the mains) for a few seconds, then plug it back in; Home Assistant reconnects by itself. **Force Refresh** cannot help here.\n\nThis message goes away by itself once the lamp answers again."
+        },
         "udp_blocked": {
             "title": "{name} uses its slower connection",
             "description": "Home Assistant has not reached {name} ({ip}) over UDP (port 55444) for over 15 minutes, while the lamp answers over TCP (port 55443): something on the network blocks UDP between them (a firewall, a VLAN rule, a container network). Everything still works, with more delay between changes.\n\nAllow UDP port 55444 between Home Assistant and the lamp. This message goes away by itself once UDP works again."
