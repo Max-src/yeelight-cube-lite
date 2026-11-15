@@ -18,12 +18,13 @@ import {
   paletteSpan,
   pixelMap,
   placeStrip,
+  settingsLength,
   stripBlur,
   triangle16,
 } from "./lamp-core.js";
 
 function fillPanel(panel, red, green, blue) {
-  for (let at = 0; at < 3 * LENGTH; at += 3) {
+  for (let at = 0; at < panel.length; at += 3) {
     panel[at] = red;
     panel[at + 1] = green;
     panel[at + 2] = blue;
@@ -32,18 +33,18 @@ function fillPanel(panel, red, green, blue) {
 }
 
 /** Solid bands of the inline colors, unshifted. */
-function bandStrip(palette) {
+function bandStrip(palette, length) {
   const count = palette.length;
-  const width = Math.floor(LENGTH / count);
-  const strip = new Uint8Array(3 * LENGTH);
-  for (let pixel = 0; pixel < LENGTH; pixel += 1)
+  const width = Math.floor(length / count);
+  const strip = new Uint8Array(3 * length);
+  for (let pixel = 0; pixel < length; pixel += 1)
     strip.set(palette[Math.min(Math.floor(pixel / width), count - 1)], 3 * pixel);
   return strip;
 }
 
 /** Into out: strip with pixel i moved to (i + shift) mod N. */
 function rotateStrip(strip, shift, out) {
-  const split = 3 * (LENGTH - shift);
+  const split = strip.length - 3 * shift;
   out.set(strip.subarray(split), 0);
   out.set(strip.subarray(0, split), 3 * shift);
   return out;
@@ -60,7 +61,7 @@ function alternateInit(settings) {
     colours: [colours.primary, colours.secondary],
     threshold,
     turn: Math.floor(threshold / RENDER_MS) + 1,
-    panel: new Uint8Array(3 * LENGTH),
+    panel: new Uint8Array(3 * settingsLength(settings)),
   };
 }
 
@@ -91,7 +92,10 @@ function alternateStep(state, settings, clockMs, render) {
 
 // ── Slot 2: Breathing ─────────────────────────────────────────────────
 function breathInit(settings) {
-  return { primary: effectColours(settings).primary, panel: new Uint8Array(3 * LENGTH) };
+  return {
+    primary: effectColours(settings).primary,
+    panel: new Uint8Array(3 * settingsLength(settings)),
+  };
 }
 
 function breathStep(state, settings, clockMs) {
@@ -121,7 +125,7 @@ export function streamerWheel(phase, intensity) {
 }
 
 function streamerInit(settings) {
-  return { table: effectColours(settings).table, panel: new Uint8Array(3 * LENGTH) };
+  return { table: effectColours(settings).table, panel: new Uint8Array(3 * settingsLength(settings)) };
 }
 
 function streamerStep(state, settings, clockMs) {
@@ -138,22 +142,24 @@ function streamerStep(state, settings, clockMs) {
 // ── Slot 4: Moving palette ────────────────────────────────────────────
 function flowInit(settings) {
   const scale = 16 << Math.floor(settings.intensity / 29);
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     table: effectColours(settings).table,
     // By logical pixel: the renderer draws them in reverse.
-    offsets: Int32Array.from({ length: LENGTH }, (_, pixel) =>
-      Math.floor(((LENGTH - 1 - pixel) * scale) / LENGTH),
+    offsets: Int32Array.from({ length }, (_, pixel) =>
+      Math.floor(((length - 1 - pixel) * scale) / length),
     ),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function flowStep(state, settings, clockMs) {
   const phase = clockPhase(clockMs, (settings.rate >> 2) + 10);
   const { table, offsets, strip } = state;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  const length = offsets.length;
+  for (let pixel = 0; pixel < length; pixel += 1) {
     const from = 3 * ((offsets[pixel] + phase) & 255);
     strip[3 * pixel] = table[from];
     strip[3 * pixel + 1] = table[from + 1];
@@ -168,9 +174,10 @@ function scanInit(settings) {
   const colours = effectColours(settings);
   const { table } = colours;
   const span = paletteSpan(colours.palette.length);
-  const gradient = new Uint8Array(3 * LENGTH);
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
-    const at = 3 * ((Math.floor((pixel * 255) / (LENGTH - 1)) * span) >> 8);
+  const length = settingsLength(settings);
+  const gradient = new Uint8Array(3 * length);
+  for (let pixel = 0; pixel < length; pixel += 1) {
+    const at = 3 * ((Math.floor((pixel * 255) / (length - 1)) * span) >> 8);
     gradient[3 * pixel] = table[at];
     gradient[3 * pixel + 1] = table[at + 1];
     gradient[3 * pixel + 2] = table[at + 2];
@@ -179,16 +186,16 @@ function scanInit(settings) {
     direction: settings.direction,
     gradient,
     period: (settings.rate ^ 255) * 150 + 250,
-    size: ((settings.intensity * LENGTH) >> 9) + 1,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    size: ((settings.intensity * length) >> 9) + 1,
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function scanStep(state, settings, clockMs) {
   const { period, size, gradient, strip } = state;
   const progress = Math.floor(((clockMs % period) * 65535) / period);
-  const room = LENGTH - size;
+  const room = strip.length / 3 - size;
   const offset = Math.abs((((progress << 1) & 0x1fffe) * room >> 16) - room);
   const mirror = room - offset;
   strip.fill(0);
@@ -201,39 +208,42 @@ function scanStep(state, settings, clockMs) {
 /** The shift a render draws with. It steps after each render where clock /
  * (290 - rate) changed: the first (the quotient starts at 0, the Apply's clock
  * is a multiple past it), and never at rate 0, where the quotient stays 0. */
-export function inlineShift(render, rate) {
+export function inlineShift(render, rate, length = LENGTH) {
   if (rate === 0 || render === 0) return 0;
   const bucket = 290 - rate;
   const steps =
     bucket <= RENDER_MS ? render - 1 : Math.floor(((render - 1) * RENDER_MS) / bucket);
-  return (steps + 1) % LENGTH;
+  return (steps + 1) % length;
 }
 
 function inlineInit(settings) {
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
-    bands: bandStrip(effectColours(settings).palette),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    bands: bandStrip(effectColours(settings).palette, length),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function inlineStep(state, settings, clockMs, render) {
-  rotateStrip(state.bands, inlineShift(render, settings.rate), state.strip);
-  return placeStrip(state.strip, state.direction, state.panel);
+  const { bands, strip } = state;
+  rotateStrip(bands, inlineShift(render, settings.rate, bands.length / 3), strip);
+  return placeStrip(strip, state.direction, state.panel);
 }
 
 // ── Slot 9: Triangular palette pulses ─────────────────────────────────
 function pulseInit(settings) {
   const colours = effectColours(settings);
   const { table } = colours;
-  const cells = ((settings.intensity * (LENGTH >> 2)) >> 8) + 1;
-  const width = Math.floor(LENGTH / cells);
-  const margin = (LENGTH - cells * width) >> 1;
+  const length = settingsLength(settings);
+  const cells = ((settings.intensity * (length >> 2)) >> 8) + 1;
+  const width = Math.floor(length / cells);
+  const margin = (length - cells * width) >> 1;
   const span = paletteSpan(colours.palette.length);
-  const foreground = new Uint8Array(3 * LENGTH);
+  const foreground = new Uint8Array(3 * length);
   for (let pixel = margin; pixel < margin + cells * width; pixel += 1) {
-    const at = 3 * ((Math.floor((pixel * 255) / (LENGTH - 1)) * span) >> 8);
+    const at = 3 * ((Math.floor((pixel * 255) / (length - 1)) * span) >> 8);
     foreground[3 * pixel] = table[at];
     foreground[3 * pixel + 1] = table[at + 1];
     foreground[3 * pixel + 2] = table[at + 2];
@@ -249,8 +259,8 @@ function pulseInit(settings) {
     weights: new Int32Array(width),
     foreground,
     secondary: colours.secondary,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
@@ -294,26 +304,28 @@ function waveInit(settings) {
       cells[3 * value + channel] =
         value === 0 ? primary[channel] : (primary[channel] * (255 - value)) >> 8;
   const step = settings.intensity >> 4;
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     cells,
-    thetas: Int32Array.from({ length: LENGTH }, (_, pixel) => (LENGTH - 1 - pixel) * step),
+    thetas: Int32Array.from({ length }, (_, pixel) => (length - 1 - pixel) * step),
     advance: Math.floor((settings.rate + 48) / 24),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function waveStep(state, settings, clockMs, render) {
   const phase = ((render + 1) * state.advance) % 256;
   const { cells, thetas, strip } = state;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  const length = thetas.length;
+  for (let pixel = 0; pixel < length; pixel += 1) {
     const from = 3 * SIN8[(phase + thetas[pixel]) & 255];
     strip[3 * pixel] = cells[from];
     strip[3 * pixel + 1] = cells[from + 1];
     strip[3 * pixel + 2] = cells[from + 2];
   }
-  stripBlur(strip, settings.intensity);
+  stripBlur(strip, settings.intensity, length);
   return placeStrip(strip, state.direction, state.panel);
 }
 
@@ -323,9 +335,10 @@ function spectrumInit(settings) {
   const colours = effectColours(settings);
   const { table } = colours;
   const span = paletteSpan(colours.palette.length);
-  const strip = new Uint8Array(3 * LENGTH);
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
-    const at = 3 * ((Math.floor((pixel * 255) / LENGTH) * span) >> 8);
+  const length = settingsLength(settings);
+  const strip = new Uint8Array(3 * length);
+  for (let pixel = 0; pixel < length; pixel += 1) {
+    const at = 3 * ((Math.floor((pixel * 255) / length) * span) >> 8);
     strip[3 * pixel] = table[at];
     strip[3 * pixel + 1] = table[at + 1];
     strip[3 * pixel + 2] = table[at + 2];
@@ -350,11 +363,12 @@ export function pulseSpread(render, clock, rate) {
 }
 
 function sunriseInit(settings) {
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     table: effectColours(settings).table,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
@@ -362,12 +376,13 @@ function sunriseStep(state, settings, clockMs, render) {
   const spread = pulseSpread(render, clockMs, settings.rate);
   const { intensity } = settings;
   const { table, strip } = state;
-  const half = LENGTH >> 1;
+  const length = strip.length / 3;
+  const half = length >> 1;
   // Drawn from both ends: the middle index, written last, covers both centre pixels.
   for (let index = 0; index <= half; index += 1) {
-    const value = triangle16(Math.floor((index * spread) / LENGTH));
+    const value = triangle16(Math.floor((index * spread) / length));
     const at = 3 * Math.min(240, (value >> 8) + ((value * intensity) >> 15));
-    const far = 3 * (LENGTH - 1 - index);
+    const far = 3 * (length - 1 - index);
     strip[3 * index] = strip[far] = table[at];
     strip[3 * index + 1] = strip[far + 1] = table[at + 1];
     strip[3 * index + 2] = strip[far + 2] = table[at + 2];
@@ -377,27 +392,29 @@ function sunriseStep(state, settings, clockMs, render) {
 
 // ── Slot 28: Scrolling Bands ──────────────────────────────────────────
 // Rate 255 gives a period of 0 and what the lamp shows is undefined: left black.
-function scrollingPeriod(rate) {
-  let step = Math.floor(12800 / LENGTH) + 1;
+function scrollingPeriod(rate, length = LENGTH) {
+  let step = Math.floor(12800 / length) + 1;
   step -= step >> 4;
   return step - Math.floor((rate * step) / 255);
 }
 
 function scrollingInit(settings) {
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
-    bands: bandStrip(effectColours(settings).palette),
-    period: scrollingPeriod(settings.rate),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    bands: bandStrip(effectColours(settings).palette, length),
+    period: scrollingPeriod(settings.rate, length),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function scrollingStep(state, settings, clockMs) {
   const { period, strip } = state;
   if (!period) return state.panel;
-  rotateStrip(state.bands, Math.floor(clockMs / period) % LENGTH, strip);
-  stripBlur(strip, settings.intensity);
+  const length = strip.length / 3;
+  rotateStrip(state.bands, Math.floor(clockMs / period) % length, strip);
+  stripBlur(strip, settings.intensity, length);
   return placeStrip(strip, state.direction, state.panel);
 }
 
@@ -406,10 +423,11 @@ function scrollingStep(state, settings, clockMs) {
 // the entry before (16 bits of it): red rises from 0 each time.
 function fadeInit(settings) {
   const { palette } = effectColours(settings);
+  const length = settingsLength(settings);
   return {
-    entries: Array.from({ length: LENGTH }, (_, pixel) => palette[pixel % palette.length]),
+    entries: Array.from({ length }, (_, pixel) => palette[pixel % palette.length]),
     duration: Math.trunc(f32(f32(f32((255 - settings.rate) / 255) * 80) + 1)),
-    panel: new Uint8Array(3 * LENGTH),
+    panel: new Uint8Array(3 * length),
   };
 }
 
@@ -419,8 +437,9 @@ function fadeStep(state, settings, clockMs, render) {
   const past = render - duration - 1;
   const entry = past < 0 ? 0 : Math.floor(past / duration) + 1;
   const phase = past < 0 ? render : (past % duration) + 1;
-  const [red, green, blue] = entries[entry % LENGTH];
-  const before = entry ? entries[(entry - 1) % LENGTH] : [0, 0, 0];
+  const length = entries.length;
+  const [red, green, blue] = entries[entry % length];
+  const before = entry ? entries[(entry - 1) % length] : [0, 0, 0];
   const alpha = Math.trunc(f32(f32(phase * 255) / duration));
   if (alpha === 255) return fillPanel(panel, red, green, blue);
   const rest = 255 - alpha;
@@ -433,8 +452,8 @@ function fadeStep(state, settings, clockMs, render) {
 }
 
 // ── Slot 52: Raw Red ──────────────────────────────────────────────────
-function redInit() {
-  return { panel: fillPanel(new Uint8Array(3 * LENGTH), 255, 0, 0) };
+function redInit(settings) {
+  return { panel: fillPanel(new Uint8Array(3 * settingsLength(settings)), 255, 0, 0) };
 }
 
 // ── Slots 65, 66, 68, 69: Wipes ────────────────────────────────────────────────
@@ -460,11 +479,12 @@ export function wipeWheel(value) {
 
 function wipeInit(settings) {
   const { mode } = settings;
-  const picture = new Uint8Array(3 * LENGTH);
-  for (let pixel = 0; pixel < LENGTH; pixel += 1)
+  const length = settingsLength(settings);
+  const picture = new Uint8Array(3 * length);
+  for (let pixel = 0; pixel < length; pixel += 1)
     picture.set(
       mode === 65 || mode === 66
-        ? wipeWheel(Math.floor((pixel * 255) / (LENGTH - 1)))
+        ? wipeWheel(Math.floor((pixel * 255) / (length - 1)))
         : [255, 255, 255],
       3 * pixel,
     );
@@ -472,16 +492,17 @@ function wipeInit(settings) {
     direction: settings.direction,
     picture,
     growing: mode === 65 || mode === 68,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function wipeStep(state, settings, clockMs, render) {
   const { picture, strip } = state;
-  const done = Math.min(Math.floor((render * RENDER_MS) / WIPE_FRAME_MS) + 1, LENGTH);
+  const length = picture.length / 3;
+  const done = Math.min(Math.floor((render * RENDER_MS) / WIPE_FRAME_MS) + 1, length);
   strip.set(picture);
-  strip.fill(0, 3 * (state.growing ? done : LENGTH - done));
+  strip.fill(0, 3 * (state.growing ? done : length - done));
   return placeStrip(strip, state.direction, state.panel);
 }
 
@@ -497,7 +518,7 @@ function bandsInit(settings) {
     const { table } = colours;
     const span = paletteSpan(colours.palette.length);
     const scale = f32(128 / intensity);
-    const cellMap = pixelMap(direction);
+    const cellMap = pixelMap(direction, undefined, settingsLength(settings));
     for (let row = 0; row < height; row += 1) {
       const level = Math.trunc((Math.trunc(f32(scale * row)) * 255) / height) & 255;
       const at = 3 * ((span * level) >> 8);

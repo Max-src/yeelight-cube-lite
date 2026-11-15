@@ -13,7 +13,7 @@
 //   select(key), navigate(delta), setIndex(index), setPage(value),
 //   itemControls(item) (rename / delete of editable items, or nothing).
 import { html, nothing, unsafeHTML } from "./lib/lit-all.js";
-import { matrixCellLook, matrixPreviewLayout } from "./gallery-display-utils.js";
+import { matrixCellStyle, matrixPreviewLayout } from "./gallery-display-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
 import { itemEmojis, itemIcons, itemIconsTemplate } from "./item-badges.js";
 import { renderCarousel } from "./carousel-utils.js";
@@ -35,11 +35,9 @@ export function matrixTemplate(colorData = [], options = {}) {
   const grid = html`<div
     class="gallery-matrix-preview"
     data-vertical=${layout.vertical ? "true" : nothing}
+    data-modules=${layout.places.length ? "true" : nothing}
     style=${layout.gridStyle}
-  >${layout.cells.map((color) => {
-    const look = matrixCellLook(color, layout.cellOptions);
-    return html`<div style=${`background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}`}></div>`;
-  })}</div>`;
+  >${layout.cells.map((_, index) => html`<div style=${matrixCellStyle(layout, index)}></div>`)}</div>`;
   return layout.proportionalSpacing
     ? html`<div style=${layout.wrapperStyle}>${grid}</div>`
     : grid;
@@ -51,7 +49,13 @@ export function matrixTemplate(colorData = [], options = {}) {
  * standing on its end, a lamp mounted so). */
 export function itemPreviewTemplate(item, options = {}) {
   if (item?.previewHtml == null)
-    return matrixTemplate(item?.colorData, { ...options, vertical: !!item?.vertical });
+    return matrixTemplate(item?.colorData, {
+      ...options,
+      vertical: !!item?.vertical,
+      // A Cube Matrix's item: its modules only (its lamp's preview
+      // context, preview-context.js).
+      ...(item?.context ? { context: item.context } : {}),
+    });
   const width = options.forceAspectRatio ? "100%" : `${options.previewSize ?? 200}px`;
   return html`<div
     class="gallery-item-preview"
@@ -589,7 +593,7 @@ export function originalLayout(g) {
 
 /** The page buttons of the list, grid and Original (pagination-utils.js
  * renderPagination's markup), at most 5 page numbers. */
-export function paginationTemplate(g, maxPages = 5) {
+function paginationTemplate(g, maxPages = 5) {
   const { currentPage, totalPages } = g.pagination;
   if (!totalPages || totalPages <= 1) return nothing;
   const start = Math.max(0, currentPage - Math.floor(maxPages / 2));

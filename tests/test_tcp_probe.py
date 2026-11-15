@@ -1,18 +1,19 @@
-"""The shared reachability probe (cube_matrix.check_tcp): setup and recovery."""
+"""The shared reachability probe (lamp_protocol.check_tcp): setup and recovery."""
 import asyncio
 import socket
 import struct
 import unittest
 
+from tests.fakes import lamp_client_source
 from tests.test_native_features import ROOT, _load_standalone_functions
 
-CUBE_MATRIX_SOURCE = (ROOT / "cube_matrix.py").read_text(encoding="utf-8")
+LAMP_CLIENT_SOURCE = lamp_client_source()
 
 
 class TcpProbeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.check_tcp = _load_standalone_functions(
-            CUBE_MATRIX_SOURCE,
+            LAMP_CLIENT_SOURCE,
             {"check_tcp"},
             {
                 "asyncio": asyncio,
@@ -45,7 +46,7 @@ class TcpProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("await check_tcp(ip_address, port, PROBE_TIMEOUT)", init)
         self.assertIn("await check_tcp(ip_address, LAN_PORT, PROBE_TIMEOUT)", flow)
         self.assertNotIn("socket.socket(", init + flow)
-        self.assertIn("await check_tcp(self._ip, self._port, timeout)", CUBE_MATRIX_SOURCE)
+        self.assertIn("await check_tcp(self._ip, self._port, timeout)", LAMP_CLIENT_SOURCE)
 
 
 class OutageLogLevelTests(unittest.TestCase):
@@ -54,14 +55,10 @@ class OutageLogLevelTests(unittest.TestCase):
         from types import SimpleNamespace
 
         level = _load_standalone_functions(
-            CUBE_MATRIX_SOURCE, {"outage_log_level"}, {"logging": logging}
+            LAMP_CLIENT_SOURCE, {"outage_log_level"}, {"logging": logging}
         )["outage_log_level"]
         self.assertEqual(level(SimpleNamespace(_device_unreachable=False)), logging.WARNING)
         self.assertEqual(level(SimpleNamespace(_device_unreachable=True)), logging.DEBUG)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class SendOnceTests(unittest.IsolatedAsyncioTestCase):
@@ -71,7 +68,7 @@ class SendOnceTests(unittest.IsolatedAsyncioTestCase):
         import json
 
         self.send_once = _load_standalone_functions(
-            CUBE_MATRIX_SOURCE,
+            LAMP_CLIENT_SOURCE,
             {"send_once"},
             {"asyncio": asyncio, "socket": socket, "json": json, "_RST_LINGER": struct.pack("ii", 1, 0)},
         )["send_once"]
@@ -112,3 +109,7 @@ class SendOnceTests(unittest.IsolatedAsyncioTestCase):
         port, _ = await self.lamp()  # closes without answering
         with self.assertRaises(OSError):
             await self.send_once("127.0.0.1", port, "set_fx_effect", [], 2.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

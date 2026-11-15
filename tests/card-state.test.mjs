@@ -258,9 +258,13 @@ function cardMethod(file, name, scope = {}, setter = false) {
 
 test("Draw shows only its pending edit and accepts unrelated HA updates", () => {
   const frames = [];
-  const setter = cardMethod("yeelight-cube-draw-card", "hass", {
-    requestAnimationFrame: (callback) => frames.push(callback),
-  }, true);
+  // The card's hooks behind the shared setter (card-base set hass).
+  const hooks = {
+    _hassReceived: cardMethod("yeelight-cube-draw-card", "_hassReceived"),
+    _hassUpdated: cardMethod("yeelight-cube-draw-card", "_hassUpdated", {
+      requestAnimationFrame: (callback) => frames.push(callback),
+    }),
+  };
   const original = [{ name: "A" }, { name: "B" }];
   const pending = original.toReversed();
   const makeHass = (arts, state) => ({
@@ -280,18 +284,22 @@ test("Draw shows only its pending edit and accepts unrelated HA updates", () => 
     _loadBuiltinPixelArts: () => {}, // the official ones: not this test's
     _pixelArts: cardMethod("yeelight-cube-draw-card", "_pixelArts"),
     _hassInputs: cardMethod("yeelight-cube-draw-card", "_hassInputs", { previewOnly }),
+    ...hooks,
   });
-  setter.call(card, makeHass(original, "off"));
+  const set = (hass) => {
+    card.hass = hass;
+  };
+  set(makeHass(original, "off"));
   card._pixelArtStore.pending.record(pending);
   const incoming = makeHass(original, "on");
-  setter.call(card, incoming);
+  set(incoming);
   // HA's state is taken as it is (never copied), the edit shown on top.
   assert.equal(card._hass, incoming);
   assert.equal(card._hass.states["light.a"].state, "on");
   assert.deepEqual(card._pixelArts(), pending);
   assert.deepEqual(incoming.states["sensor.art"].attributes.pixel_arts, original);
   // The backend confirms the edit: HA's array is shown again.
-  setter.call(card, makeHass(pending, "off"));
+  set(makeHass(pending, "off"));
   assert.equal(card._pixelArtStore.pending.pending, null);
   assert.deepEqual(card._pixelArts(), pending);
   assert.equal(card._hass.states["light.a"].state, "off");

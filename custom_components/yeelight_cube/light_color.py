@@ -8,7 +8,7 @@ Mixed into ``YeelightCubeLight``; not usable on its own.
 """
 import logging
 
-from .color_adjustments import ADJUSTMENT_DEFAULTS, active_adjustments, adjust_color
+from .color_adjustments import ADJUSTMENT_DEFAULTS, active_adjustments
 from .lamp_power import estimated_power, limit_frame_power
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,14 +104,6 @@ class ColorPipelineMixin:
         return active_adjustments({
             name: getattr(self, f"_preview_{name}") for name in ADJUSTMENT_DEFAULTS
         })
-
-    def apply_color_adjustments(self, rgb_color):
-        """``rgb_color`` with the color adjustments applied
-        (color_adjustments.adjust_color, in its order: hue shift, temperature,
-        saturation, vibrance, contrast, glow, grayscale, tint, invert). Black
-        pixels are the background and stay black. The brightness is not
-        applied here: it is the hardware's (hardware_brightness_for)."""
-        return adjust_color(rgb_color, self.color_adjustments())
 
     def _brightness_stages(self, colors):
         """The stages that depend on the lamp's brightness, last before
@@ -274,15 +266,17 @@ class ColorPipelineMixin:
 
     def _lamp_frame(self, frame):
         """``frame`` as sent to the lamp: dimmed when its estimated draw is
-        over the power limit (lamp_power.py). Records that estimate for the
+        over the power limit (lamp_power.py), in the order the lamp model's
+        update_leds takes (device_profile.to_wire: a Cube Matrix fills its
+        5 x 5 modules column by column). Records that estimate for the
         Estimated power sensor. The layout and previews keep the unscaled
-        frame."""
+        frame, in lamp order."""
         # Unknown hardware brightness (None):
         # assume full brightness, the worst case.
         hardware = self._last_hardware_brightness or 100
         sent = limit_frame_power(frame, self._power_limit, hardware)
         self._last_frame_power = estimated_power(sent, hardware)
-        return sent
+        return self.device_profile.to_wire(sent)
 
     def _apply_color_accuracy(self, rgb_color):
         """

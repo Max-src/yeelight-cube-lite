@@ -1,8 +1,10 @@
 import {
+  followPreviewState,
   previewOnly,
   previewAttributes,
   setPreviewAttributes,
 } from "./offline-preview-state.js";
+import { ColorModeController, NATIVE_CARD_COLORS } from "./color-mode-controller.js";
 import { nativePreviewCatalogue } from "./native-effect-card-utils.js";
 import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { createNativeCardAdapter } from "./native-card-adapter.js";
@@ -10,11 +12,10 @@ import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
 import { PreviewVisibility } from "./preview-visibility.js";
 import { SUPERSEDED } from "./card-command-controller.js";
-import { collectionGalleryStyles } from "./collection-gallery.js";
-import "./color-mode-ui.js";
+import { collectionGalleryStyles, modeGallery } from "./collection-gallery.js";
+import { colorModeRow } from "./color-mode-ui.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
-import { NATIVE_COLOR_MODES } from "./clock-preview-utils.js";
 import { paletteMusicFlow } from "./lamp-renderers.js";
 import {
   effectOffersColorMode,
@@ -24,12 +25,7 @@ import {
   closeColorPicker,
   colorPickerStyles,
 } from "./color-picker-utils.js";
-import {
-  clockPresetLibrary,
-  clockColorModeOptions,
-  clockPresetsByKind,
-  watchClockPresets,
-} from "./clock-preset-utils.js";
+import { clockPresetLibrary } from "./clock-preset-utils.js";
 import "./clock-preset-manager.js";
 import "./mode-controls-ui.js";
 import {
@@ -43,7 +39,7 @@ import {
   matrixPreviewCells,
   renderMatrixPreview,
 } from "./gallery-display-utils.js";
-import { deviceOrientation, isVerticalMount } from "./matrix-view.js";
+import { isVerticalMount } from "./matrix-view.js";
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
@@ -60,7 +56,7 @@ import {
   stableSliderMarkup,
   isSliderHandler,
 } from "./slider-control-utils.js";
-import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { YeelightCardMixin, cubeLampEntities, lampInputs } from "./card-base.js";
 import {
   cardNotice,
   cardShell,
@@ -69,7 +65,6 @@ import {
 } from "./card-shell.js";
 import { LampSliders } from "./lamp-sliders.js";
 import { availableTargets, everyAvailable } from "./service-call-utils.js";
-import { createPendingValue } from "./pending-value.js";
 import {
   createRafLoop,
   createVisibilityTracker,
@@ -83,10 +78,19 @@ import {
 } from "./lamp-renderers.js";
 import { FamilyFilter, GallerySort, familyBadge } from "./effect-families.js";
 import { ITEM_BADGES } from "./item-badges.js";
+import { previewContext } from "./preview-context.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { itemLabel, normalizeCardOptions } from "./card-config.js";
 
 const OFF_FRAME = Array.from({ length: 100 }, () => [0, 0, 0]);
+// What the card shows before its lamp reports a color mode, and offline.
+const PREVIEW_DEFAULTS = Object.freeze({
+  native_effect_color_mode: "normal",
+  native_effect_color: null,
+});
+const OFFLINE_ATTRIBUTES = Object.freeze({
+  native_effect_catalog: nativePreviewCatalogue,
+});
 // A lit pixel's shadow, as on the cells of a repainted preview.
 const PIXEL_SHADOW = "0 0 2px #0008";
 
@@ -108,7 +112,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     _state: { state: true },
     _selected: { state: true },
     _error: { state: true },
-    _customColorDraft: { state: true },
+    _customDraft: { state: true },
   };
 
   constructor() {
@@ -118,6 +122,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._frames = [];
     // The gallery shows the favourites' stars (it follows _controls).
     this._controls = new ModeControlsController(createNativeCardAdapter(this));
+    this._colors = new ColorModeController(this, NATIVE_CARD_COLORS);
     this._loop = createRafLoop(
       (now, due) => {
         const delta = this._lastFrame
@@ -201,6 +206,10 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   static getStubConfig(hass) {
     return {
       entity: cubeLampEntities(hass)[0],
+      // A new card: the Original gallery, as a grid, 10 effects a page.
+      style_selector_style: "original",
+      effect_view: "grid",
+      items_per_page: 10,
     };
   }
 
@@ -226,7 +235,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   setConfig(config) {
     this._offlinePreviewDraft = null;
     closeColorPicker(this);
-    this._customColorDraft = null;
+    this._customDraft = null;
     // Never throw from setConfig: Home Assistant turns any thrown error into a
     // permanent "Configuration error" card that only clears on a full page
     // reload. When no entity is configured yet (e.g. right after the browser
@@ -252,6 +261,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       show_sort: true,
       show_device_orientation: true,
       show_effect_direction: true,
+      // Color Modes & Controls: shown unless turned off in the editor.
+      show_color_modes: true,
       favourites_show_stars: true,
       ...resolvePreviewAppearance(normalizeCardOptions(config, "native"), "native"),
     };
@@ -263,29 +274,15 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     );
   }
 
-  set hass(hass) {
-    this._attrs();
-    const wasPreviewOnly = previewOnly(this);
-    this._hass = hass;
-    if (wasPreviewOnly && !previewOnly(this)) {
-      this._offlinePreviewDraft = null;
-      this._customColorDraft = null;
+  // A push that changed what the card shows (card-base set hass).
+  _hassUpdated(hass) {
+    // Back online: the offline picks go.
+    if (followPreviewState(this)) {
+      this._customDraft = null;
       this._selected = null;
     }
     this._controls.update();
-    // The rotation, the color modes and the header read more than the lamp
-    // state (followed by _state below), and the frame names a lamp of the
-    // card that is gone (renamed or removed) or offline.
-    const lamps = this._lampsKey(hass);
-    if (
-      this._hassChanged(hass) &&
-      (this.config?.show_rotation ||
-        this.config?.show_color_modes ||
-        this.config?.show_lamp_status ||
-        lamps !== this._lampsShown)
-    )
-      this.requestUpdate();
-    this._lampsShown = lamps;
+    this.requestUpdate();
     const state = hass?.states?.[this._primaryEntity(hass)];
     if (state !== this._state) {
       if (
@@ -304,15 +301,14 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._lampSliders.settle(state?.attributes || {});
   }
 
-  // Rotation status and color modes read every target lamp (not just the
-  // primary `_state`), the shared color-preset library and the service
-  // registry. Home Assistant hands out a new hass on every state push anywhere,
-  // so re-render only when one of those inputs was replaced.
-  // What the card shows from hass (card-base _hassChanged).
+  // What the card shows from hass (card-base _hassChanged): every target
+  // lamp (the rotation status and color modes read them all) but not their
+  // matrix_colors (lampInputs), which no preview here reads; the shared
+  // color-preset library and the service registry.
   _hassInputs(hass) {
     return [
       this.config,
-      ...this._targets.map((entity) => hass?.states?.[entity]),
+      ...this._targets.flatMap((entity) => lampInputs(hass?.states?.[entity])),
       ...(this.config?.show_color_modes
         ? [clockPresetLibrary(hass), hass?.services]
         : []),
@@ -321,8 +317,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
 
   connectedCallback() {
     super.connectedCallback();
-    // The shared preset library changed here (clock-preset-utils.js).
-    this._presetsOff = watchClockPresets(this);
+    this._colors.connect();
     this._visibility = createVisibilityTracker(this);
     this._visibility.connect();
     this._loop.start();
@@ -331,8 +326,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._presetsOff?.();
-    closeColorPicker(this);
+    this._colors.disconnect();
     this._controls.disconnect();
     this._commands.reset();
     this._loop.stop();
@@ -349,24 +343,16 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     await this.shadowRoot.querySelector("yeelight-color-mode")?.updateComplete;
     return complete;
   }
+  // Offline: the preview catalogue (previewAttributes).
   _attrs() {
-    const attrs = previewAttributes(this, {
-      native_effect_color_mode: "normal",
-      native_effect_color: null,
-    });
-    return previewOnly(this)
-      ? {
-          ...attrs,
-          native_effect_catalog: nativePreviewCatalogue,
-        }
-      : attrs;
+    return previewAttributes(this, PREVIEW_DEFAULTS, OFFLINE_ATTRIBUTES);
   }
   _items() {
     const attrs = this._attrs();
-    const mode = this._customColorDraft
+    const mode = this._customDraft
       ? "normal"
       : attrs.native_effect_color_mode || "normal";
-    const color = this._customColorDraft || attrs.native_effect_color;
+    const color = this._customDraft || attrs.native_effect_color;
     return nativeEffectItems(attrs, this.config).filter((item) => this._respondsToColor(item.name, mode, color));
   }
 
@@ -443,9 +429,9 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       this.requestUpdate();
       return true;
     }
-    // Rotation-aware, like the Clock card's (mode controller send, which
-    // refuses while no lamp is available).
-    return this._controls.send(service, data, { domain, managed, ...options });
+    // Rotation-aware, the shown palette shared first in the Palette color
+    // mode, like the Clock card's (color-mode-controller.js send).
+    return this._colors.send(service, data, { domain, managed, ...options });
   }
 
   get _context() {
@@ -469,12 +455,12 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     // must already be the favourite's (restored below if the request fails).
     const previous = {
       selected: this._selected,
-      draft: this._customColorDraft,
+      draft: this._customDraft,
       presetId: this._selectedColorPresetId,
     };
-    this._dropColorPick();
+    this._colors.drop();
     this._selected = favourite.key;
-    this._customColorDraft =
+    this._customDraft =
       favourite.colorMode === "custom" ? [...favourite.color] : null;
     this._selectedColorPresetId = null;
     this.requestUpdate();
@@ -482,9 +468,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       "set_native_effect",
       {
         ...nativeEffectAction(favourite.key),
-        color_mode:
-          favourite.colorMode === "custom" ? "normal" : favourite.colorMode,
-        color: favourite.colorMode === "custom" ? favourite.color : "clear",
+        ...this._colors.favouriteColor(favourite),
       },
       "yeelight_cube",
       true,
@@ -494,7 +478,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       // Only roll back if nothing newer replaced the favourite meanwhile.
       if (this._selectionVersion === version) {
         this._selected = previous.selected;
-        this._customColorDraft = previous.draft;
+        this._customDraft = previous.draft;
         this._selectedColorPresetId = previous.presetId;
         this.requestUpdate();
       }
@@ -564,6 +548,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           ...appearance,
           forceAspectRatio: true,
           vertical,
+          // A Cube Matrix's modules only (preview-context.js).
+          context: previewContext(this._previewAttrs()),
         }),
       )}
     </div>`;
@@ -619,7 +605,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           this._brightnessDraft ??
           brightnessRawToPct(Number(attrs.brightness) || 0),
       });
-    // Speed and intensity only for an effect that reads them (const.py
+    // Speed and intensity only for an effect that reads them (effect_catalog.py
     // LAMP_INTENSITY_SLOTS); otherwise hidden or greyed out (sliderWhenUsed).
     // A music effect in the Palette color mode runs as the microphone's
     // music mode, which takes neither (lamp-renderers.js paletteMusicFlow).
@@ -691,42 +677,20 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     );
   }
 
+  // The saved colors and Add only where every lamp takes a color.
   _colorOptions() {
-    const custom = this._supportsCustomColor();
-    const options = clockColorModeOptions(
-      NATIVE_COLOR_MODES,
-      custom ? clockPresetLibrary(this._hass) : [],
-      this.config,
-    );
-    return options.filter((option) => custom || option.value !== "__pick__");
+    return this._colors.options(this._supportsCustomColor());
   }
 
-  // A clicked color mode (pending-value.js): shown at once, kept until the
-  // lamp reports it (or another mode: another dashboard wins), or for 5 s;
-  // dropped if the request fails.
-  get _pendingColor() {
-    return (this.__pendingColor ||= createPendingValue({
-      onExpire: () => this.isConnected && this.requestUpdate(),
-      yieldToLamp: true,
-    }));
-  }
-
-  // Another color command replaces a pending pick (its echo is not awaited).
-  _dropColorPick() {
-    this._colorClick = (this._colorClick || 0) + 1;
-    this._pendingColor.clear();
-  }
-
+  // A clicked color mode shows at once (color-mode-controller.js).
   _currentColorSelection() {
-    const lamp = this._lampColorSelection();
-    this._pendingColor.settle(lamp);
-    return this._pendingColor.value ?? lamp;
+    return this._colors.selection(this._lampColorSelection());
   }
 
   // The color mode the lamp shows (or the color being drafted).
   _lampColorSelection() {
     const attrs = this._attrs();
-    if (this._customColorDraft && this._supportsCustomColor())
+    if (this._customDraft && this._supportsCustomColor())
       return "__draft__";
     if (
       attrs.native_effect_color_mode &&
@@ -738,10 +702,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       attrs.native_effect_color &&
       this._supportsCustomColor()
     ) {
-      const matches = clockPresetsByKind(
-        clockPresetLibrary(this._hass),
-        "color_mode",
-      ).filter((preset) =>
+      const matches = this._colors.presets().filter((preset) =>
         preset.color.every(
           (channel, index) => channel === attrs.native_effect_color[index],
         ),
@@ -769,14 +730,9 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     const attrs = this._attrs();
     const selection = this._currentColorSelection();
     if (selection === "__draft__")
-      return this._customColorDraft || attrs.native_effect_color || null;
-    if (selection.startsWith("custom:")) {
-      const preset = clockPresetsByKind(
-        clockPresetLibrary(this._hass),
-        "color_mode",
-      ).find((preset) => `custom:${preset.id}` === selection);
-      return preset?.color || attrs.native_effect_color || null;
-    }
+      return this._customDraft || attrs.native_effect_color || null;
+    if (selection.startsWith("custom:"))
+      return this._colors.preset(selection)?.color || attrs.native_effect_color || null;
     return null;
   }
 
@@ -790,7 +746,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     }
     const context = this._context;
     const version = this._nextSelection?.();
-    this._dropColorPick();
+    this._colors.drop();
     const success = await this._command("set_native_effect", {
       effect,
       color_mode: "normal",
@@ -801,7 +757,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       context === this._context &&
       this._selectionVersion === version
     ) {
-      this._customColorDraft = [...color];
+      this._customDraft = [...color];
       this._selectedColorPresetId = null;
       this._selected = effect;
     }
@@ -812,20 +768,13 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     if (value === "__pick__") {
       if (!this._supportsCustomColor()) return;
       // The picker at the row's Add (color-mode-ui).
-      this.shadowRoot
-        ?.querySelector("yeelight-color-mode")
-        ?.openAddPicker(
-          this,
-          this._customColorDraft || this._attrs().native_effect_color,
-          (rgb) => this._applyCustomColor(rgb),
-        );
+      this._colors.openPicker(
+        this._customDraft || this._attrs().native_effect_color,
+        (rgb) => this._applyCustomColor(rgb),
+      );
       return;
     }
-    const preset = value.startsWith("custom:")
-      ? clockPresetsByKind(clockPresetLibrary(this._hass), "color_mode").find(
-          (preset) => `custom:${preset.id}` === value,
-        )
-      : null;
+    const preset = value.startsWith("custom:") ? this._colors.preset(value) : null;
     if (
       value.startsWith("custom:") &&
       (!preset || !this._supportsCustomColor())
@@ -839,15 +788,11 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       return;
     }
     const context = this._context;
-    // Each click owns the pending highlight until a newer click replaces it
-    // (compared by click, not value: A, B, A must not clear on the first A).
-    const click = (this._colorClick = (this._colorClick || 0) + 1);
     const version = this._nextSelection?.();
-    this._pendingColor.hold(value);
-    this.requestUpdate();
-    let success = false;
-    try {
-      success = await this._command("set_native_effect", {
+    // Shown at once; kept once sent until the lamp reports it.
+    const shown = this._colors.show(
+      value,
+      this._command("set_native_effect", {
         effect,
         color_mode: mode,
         ...(preset
@@ -855,21 +800,16 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           : Object.hasOwn(this._attrs(), "native_effect_color")
             ? { color: "clear" }
             : {}),
-      });
-    } finally {
-      // Sent: kept until the lamp reports it; failed: the lamp's shows again.
-      if (this._colorClick === click) {
-        if (success) this._pendingColor.set(value);
-        else this._pendingColor.clear();
-        this.requestUpdate();
-      }
-    }
+      }),
+    );
+    this.requestUpdate();
+    const success = await shown;
     if (
       success &&
       context === this._context &&
       this._selectionVersion === version
     ) {
-      this._customColorDraft = null;
+      this._customDraft = null;
       this._selectedColorPresetId = preset?.id;
       this._selected = effect;
     }
@@ -927,24 +867,19 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ${this.config.show_color_modes &&
         Object.hasOwn(attrs, "native_effect_color_mode")
           ? html`<section class="color-modes">
-              <yeelight-color-mode
-                .config=${this.config}
-                .options=${this._colorOptions()}
-                .selected=${this._controls.displayed(
-                  "color",
-                  this._currentColorSelection(),
-                )}
-                .draft=${this._customColorDraft}
-                .hass=${this._hass}
-                .saveKinds=${this._supportsCustomColor() &&
-                this.config.show_save_color_mode_button !== false
-                  ? ["color_mode"]
-                  : []}
-                .onSelect=${(value) => this._applyColorMode(value)}
-                .onSaved=${() => {
-                  this._customColorDraft = null;
-                }}
-              ></yeelight-color-mode>
+              ${colorModeRow(this, {
+                options: this._colorOptions(),
+                lamp: this._lampColorSelection(),
+                draft: this._customDraft,
+                saveKinds:
+                  this._supportsCustomColor() &&
+                  this.config.show_save_color_mode_button !== false
+                    ? ["color_mode"]
+                    : [],
+                onSaved: () => {
+                  this._customDraft = null;
+                },
+              })}
             </section>`
           : ""}
         ${this.config.show_gallery && Array.isArray(attrs.native_effect_catalog)
@@ -958,14 +893,13 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     );
   }
 
-  // The shared gallery (collection-gallery.js), used exactly like the Clock
+  // The shared gallery (collection-gallery.js modeGallery), as the Clock
   // card's.
   _gallery(effect, all) {
     const attrs = this._previewAttrs();
     const vertical = isVerticalMount(attrs.device_orientation);
-    return html`<yc-collection-gallery
-      .config=${this.config}
-      .items=${all.map((item) => ({
+    return modeGallery(this, {
+      items: all.map((item) => ({
         ...item,
         dataMode: item.name,
         title: item.name,
@@ -974,21 +908,16 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         badgeIcon: this.config.show_family_icons === false ? null : familyBadge(item.family),
         colorData: nativeEffectFrame(item, attrs, 0),
         vertical,
+        // A Cube Matrix's modules only (preview-context.js).
+        context: previewContext(attrs),
         favourite: this._controls.hasFavourite(item.name, this._colorModeKey()),
-      }))}
-      .active=${this._controls.displayed("key", effect?.name)}
-      .model=${this._controls}
-      .filter=${this._families.gallery(this._items())}
-      .sort=${this._sort.gallery()}
-      searchLabel="Search native effects"
-      actionLabel="Play on the lamp"
-      .onSelect=${(name) => this._controls.choose(name)}
-      .onQuery=${(query) => {
-        this._searchQuery = query;
-        this._controls?.notify();
-      }}
-      @gallery-updated=${() => this._refreshPreviews()}
-    ></yc-collection-gallery>`;
+      })),
+      active: this._controls.displayed("key", effect?.name),
+      filter: this._families.gallery(this._items()),
+      searchLabel: "Search native effects",
+      actionLabel: "Play on the lamp",
+      onUpdated: () => this._refreshPreviews(),
+    });
   }
 
   updated() {
@@ -1035,12 +964,23 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   // The lamp's attributes the previews follow: the orientation and direction
   // being set (the lamp's until it confirms) and the speed and intensity being
   // dragged.
+  // The same object until one of those changes (the previews paint from it
+  // on every frame).
   _previewAttrs() {
     const attrs = this._attrs();
-    return {
+    const inputs = [
+      attrs,
+      this._controls.shownOrientation(),
+      this._controls.pendingDirection,
+      this._speedDraft,
+      this._intensityDraft,
+    ];
+    const memo = this.__previewAttrs;
+    if (memo?.inputs.every((value, index) => value === inputs[index]))
+      return memo.value;
+    const value = {
       ...attrs,
-      device_orientation:
-        this._controls.pendingOrientation || deviceOrientation(attrs),
+      device_orientation: inputs[1],
       native_effect_direction:
         this._controls.pendingDirection || attrs.native_effect_direction,
       native_effect_speed:
@@ -1052,6 +992,19 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           ? attrs.native_effect_intensity
           : intensityPctToRaw(this._intensityDraft),
     };
+    this.__previewAttrs = { inputs, value };
+    return value;
+  }
+
+  // The lamp's effects by name (once per catalogue).
+  _catalogue(attrs) {
+    const list = attrs.native_effect_catalog;
+    if (this.__catalogue?.list !== list)
+      this.__catalogue = {
+        list,
+        byName: new Map(list?.map((item) => [item.name, item])),
+      };
+    return this.__catalogue.byName;
   }
 
   // The previews stand up while the lamp does (matrix-view.js).
@@ -1070,9 +1023,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ? this._lampSliders.previewScale(attrs)
         : 1;
     const off = this._state?.state === "off";
-    const catalogue = new Map(
-      attrs.native_effect_catalog?.map((item) => [item.name, item]),
-    );
+    const catalogue = this._catalogue(attrs);
     for (const frame of this._frames) {
       if (!frame.grid || !this._previewVisibility?.visible.has(frame.node)) continue;
       if (!all && !isLampRendered(frame.name)) continue;

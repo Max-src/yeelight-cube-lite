@@ -1,7 +1,14 @@
 """The text modes: the gallery previews (preview_gradient_modes) draw every
 mode exactly as the lamp shows it (_apply_display_mode_internal)."""
 
-import asyncio
+import sys as _sys
+
+# Other test files import this one as tests.test_text_modes, test discovery as
+# test_text_modes: one module under both names, so its setup runs once and a patch
+# of it is seen by all.
+for _name in ("test_text_modes", "tests.test_text_modes"):
+    _sys.modules.setdefault(_name, _sys.modules[__name__])
+
 import itertools
 import math
 import random
@@ -15,16 +22,16 @@ from tests.test_native_features import (
     CONSTANTS,
     LIGHT_SOURCE,
     ROOT,
-    SERVICES_SOURCE,
     _load_standalone_functions,
 )
+from fakes import QuietLogger, run
 
 # layout.py without its one relative import (only the encoder uses it).
 LAYOUT = {}
 exec(
     compile(
         (ROOT / "layout.py").read_text(encoding="utf-8").replace(
-            "from .cube_matrix import CubeMatrix\n", ""
+            "from .lamp_client import LampClient\n", ""
         ),
         "layout.py",
         "exec",
@@ -57,23 +64,26 @@ NAMESPACE = {
     "math": math,
     "random": random,
     "traceback": traceback,
-    "_LOGGER": Mock(),
+    "_LOGGER": QuietLogger(),
     "is_connection_error": lambda error: False,
     "is_quota_error": lambda error: False,
     "_MISSING_GLYPHS": set(),
+    "KEEP": object(),
 }
 METHODS = {
     "_apply_display_mode_internal", "_text_mode_frame", "_place_frame",
     "_panel_sequence_frame", "place_pixels", "letter_size", "_char_advance", "get_positions_for_letter",
     "calculate_multi_gradient_color", "calculate_text_offset",
-    "_flip_position", "_flip_positions",
+    "_flip_position", "_flip_positions", "_shown_columns", "gradient_preview",
+    # light_state's transitions, which the renderer goes through.
+    "_enter_mode", "_set_scrolling", "_set_display_frozen",
 }
 FUNCTIONS = _load_standalone_functions(
     LIGHT_SOURCE, METHODS, dict(NAMESPACE)
 )
-PREVIEW = _load_standalone_functions(
-    SERVICES_SOURCE, {"generate_preview_for_mode"}, dict(NAMESPACE)
-)["generate_preview_for_mode"]
+def PREVIEW(lamp, mode):
+    """preview_gradient_modes's frame (light_actions_display.gradient_preview)."""
+    return lamp.gradient_preview(mode)
 
 
 class Lamp:
@@ -120,7 +130,7 @@ def lamp_frame(**state):
     """What the lamp shows: the hex color of each of its 100 pixels."""
     lamp = Lamp(**state)
     random.seed(7)
-    asyncio.run(lamp._apply_display_mode_internal())
+    run(lamp._apply_display_mode_internal())
     return [module.data[0] for module in lamp._layout.device_layout]
 
 
@@ -181,6 +191,34 @@ class TextModeTests(unittest.TestCase):
             for mode in MODES:
                 with self.subTest(mode=mode, text=text, font=font):
                     self.assertEqual(lit[mode], lit["Solid Color"])
+
+
+class ShownColumnsTests(unittest.TestCase):
+    """A Cube Matrix with 3 blocks shows 15 columns (device_profile.columns):
+    the gradients span those, not 20, so their last colour shows, and their
+    gallery previews draw the same (2026-11-15: an angle gradient ended in
+    the hidden columns)."""
+
+    MATRIX = {"device_profile": types.SimpleNamespace(columns=15)}
+
+    def test_the_gradients_span_the_columns_shown(self):
+        state = {
+            **self.MATRIX, "_mode": "Angle Gradient", "_full_panel": True, "_custom_text": "",
+            "_text_colors": [(255, 0, 0), (0, 0, 255)], "_angle": 0,
+        }
+        frame = lamp_frame(**state)
+        self.assertEqual(frame[0], "#FF0000")
+        self.assertEqual(frame[14], "#0000FF")  # the last column shown ends it
+        self.assertEqual(set(frame[15:20]), {"#000000"})  # nothing past it
+        self.assertEqual(frame, preview_frame(**state))
+
+    def test_previews_draw_each_mode_as_the_lamp(self):
+        for mode, case in itertools.product(MODES, CASES[::7]):
+            state = {**case, **self.MATRIX, "_mode": mode}
+            with self.subTest(mode=mode, **{k.lstrip("_"): v for k, v in case.items()}):
+                frame = lamp_frame(**state)
+                self.assertEqual(frame, preview_frame(**state))
+                self.assertEqual({frame[row * 20 + col] for row in range(5) for col in range(15, 20)}, {"#000000"})
 
 
 class TurnedPictureTests(unittest.TestCase):

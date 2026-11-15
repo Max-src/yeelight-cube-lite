@@ -32,7 +32,9 @@ import {
   isVerticalArt,
   isVerticalMount,
   matrixView,
+  viewerFrame,
 } from "./matrix-view.js";
+import { shownColumns, shownMask } from "./matrix-modules.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
 import { notifyUnreported } from "./notify-utils.js";
@@ -145,7 +147,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     matrix: { type: Array },
     selectedColor: { type: String },
     isDrawing: { type: Boolean },
-    hass: { type: Object },
     pixelArtVersion: { type: Number },
   };
 
@@ -228,9 +229,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     // config (entity, sensors, tools) into every draw card on the dashboard.
   }
 
-  set hass(hass) {
-    const oldHass = this._hass;
-
+  _hassReceived(hass) {
     // The collection sensors: found on the first hass (setConfig may run
     // before it), and again if renamed.
     if (this.config && hass) {
@@ -238,15 +237,17 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       this._autoResolveSensor("palette_sensor", "palettes", hass, this);
       this.paletteSensor = this.config.palette_sensor || null;
     }
-
-    this._hass = hass;
     if (!hass) return;
     this._loadBuiltinPixelArts(hass);
     // The pixel arts (a new content, a fetch, a confirmed edit): the store
     // compares the sensor's hash and refreshes the gallery only.
     if (this.config?.pixelart_sensor && this._pixelArtStore.update(hass, this.config))
       this._schedulePixelArtRender();
-    if (!this._hassChanged(hass)) return;
+  }
+
+  // A push that changed what the card shows (card-base set hass).
+  _hassUpdated(hass, oldHass) {
+    if (!hass) return;
     // One render per frame for bursts of pushes.
     if (!this._renderScheduled) {
       this._renderScheduled = true;
@@ -274,7 +275,18 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       // The drawing area (until one is chosen) and the gallery's default
       // orientation ("lamp") follow the lamp's orientation.
       lamp?.device_orientation,
+      // The columns a Cube Matrix shows (the others marked absent).
+      lamp?.matrix_columns,
     ];
+  }
+
+  /** The drawing's pixels the lamp does not show, top-first (a Cube Matrix
+   * with fewer than 4 blocks: matrix-modules.js), or null when it shows all.
+   * They stay drawable (a pixel art keeps them), marked absent. */
+  _absentPixels() {
+    const lamp = this._hass?.states?.[this._primaryEntity(this._hass)]?.attributes;
+    if (shownColumns(lamp) >= 20) return null;
+    return viewerFrame(shownMask(lamp), deviceOrientation(lamp)).map((shown) => !shown);
   }
 
   /** The orientation the pixel-art gallery shows: the one picked in its
@@ -332,10 +344,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this._drawVertical = !!vertical;
     StorageUtils.saveDrawingView(this._drawVertical);
     this.requestUpdate();
-  }
-
-  get hass() {
-    return this._hass;
   }
 
   disconnectedCallback() {
@@ -584,6 +592,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       shadow: cfg.matrix_box_shadow !== false,
     });
     const length = frame.length;
+    const absent = this._absentPixels();
 
     return html`
       <div style="${frame.wrapperStyle}margin:0 auto;">
@@ -632,6 +641,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
                 onMouseLeave: () => onMatrixMouseLeave(this),
               },
               cfg.matrix_ignore_black_pixels,
+              absent?.[idx] === true,
             );
           })}
         </div>

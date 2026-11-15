@@ -974,6 +974,32 @@ The names are the lamp's own.
 `White fill-in (one-shot)` (68), `White wipe-out (one-shot)` (69),
 `Stored GIF` (71), `Random scatter` (72), `Music Note` (73), `Music Impact` (74)
 
+**The Cube Matrix's own versions (3, experimental):**
+`Northern Lights` (the Cube Matrix's Aurora: its own aurora colours),
+`Rose Sea` (its Flower Sea: red to hot pink to purple, rows dimming towards
+the far end, one pace), `Dark palette pulses` (its Triangular palette pulses,
+on black). A Cube Matrix shows these itself and streams the Cube Lite's
+`Aurora`, `Flower Sea` and `Triangular palette pulses`; a Cube Lite shows
+its own and `Northern Lights` itself, and streams `Rose Sea` and `Dark
+palette pulses` (drawn by Home Assistant, over UDP).
+
+**The integration's own (3):** `Knight Rider` (a light running back and forth
+along the direction's line, leaving a fading trail; red or `color`; `speed`
+sets a sweep's time, `intensity` the trail's length; under `palette` each
+sweep takes the next colour, under a preset colours along it, under `bw`
+white), and `Lava Lamp` (wax heated in a pool at the direction's start rises
+in blobs, cools, sinks back and melts in again; a simulation that never
+repeats, a new run each time it starts; orange or `color`; `speed` sets its
+pace, `intensity` how much wax; under `palette` or a preset the blobs take
+the first colours and the liquid glows in the last, under `bw` white), and
+`Falling Blocks` (a falling-block puzzle playing itself: pieces turned and
+moved as they fall, full lines cleared, a new game when the well is full;
+its own colour per shape, or `color` in shades, a palette's or a preset's,
+`bw` shades of white; `speed` sets how fast pieces fall, `intensity` how well
+it plays). No lamp has them: they are drawn by Home Assistant
+and streamed, to a Cube Lite over UDP, to a Cube Matrix over Matter (else the
+LAN).
+
 Names are matched exactly. Up to 1.4.0 these slots were named by their number
 (for example `"2"`), and that number still selects them. Every name an effect
 had in 1.4.0 or earlier still works too: `Streamer` is `Ribbon`, `Starry sky` is
@@ -1038,14 +1064,22 @@ data:
 `Rainbow`, `Waves`, `Spectrum`, `White`, `Mint`, `Yellow`, `Pink`, `Red`,
 `Cyan`, `Purple`
 
-**Experimental (31):**
+**Experimental (34):**
 `Rainbow noise`, `Night-amber waves`, `Night-sky waves`, `Navy-white noise`,
 `Violet interference`, `Ribbon`, `Moving palette`, `Starry Sky`,
 `Particle path`, `Triangular palette pulses`, `Fireworks`, `Sine wave`,
 `Aurora`, `Sunrise and sunset`, `Heat fire`, `Comet stream`, `Mirrored comets`,
 `Palette sparks`, `Waterfall`, `Fire`, `Tide (slot 35)`, `Bouncing Ball`,
 `Tide`, `Flower Sea`, `Particle glows`, `Palette stripes`, `Neon sine bands`,
-`Magic`, `Wonderland`, `Violet twinkles`, `Kaleidoscope`
+`Magic`, `Wonderland`, `Violet twinkles`, `Kaleidoscope`, `Northern Lights`,
+`Rose Sea`, `Dark palette pulses`, `Knight Rider`, `Lava Lamp`, `Falling Blocks`
+
+A style over one of the Cube Matrix's own versions (`Northern Lights`, `Rose
+Sea`, `Dark palette pulses`) shows that version on both lamps; the last two are
+streamed to a Cube Lite, and can't be on its physical button.
+A style over one of the integration's own effects (`Knight Rider`, `Lava Lamp`, `Falling Blocks`) is streamed
+to both lamps, its background in the clock's colour or palette, and can't be
+on a Cube Lite's physical button either.
 
 Two backgrounds have a style in each of the two ways the lamp starts a clock
 background, and look different in each: `Mirrored comets` (comets and their
@@ -1146,6 +1180,34 @@ data:
   orientation: down
   entity_id: light.cubelite_a904
 ```
+
+---
+
+### `set_matrix_modules`
+
+Tell a **Cube Matrix** which modules it has, in chain order from the base, as the Yeelight app's
+**module splicing** does (the same Matter command). The lamp cannot detect its modules: the list must name them as
+they are fitted. The lamp keeps it through power cuts, lays its own effects and clock out for it, and Home Assistant
+follows (what is shown is drawn again for the new layout). Needs the lamp linked to a Matter server that delivers the
+Yeelight commands (`matrix_modules_need_matter` otherwise); a Cube Lite has no modules (`matrix_modules_not_matrix`).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `modules` | Yes | 1 to 6 of `matrix` (5 x 5), `spot`, `panel`, from the base |
+| `entity_id` | Yes | The Cube Matrix's light entity |
+
+```yaml
+action: yeelight_cube.set_matrix_modules
+data:
+  modules: [matrix, matrix, spot, matrix]
+  entity_id: light.cubematrix_6a80
+```
+
+What Home Assistant draws follows the modules: each module covers 5 columns of the picture, in chain order, so a
+lamp with 3 modules shows 15 (effects run on them, text is laid out and scrolled in them, the streamed clock fits
+them). A **Spot** takes a module's place: it is one light, the colour of the 5 columns it covers (as bright as their
+brightest pixel), so what moves along the lamp passes through it. The
+light's `matrix_modules` and `matrix_columns` attributes describe the layout, and the lamp preview card draws it. The **Cube Matrix Modules card** sets the modules and the power supply's side on a dashboard, as the app's module page does (`matrix_module_list` lists every module by name).
 
 ---
 

@@ -21,7 +21,7 @@ export function openRgbColorPicker(owner, anchor, rgb, onColor) {
   });
 }
 
-export const colorPickerStyleChoices = [
+const colorPickerStyleChoices = [
   { value: "swatch", label: "Swatch" },
   { value: "chip", label: "Hex chip" },
   { value: "row", label: "Color row" },

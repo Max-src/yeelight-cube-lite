@@ -4,7 +4,6 @@ can make the lamp show an older picture again, so activating direct mode
 again never sends it, and apply() sends it only when it changes, before any
 frame of the update."""
 import ast
-import asyncio
 import logging
 import time
 import types
@@ -12,61 +11,25 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 
 from tests.test_activation_timing import _table as activation_timing
-from tests.test_native_features import ROOT, _load_standalone_functions
+from tests.test_native_features import ROOT, _function_source, _load_standalone_functions
+from fakes import FakeCube, light_state, make_light, module
 
 
-class CubeFxModeLost(Exception):
-    pass
-
-
-FNS = {
-    **_load_standalone_functions(
-        (ROOT / "light.py").read_text(encoding="utf-8"),
-        {"ensure_fx_ready"},
-        # The real waits (light_display.ACTIVATION_TIMING).
-        {"asyncio": asyncio, "time": time, "_LOGGER": logging.getLogger("t"),
-         "ACTIVATION_TIMING": activation_timing()},
-    ),
-    **_load_standalone_functions(
-        (ROOT / "light_display.py").read_text(encoding="utf-8"),
-        {"_draw_direct"},
-        {"_LOGGER": logging.getLogger("t"), "CubeFxModeLost": CubeFxModeLost},
-    ),
-}
-
-
-class Lamp:
-    ensure_fx_ready = FNS["ensure_fx_ready"]
-    _draw_direct = FNS["_draw_direct"]
+CubeFxModeLost = module("lamp_protocol").CubeFxModeLost
 
 
 def make_lamp(reconnects=()):
-    """A lamp whose connection reports a reconnection at the given draws."""
-    lamp = Lamp()
-    lamp._ip = "192.168.4.149"
-    lamp._fx_mode_is_direct = False
-    lamp._in_native_fw_mode = False
-    lamp._last_fx_mode_time = 0.0
-    lamp._last_hardware_brightness = 60
-    lamp.sent = []
+    """The real light, its connection reporting a reconnection at the given
+    draws; what it sends is lamp.sent()."""
     flags = iter(reconnects)
-    state = {"flag": False}
 
-    async def raw(method, params):
-        lamp.sent.append(method)
+    class Connection(FakeCube):
+        async def draw_matrices_fast(self, data):
+            await super().draw_matrices_fast(data)
+            self.reconnected = next(flags, False)
 
-    async def draw(data):
-        lamp.sent.append("update_leds")
-        state["flag"] = next(flags, False)
-
-    def consume():
-        flag, state["flag"] = state["flag"], False
-        return flag
-
-    lamp._cube_matrix = types.SimpleNamespace(
-        summary="", close_fast_socket=Mock(), send_raw_command=raw,
-        draw_matrices_fast=draw, consume_reconnected_flag=consume, transport="udp",
-    )
+    lamp = make_light(cube=Connection(), _last_hardware_brightness=60)
+    lamp.sent = lamp._lamp_client.methods
     return lamp
 
 
@@ -76,13 +39,13 @@ class DirectModeTests(unittest.IsolatedAsyncioTestCase):
         await lamp.ensure_fx_ready()
         self.assertTrue(lamp._fx_mode_is_direct)
         self.assertEqual(60, lamp._last_hardware_brightness)  # not sent again
-        self.assertEqual(["activate_fx_mode"], lamp.sent)
+        self.assertEqual(["activate_fx_mode"], lamp.sent())
 
     async def test_a_frame_is_drawn_once(self):
         lamp = make_lamp()
         lamp._fx_mode_is_direct = True
         await lamp._draw_direct("AAAA")
-        self.assertEqual(["update_leds"], lamp.sent)
+        self.assertEqual(["update_leds"], lamp.sent())
 
     async def test_a_changed_connection_gets_direct_mode_and_the_frame_again(self):
         # No error, no retry: direct mode on the new connection, the frame
@@ -90,7 +53,7 @@ class DirectModeTests(unittest.IsolatedAsyncioTestCase):
         lamp = make_lamp(reconnects=[True])
         lamp._fx_mode_is_direct = True
         await lamp._draw_direct("AAAA")
-        self.assertEqual(["update_leds", "activate_fx_mode", "update_leds"], lamp.sent)
+        self.assertEqual(["update_leds", "activate_fx_mode", "update_leds"], lamp.sent())
         self.assertTrue(lamp._fx_mode_is_direct)
         self.assertEqual(60, lamp._last_hardware_brightness)
 
@@ -122,15 +85,14 @@ class ApplyOrderTests(unittest.TestCase):
         self.assertIn(
             "if hardware_brightness != self._last_hardware_brightness:", self.apply
         )
-        self.assertNotIn("_cube_matrix.draw_matrices_fast", self.apply)  # always _draw_direct
+        self.assertNotIn("_lamp_client.draw_matrices_fast", self.apply)  # always _draw_direct
 
     def test_turn_offs_black_picture_keeps_the_light_off(self):
         # Live 2026-10-27: marking the light on for turn_off's black frame
         # made the preview card send turn_off again on every click.
         self.assertIn("if not self._is_on and not off_frame:", self.apply)
-        light = (ROOT / "light.py").read_text(encoding="utf-8")
-        turn_off = light[light.index("async def _internal_turn_off("):]
-        turn_off = turn_off[: turn_off.index("\n    async def ")]
+        light = (ROOT / "light_onoff.py").read_text(encoding="utf-8")
+        turn_off = _function_source(light, "_internal_turn_off")
         self.assertIn("await self.apply(off_frame=True)", turn_off)
 
 
@@ -142,7 +104,7 @@ class TurnOffTests(unittest.IsolatedAsyncioTestCase):
 
     def lamp(self, mode, music=False, keep_powered=False):
         fns = _load_standalone_functions(
-            (ROOT / "light.py").read_text(encoding="utf-8"),
+            (ROOT / "light_onoff.py").read_text(encoding="utf-8"),
             {"_internal_turn_off"},
             {"_LOGGER": logging.getLogger("t"), "LAMP_MODES": ("Clock", "Native Effect")},
         )
@@ -153,11 +115,11 @@ class TurnOffTests(unittest.IsolatedAsyncioTestCase):
                 self.calls.append(name if not args else (name, *args))
             return call
 
-        lamp = types.SimpleNamespace(
+        lamp = light_state(
             _mode=mode, _music_flow_enabled=music, remote_keeps_lamp_powered=keep_powered,
             _is_on=True, hass=None, _music_flow_restore_power=None,
             _last_hardware_brightness=100, _last_apply_time=1,
-            _cube_matrix=types.SimpleNamespace(
+            _lamp_client=types.SimpleNamespace(
                 close_fast_socket=lambda: None, send_raw_command=record("raw"),
             ),
             _expect_lamp_power=lambda on: None,
@@ -205,12 +167,12 @@ class BrightnessRetryTests(unittest.IsolatedAsyncioTestCase):
         async def send(method, params):
             self.sent.append((method, params))
 
-        lamp = types.SimpleNamespace(
+        lamp = light_state(
             _ip="t", _is_on=True, _brightness=255, lamp_draws_matrix=False,
             _last_hardware_brightness=100, _has_color_effects=False, hass=None,
             _pending_brightness=None, _last_successful_brightness=None,
             _start_brightness_retry_task=Mock(), _apply_brightness_only=AsyncMock(),
-            _cube_matrix=types.SimpleNamespace(
+            _lamp_client=types.SimpleNamespace(
                 is_connected=lambda: self.connected, send_command_fast=send,
             ),
         )
@@ -248,7 +210,7 @@ class SharedChecksTests(unittest.TestCase):
         stages = _load_standalone_functions(
             (ROOT / "light_color.py").read_text(encoding="utf-8"), {"_brightness_stages"}
         )["_brightness_stages"]
-        lamp = types.SimpleNamespace(
+        lamp = light_state(
             _last_hardware_brightness=100, _calib_hw_threshold=50,
             _color_accuracy_enabled=True,
             _calib_gain_r=1.0, _calib_gain_g=1.0, _calib_gain_b=1.0,
@@ -272,8 +234,8 @@ class SharedChecksTests(unittest.TestCase):
         cube = types.SimpleNamespace(
             consume_reconnected_flag=lambda: flags.pop() if flags else False, transport="tcp",
         )
-        lamp = types.SimpleNamespace(
-            _ip="t", _fx_mode_is_direct=True, _last_fx_mode_time=time.time(), _cube_matrix=cube,
+        lamp = light_state(
+            _ip="t", _fx_mode_is_direct=True, _last_fx_mode_time=time.time(), _lamp_client=cube,
         )
         self.assertTrue(trusted(lamp))
         flags.append(True)  # the connection changed

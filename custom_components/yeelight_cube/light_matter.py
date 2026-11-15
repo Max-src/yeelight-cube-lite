@@ -20,10 +20,15 @@ from .const import (
     CONF_RESTORE_MUSIC_CHANGES,
     CONF_REMOTE_SAVED_PLAYLIST,
     CONF_REMOTE_PLAYLIST_INSTALLED,
+    CONF_IP,
+    LAN_PORT,
+    PROBE_TIMEOUT,
     CONF_MATTER_MAC,
     CONF_MOUNT_PROFILE_NODE,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
+)
+from .effect_catalog import (
     MUSIC_FLOW_EFFECT_IDS,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_APPLY,
@@ -40,10 +45,23 @@ from .matter_commands import (
     MatterCommandsUnavailable,
 )
 from .matter_discovery import async_offer_matter_lamps
-from .matter_link import ROTATION, ROTATION_ORIENTATIONS, MatterLink
+from .device_profile import CUBEMATRIX, MATRIX_ROTATION_ORIENTATIONS
+from .matter_link import MATRIX_REPORTED, ROTATION, ROTATION_ORIENTATIONS, MatterLink
 from .mount_profile import SOURCE_MATTER, saved_on_lamp, valid_profile
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def lamp_answers(ip: str) -> bool:
+    """Whether a lamp's LAN port answers at ``ip`` (a connection, nothing
+    sent)."""
+    from .lamp_protocol import check_tcp  # the transport (the yeelight library)
+
+    try:
+        await check_tcp(ip, LAN_PORT, PROBE_TIMEOUT)
+    except OSError:
+        return False
+    return True
 
 # Seconds after a command to the lamp (light_connection._execute_hardware_op)
 # during which a report of what it shows, or of what was shown before, is that
@@ -119,14 +137,14 @@ class MatterMixin:
     def _init_matter_state(self) -> None:
         """Called by YeelightCubeLight.__init__."""
         self._matter: MatterLink | None = None
+        # The check that Matter delivers the Yeelight commands, while it runs.
+        self._matter_commands_check = None
         # Yeelight writes and commands over Matter (matter_commands.py).
         self._matter_commands: MatterCommands | None = None
-        # The Matter link sensor (sensor.py), told when the link changes.
-        self._matter_link_sensor = None
-        # The Lamp buttons event entity (event.py).
-        self._lamp_buttons_event = None
-        self._buttons_as_remote_switch = None
         self._external_display = False
+        # The check that the lamp answers at its node's new address
+        # (_follow_matter_address): one at a time, cancelled on removal.
+        self._address_check: asyncio.Task | None = None
         # The command (method, params) that shows the Yeelight app's content
         # again while it is the external display (_app_content_command), or
         # None.
@@ -182,8 +200,15 @@ class MatterMixin:
 
     # ── The link ────────────────────────────────────────────────────────
     def _start_matter_link(self) -> None:
-        """From async_added_to_hass: follow the lamp's Matter node, if any."""
-        self._matter = MatterLink(self.hass, self._on_matter_report)
+        """From async_added_to_hass: follow the lamp's Matter node, if any
+        (a Cube Matrix's: its own product id and reports, light_matrix)."""
+        if getattr(self, "is_cube_matrix", False):
+            self._matter = MatterLink(
+                self.hass, self._on_matrix_report,
+                products=(self.device_profile.matter_product,), reported=MATRIX_REPORTED,
+            )
+        else:
+            self._matter = MatterLink(self.hass, self._on_matter_report)
         self.async_on_remove(self._matter.release)
         self._matter_commands = MatterCommands(self.hass, self._matter, lambda: self._ip)
         self._refresh_matter_link()
@@ -199,9 +224,12 @@ class MatterMixin:
         entry = self._config_entry
         remembered = entry.data.get(CONF_MATTER_MAC) if entry is not None else None
         changed = self._matter.refresh(self._ip, remembered)
+        self._follow_matter_address(entry, remembered)
         self._check_matter_commands()
-        self._sync_remote_playlist()
-        self._check_mount_profile()
+        # The buttons' playlist and the orientation check are a Cube Lite's.
+        if self.device_profile.matter:
+            self.sync_remote_playlist()
+            self._check_mount_profile()
         if not changed:
             return
         if entry is not None and self._matter.mac and self._matter.mac != remembered:
@@ -211,6 +239,42 @@ class MatterMixin:
         if self.hass is not None:
             self.async_write_ha_state()
         self._matter_status_changed()
+
+    def _follow_matter_address(self, entry, remembered: str | None) -> bool:
+        """The lamp may have a new address (DHCP, no reservation: seen on a
+        Cube Matrix overnight): its node, found by the remembered MAC,
+        reports another usable one (matter_link.usable_address). The entry
+        takes it only once checked (_async_follow_address): a server's cached
+        address can be stale, and a node reports 0.0.0.0 after a power-on.
+        True when a check was started."""
+        if entry is None or not remembered or self._matter.mac != remembered:
+            return False
+        address = self._matter.address()
+        if not address or address == self._ip or address == entry.data.get(CONF_IP):
+            return False
+        if self._address_check is not None or self.hass is None:
+            return False
+        self._address_check = self._create_tracked_task(
+            self._async_follow_address(entry, address), name=f"yeelight_cube_address_{self._ip}",
+        )
+        return True
+
+    async def _async_follow_address(self, entry, address: str) -> bool:
+        """Move the entry to ``address`` only when the lamp no longer
+        answers at its own and does at that one (its LAN port): never on a
+        stale or wrong report, so it cannot go back and forth with
+        discovery. True when moved (the entry's update reloads it)."""
+        try:
+            if await lamp_answers(self._ip) or not await lamp_answers(address):
+                return False
+            _LOGGER.info(
+                "[MATTER] [%s] The lamp answers at %s now (its Matter node's address): the entry follows it",
+                self._ip, address,
+            )
+            self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_IP: address})
+            return True
+        finally:
+            self._address_check = None
 
     @property
     def matter_link_state(self) -> str:
@@ -239,9 +303,14 @@ class MatterMixin:
     def _matter_status_changed(self) -> None:
         """Show a new link or commands state on the Matter link sensor, and
         the Lamp buttons entity's availability."""
-        for entity in (self._matter_link_sensor, self._lamp_buttons_event, self._buttons_as_remote_switch):
-            if entity is not None and getattr(entity, "hass", None) is not None:
-                entity.async_write_ha_state()
+        self._notify("matter_link", "lamp_buttons", "buttons_as_remote")
+        # A Cube Matrix shows its own effects once Matter delivers them, also
+        # when Matter had failed meanwhile (the link came back: tried again).
+        retry = getattr(self, "_retry_matrix_native", None)
+        if retry is not None and retry(link_back=True):
+            return
+        if changed := getattr(self, "_matrix_matter_changed", None):
+            changed()
 
     def _check_matter_commands(self) -> None:
         """Find which server delivers Yeelight commands now (with the link's
@@ -250,20 +319,24 @@ class MatterMixin:
         channel = self._matter_commands
         if channel is None or self._matter is None or not self._matter.linked:
             return
-        if getattr(self, "_matter_commands_check", None) is not None:
+        if self._matter_commands_check is not None:
             return
 
         async def check() -> None:
             before = (channel.backend, channel.reason)
             try:
                 await channel.async_available()
+                # The lamp's new node answers: its earlier pairings' nodes go.
+                if channel.backend and self._matter is not None and self._matter.stale_node_ids:
+                    await self._matter.remove_stale_nodes()
             finally:
                 self._matter_commands_check = None
             if (channel.backend, channel.reason) != before and self.hass is not None:
                 self.async_write_ha_state()
                 self._matter_status_changed()
                 # A server now delivers the write that confirms the profile.
-                self._check_mount_profile()
+                if self.device_profile.matter:
+                    self._check_mount_profile()
 
         self._matter_commands_check = self._create_tracked_task(
             check(), name=f"yeelight_cube_matter_commands_{self._ip}"
@@ -271,8 +344,12 @@ class MatterMixin:
 
     @property
     def animations_available(self) -> bool:
-        """Whether a server delivers the Yeelight commands now, so an
-        animation can be uploaded (the `matter` attribute's "commands")."""
+        """Whether an animation can be shown: streamed on a lamp without
+        effects of its own (Cube Matrix, device_profile); on a Cube Lite, a
+        server delivers the Yeelight commands now, so it can be uploaded
+        (the `matter` attribute's "commands")."""
+        if self.device_profile.streams_effects:
+            return True
         channel = self._matter_commands
         return channel is not None and channel.backend is not None
 
@@ -448,14 +525,14 @@ class MatterMixin:
                 self._effect_reported_at = time.monotonic()
                 if self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
                     # A black slot: the press is its custom id (effect_sub).
-                    self._fx_mode_is_direct = False
+                    self._direct_mode_lost()
                     self._check_lamp_content()
                 elif self._effect_echo(value):
                     self._content_reports_ignored_at = time.monotonic()
                 elif value in APP_CONTENT_EFFECTS:
                     # The app's colour, drawing, clock or animation: told by
                     # its colour or id.
-                    self._fx_mode_is_direct = False
+                    self._direct_mode_lost()
                     self._check_lamp_content()
                 else:
                     self._lamp_changed_effect(value)
@@ -481,7 +558,7 @@ class MatterMixin:
                 if self.remote_playlist_active and not self._remote_playlist_settling():
                     # The slot alone proves the lamp left direct mode. Its
                     # effect=36 report may arrive later, or not change at all.
-                    self._fx_mode_is_direct = False
+                    self._direct_mode_lost()
                     self._remote_press_at = time.monotonic()
                     self._content_reports_ignored_at = self._remote_press_at
                     self._lamp_event("right_button", {"slot": value - REMOTE_SLOT_BASE})
@@ -561,7 +638,7 @@ class MatterMixin:
         id): it uploaded it first, over the animation this integration stored
         (light._stored_gif), which the next activation uploads again."""
         values = self._matter.values if self._matter else {}
-        stored = getattr(self, "_stored_gif", None)
+        stored = self._stored_gif
         if (
             stored and stored.get("animation")
             and values.get("effect") == APP_GIF_EFFECT
@@ -584,7 +661,7 @@ class MatterMixin:
                     {"effect": NATIVE_EFFECT_IDS.get(effect_id), "effect_id": effect_id},
                 )
             if music is not None and self.restore_after_music_changes:
-                self._fx_mode_is_direct = False
+                self._direct_mode_lost()
                 self._take_back_from_music()
                 return
         if music is None:
@@ -731,12 +808,11 @@ class MatterMixin:
             self._lamp_restore_pending = False
         self._is_on = True
         self._stop_own_animations()
-        self._fx_mode_is_direct = False
-        self._in_native_fw_mode = True
-        matrix = getattr(self, "_cube_matrix", None)
+        self._entered_builtin_mode()
+        matrix = self._lamp_client
         if matrix is not None:
             matrix.forget_running_effect()
-        retry = getattr(self, "_retry_display_task", None)
+        retry = self._retry_display_task
         if retry is not None and not retry.done():
             retry.cancel()
         self._matter_status_changed()
@@ -806,7 +882,7 @@ class MatterMixin:
     def _remote_playlist_settling(self) -> bool:
         return self._remote_playlist_busy or time.monotonic() - self._remote_playlist_written_at < REMOTE_WRITE_SETTLE
 
-    def _sync_remote_playlist(self) -> None:
+    def sync_remote_playlist(self) -> None:
         """Right as Remote on: save the lamp's playlist and make every slot
         black (needs Matter settings; until then ordinary changes are
         followed without restoration). Off: write the saved playlist back. From the switch and
@@ -849,7 +925,7 @@ class MatterMixin:
                 self._remote_playlist_busy = False
                 self._matter_status_changed()
                 if requested != self.buttons_as_remote:
-                    self._sync_remote_playlist()
+                    self.sync_remote_playlist()
 
         self._create_tracked_task(sync(), name=f"yeelight_cube_remote_playlist_{self._ip}")
 
@@ -969,9 +1045,7 @@ class MatterMixin:
 
     def _lamp_event(self, event_type: str, data: dict) -> None:
         """Fire a Lamp buttons event (event.py), if the entity is there."""
-        entity = self._lamp_buttons_event
-        if entity is not None and getattr(entity, "hass", None) is not None:
-            entity.lamp_event(event_type, data)
+        self._notify("lamp_button_event", args=(event_type, data))
 
     def _request_lamp_restore(self, music: bool) -> bool:
         """Ask for a restore pass; True when none is scheduled or running, so
@@ -1015,7 +1089,7 @@ class MatterMixin:
                 self._lamp_restore_music = False
                 # Every pass follows the latest desired state, including a
                 # power change or automation received during the previous pass.
-                self._fx_mode_is_direct = False
+                self._direct_mode_lost()
                 if restore_music or self._music_flow_enabled:
                     await self.async_set_music_flow(
                         self._music_flow_enabled, restore_display=False, persist_state=False,
@@ -1030,7 +1104,7 @@ class MatterMixin:
                 if self._app_content is not None:
                     await self._replay_app_content(self._app_content)
                     continue
-                self._cube_matrix.forget_running_effect()
+                self._lamp_client.forget_running_effect()
                 # Not suppressed while the lamp runs its own renderer (the
                 # black slot, an app's drawing): putting it back is the point.
                 await self.async_apply_display_mode(update_type="remote_restore")
@@ -1059,14 +1133,14 @@ class MatterMixin:
             if clock:
                 await asyncio.sleep(0.1)  # as light_native._send_native
             self._expect_lamp_power(True)
-            await self._cube_matrix.send_raw_command(
+            await self._lamp_client.send_raw_command(
                 method, params, abortive_close=not clock, check_reply=True
             )
             if effect:
-                self._cube_matrix.note_running_effect(params)
+                self._lamp_client.note_running_effect(params)
             else:
-                self._cube_matrix.forget_running_effect()
-            self._in_native_fw_mode = True
+                self._lamp_client.forget_running_effect()
+            self._entered_builtin_mode()
 
         await self._execute_hardware_op(send, "matter:app_content")
 
@@ -1076,7 +1150,7 @@ class MatterMixin:
         but DRAWING_EFFECT means the lamp left this integration's drawing
         mode: the next frame enters it again."""
         if effect_id != DRAWING_EFFECT:
-            self._fx_mode_is_direct = False
+            self._direct_mode_lost()
         music = MUSIC_FLOW_EFFECT_IDS.get(effect_id)
         if music is not None:
             self._follow_music_flow(music)
@@ -1094,7 +1168,7 @@ class MatterMixin:
             return
         _LOGGER.info("[MATTER] [%s] Lamp switched to %s on its own", self._ip, name)
         self._stop_own_animations()
-        self._mode = MODE_NATIVE_EFFECT
+        self._enter_mode(MODE_NATIVE_EFFECT)
         self._native_effect = name
         self._mark_lamp_drawing()
         self._followed_lamp()
@@ -1138,12 +1212,14 @@ class MatterMixin:
         _LOGGER.info("[MATTER] [%s] Lamp switched %s on its own", self._ip, "on" if on else "off")
         if not on:
             self._stop_own_animations()
+            # A Cube Matrix: its effect is sent in full when it is on again.
+            self._matrix_shown = None
             if self._music_flow_enabled:
                 self._drop_music_flow()
         self._is_on = on
         # Its brightness and drawing mode are set again by the next command.
-        self._fx_mode_is_direct = False
-        self._last_hardware_brightness = None
+        self._direct_mode_lost()
+        self._forget_hardware_brightness()
         self._followed_lamp()
 
     def _lamp_dimmed(self, level: int) -> None:
@@ -1155,15 +1231,24 @@ class MatterMixin:
         _LOGGER.info("[MATTER] [%s] Lamp brightness set to %s on its own", self._ip, brightness)
         self._brightness = brightness
         # Unknown to this integration: the next brightness change is sent.
-        self._last_hardware_brightness = None
+        self._forget_hardware_brightness()
         self._followed_lamp()
+
+    def _rotation_for(self, orientation: str) -> int | None:
+        """The lamp's direction setting for a Device Orientation: the Cube
+        Lite's arrows (ROTATION_ORIENTATIONS), or the mounting each Cube
+        Matrix rotation is for (device_profile.MATRIX_ROTATION_ORIENTATIONS):
+        the two lamps number them differently."""
+        if getattr(getattr(self, "device_profile", None), "key", None) == CUBEMATRIX:
+            return {name: value for value, name in MATRIX_ROTATION_ORIENTATIONS.items()}.get(orientation)
+        return ORIENTATION_ROTATIONS.get(orientation)
 
     def _expect_lamp_rotation(self, orientation: str) -> None:
         """Before ``orientation`` is published: the profile the lamp is about
         to run (_mount_profile_pending), when a server known to deliver will
         write it (_sync_lamp_rotation clears it). A lamp no server delivers to
         gets none, so its previews never turn for a write that fails."""
-        rotation = ORIENTATION_ROTATIONS.get(orientation)
+        rotation = self._rotation_for(orientation)
         link, channel = self._matter, self._matter_commands
         if (
             rotation is not None and channel is not None and channel.backend is not None
@@ -1181,13 +1266,20 @@ class MatterMixin:
         False when it already matched (unless ``force``: a value read on a
         node not confirmed yet may not be the lamp's) or no server delivers
         it (as before). A write confirms the profile on this node."""
-        rotation = ORIENTATION_ROTATIONS.get(orientation)
+        rotation = self._rotation_for(orientation)
         link, channel = self._matter, self._matter_commands
         if rotation is None or channel is None or link is None or not link.linked:
             return False
         if link.values.get("rotation") == rotation and not force:
             return False
         node = link.node_id
+        cube = self._lamp_client
+        if getattr(self, "is_cube_matrix", False) and cube is not None:
+            # A Cube Matrix saves the rotation only with a later request, and
+            # never while its music mode is on (tested 2026-11-12: written
+            # with a music connection open, gone after a power cut): ours is
+            # closed first (the next frame opens it again).
+            cube.close_music_session()
         # While it is written, the previews follow the profile the lamp is
         # about to run (light_mount_profile.lamp_turns_clock), not the old one.
         self._mount_profile_pending = rotation
@@ -1204,6 +1296,8 @@ class MatterMixin:
         # As the lamp will report it: previews turn now, its echo is no change.
         link.values["rotation"] = rotation
         self._lamp_rotation_seen = rotation
+        if note := getattr(self, "matrix_note_rotation", None):
+            note(rotation)
         if link.node_id == node:
             self._store_mount_profile(rotation, SOURCE_MATTER, node)
         return True
@@ -1297,7 +1391,7 @@ class MatterMixin:
         """What this integration animated on the lamp gave way to the lamp."""
         if self._rotation_active or self._rotation_resume_pending:
             self.stop_effect_rotation()
-        self._is_scrolling = False
+        self._set_scrolling(False)
         self.stop_scroll_timer()
 
     def _drop_music_flow(self) -> None:
@@ -1316,8 +1410,7 @@ class MatterMixin:
         """The lamp draws itself (as after this integration starts an
         effect, light_native._activate_native_effect)."""
         self._is_on = True
-        self._fx_mode_is_direct = False
-        self._in_native_fw_mode = True
+        self._entered_builtin_mode()
         self._last_fx_mode_time = 0.0
 
     def _followed_lamp(self) -> None:

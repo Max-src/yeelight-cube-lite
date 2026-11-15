@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Before each commit: the lint (ruff, eslint), a few seconds. Turn it on once
+# per clone:
+#
+#   git config core.hooksPath scripts/git-hooks
+#
+# `git commit --no-verify` skips it.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+npm run --silent lint

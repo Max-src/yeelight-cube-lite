@@ -111,6 +111,12 @@ export const drawCardStyles = css`
   .pixel.active {
     /* No border for active, just keep the color */
   }
+  /* A pixel the lamp does not show (a Cube Matrix with fewer blocks). */
+  .pixel.absent {
+    opacity: 0.25;
+    outline: 1px dashed var(--secondary-text-color, #888);
+    outline-offset: -1px;
+  }
 
   /* Tool shape modifiers for new btn-style system */
   .tool-btn.tool-shape-round {

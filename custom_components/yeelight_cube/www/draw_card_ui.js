@@ -9,6 +9,7 @@ export function renderMatrixPixel(
   previewStyle,
   handlers,
   ignoreBlackPixels = false,
+  absent = false,
 ) {
   // Check if pixel is black and should be ignored
   let displayColor = color || "#000000";
@@ -25,7 +26,8 @@ export function renderMatrixPixel(
 
   return html`
     <div
-      class="pixel ${styleClass} ${color ? "active" : ""}"
+      class="pixel ${styleClass} ${color ? "active" : ""} ${absent ? "absent" : ""}"
+      title=${absent ? "Not shown as a pixel: no module here, or a spot (one light for its area)" : ""}
       style="background:${displayColor};${previewStyle}"
       @mousedown=${handlers.onMouseDown}
       @contextmenu=${handlers.onContextMenu}

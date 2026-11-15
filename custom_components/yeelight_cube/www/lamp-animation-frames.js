@@ -11,7 +11,7 @@ import { studioAnimationFrames, studioLook, studioPalette } from "./lamp-studio.
 import { adjustColor, adjustmentsKey } from "./color-adjustments.js";
 import { MATRIX_COLS, MATRIX_ROWS, MATRIX_SIZE, isUpsideDownMount } from "./matrix-view.js";
 
-/** Each animation's key by its effect name (const.py LAMP_ANIMATION_EFFECTS). */
+/** Each animation's key by its effect name (effect_catalog.py LAMP_ANIMATION_EFFECTS). */
 export const ANIMATION_EFFECTS = Object.fromEntries(
   Object.entries(LAMP_ANIMATIONS).map(([key, entry]) => [entry.name, key]),
 );
@@ -40,7 +40,7 @@ function animation(key) {
   return decoded.get(key);
 }
 
-// const.py DEFAULT_NATIVE_EFFECT_SPEED: the speed an animation plays at as
+// effect_catalog.py DEFAULT_NATIVE_EFFECT_SPEED: the speed an animation plays at as
 // drawn; lamp_animations.py SPEED_DOUBLING, MIN_DELAY_HUNDREDTHS.
 const DRAWN_SPEED = 128;
 const SPEED_DOUBLING = 64;
@@ -102,7 +102,7 @@ export function animationFrameAt(key, seconds, speed = null, adjustments = null,
 // the same.
 const lampFrames = new WeakMap();
 
-// const.py ANIMATION_LAYOUT_APP: an animation sent as the Yeelight app sends
+// effect_catalog.py ANIMATION_LAYOUT_APP: an animation sent as the Yeelight app sends
 // its GIFs, the picture as it is, which the lamp shows rearranged.
 export const ANIMATION_LAYOUT_APP = "app";
 

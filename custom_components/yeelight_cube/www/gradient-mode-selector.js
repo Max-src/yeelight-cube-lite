@@ -9,6 +9,7 @@ import { rgbToCss } from "./color-utils.js";
 import { PREVIEW_SELECTOR_STYLES } from "./selector-shared-styles.js";
 import { html } from "./lib/lit-all.js";
 import "./collection-gallery.js";
+import { previewContext } from "./preview-context.js";
 
 // Short button labels (filled, chips) of the modes.
 const MODE_LABELS = {
@@ -77,6 +78,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
     }
     const data = this._previewCache().data;
     if (!data) return [];
+    const stateObj = this._hass?.states?.[this._primaryEntity()];
     const rows = data.rows || 5;
     const cols = data.cols || 20;
     return modes
@@ -88,7 +90,9 @@ export const ModeSelectorMixin = (Base) => class extends Base {
         for (let row = rows - 1; row >= 0; row--)
           for (let col = 0; col < cols; col++)
             colorData.push(colors[row * cols + col]);
-        return { ...item(mode), colorData };
+        // A Cube Matrix's modules only (matrix-modules.js): the picture
+        // before the mount's turn, as the backend draws it.
+        return { ...item(mode), colorData, context: previewContext(stateObj?.attributes, { frame: "drawing" }) };
       });
   }
 

@@ -25,7 +25,7 @@ export const MATRIX_SIZE = MATRIX_COLS * MATRIX_ROWS;
 // A vertical view at the same pixel size is this many times narrower.
 export const VERTICAL_SCALE = MATRIX_COLS / MATRIX_ROWS;
 
-export const DEFAULT_ORIENTATION = "right";
+const DEFAULT_ORIENTATION = "right";
 const VERTICAL_MOUNTS = new Set(["down", "up"]);
 const UPSIDE_DOWN_MOUNTS = new Set(["left", "up"]);
 
@@ -41,24 +41,31 @@ export const isUpsideDownMount = (orientation) =>
 export const deviceOrientation = (attributes) =>
   attributes?.device_orientation || DEFAULT_ORIENTATION;
 
-/**
- * Whether the lamp draws its clock turned a half turn: the mount
- * profile it runs (the Yeelight app's orientation, the light's
- * `mount_profile.in_use`; the lamp's default 3 when none is known) is 0
- * or 1. Only the digits turn: the background stays where it is on the
- * panel (renderClockFrame). Native effects never are (the integration
- * compensates their direction). Mirrors light_mount_profile.lamp_turns_clock.
- */
 /** Whether the Lamp mounted setting reaches the lamp's own clock: it is
  * written to the lamp's mount profile, which takes a server that delivers the
  * Yeelight commands (the light's `matter.commands`). Without one the lamp's
  * clock stays as it is (light.set_device_orientation). */
 export const lampTakesMount = (attributes) => Boolean(attributes?.matter?.commands);
 
+/**
+ * Whether the clock's digits are laid out a half turn round, as the light
+ * says (`mount_profile.clock_turned`, light_mount_profile.lamp_turns_clock).
+ * A Cube Lite does it on the mount profile it runs (0 or 1, the fallback for
+ * a light that does not say); a Cube Matrix numbers its rotations otherwise
+ * and its clock is streamed turned on the Device Orientations
+ * CLOCK_TURNED_ORIENTATIONS. Only the digits turn: the background stays
+ * where it is on the panel (renderClockFrame). Native effects never are
+ * (the integration compensates their direction).
+ */
 export const lampTurnsClock = (attributes) => {
   const profile = attributes?.mount_profile;
+  if (typeof profile?.clock_turned === "boolean") return profile.clock_turned;
   return [0, 1].includes(profile?.pending ?? profile?.in_use ?? profile?.profile);
 };
+
+// mount_profile.py CLOCK_TURNED_ORIENTATIONS: the Device Orientations whose
+// clock is laid out a half turn round (a Cube Lite's profiles 0 and 1).
+const CLOCK_TURNED_ORIENTATIONS = new Set(["left", "up"]);
 
 // The lamp's mount profile for each Device Orientation (matter_link.py
 // ROTATION_ORIENTATIONS).
@@ -74,7 +81,11 @@ export function withPendingMount(attributes, pending) {
     return attributes;
   return {
     ...attributes,
-    mount_profile: { ...attributes?.mount_profile, pending: ORIENTATION_PROFILES[pending] },
+    mount_profile: {
+      ...attributes?.mount_profile,
+      pending: ORIENTATION_PROFILES[pending],
+      clock_turned: CLOCK_TURNED_ORIENTATIONS.has(pending),
+    },
   };
 }
 

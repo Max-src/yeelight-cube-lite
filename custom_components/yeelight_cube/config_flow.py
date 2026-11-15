@@ -14,12 +14,16 @@ from .const import (
     CONF_IP,
     CONF_DEVICE_ID,
     CONF_MATTER_MAC,
+    CONF_MODEL,
+    MODEL_PROBE_TIMEOUT,
     CONF_MOUNT_PROFILE,
     CONF_MOUNT_PROFILE_SOURCE,
     LAN_PORT,
     PROBE_TIMEOUT,
 )
-from .cube_matrix import check_tcp, send_once
+from .lamp_protocol import check_tcp, send_once
+from .device_profile import CUBEMATRIX, model_key
+from .matter_link import usable_address
 from .discovery import is_cube_device, parse_service_name, normalize_device_id
 from .mount_profile import (
     STAR_CHECK_PARAMS,
@@ -60,6 +64,23 @@ async def _lamp_answers(ip_address: str) -> bool:
     return True
 
 
+async def _cube_matrix_layout(ip_address: str) -> dict | None:
+    """A Cube Matrix's layout (get_prop cube_topology, rotation_angle,
+    strip_lenth), or None: a Cube Lite never answers get_prop, a Cube Matrix
+    does (device_profile)."""
+    try:
+        answer = await send_once(
+            ip_address, LAN_PORT, "get_prop",
+            ["cube_topology", "rotation_angle", "strip_lenth"], MODEL_PROBE_TIMEOUT,
+        )
+    except OSError:
+        return None
+    values = (answer or {}).get("result") or []
+    if len(values) < 3 or not str(values[0]).strip(", 0"):
+        return None
+    return {"cube_topology": values[0], "rotation_angle": values[1], "strip_lenth": values[2]}
+
+
 class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Yeelight Cube Lite."""
 
@@ -75,6 +96,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     _discovered_name: str = ""
     _discovered_device_id: str = ""
     _discovered_mac: str | None = None
+    _discovered_model: str = ""
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
@@ -127,6 +149,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_ip = ip
         self._discovered_name = device_name
         self._discovered_device_id = device_id
+        self._discovered_model = model
 
         # Use device_id as unique_id if available, else IP
         unique_id = device_id if device_id else ip
@@ -172,7 +195,8 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Format title like the built-in Yeelight: "CubeLite 0xABCD (192.168.4.144)"
         id_display = f"0x{device_id}" if device_id and not device_id.startswith("0x") else (device_id or "")
-        display_title = f"CubeLite {id_display} ({ip})" if id_display else f"CubeLite ({ip})"
+        kind = "Cube Matrix" if model_key(model) == CUBEMATRIX else "CubeLite"
+        display_title = f"{kind} {id_display} ({ip})" if id_display else f"{kind} ({ip})"
 
         self.context["title_placeholders"] = {
             "name": display_title,
@@ -200,18 +224,34 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         })
 
     async def async_step_integration_discovery(self, discovery_info):
-        """A Cube Lite in Home Assistant's Matter integration that no entry
-        has (matter_discovery.py): its IP address and MAC."""
+        """A Cube Lite or Cube Matrix in Home Assistant's Matter integration
+        that no entry has (matter_discovery.py): its IP address, MAC and
+        model (from its product id; a Cube Lite when not given)."""
         ip = discovery_info[CONF_IP]
         mac = discovery_info.get(CONF_MATTER_MAC)
+        if not usable_address(ip):
+            return self.async_abort(reason="no_address")
+        model = discovery_info.get(CONF_MODEL) or "CubeLite"
         await self.async_set_unique_id(ip)
         self._abort_if_unique_id_configured()
         for entry in self._async_current_entries():
+            if (
+                mac and entry.data.get(CONF_MATTER_MAC) == mac and entry.data.get(CONF_IP) != ip
+                and usable_address(ip)
+            ):
+                # The same lamp on a new address (DHCP): the entry follows it,
+                # only when the lamp no longer answers at its own address and
+                # does at this one (a server's cached address can be stale).
+                if not await _lamp_answers(entry.data.get(CONF_IP) or "") and await _lamp_answers(ip):
+                    self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_IP: ip})
+                return self.async_abort(reason="already_configured")
             if entry.data.get(CONF_IP) == ip or (mac and entry.data.get(CONF_MATTER_MAC) == mac):
                 return self.async_abort(reason="already_configured")
         self._discovered_ip = ip
         self._discovered_mac = mac
-        self.context["title_placeholders"] = {"name": f"CubeLite ({ip})", "host": ip}
+        self._discovered_model = model
+        kind = "Cube Matrix" if model_key(model) == CUBEMATRIX else "CubeLite"
+        self.context["title_placeholders"] = {"name": f"{kind} ({ip})", "host": ip}
         return await self.async_step_matter_confirm()
 
     async def async_step_matter_confirm(self, user_input=None):
@@ -220,7 +260,8 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             if await _lamp_answers(self._discovered_ip):
-                data = {CONF_IP: self._discovered_ip}
+                # Found in Matter: the model its product id names.
+                data = {CONF_IP: self._discovered_ip, CONF_MODEL: self._discovered_model or "CubeLite"}
                 if self._discovered_mac:
                     data[CONF_MATTER_MAC] = self._discovered_mac
                 return await self._async_add_lamp(f"Yeelight Cube ({self._discovered_ip})", data)
@@ -237,6 +278,8 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {CONF_IP: self._discovered_ip}
             if self._discovered_device_id:
                 data[CONF_DEVICE_ID] = self._discovered_device_id
+            if self._discovered_model:
+                data[CONF_MODEL] = self._discovered_model
             return await self._async_add_lamp(f"Yeelight Cube ({self._discovered_ip})", data)
 
         self._set_confirm_only()
@@ -249,8 +292,19 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _async_add_lamp(self, title: str, data: dict):
-        """The lamp answers: ask how it is mounted (its saved orientation)
-        before it is added."""
+        """The lamp answers: a Cube Matrix (its model, or its answer to
+        get_prop) is added at once, mounted as it reports (rotation_angle);
+        a Cube Lite is first asked how it is mounted (its saved orientation)."""
+        layout = None
+        if model_key(data.get(CONF_MODEL)) in (None, CUBEMATRIX):
+            layout = await _cube_matrix_layout(data[CONF_IP])
+        if layout is not None or model_key(data.get(CONF_MODEL)) == CUBEMATRIX:
+            data = {**data, CONF_MODEL: data.get(CONF_MODEL) or "CubeMatrix"}
+            rotation = valid_profile((layout or {}).get("rotation_angle"))
+            self._new_title, self._new_data = f"Yeelight Cube Matrix ({data[CONF_IP]})", data
+            return self._create_with_profile(LAMP_DEFAULT_PROFILE if rotation is None else rotation)
+        # A model only when it was named: no get_prop answer may be a Cube
+        # Matrix slow to answer, so the light asks again (probe_model).
         self._new_title, self._new_data = title, data
         return await self.async_step_orientation()
 
@@ -401,7 +455,10 @@ class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
         current, source = lamp.mount_profile if lamp is not None else (
             valid_profile(self.config_entry.options.get(CONF_MOUNT_PROFILE)), SOURCE_USER
         )
-        options = [str(profile) for profile in PROFILES] + [MOUNT_CHECK]
+        # The check plays the lamp's own shooting stars: not on a lamp without
+        # effects of its own (Cube Matrix, device_profile).
+        checkable = lamp is None or getattr(getattr(lamp, "device_profile", None), "native_effects", True)
+        options = [str(profile) for profile in PROFILES] + ([MOUNT_CHECK] if checkable else [])
         key = vol.Required(CONF_MOUNT_PROFILE)
         if current is not None:
             key = vol.Required(CONF_MOUNT_PROFILE, default=str(current))

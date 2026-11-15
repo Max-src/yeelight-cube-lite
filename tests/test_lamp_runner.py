@@ -60,7 +60,7 @@ class LampRunnerTests(unittest.IsolatedAsyncioTestCase):
             # Already known unreachable: its failure is quiet (debug).
             lamp(
                 "light.off",
-                _cube_matrix=types.SimpleNamespace(outage_log_level=lambda: logging.DEBUG),
+                _lamp_client=types.SimpleNamespace(outage_log_level=lambda: logging.DEBUG),
             ),
             lamp("light.ok"),
         ]

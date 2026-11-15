@@ -5,7 +5,6 @@
 
 import {
   COLS,
-  LENGTH,
   ROWS,
   SIN8,
   effectColours,
@@ -39,8 +38,8 @@ function rainbowInit(settings) {
     rows: Int32Array.from({ length: height }, (_, row) =>
       Math.floor(((255 - Math.floor(255 / height)) * row) / height),
     ),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * width * height),
+    panel: new Uint8Array(3 * width * height),
   };
 }
 
@@ -83,7 +82,7 @@ function tideInit(settings) {
     spreads,
     colours,
     work: newGrid(width, height),
-    panel: new Uint8Array(3 * LENGTH),
+    panel: new Uint8Array(3 * width * height),
   };
 }
 
@@ -136,15 +135,15 @@ function magicInit(settings) {
     width,
     height,
     hues: new Int32Array(width * height),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * width * height),
+    panel: new Uint8Array(3 * width * height),
   };
 }
 
 function magicStep(state, settings, clockMs, render) {
   const { hues, strip } = state;
   magicHues(render, settings.rate, state.width, state.height, hues);
-  for (let cell = 0; cell < LENGTH; cell += 1) {
+  for (let cell = 0; cell < hues.length; cell += 1) {
     const drive = hueDrive(hues[cell]);
     strip[3 * cell] = drive[0];
     strip[3 * cell + 1] = drive[1];

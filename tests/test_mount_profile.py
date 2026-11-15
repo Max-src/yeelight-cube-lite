@@ -8,7 +8,6 @@ in the Yeelight app, on the linked node) or when only a save gives its value,
 else the user's choice (options, the Fire check), else unknown (then the
 lamp's default 3, what a lamp never saved, or reset, runs)."""
 import asyncio
-import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -175,7 +174,7 @@ class ProfileLight(FakeLight):
     def __init__(self, options=None):
         super().__init__()
         self._config_entry, self.hass = entry_and_hass(options)
-        self._cube_matrix = SimpleNamespace(forget_running_effect=Mock())
+        self._lamp_client = SimpleNamespace(forget_running_effect=Mock())
         self._mode = "Native Effect"
         self._external_display = False
         self.pending = []
@@ -214,7 +213,7 @@ class MatterProfileTests(unittest.TestCase):
         self.assertTrue(light.lamp_turns_clock)
         # What the lamp shows follows: the effect is sent again.
         self.assertIn("redraw", light.calls)
-        light._cube_matrix.forget_running_effect.assert_called()
+        light._lamp_client.forget_running_effect.assert_called()
         # Confirmed: not written again (every minute's link refresh).
         light._check_mount_profile()
         light.run_tasks()
@@ -416,6 +415,8 @@ class LanOnlyTests(unittest.TestCase):
     def test_a_180_degree_lamp_sends_what_it_always_did(self):
         value = CONSTANTS["effect_direction_value"]
         for name, spec in CONSTANTS["NATIVE_EFFECTS"].items():
+            if spec.get("one_axis"):
+                continue  # chosen for the rotation (test_effect_direction.FilmedSweepTests)
             for direction in spec.get("directions") or ():
                 self.assertEqual(value(spec, direction), self.sent_direction(2, name, direction), name)
 
@@ -444,7 +445,8 @@ class LanOnlyTests(unittest.TestCase):
         self.assertEqual((None, "unknown"), light.mount_profile)
         self.assertEqual(3, light.effect_profile)
         self.assertEqual(
-            {"profile": None, "source": "unknown", "in_use": 3}, light._mount_profile_summary()
+            {"profile": None, "source": "unknown", "in_use": 3, "clock_turned": False},
+            light._mount_profile_summary()
         )
 
     def test_the_users_choice_is_kept_and_followed(self):
@@ -479,7 +481,7 @@ class LanOnlyTests(unittest.TestCase):
             await func()
             return True
 
-        light._cube_matrix = SimpleNamespace(send_raw_command=send, forget_running_effect=Mock())
+        light._lamp_client = SimpleNamespace(send_raw_command=send, forget_running_effect=Mock())
         light._execute_hardware_op = run
         light._leave_direct_mode = AsyncMock()
         light.async_apply_display_mode = AsyncMock()
@@ -496,7 +498,7 @@ class LanOnlyTests(unittest.TestCase):
         light = CheckLight()
         light._rotation_active = False
         light._is_on = False
-        light._cube_matrix = SimpleNamespace(send_raw_command=AsyncMock(), forget_running_effect=Mock())
+        light._lamp_client = SimpleNamespace(send_raw_command=AsyncMock(), forget_running_effect=Mock())
 
         async def run(func, name):
             await func()
@@ -563,7 +565,7 @@ class CheckLight(ProfileLight):
             await func()
             return True
 
-        self._cube_matrix = SimpleNamespace(send_raw_command=send, forget_running_effect=Mock())
+        self._lamp_client = SimpleNamespace(send_raw_command=send, forget_running_effect=Mock())
         self._execute_hardware_op = run
         self._leave_direct_mode = AsyncMock()
         self.async_apply_display_mode = AsyncMock()

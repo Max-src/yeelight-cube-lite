@@ -28,7 +28,7 @@ try:
         studio_palette,
         studio_runs,
     )
-    from .const import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE, STORED_GIF_EFFECT
+    from .effect_catalog import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE, STORED_GIF_EFFECT
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
     import sys
@@ -50,7 +50,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         studio_palette,
         studio_runs,
     )
-    from const import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE, STORED_GIF_EFFECT
+    from effect_catalog import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE, STORED_GIF_EFFECT
 
 COLS = 20
 ROWS = 5
@@ -216,6 +216,7 @@ def render_native_effect(
     stored=None,
     layout: str | None = None,
     adjustments: dict | None = None,
+    columns: int | None = None,
 ) -> list[tuple[int, int, int]]:
     """One frame of a native effect, lamp order: what the lamp's renderer
     draws for the command sent, LED drive
@@ -226,16 +227,18 @@ def render_native_effect(
     lamp's, for the palette and Studio color modes. ``stored``: what the lamp stores
     (light._stored_gif, or the animation's key), which the stored GIF shows,
     in its layout, at its speed, with its color adjustments. ``layout``: the
-    one an animation is sent in (const.ANIMATION_LAYOUTS; upright when None).
+    one an animation is sent in (effect_catalog.ANIMATION_LAYOUTS; upright when None).
     ``adjustments``: the color adjustments an animation is sent with
-    (color_adjustments.active_adjustments; none when None)."""
+    (color_adjustments.active_adjustments; none when None). ``columns``: the
+    columns the lamp shows, which its effects are drawn on (a Cube Matrix's
+    device_profile.columns; None: all 20, a Cube Lite)."""
     speed = DEFAULT_PREVIEW_SPEED if speed is None else speed
     seconds = phase / (0.25 + speed / 55.0)
     if studio_runs(effect, color_mode, palette):
         # Palette beyond what the lamp takes: drawn here and streamed
         # (light_studio); what the lamp shows of it.
         return studio_drive(
-            studio_frame(effect, seconds, direction, speed, orientation, intensity, palette)
+            studio_frame(effect, seconds, direction, speed, orientation, intensity, palette, columns)
         )
     animation = ALL_NATIVE_EFFECTS.get(effect, {}).get("animation")
     pace = speed
@@ -257,14 +260,9 @@ def render_native_effect(
         return _render_gradient(phase, direction)
     settings = lamp_settings(
         effect, direction, speed, color_override, color_mode, orientation, intensity,
-        palette,
+        palette, columns,
     )
     return lamp_effect_frame(settings, seconds)
-
-
-# Kept for the code that imports it: the lamp's renderers place every direction as the
-# lamp does, nothing is left to correct.
-render_native_effect_oriented = render_native_effect
 
 
 def _render_gradient(phase: float, direction: str) -> list[tuple[int, int, int]]:

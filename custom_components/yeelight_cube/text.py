@@ -45,8 +45,8 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
         self._ip = ip
         self._config_entry = config_entry
         self._attr_translation_key = "display_text"
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_display_text"
-        self._attr_native_value = light_entity._custom_text
+        self._attr_unique_id = f"{light_entity.unique_id}_display_text"
+        self._attr_native_value = light_entity.custom_text
         
         # Text input constraints
         self._attr_native_min = 0
@@ -58,7 +58,7 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
     def native_value(self) -> str:
         """Return the current text value."""
         # Always get fresh value from light entity
-        return self._light_entity._custom_text
+        return self._light_entity.custom_text
     
     async def async_set_value(self, value: str) -> None:
         """Update the text and apply to the lamp."""
@@ -69,30 +69,9 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
             _LOGGER.debug("[TEXT INPUT] Light entity not ready yet, skipping update")
             return
         
-        # Update the light entity's custom text
-        await self._light_entity.set_custom_text(value)
-        
-        # Disable pixel art mode — text takes priority
-        self._light_entity._custom_pixels = None
-        self._light_entity._custom_draw_active = False
-        self._light_entity._active_pixel_art_name = None
+        # The text replaces the drawing.
+        await self._light_entity.async_set_text_input(value)
 
-        # Leaving pixel-art (Custom Draw) for text: restore a valid text render
-        # mode so the renderer doesn't fall through all branches and blank the
-        # panel, and the mode-select entity stays consistent.
-        if self._light_entity._mode == "Custom Draw":
-            self._light_entity._mode = "Solid Color"
-            self._light_entity._matrix_mode = "Solid Color"
-            if self._light_entity._mode_select_entity:
-                self._light_entity._mode_select_entity.async_update_from_light()
-
-        # Notify pixel art select entity (deselect)
-        if self._light_entity._pixel_art_select_entity:
-            self._light_entity._pixel_art_select_entity.async_update_from_light()
-        
-        # Apply the changes to the lamp
-        await self._light_entity.async_apply_display_mode()
-        
         # Update our local value
         self._attr_native_value = value
         
@@ -103,7 +82,7 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
     @callback
     def async_update_from_light(self):
         """Update the text input when light entity's text changes."""
-        new_value = self._light_entity._custom_text
+        new_value = self._light_entity.custom_text
         _LOGGER.debug("[TEXT INPUT] async_update_from_light called: current='%s', new='%s'", self._attr_native_value, new_value)
         if self._attr_native_value != new_value:
             _LOGGER.debug("[TEXT INPUT] Updating value from '%s' to '%s'", self._attr_native_value, new_value)
@@ -122,7 +101,7 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
         await super().async_added_to_hass()
         
         # The light notifies it of changes made elsewhere.
-        self._register_on_light("_text_input_entity")
+        self._listen_to_light("text_input")
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:

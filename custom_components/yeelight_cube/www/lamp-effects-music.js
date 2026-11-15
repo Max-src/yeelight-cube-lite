@@ -12,7 +12,6 @@
 import {
   DIRECTION_TABLE,
   HANDOVER_FLAGS,
-  LENGTH,
   REFERENCE_PROFILE,
   blendGrid,
   blurColumns,
@@ -32,11 +31,12 @@ import {
   placeStrip,
   readBackFlags,
   rowBlurGrid,
+  settingsLength,
   sourceWord,
   sx8,
 } from "./lamp-core.js";
 
-const newPanel = () => new Uint8Array(3 * LENGTH);
+const newPanel = (length) => new Uint8Array(3 * length);
 
 // A warmup here is the worst start over the demo loop (and the rates and
 // intensities that matter, swept against a full replay): the smoothers forget
@@ -46,6 +46,7 @@ const newPanel = () => new Uint8Array(3 * LENGTH);
 function gridState(settings) {
   const [width, height] = effectGeometry(settings);
   const colours = effectColours(settings);
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     width,
@@ -53,7 +54,8 @@ function gridState(settings) {
     table: colours.table,
     span: paletteSpan(colours.palette.length),
     work: newGrid(width, height),
-    panel: newPanel(),
+    length,
+    panel: newPanel(length),
   };
 }
 
@@ -65,7 +67,7 @@ const breathingInit = (settings, weight) => ({
   table: effectColours(settings).table,
   weight,
   level: 0, // the smoothed level, shared across slots
-  panel: newPanel(),
+  panel: newPanel(settingsLength(settings)),
 });
 
 const breathing20Init = (settings) => breathingInit(settings, 4);
@@ -87,7 +89,7 @@ function breathingStep(state, settings, clockMs, render) {
     green = (green * gain) >> 8;
     blue = (blue * gain) >> 8;
   }
-  for (let cell = 0; cell < 3 * LENGTH; cell += 3) {
+  for (let cell = 0; cell < panel.length; cell += 3) {
     // one colour: no placement
     panel[cell] = red;
     panel[cell + 1] = green;
@@ -103,18 +105,20 @@ const BARS_WARMUP = 36; // the level, then the peak's next catch
 
 const barsInit = (settings, selector) => {
   const colours = effectColours(settings);
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     table: colours.table,
     span: paletteSpan(colours.palette.length),
     selector,
-    width: f32(LENGTH >> (selector ? 1 : 0)),
+    length,
+    width: f32(length >> (selector ? 1 : 0)),
     limit: 8 - (settings.rate >> 5),
-    strip: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
     level: 0,
     index: 0,
     peak: 0,
-    panel: newPanel(),
+    panel: newPanel(length),
   };
 };
 
@@ -123,29 +127,29 @@ const bars26Init = (settings) => barsInit(settings, 1);
 const bars25Init = (settings) => barsInit(settings, 2);
 
 /** Steps first..last - 1 of a bar, in one colour. */
-function barsDraw(strip, selector, first, last, red, green, blue) {
+function barsDraw(strip, length, selector, first, last, red, green, blue) {
   const put = (pixel) => {
     strip[3 * pixel] = red;
     strip[3 * pixel + 1] = green;
     strip[3 * pixel + 2] = blue;
   };
-  const mid = LENGTH >> 1;
+  const mid = length >> 1;
   for (let step = first; step < last; step += 1) {
     if (selector === 1) {
       put(mid + step);
       put(mid - 1 - step);
     } else {
       put(step);
-      if (selector === 2) put(LENGTH - 1 - step);
+      if (selector === 2) put(length - 1 - step);
     }
   }
 }
 
 function barsStep(state, settings, clockMs, render) {
   const [level, , , spectrum] = demoSound(render);
-  const { strip, selector, width, table } = state;
+  const { strip, selector, width, table, length } = state;
   state.level = Math.floor((2 * state.level + level) / 3);
-  fadeTowards(strip, 254);
+  fadeTowards(strip, 254, 0, length);
   const gain = f32(f32(f32(f32(state.level) * f32(settings.intensity)) / 255.0) * 0.125);
   const span = f32(width * (gain + gain) * 0.03125);
   const bars = span < 1 ? 1 : Math.trunc(span <= width ? span : width);
@@ -162,19 +166,25 @@ function barsStep(state, settings, clockMs, render) {
     state.index = best >= spectrum[15] ? (index * 17) & 0xffff : 255;
   }
   const at = 3 * ((state.span * (state.index & 255)) >> 8);
-  barsDraw(strip, selector, 0, bars, table[at], table[at + 1], table[at + 2]);
+  barsDraw(strip, length, selector, 0, bars, table[at], table[at + 1], table[at + 2]);
   let { peak } = state;
   if (bars >= peak) peak = bars - 1;
   else if (render % state.limit === 0) peak -= 1; // the hold counter, from 0 at the Apply
   state.peak = peak;
-  if (peak >= 0) barsDraw(strip, selector, peak, peak + 1, 255, 255, 255);
+  if (peak >= 0) barsDraw(strip, length, selector, peak, peak + 1, 255, 255, 255);
   return placeStrip(strip, state.direction, state.panel);
 }
 
 // ── Slot 27: Music ────────────────────────────────────────────────────
 const MUSIC_WARMUP = 11; // a re-sum, then the fade; ties on the beat hold it
 
-const musicInit = () => ({ colour: new Uint8Array(3), low: 0, mid: 0, high: 0, panel: newPanel() });
+const musicInit = (settings) => ({
+  colour: new Uint8Array(3),
+  low: 0,
+  mid: 0,
+  high: 0,
+  panel: newPanel(settingsLength(settings)),
+});
 
 function musicStep(state, settings, clockMs, render) {
   const [level, , , spectrum] = demoSound(render);
@@ -190,7 +200,7 @@ function musicStep(state, settings, clockMs, render) {
   else if (mid > low && mid > high) target = 0xff00;
   else if (high > low && high > mid) target = 0xff;
   if (target !== null) fadeTowards(colour, 255, target, 1); // the strip is one colour
-  for (let cell = 0; cell < 3 * LENGTH; cell += 3) panel.set(colour, cell);
+  for (let cell = 0; cell < panel.length; cell += 3) panel.set(colour, cell);
   return panel;
 }
 
@@ -259,7 +269,8 @@ function gatherInit(settings) {
   const state = gridState(settings);
   // A bar longer than the grid gives negative mirrored rows: the 16-bit index
   // clamps to the last pixel after the mapper, the cell the mapper sends there.
-  state.last = pixelMap(settings.direction).indexOf(LENGTH - 1);
+  const { length } = state;
+  state.last = pixelMap(settings.direction, REFERENCE_PROFILE, length).indexOf(length - 1);
   return state;
 }
 
@@ -405,7 +416,7 @@ function equalizerStep(state, settings, clockMs, render) {
     }
   }
   // Through the mapper on the flags it runs with (lamp_effects_music.py).
-  const placement = equalizerPlacement(settings);
+  const placement = equalizerPlacement(settings, state.length);
   const { panel } = state;
   for (let byte = 0; byte < panel.length; byte++) panel[byte] = work[placement[byte]];
   return panel;
@@ -415,14 +426,14 @@ const PLACEMENTS_51 = new Map();
 
 // Panel byte -> grid byte: each grid cell through the mapper on the flags slot
 // 51 runs with (0x05 behind the clock), one panel pixel each.
-function equalizerPlacement(settings) {
+function equalizerPlacement(settings, length) {
   const mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings.direction];
   const flags = settings.handover ? HANDOVER_FLAGS : readBackFlags(51, mapped);
-  const key = `${mapped},${flags}`;
+  const key = `${mapped},${flags},${length}`;
   if (!PLACEMENTS_51.has(key)) {
-    const table = new Uint16Array(3 * LENGTH);
-    for (let pixel = 0; pixel < LENGTH; pixel++) {
-      const [index] = flaggedTargets(pixel, LENGTH, mapped, flags);
+    const table = new Uint16Array(3 * length);
+    for (let pixel = 0; pixel < length; pixel++) {
+      const [index] = flaggedTargets(pixel, length, mapped, flags);
       for (let channel = 0; channel < 3; channel++) table[3 * index + channel] = 3 * pixel + channel;
     }
     PLACEMENTS_51.set(key, table);
@@ -515,7 +526,7 @@ const IMPACT_LAUNCH = -2.200000047683716;
 function impactInit(settings) {
   const state = gridState(settings);
   state.gravity = f32(state.height * f32(f32(settings.rate / -10000) + IMPACT_FALL));
-  state.particles = Array.from({ length: LENGTH >> 4 }, () => ({
+  state.particles = Array.from({ length: state.length >> 4 }, () => ({
     y: 0,
     x: 0,
     vy: 0,

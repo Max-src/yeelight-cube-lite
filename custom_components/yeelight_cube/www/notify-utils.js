@@ -22,7 +22,7 @@ export function notify(element, message) {
 }
 
 /** True when HA's callService has already reported this failure to the user. */
-export function isReportedByHass(error) {
+function isReportedByHass(error) {
   return !!error && typeof error === "object" && !(error instanceof Error);
 }
 

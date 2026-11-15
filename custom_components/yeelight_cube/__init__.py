@@ -7,12 +7,14 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP # type: ignore
 from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from yeelight import BulbException  # type: ignore
 from homeassistant.helpers.typing import ConfigType # type: ignore
 from homeassistant.helpers.event import async_call_later # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
-from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID, LAN_PORT, PROBE_TIMEOUT
-from .cube_matrix import check_tcp
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID, CONF_MATTER_MAC, LAN_PORT, PROBE_TIMEOUT
+from .lamp_protocol import check_tcp
+from .device_profile import CUBEMATRIX, model_key
 from .conflict_prevention import get_conflict_prevention
 from .discovery_services import async_setup_services
 from .issues import clear_problems
@@ -43,9 +45,6 @@ FRONTEND_CARD_FILES = [
 ]
 
 FRONTEND_URL_BASE = f"/{DOMAIN}"
-
-# Unique prefix to tag resources we manage so we can update/identify them
-_RESOURCE_TAG = "yeelight_cube_auto"
 
 # Ensure ES-module assets are always served with a JavaScript MIME type.
 # Browsers enforce strict MIME checking for module scripts: if a .js/.mjs file
@@ -175,9 +174,13 @@ async def _async_register_lovelace_resources(
 
 
 def _is_cubelite_model(model: str) -> bool:
-    """Check if a SSDP model string represents a CubeLite device."""
+    """Whether an SSDP model string is a lamp this integration drives: a
+    Cube Lite, or a Cube Matrix (the original Yeelight Cube; device_profile)."""
     m = model.lower()
-    return "cubelite" in m or "cube_lite" in m or "cube-lite" in m or "clt" in m
+    return (
+        "cubelite" in m or "cube_lite" in m or "cube-lite" in m or "clt" in m
+        or model_key(model) == CUBEMATRIX
+    )
 
 
 async def _async_serve_card_files(hass: HomeAssistant) -> None:
@@ -365,6 +368,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     await _async_register_frontend_cards(hass)
 
+    # The animations' frames (a file read and decoded once, then cached):
+    # read here, off the event loop, not at their first use in it.
+    from .lamp_animations import animation_names
+
+    await hass.async_add_executor_job(animation_names)
+
     _schedule_device_discovery(hass)
 
     return True
@@ -457,7 +466,7 @@ async def _async_migrate_entity_unique_ids(
             ent_reg.async_update_entity(entity_id, new_unique_id=new_uid)
             migrated += 1
             _LOGGER.debug("[MIGRATE] %s: %s → %s", entity_id, old_uid, new_uid)
-        except Exception as exc:
+        except ValueError as exc:  # the new unique id is taken
             _LOGGER.warning(
                 "[MIGRATE] Failed to migrate %s (%s → %s): %s",
                 entity_id, old_uid, new_uid, exc,
@@ -477,16 +486,19 @@ def _resync_entry_title(hass: HomeAssistant, entry: ConfigEntry, ip_address: str
     # title keeps showing the IP from creation time. Only rewrite titles
     # that match the auto-generated pattern — never a user-customized name.
     title_match = re.fullmatch(
-        r"(?:Yeelight Cube|CubeLite.*) \((\d{1,3}(?:\.\d{1,3}){3})\)",
+        r"(Yeelight Cube(?: Matrix)?|CubeLite.*|Cube Matrix.*) \((\d{1,3}(?:\.\d{1,3}){3})\)",
         entry.title or "",
     )
-    if title_match and title_match.group(1) != ip_address:
+    if title_match and title_match.group(2) != ip_address:
         _LOGGER.info(
             "[SETUP] Updating stale entry title '%s' to current IP %s",
             entry.title, ip_address,
         )
         hass.config_entries.async_update_entry(
-            entry, title=f"Yeelight Cube ({ip_address})"
+            entry, title=(
+                f"Yeelight Cube Matrix ({ip_address})"
+                if "Matrix" in title_match.group(1) else f"Yeelight Cube ({ip_address})"
+            )
         )
 
 
@@ -546,7 +558,7 @@ async def _async_store_device_id(
                         entry,
                         data={**entry.data, CONF_DEVICE_ID: new_device_id},
                     )
-        except Exception as exc:
+        except (OSError, BulbException, ValueError) as exc:
             _LOGGER.debug("[SETUP] Could not fetch device_id for %s: %s", ip_address, exc)
 
 
@@ -589,7 +601,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CubeConfigEntry) -> bool
     # This migration runs once; after that the old entities no longer exist.
     await _async_migrate_entity_unique_ids(hass, entry, ip_address)
 
-    # Set up light platform FIRST — it creates the CubeMatrix and stores the
+    # Set up light platform FIRST — it creates the LampClient and stores the
     # light entity in entry.runtime_data, which the other platforms (switch,
     # camera, …) depend on.
     # A network or lamp error while the light sets up (OSError, timeouts
@@ -613,7 +625,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CubeConfigEntry) -> bool
         ) from exc
     
     # Now set up all dependent platforms (they can safely read the light entity)
-    await hass.config_entries.async_forward_entry_setups(entry, ["switch", "text", "select", "sensor", "number", "button", "camera", "event"])
+    await hass.config_entries.async_forward_entry_setups(entry, ["switch", "text", "select", "sensor", "binary_sensor", "number", "button", "camera", "event"])
     
     # Auto-dismiss built-in Yeelight discovery flows for this device.
     # The built-in Yeelight integration discovers CubeLite devices via zeroconf/DHCP
@@ -669,7 +681,7 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
                         "name": device_name or f"CubeLite ({bulb_ip})",
                     },
                 )
-            except Exception as exc:
+            except HomeAssistantError as exc:
                 # Flow may abort if already configured — that's fine
                 _LOGGER.debug("[SSDP-SCAN] Flow init result: %s", exc)
 
@@ -678,7 +690,7 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
         # users see them only under our integration.
         await _async_dismiss_yeelight_discoveries(hass)
 
-    except Exception as exc:
+    except (OSError, HomeAssistantError) as exc:
         _LOGGER.warning("[SSDP-SCAN] Scan failed: %s", exc)
 
 
@@ -700,7 +712,7 @@ def _async_dismiss_own_discovery_flows(
                     "[REDISCOVER] Dismissed stale discovery flow %s (unique_id=%s)",
                     flow["flow_id"], context_uid,
                 )
-            except Exception as err:  # noqa: BLE001 — flow may already be gone
+            except HomeAssistantError as err:  # the flow may already be gone
                 _LOGGER.debug(
                     "[REDISCOVER] Could not dismiss discovery flow %s: %s",
                     flow["flow_id"], err,
@@ -735,6 +747,9 @@ async def _async_try_rediscover(
         _LOGGER.debug("[REDISCOVER] Found %d Yeelight devices on the network", len(bulbs))
 
         stored_device_id = entry.data.get(CONF_DEVICE_ID, "")
+        # An entry found through Matter has no SSDP id but its Wi-Fi MAC,
+        # which is a Cube Matrix's SSDP id (84fce6096a80).
+        stored_mac = normalize_device_id(str(entry.data.get(CONF_MATTER_MAC) or "").replace(":", ""))
 
         # --- Pass 1: match by device_id (precise, handles multiple lamps) ---
         for bulb in bulbs:
@@ -751,11 +766,9 @@ async def _async_try_rediscover(
             if not _is_cubelite_model(model):
                 continue
 
-            if (
-                stored_device_id
-                and device_id
-                and normalize_device_id(device_id)
-                == normalize_device_id(stored_device_id)
+            if device_id and (
+                (stored_device_id and normalize_device_id(device_id) == normalize_device_id(stored_device_id))
+                or (stored_mac and normalize_device_id(device_id) == stored_mac)
             ):
                 _LOGGER.info(
                     "[REDISCOVER] Matched by device_id '%s': %s -> %s. "
@@ -773,7 +786,7 @@ async def _async_try_rediscover(
         _LOGGER.info("[REDISCOVER] No matching hardware identity found for %s", old_ip)
         return None
 
-    except Exception as exc:
+    except (OSError, HomeAssistantError) as exc:
         _LOGGER.warning("[REDISCOVER] Scan failed: %s", exc)
         return None
 
@@ -820,7 +833,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Unload platforms (removes entities tied to this entry, including sensors
     # if this entry was the one that created them).
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera", "event"])
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "binary_sensor", "number", "button", "camera", "event"])
 
     # Home Assistant drops entry.runtime_data once the entry is unloaded.
 
@@ -853,7 +866,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.debug(
                     "Global sensors transferred to entry %s", new_owner_id
                 )
-            except Exception as exc:
+            except HomeAssistantError as exc:
                 _LOGGER.warning(
                     "Failed to recreate sensors after entry removal: %s", exc
                 )
@@ -936,7 +949,7 @@ async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
 
     try:
         flows = hass.config_entries.flow.async_progress_by_handler("yeelight")
-    except Exception:
+    except AttributeError:
         return
 
     for flow in flows:
@@ -954,6 +967,6 @@ async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
                     "Auto-dismissed built-in Yeelight discovery for %s (managed by Yeelight Cube Lite)",
                     flow_host,
                 )
-            except Exception as exc:
+            except HomeAssistantError as exc:  # the flow is gone
                 _LOGGER.debug("Could not abort Yeelight discovery flow: %s", exc)
 

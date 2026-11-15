@@ -5,7 +5,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.yeelight_cube.const import CONF_DEVICE_ID, CONF_IP, CONF_MATTER_MAC, DOMAIN
+from custom_components.yeelight_cube.const import CONF_DEVICE_ID, CONF_IP, CONF_MATTER_MAC, CONF_MODEL, DOMAIN
 
 DISCOVERY = config_entries.SOURCE_DISCOVERY
 
@@ -35,6 +35,8 @@ async def test_manual_setup_adds_a_lamp_that_answers(hass, lamp_answers):
     result = await oriented(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Yeelight Cube (192.168.4.139)"
+    # No get_prop answer: no model stored (a Cube Matrix can answer late;
+    # the light asks again, LampClient.probe_model).
     assert result["data"] == {CONF_IP: "192.168.4.139"}
     assert result["options"] == {"mount_profile": 2, "mount_profile_source": "user"}
     assert result["result"].unique_id == "192.168.4.139"
@@ -83,7 +85,7 @@ async def test_a_discovered_lamp_is_added_once_confirmed(hass):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     result = await oriented(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {CONF_IP: "192.168.4.150", CONF_DEVICE_ID: "1234ab"}
+    assert result["data"] == {CONF_IP: "192.168.4.150", CONF_DEVICE_ID: "1234ab", CONF_MODEL: "CubeLite"}
     assert result["result"].unique_id == "1234ab"
 
 
@@ -152,7 +154,7 @@ def zeroconf(name, properties):
 # ── A lamp found in Home Assistant's Matter integration ──────────────────────
 
 MATTER = config_entries.SOURCE_INTEGRATION_DISCOVERY
-MATTER_LAMP = {CONF_IP: "192.168.4.139", CONF_MATTER_MAC: "cc:ba:97:44:38:98"}
+MATTER_LAMP = {CONF_IP: "192.168.4.139", CONF_MATTER_MAC: "cc:ba:97:44:38:98", CONF_MODEL: "CubeLite"}
 
 
 async def test_a_lamp_found_in_matter_is_added_once_it_answers_over_lan(hass, lamp_answers):
@@ -180,7 +182,7 @@ async def test_a_lamp_found_in_matter_without_a_mac(hass, lamp_answers):
     result = await start(hass, MATTER, {CONF_IP: "192.168.4.139"})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     result = await oriented(hass, result, "3")  # arrow down, or never set
-    assert result["data"] == {CONF_IP: "192.168.4.139"}
+    assert result["data"] == {CONF_IP: "192.168.4.139", CONF_MODEL: "CubeLite"}
     assert result["options"] == {"mount_profile": 3, "mount_profile_source": "user"}
 
 
@@ -194,8 +196,22 @@ async def test_a_lamp_found_in_matter_that_is_already_set_up(hass, lamp_answers)
         known = entry(hass, **data)
         result = await start(hass, MATTER, dict(MATTER_LAMP))
         assert (result["type"], result["reason"]) == (FlowResultType.ABORT, "already_configured")
+        # Known by its MAC on another address: not moved while the lamp still
+        # answers at its own (the Matter server's address may be stale).
+        assert known.data[CONF_IP] == data["data"][CONF_IP]
         await hass.config_entries.async_remove(known.entry_id)
-    lamp_answers.assert_not_awaited()
+
+
+async def test_a_lamp_found_in_matter_on_a_new_address_is_followed(hass, lamp_answers):
+    # Its remembered MAC, silent at its address, answering at the new one.
+    known = entry(hass, unique_id="5678cd", data={CONF_IP: "192.168.4.20", CONF_MATTER_MAC: "cc:ba:97:44:38:98"})
+    lamp_answers.side_effect = lambda ip, *args: (_ for _ in ()).throw(OSError()) if ip == "192.168.4.20" else None
+    result = await start(hass, MATTER, dict(MATTER_LAMP))
+    assert (result["type"], result["reason"]) == (FlowResultType.ABORT, "already_configured")
+    assert known.data[CONF_IP] == "192.168.4.139"
+    # Never to an address no lamp can be reached at.
+    result = await start(hass, MATTER, {**MATTER_LAMP, CONF_IP: "0.0.0.0"})
+    assert (result["type"], result["reason"]) == (FlowResultType.ABORT, "no_address")
 
 
 async def test_zeroconf_offers_a_cube_and_ignores_other_lamps(hass):
@@ -362,3 +378,77 @@ async def test_setup_checks_the_orientation_on_the_lamp(hass, lamp_answers):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["options"] == {"mount_profile": 2, "mount_profile_source": "user"}
 
+
+
+# ── The Cube Matrix (the original Yeelight Cube, classic firmware) ──────────
+
+CUBE_MATRIX_LAYOUT = {"cube_topology": "1,1,1,1,3,3,0,0,", "rotation_angle": "3", "strip_lenth": "110"}
+
+
+async def test_a_cube_matrix_added_by_hand_is_added_at_once(hass, lamp_answers, cube_matrix_layout):
+    # It answers get_prop: no orientation step (it drives Cube Lite effects),
+    # mounted as it reports.
+    cube_matrix_layout.return_value = dict(CUBE_MATRIX_LAYOUT)
+    result = await start(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_IP: "192.168.4.189"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Yeelight Cube Matrix (192.168.4.189)"
+    assert result["data"] == {CONF_IP: "192.168.4.189", CONF_MODEL: "CubeMatrix"}
+    assert result["options"] == {"mount_profile": 3, "mount_profile_source": "user"}
+    cube_matrix_layout.assert_awaited_once_with("192.168.4.189")
+
+
+async def test_a_discovered_cube_matrix(hass, cube_matrix_layout):
+    # Its model said so; a rotation it does not report: the lamp default.
+    cube_matrix_layout.return_value = {**CUBE_MATRIX_LAYOUT, "rotation_angle": ""}
+    result = await start(hass, DISCOVERY, {"ip": "192.168.4.189", "model": "CubeMatrix",
+                                           "device_id": "84fce6001234", "name": "CubeMatrix"})
+    flow = hass.config_entries.flow.async_get(result["flow_id"])
+    assert flow["context"]["title_placeholders"]["name"] == "Cube Matrix 0x84fce6001234 (192.168.4.189)"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {CONF_IP: "192.168.4.189", CONF_DEVICE_ID: "84fce6001234", CONF_MODEL: "CubeMatrix"}
+    assert result["options"] == {"mount_profile": 3, "mount_profile_source": "user"}
+
+
+async def test_a_cube_matrix_found_in_matter(hass, lamp_answers, cube_matrix_layout):
+    # Shared to Home Assistant's Matter server (product 16787457): offered
+    # as a Cube Matrix, added at once like one found over the LAN.
+    cube_matrix_layout.return_value = {**CUBE_MATRIX_LAYOUT, "cube_topology": "2,2,2,2,0,0,0,0,",
+                                       "rotation_angle": "0", "strip_lenth": "100"}
+    lamp = {CONF_IP: "192.168.4.189", CONF_MATTER_MAC: "84:fc:e6:00:12:34", CONF_MODEL: "CubeMatrix"}
+    result = await start(hass, MATTER, dict(lamp))
+    flow = hass.config_entries.flow.async_get(result["flow_id"])
+    assert flow["context"]["title_placeholders"]["name"] == "Cube Matrix (192.168.4.189)"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Yeelight Cube Matrix (192.168.4.189)"
+    assert result["data"] == lamp
+    assert result["options"] == {"mount_profile": 0, "mount_profile_source": "user"}
+
+
+async def test_a_discovered_cube_matrix_that_does_not_answer_get_prop(hass, cube_matrix_layout):
+    # The model alone makes it one.
+    result = await start(hass, DISCOVERY, {"ip": "192.168.4.189", "model": "CubeMatrix"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MODEL] == "CubeMatrix"
+
+
+async def test_the_model_probe_reads_the_layout(cube_matrix_layout):
+    from unittest.mock import AsyncMock, patch
+
+    probe = cube_matrix_layout.original
+    answers = {
+        "answers": ({"id": 1, "result": ["1,1,1,1,3,3,0,0,", "3", "110"]}, CUBE_MATRIX_LAYOUT),
+        "a Cube Lite never answers": (OSError("timed out"), None),
+        "no modules": ({"id": 1, "result": ["0,0,0,0,", "", ""]}, None),
+        "short": ({"id": 1, "result": []}, None),
+    }
+    for name, (reply, expected) in answers.items():
+        mock = AsyncMock(side_effect=reply) if isinstance(reply, Exception) else AsyncMock(return_value=reply)
+        with patch("custom_components.yeelight_cube.config_flow.send_once", new=mock):
+            assert await probe("192.168.4.189") == expected, name
+        mock.assert_awaited_once_with(
+            "192.168.4.189", 55443, "get_prop", ["cube_topology", "rotation_angle", "strip_lenth"], 1.5,
+        )

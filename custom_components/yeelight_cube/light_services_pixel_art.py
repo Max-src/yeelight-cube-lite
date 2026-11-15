@@ -96,7 +96,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
                 connection.send_error(msg["id"], "no_pixels", f"No valid pixels for idx {idx}")
                 return
             connection.send_result(msg["id"], {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])})
-        except Exception as e:
+        except (KeyError, TypeError) as e:  # a malformed message or stored pixel art
             _LOGGER.error("[pixelart-debug] Exception in ws_get_pixel_art_v2: %s", e)
 
     websocket_api.async_register_command(hass, ws_get_pixel_art_v2)
@@ -111,7 +111,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_builtin_pixel_arts)
 
     # NOTE: Entity is already created and registered at the top of this function.
-    # Do NOT create a second CubeMatrix/YeelightCubeLight here.
+    # Do NOT create a second LampClient/YeelightCubeLight here.
 
     # --- Pixel Art Service Handlers ---
     async def handle_save_pixel_art(service_call):
@@ -198,7 +198,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             await target_entity.show_pixel_art(name, pixels)
-            _LOGGER.debug("[pixelart-backend] Applied pixel art '%s' to %s.", name, target_entity._ip)
+            _LOGGER.debug("[pixelart-backend] Applied pixel art '%s' to %s.", name, target_entity.ip)
 
         run_on_lamps("APPLY_PIXEL_ART", targets, _apply_one)
 

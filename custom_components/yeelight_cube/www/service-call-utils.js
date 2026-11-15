@@ -125,3 +125,29 @@ export async function callServiceOnTargetEntities(
     throw error;
   }
 }
+
+/**
+ * Before a card shows its lamps an effect or clock in the Palette color mode:
+ * each lamp draws its own palette (its text_colors), so a lamp whose palette
+ * differs from the one the card shows (its primary lamp's, `shownEntity`)
+ * would show other colors than the card. Those lamps are given the shown
+ * palette first (set_text_colors, one call). Only available lamps; nothing
+ * is sent when they all have it already, or the shown lamp has none.
+ * Resolves to the lamps that were given it.
+ */
+export async function shareShownPalette(hass, config, shownEntity) {
+  const shown = hass?.states?.[shownEntity]?.attributes?.text_colors;
+  if (!Array.isArray(shown) || !shown.length) return [];
+  const wanted = JSON.stringify(shown);
+  const others = availableTargets(hass, config).filter(
+    (entity) =>
+      entity !== shownEntity &&
+      JSON.stringify(hass.states[entity]?.attributes?.text_colors ?? null) !== wanted,
+  );
+  if (!others.length) return [];
+  await hass.callService("yeelight_cube", "set_text_colors", {
+    entity_id: others.length === 1 ? others[0] : others,
+    text_colors: shown.map((colour) => [...colour]),
+  });
+  return others;
+}

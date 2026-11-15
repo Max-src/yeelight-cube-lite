@@ -1,25 +1,42 @@
 """Tests for Cube Lite native protocol definitions and bundled presets."""
 
-import __future__
+import sys as _sys
+
+# Other test files import this one as tests.test_native_features, test discovery as
+# test_native_features: one module under both names, so its setup runs once and a patch
+# of it is seen by all.
+for _name in ("test_native_features", "tests.test_native_features"):
+    _sys.modules.setdefault(_name, _sys.modules[__name__])
+
 import ast
 import importlib
 import sys
 import asyncio
 import base64
 import colorsys
+import datetime
 import json
 from pathlib import Path
 import runpy
 import shutil
 import subprocess
-import time
 import types
 import unittest
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
+
+sys.path.insert(0, str(Path(__file__).parent))
+from fakes import (  # noqa: E402
+    FakeCube, FakeHass, HomeAssistantError, NodeRun, functions, instant_asyncio, instant_sleeps, make_light, module, parsed,
+    run as run_on_loop, slow,
+)
+
+# The lamp's pacing waits (0.1 s around an activation) do not wait in the tests.
+INSTANT_ASYNCIO = instant_asyncio()
 
 
 ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
-CONSTANTS = runpy.run_path(ROOT / "const.py")
+# The constants the light's code sees: const.py's and the effect catalogue's.
+CONSTANTS = {**runpy.run_path(ROOT / "const.py"), **runpy.run_path(ROOT / "effect_catalog.py")}
 PIXEL_ART = runpy.run_path(ROOT / "builtin_pixel_art.py")
 NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
 LAMP_RENDERERS = runpy.run_path(ROOT / "lamp_renderers.py")
@@ -29,7 +46,7 @@ COLOR_ADJUSTMENTS = runpy.run_path(ROOT / "color_adjustments.py")
 # its own: the activations and the helpers they call. live_effect_changes is a
 # module function; the others are methods (NATIVE_ACTIVATION_METHODS).
 NATIVE_ACTIVATION = frozenset({
-    "effect_direction_sent", "lamp_direction",
+    "effect_direction_sent", "lamp_direction", "label_direction",
     "_activate_native_effect", "_native_effect_params",
     "_activate_native_clock", "_native_clock_params",
     "_send_native", "_update_running_effect", "_native_renderer_shown",
@@ -37,12 +54,12 @@ NATIVE_ACTIVATION = frozenset({
     "runs_lamp_music", "_clear_fx_mode_flag", "intensity_config",
     "palette_music", "_send_palette_music", "_build_music_flow_payload",
     "_store_animation", "_send_music_direction", "_music_direction_due", "stored_gif_tile",
-    "animation_look",
+    "animation_look", "names_streamed_slot",
 })
 NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {
-    "live_effect_changes", "effect_direction_sent", "lamp_direction", "stored_gif_tile",
+    "live_effect_changes", "effect_direction_sent", "lamp_direction", "label_direction", "stored_gif_tile",
     "animation_look", "runs_lamp_music", "intensity_config", "palette_music",
-    "_build_music_flow_payload",
+    "_build_music_flow_payload", "names_streamed_slot",
 }
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
 MOUNT_PROFILE = runpy.run_path(ROOT / "mount_profile.py")
@@ -59,6 +76,15 @@ def import_pure_module(name: str) -> types.ModuleType:
 
 
 MATTER_COMMANDS = import_pure_module("matter_commands")
+# The real modules, for the tests that run the light itself (fakes.make_light).
+CONST = module("const")
+CUBE = module("lamp_client")
+PROTOCOL = module("lamp_protocol")
+HEALTH = module("lamp_client_health")
+DISPLAY = module("light_display")
+LIGHT_MODULE = module("light")
+# The light's life in Home Assistant (its timers): light_lifecycle.py.
+LIFECYCLE_MODULE = module("light_lifecycle")
 # The effect ids the Yeelight app shows as one of its effects when the lamp
 # reports them: its 18 effect tiles, the clock, a drawing, a plain colour and
 # the ids it shows as Music Flow. (71, its GIFs, it tells by the custom id.)
@@ -93,7 +119,7 @@ _DEFAULT_NAMESPACE = {
         "MODE_CLOCK", "MODE_NATIVE_EFFECT", "LAMP_MODES", "ROTATION_KIND_MODES",
         "lamp_rate", "lamp_intensity", "DEFAULT_NATIVE_EFFECT_INTENSITY",
         "PALETTE_COLOR_MODE", "MUSIC_FLOW_EFFECTS", "MUSIC_FLOW_DEFAULT_PALETTE",
-        "DEFAULT_NATIVE_EFFECT_SPEED",
+        "DEFAULT_NATIVE_EFFECT_SPEED", "streamed_slot",
     )},
     # What an animation's GIF is drawn with (light_native.animation_look).
     **{name: COLOR_ADJUSTMENTS[name] for name in ("ADJUSTMENT_DEFAULTS", "active_adjustments")},
@@ -109,6 +135,9 @@ _DEFAULT_NAMESPACE = {
     "base64": __import__("base64"),
     **{name: COLOR_UTILS[name] for name in ("rgb_to_argb", "argb_to_rgb")},
     "compensate_direction": MOUNT_PROFILE["compensate_direction"],
+    "one_axis_direction": MOUNT_PROFILE["one_axis_direction"],
+    "HIGH_PAIR": MOUNT_PROFILE["HIGH_PAIR"],
+    "LOW_PAIR": MOUNT_PROFILE["LOW_PAIR"],
     **ERRORS,
 }
 # The light entity is split across light.py and its light_*.py mixins. Join them
@@ -136,8 +165,44 @@ CLOCK_CARD_SOURCE = "\n\n".join(
 )
 
 
+_CARDS = None
+
+
+def cards() -> dict:
+    """What the cards' modules hold and resolve (www/clock-preview-utils.js,
+    lamp-renderers.js, effect-families.js), for the names of effect_catalog.py: one
+    Node run, on first use."""
+    global _CARDS
+    if _CARDS is None:
+        www = ROOT / "www"
+        clock, lamp, families = (
+            json.dumps((www / name).as_uri())
+            for name in ("clock-preview-utils.js", "lamp-renderers.js", "effect-families.js")
+        )
+        _CARDS = NodeRun(
+            f"import * as clock from {clock}; import * as lamp from {lamp}; import * as families from {families};"
+            "import {readFileSync} from 'node:fs';"
+            "const asked = JSON.parse(readFileSync(0, 'utf8'));"
+            "const each = (keys, value) => Object.fromEntries(keys.map((key) => [key, value(key)]));"
+            "process.stdout.write(JSON.stringify({"
+            " mixerEffects: clock.CLOCK_MIXER_EFFECTS, styleMixer: clock.CLOCK_STYLE_MIXER,"
+            " mixerByName: each(asked.names, (name) => clock.clockStyleMixer({clock_style: name})),"
+            " mixerById: each(asked.ids, (id) => clock.clockStyleMixer({clock_style_id: Number(id)})),"
+            " clockDirection: each(asked.clockEffects, (effect) => lamp.lampClockSettings(effect, 50).direction),"
+            " defaultSpeed: lamp.DEFAULT_EFFECT_SPEED, undirected: lamp.UNDIRECTED_EFFECT_DIRECTION,"
+            " familyNames: families.EFFECT_FAMILY_NAMES,"
+            "}));",
+            {
+                "names": sorted(set(CONSTANTS["CLOCK_MIXER_EFFECTS"].values())),
+                "ids": [str(style_id) for style_id in CONSTANTS["NATIVE_CLOCK_STYLES"]],
+                "clockEffects": sorted(set(CONSTANTS["CLOCK_MIXER_EFFECTS"].values())),
+            },
+        )
+    return _CARDS.result()
+
+
 def _function_source(source: str, name: str) -> str:
-    tree = ast.parse(source)
+    tree = parsed(source)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
             lines = source.splitlines()
@@ -172,27 +237,9 @@ def _js_object(source: str, name: str) -> str:
 
 
 def _load_standalone_functions(source: str, names: set, extra_namespace=None) -> dict:
-    """Load selected helpers without importing Home Assistant."""
-    tree = ast.parse(source)
-    functions = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name in names
-    ]
-    namespace = {"json": json, **_DEFAULT_NAMESPACE}
-    if extra_namespace:
-        namespace.update(extra_namespace)
-    exec(
-        compile(
-            ast.Module(body=functions, type_ignores=[]),
-            "<helpers>",
-            "exec",
-            flags=__future__.annotations.compiler_flag,
-        ),
-        namespace,
-    )
-    return namespace
+    """Load selected helpers without importing Home Assistant (fakes.functions,
+    with the names every loaded helper may reference)."""
+    return functions(source, names, {**_DEFAULT_NAMESPACE, **(extra_namespace or {})})
 
 
 class NativeFeatureTests(unittest.TestCase):
@@ -207,6 +254,7 @@ class NativeFeatureTests(unittest.TestCase):
             _rotation_active=False, _calibration_lock=False, _music_flow_enabled=False,
             _in_native_fw_mode=True, _mode="Solid Color", _display_overlay=False,
             _display_retry_count=0, MAX_DISPLAY_RETRIES=3, _ip="test", _custom_text="text",
+            _restoring_after_lamp=False,
         )
 
         async def draw():
@@ -310,6 +358,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertEqual(expected, actual)
 
     @unittest.skipUnless(shutil.which("node"), "Node is required for renderer parity")
+    @slow
     def test_every_native_effect_matches_between_camera_and_card(self):
         # The camera entity (Python) and the Lamp Preview / Native Effects
         # cards (JavaScript) draw the same frames: every effect of the
@@ -317,16 +366,28 @@ class NativeFeatureTests(unittest.TestCase):
         # custom color and each palette mode it supports.
         supports = NATIVE_PREVIEW["effect_supports_color_mode"]
         modes = ("bw", "red_blue", "white_orange", "blue_yellow", "purple_orange")
+        # A live simulation (Lava Lamp) starts a new run wherever it is first
+        # asked, so two previews match only when asked in the same order: its
+        # Python and JS runs from the same start are compared in
+        # test_streamed_effects instead.
+        registry = NATIVE_PREVIEW["lamp_settings"].__globals__["REGISTRY"]
+        live = {
+            name for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
+            if registry.get(spec["mode"], {}).get("live")
+        }
+        self.assertEqual({"Lava Lamp", "Falling Blocks"}, live)
+        # The moments innermost: each timeline then runs on from the last
+        # one instead of being replayed (the timelines kept are few).
         cases = [
             [effect, phase, direction, override, mode]
-            for effect in sorted(CONSTANTS["ALL_NATIVE_EFFECTS"])
-            for phase in (0, 0.37, 1, 2.5, 7.25)
+            for effect in sorted(set(CONSTANTS["ALL_NATIVE_EFFECTS"]) - live)
             for direction in ("Up", "Down", "Left", "Right")
             for override, mode in (
                 (None, None),
                 ([180, 20, 60], None),
                 *((None, mode) for mode in modes if supports(effect, mode)),
             )
+            for phase in (0, 0.37, 1, 2.5, 7.25)
         ]
         module_uri = (ROOT / "www" / "native-effect-preview.js").as_uri()
         timelines = NATIVE_PREVIEW["lamp_settings"].__globals__  # its own timelines
@@ -334,7 +395,7 @@ class NativeFeatureTests(unittest.TestCase):
         # A replay gives up at a time limit that differs between the languages:
         # the frames are computed ahead, in full.
         script = (
-            f"import {{renderNativeEffectOriented}} from {json.dumps(module_uri)};"
+            f"import {{renderNativeEffect}} from {json.dumps(module_uri)};"
             f"import {{lampSettings, hasRenderer, isLampRendered, timelineFor}} from {json.dumps(lamp_uri)};"
             "import {readFileSync} from 'node:fs';"
             "const cases = JSON.parse(readFileSync(0, 'utf8'));"
@@ -345,15 +406,13 @@ class NativeFeatureTests(unittest.TestCase):
             "  timelineFor(settings).frameAt("
             "   timelineFor(settings).firstShown() + phase / (0.25 + 50 / 55) / 0.04, true); };"
             "process.stdout.write(JSON.stringify(cases.map(args => {"
-            " ahead(args); return renderNativeEffectOriented(...args); })));"
+            " ahead(args); return renderNativeEffect(...args); })));"
         )
-        result = subprocess.run(
-            [shutil.which("node"), "--input-type=module", "-e", script],
-            input=json.dumps(cases), text=True, capture_output=True, check=True,
-        )
-        render = NATIVE_PREVIEW["render_native_effect_oriented"]
-        mismatched = []
-        for case, actual in zip(cases, json.loads(result.stdout), strict=True):
+        # The cards draw theirs meanwhile.
+        node = NodeRun(script, cases)
+        render = NATIVE_PREVIEW["render_native_effect"]
+        expected_frames = []
+        for case in cases:
             effect, phase, direction, override, mode = case
             if effect in timelines["LAMP_RENDERED_EFFECTS"]:
                 settings = timelines["lamp_settings"](effect, direction, 50, override, mode)
@@ -362,9 +421,11 @@ class NativeFeatureTests(unittest.TestCase):
                     timeline.frame_at(
                         timeline.first_shown() + int(phase / (0.25 + 50 / 55.0) / 0.04), True
                     )
-            expected = [list(pixel) for pixel in render(*case)]
-            if expected != actual:
-                mismatched.append(case)
+            expected_frames.append([list(pixel) for pixel in render(*case)])
+        mismatched = [
+            case for case, expected, actual in zip(cases, expected_frames, node.result(), strict=True)
+            if expected != actual
+        ]
         self.assertEqual([], mismatched[:20], f"{len(mismatched)} of {len(cases)} frames differ")
 
     def test_clock_uses_lamp_clock_apply_mode(self):
@@ -373,99 +434,46 @@ class NativeFeatureTests(unittest.TestCase):
 
     def test_clock_applies_brightness_after_activation(self):
         # The shared send path sets the brightness after set_fx_effect for
-        # the clock only (it can drop the activation otherwise).
-        function = _function_source(LIGHT_SOURCE, "_send_native")
-        after = function[function.index('"set_fx_effect", params'):]
-        self.assertIn('"clock:brightness"', after)
-        self.assertIn("await self._set_native_mode_brightness()", after)
+        # the clock only (it can drop the activation otherwise); an effect
+        # has it set first.
+        phases = []
+
+        class Lamp(FakeCube):
+            async def send_raw_command(self, method, params, *args, **kwargs):
+                phases.append((method, getattr(light, "_hardware_operation_phase", None)))
+                await super().send_raw_command(method, params)
+
+        with instant_sleeps():
+            light = make_light(cube=Lamp(), _mode=CONST.MODE_CLOCK, _brightness=128,
+                               _last_hardware_brightness=None)
+            run_on_loop(light._activate_native_clock())
+            self.assertEqual([("set_fx_effect", "clock:set_fx_effect"), ("set_bright", "clock:brightness")], phases)
+            light = make_light(_mode=CONST.MODE_NATIVE_EFFECT, _native_effect="Rainbow", _brightness=128,
+                               _last_hardware_brightness=None)
+            run_on_loop(light._activate_native_effect())
+            self.assertEqual(["set_bright", "set_fx_effect"], light._lamp_client.methods())
 
     def test_clock_color_override_cleared_for_any_active_palette_mode(self):
         # A custom color override must not linger once a palette mode (B&W,
         # Vivid, Retro Orange, ...) is active on an animated style - it would
         # otherwise re-tint the lamp's own palette remap. Solid styles
         # have no mixer effect to protect and stay unaffected (except B&W).
-        helpers = _load_standalone_functions(
-            LIGHT_SOURCE,
-            {"_resolve_native_clock_color", "_leave_direct_mode", *NATIVE_ACTIVATION},
-            {
-                "LIVE_EFFECT_KEYS": CONSTANTS["LIVE_EFFECT_KEYS"],
-                "hardware_brightness_for": lambda brightness: max(1, min(100, round(brightness * 100 / 255))),
-                "effect_direction_value": CONSTANTS["effect_direction_value"],
-                "asyncio": asyncio,
-                "base64": base64,
-                "NATIVE_CLOCK_STYLES": CONSTANTS["NATIVE_CLOCK_STYLES"],
-                "DEFAULT_NATIVE_CLOCK_STYLE": CONSTANTS["DEFAULT_NATIVE_CLOCK_STYLE"],
-                "NATIVE_CLOCK_EFFECT_ID": CONSTANTS["NATIVE_CLOCK_EFFECT_ID"],
-                "NATIVE_CLOCK_APPLY": CONSTANTS["NATIVE_CLOCK_APPLY"],
-                "CLOCK_MIXER_COMMAND_IDS": CONSTANTS["CLOCK_MIXER_COMMAND_IDS"],
-                "CLOCK_MIXER_EFFECTS": CONSTANTS["CLOCK_MIXER_EFFECTS"],
-                "LAMP_MUSIC_SLOTS": CONSTANTS["LAMP_MUSIC_SLOTS"],
-                "clock_segment_modes": CONSTANTS["clock_segment_modes"],
-                "clock_style_direct": CONSTANTS["clock_style_direct"],
-                "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
-                "clock_style_default_color": CONSTANTS["clock_style_default_color"],
-                "clock_style_colors": CONSTANTS["clock_style_colors"],
-                "resolve_clock_mixer_direction": CONSTANTS["resolve_clock_mixer_direction"],
-                "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
-                "NATIVE_EFFECT_DIRECTION_VALUES": CONSTANTS["NATIVE_EFFECT_DIRECTION_VALUES"],
-                "_LOGGER": __import__("logging").getLogger(__name__),
-            },
-        )
-
-        class FakeCube:
-            def __init__(self):
-                self.params = None
-                self.running_effect = None
-
-            def close_fast_socket(self):
-                return None
-
-            async def clear_fx_mode_flag(self):
-                return False
-
-            def note_running_effect(self, params):
-                self.running_effect = params
-
-            async def send_raw_command(
-                self, command, params, abortive_close=False, check_reply=False
-            ):
-                self.params = params
-
         def make_device(style_id, color_mode):
-            device = types.SimpleNamespace(
-                _native_clock_timezone_hours=lambda: 0,
-                _native_clock_style=style_id,
-                _native_clock_data_bytes=lambda: b"",
-                _native_effect_speed=50,
-                _native_clock_color=0x01FFEE00,
-                _native_clock_color_mode=color_mode,
-                _native_effect_direction="Up",
-                _cube_matrix=FakeCube(),
-                _set_native_mode_brightness=lambda: asyncio.sleep(0),
-                _brightness=255,
-                _last_hardware_brightness=100,
-                _is_on=False,
-                _fx_mode_is_direct=False,
-                _in_native_fw_mode=False,
-                _last_fx_mode_time=0.0,
+            return make_light(
+                hass=FakeHass(), _mode=CONST.MODE_CLOCK, _native_clock_style=style_id,
+                _native_effect_speed=50, _native_clock_color=0x01FFEE00,
+                _native_clock_color_mode=color_mode, _native_effect_direction="Up", _is_on=False,
                 _native_clock_timezone_offset=0,
-                _notify_camera_preview=lambda: None,
-                hass=None,
-                _ip="test",
             )
-            for name in ("_leave_direct_mode", *NATIVE_ACTIVATION_METHODS):
-                setattr(device, name, types.MethodType(helpers[name], device))
-            return device
-
-        activate = helpers["_activate_native_clock"]
 
         async def run(style_id, color_mode):
+            """What the activation sends (None: nothing, the clock is streamed)."""
             device = make_device(style_id, color_mode)
-            device._resolve_native_clock_color = types.MethodType(
-                helpers["_resolve_native_clock_color"], device
-            )
-            await types.MethodType(activate, device)()
-            return device._cube_matrix.params
+            with instant_sleeps():
+                await device._activate_native_clock()
+                device.stop_studio_stream()
+            sent = [params for _, method, params in device._lamp_client.sent if method == "set_fx_effect"]
+            return sent[-1] if sent else None
 
         # Ember goes as itself under mixer 1, so its first frame runs: under a
         # mode 40 hand-over it comes back with no sparks after the first time.
@@ -485,6 +493,11 @@ class NativeFeatureTests(unittest.TestCase):
         for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
             with self.subTest(style=style["name"]):
                 params = asyncio.run(run(style_id, "normal"))
+                if style.get("background") in CONSTANTS["LITE_STREAMED_EFFECTS"]:
+                    # An effect a Cube Lite does not have (the integration's
+                    # own, a Cube Matrix's version): streamed, never sent.
+                    self.assertIsNone(params)
+                    continue
                 expected = (
                     (style["mixer"], 1)
                     if CONSTANTS["clock_style_direct"](style)
@@ -531,28 +544,48 @@ class NativeFeatureTests(unittest.TestCase):
                     self.assertIsNone(guard.fx_refusal(params[3], preset=params[0]))
                 device = make_device(style_id, "normal")
                 device._native_clock_color = None
-                device._resolve_native_clock_color = types.MethodType(
-                    helpers["_resolve_native_clock_color"], device
-                )
                 params = device._native_clock_params()
                 self.assertEqual(list(words), params[3]["color"])
                 self.assertNotIn("color", asyncio.run(run(style_id, "bw"))[3])
 
     def test_native_settings_reject_skipped_commands(self):
-        power = _function_source(LIGHT_SOURCE, "async_set_power_on_state")
-        buttons = _function_source(LIGHT_SOURCE, "async_set_button_effects")
-        self.assertIn("if result is None", power)
-        self.assertIn("if result is None", buttons)
+        # A command the connection skipped (cooldown: no answer at all) is an
+        # error, and the setting is not taken as the lamp's.
+        light = make_light()
+        light._lamp_client.reply = None
+        before = light._power_on_state
+        other = next(state for state in CONST.POWER_ON_STATES if state != before)
+        with self.assertRaises(PROTOCOL.CubeConnectionError):
+            run_on_loop(light.async_set_power_on_state(other))
+        self.assertEqual(before, light._power_on_state)
+        with self.assertRaises(PROTOCOL.CubeConnectionError):
+            run_on_loop(light.async_set_button_effects(["Rainbow"]))
+        self.assertEqual([], light._button_effects)
+        # Answered: both are taken.
+        light._lamp_client.reply = {"id": 1, "result": ["ok"]}
+        run_on_loop(light.async_set_power_on_state(other))
+        self.assertEqual(other, light._power_on_state)
 
     def test_light_services_are_registered_at_component_setup(self):
         # Once, for the whole session: registering them again at each lamp
         # setup replaced their handlers and their state (locks, trackers).
-        component_setup = _function_source(INIT_SOURCE, "async_setup")
-        entry_setup = _function_source(INIT_SOURCE, "async_setup_entry")
-        platform_setup = _function_source(LIGHT_SOURCE, "async_setup_entry")
-        self.assertIn("async_setup_light_services(hass)", component_setup)
-        self.assertNotIn("async_setup_light_services", entry_setup)
-        self.assertNotIn("services.async_register", platform_setup)
+        init = module("__init__")
+        hass = FakeHass()
+        with patch.object(LIGHT_MODULE, "async_setup_light_services") as services, \
+                patch.object(init, "get_conflict_prevention"), \
+                patch.object(init, "_schedule_dismiss_yeelight_discoveries"), \
+                patch.object(init, "async_setup_services"), \
+                patch.object(init, "_async_serve_card_files", AsyncMock()), \
+                patch.object(init, "_async_register_frontend_cards", AsyncMock()):
+            run_on_loop(init.async_setup(hass, {}))
+        services.assert_called_once_with(hass)
+        # What it registers: the entity actions, each once.
+        LIGHT_MODULE.async_setup_light_services(hass)
+        self.assertIn((CONST.DOMAIN, "send_fx_effect"), hass.registered)
+        # The entry and platform setups (Home Assistant's, too entangled to run
+        # here) register none.
+        self.assertNotIn("async_setup_light_services", _function_source(INIT_SOURCE, "async_setup_entry"))
+        self.assertNotIn("services.async_register", _function_source(LIGHT_SOURCE, "async_setup_entry"))
 
     def test_all_lan_supported_native_effects_are_defined(self):
         effects = CONSTANTS["NATIVE_EFFECTS"]
@@ -630,19 +663,32 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual({"on": 0}, json.loads(build(False, "Blossom")))
 
     def test_music_flow_command_uses_private_property_and_restores_content(self):
-        function = _function_source(LIGHT_SOURCE, "async_set_music_flow")
-        self.assertIn('"set_ps"', function)
-        self.assertIn('"mic_music_mode"', function)
-        self.assertIn("_music_flow_restore_power", function)
-        self.assertIn("_apply_display_mode_internal", function)
-        self.assertIn("_persist_music_flow_runtime_state", function)
+        # On: set_ps mic_music_mode with the effect. Off: set_ps {"on": 0},
+        # then the content shown before is drawn again (direct mode, frame),
+        # and the state is saved both times.
+        with instant_sleeps():
+            light = make_light(_music_flow_enabled=False)
+            light._persist_music_flow_runtime_state = AsyncMock()
+            run_on_loop(light.async_set_music_flow(True))
+            method, params = light._lamp_client.sent[0][1:]
+            self.assertEqual(("set_ps", "mic_music_mode"), (method, params[0]))
+            self.assertEqual(1, json.loads(params[1])["on"])
+            self.assertTrue(light._music_flow_enabled)
+            run_on_loop(light.async_set_music_flow(False))
+            self.assertEqual({"on": 0}, json.loads(light._lamp_client.params("set_ps")[1]))
+            self.assertEqual(["set_ps", "set_ps", "activate_fx_mode", "set_bright", "update_leds"],
+                             light._lamp_client.methods())
+            self.assertFalse(light._music_flow_enabled)
+            self.assertIsNone(light._music_flow_restore_power)
+            self.assertEqual(2, light._persist_music_flow_runtime_state.await_count)
 
     def test_content_change_exits_music_flow_without_double_restore(self):
-        function = _function_source(LIGHT_SOURCE, "async_apply_display_mode")
-        self.assertIn(
-            "self.async_set_music_flow(False, restore_display=False)",
-            function,
-        )
+        # The new content is drawn by the change itself: leaving Music Flow
+        # does not draw the old one first.
+        light = make_light(_music_flow_enabled=True)
+        light.async_set_music_flow = AsyncMock()
+        run_on_loop(light.async_apply_display_mode(update_type="text_change"))
+        light.async_set_music_flow.assert_awaited_once_with(False, restore_display=False)
 
     def test_rgb_turn_on_exits_music_flow_before_applying_color(self):
         async_turn_on = _load_standalone_functions(
@@ -747,87 +793,38 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(("execute", None), events[0])
 
     def test_palette_selection_uses_guarded_display_state_machine(self):
-        palette_class = SELECT_SOURCE[
-            SELECT_SOURCE.index("class YeelightCubePaletteSelect") :
-        ]
-        palette_class = palette_class[: palette_class.index("\nclass ", 1)]
-        function = _function_source(palette_class, "async_select_option")
-        palette_branch = function[
-            function.index("[PALETTE SELECT]") :
-        ]
-        self.assertIn(
-            'async_apply_display_mode(\n            update_type="color_change"',
-            palette_branch,
-        )
-        self.assertNotIn("._light_entity.apply()", palette_branch)
+        # A palette chosen in the dropdown goes through the guarded display
+        # queue as a color change (never a bare apply()).
+        select = module("select")
+        palette = {"name": "Sunset", "colors": [[255, 80, 0], [120, 0, 200]]}
+        hass = FakeHass({CONST.DOMAIN: {"palettes_v2": [palette]}})
+        light = make_light(hass=hass, async_apply_display_mode=AsyncMock(return_value=True), apply=AsyncMock())
+        entity = select.YeelightCubePaletteSelect(light, "192.0.2.10", None, hass)
+        run_on_loop(entity.async_select_option("Sunset"))
+        light.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
+        light.apply.assert_not_awaited()
+        self.assertEqual(palette["colors"], light._text_colors)
 
     def test_health_recovery_restarts_active_music_flow(self):
+        # A turn_on redraw does not leave Music Flow (the recovery restarts
+        # it instead of drawing over it).
+        self.assertNotIn("turn_on", DISPLAY.MUSIC_FLOW_EXIT_UPDATE_TYPES)
+        light = make_light(_music_flow_enabled=True)
+        light.async_set_music_flow = AsyncMock()
+        light._apply_display_mode_internal = AsyncMock()
+        run_on_loop(light.async_apply_display_mode(update_type="turn_on"))
+        light.async_set_music_flow.assert_not_awaited()
+        # The recovery branch itself (light_connection._periodic_health_check,
+        # an endless loop): Music Flow restarted before any redraw.
         health_check = _function_source(LIGHT_SOURCE, "_periodic_health_check")
         self.assertIn("if self._music_flow_enabled:", health_check)
-        self.assertIn("await self.async_set_music_flow(True)", health_check)
         self.assertLess(
             health_check.index("await self.async_set_music_flow(True)"),
-            health_check.index(
-                "await self.async_apply_display_mode(update_type='turn_on')"
-            ),
+            health_check.index("await self.async_apply_display_mode(update_type='turn_on')"),
         )
-        exit_types = LIGHT_SOURCE[
-            LIGHT_SOURCE.index("MUSIC_FLOW_EXIT_UPDATE_TYPES") :
-            LIGHT_SOURCE.index(
-                "MUSIC_FLOW_EXIT_UPDATE_TYPES"
-            ) + 250
-        ]
-        self.assertNotIn('"turn_on"', exit_types)
 
     def test_turning_music_flow_off_restores_display_and_prior_power(self):
-        helpers = _load_standalone_functions(
-            LIGHT_SOURCE,
-            {"_build_music_flow_payload", "async_set_music_flow", "_leave_direct_mode"},
-            {
-                "asyncio": asyncio,
-                "time": time,
-                "MUSIC_FLOW_EFFECTS": CONSTANTS["MUSIC_FLOW_EFFECTS"],
-                "MUSIC_FLOW_DEFAULT_PALETTE": CONSTANTS[
-                    "MUSIC_FLOW_DEFAULT_PALETTE"
-                ],
-                "MUSIC_FLOW_HARD_TIMEOUT": 12.0,
-                "HomeAssistantError": RuntimeError,
-            },
-        )
-
-        class FakeCube:
-            def __init__(self):
-                self.commands = []
-                self.raw_commands = []
-
-            def close_fast_socket(self):
-                return None
-
-            async def clear_fx_mode_flag(self):
-                return False
-
-            def close_command_socket(self):
-                return None
-
-            async def send_command_with_recovery(self, command, params):
-                self.commands.append((command, params))
-                return {"result": ["ok"]}
-
-            async def send_raw_command(self, command, params):
-                self.raw_commands.append((command, params))
-
-        applied = []
-        device = types.SimpleNamespace(
-            _music_flow_enabled=True,
-            _music_flow_effect="Breathing",
-            _music_flow_restore_power=True,
-            _is_on=True,
-            _cube_matrix=FakeCube(),
-            _in_native_fw_mode=True,
-            hass=None,
-            _refresh_music_flow_entities=lambda: None,
-            _notify_camera_preview=lambda: None,
-        )
+        applied, persisted = [], []
 
         async def execute(func, op_name, timeout_override=None):
             await func()
@@ -836,94 +833,55 @@ class NativeFeatureTests(unittest.TestCase):
         async def apply_display():
             applied.append("display")
 
-        persisted = []
-
         async def persist_music_flow():
             persisted.append(True)
 
-        device._execute_hardware_op = execute
-        device._apply_display_mode_internal = apply_display
-        device._persist_music_flow_runtime_state = persist_music_flow
-        device._fx_mode_is_direct = getattr(device, "_fx_mode_is_direct", False)
-        device._leave_direct_mode = types.MethodType(helpers["_leave_direct_mode"], device)
-        set_music_flow = types.MethodType(helpers["async_set_music_flow"], device)
+        device = make_light(
+            _music_flow_enabled=True, _music_flow_effect="Breathing", _music_flow_restore_power=True,
+            _is_on=True, _in_native_fw_mode=True, _execute_hardware_op=execute,
+            _apply_display_mode_internal=apply_display, _persist_music_flow_runtime_state=persist_music_flow,
+        )
+        cube = device._lamp_client
+        set_music_flow = device.async_set_music_flow
+        commands = lambda: [(method, params) for how, method, params in cube.sent if how == "recovery"]
+        raw_commands = lambda: [(method, params) for how, method, params in cube.sent if how == "raw"]
 
-        asyncio.run(set_music_flow(False))
+        run_on_loop(set_music_flow(False))
         self.assertFalse(device._music_flow_enabled)
         self.assertEqual(["display"], applied)
-        self.assertEqual("set_ps", device._cube_matrix.commands[0][0])
+        self.assertEqual("set_ps", commands()[0][0])
         self.assertEqual(
             {"on": 0},
-            json.loads(device._cube_matrix.commands[0][1][1]),
+            json.loads(commands()[0][1][1]),
         )
 
         device._music_flow_enabled = True
         device._music_flow_restore_power = False
         device._is_on = True
         applied.clear()
-        asyncio.run(set_music_flow(False))
+        run_on_loop(set_music_flow(False))
         self.assertFalse(device._is_on)
         self.assertEqual([], applied)
         self.assertEqual(
             [("set_power", ["off"])],
-            device._cube_matrix.raw_commands,
+            raw_commands(),
         )
         self.assertEqual(2, len(persisted))
         # A remote press did not change the desired Music Flow state. Stop
         # its physical music mode without a storage write before the redraw.
         device._is_on = True
         applied.clear()
-        asyncio.run(set_music_flow(False, restore_display=False, persist_state=False))
-        self.assertEqual(3, len(device._cube_matrix.commands))
-        self.assertEqual({"on": 0}, json.loads(device._cube_matrix.commands[-1][1][1]))
+        run_on_loop(set_music_flow(False, restore_display=False, persist_state=False))
+        self.assertEqual(3, len(commands()))
+        self.assertEqual({"on": 0}, json.loads(commands()[-1][1][1]))
         self.assertEqual([], applied)
         self.assertEqual(2, len(persisted))
 
     def test_music_flow_stop_finalizes_state_when_display_restore_fails(self):
-        helpers = _load_standalone_functions(
-            LIGHT_SOURCE,
-            {"_build_music_flow_payload", "async_set_music_flow", "_leave_direct_mode"},
-            {
-                "asyncio": asyncio,
-                "time": time,
-                "MUSIC_FLOW_EFFECTS": CONSTANTS["MUSIC_FLOW_EFFECTS"],
-                "MUSIC_FLOW_DEFAULT_PALETTE": CONSTANTS[
-                    "MUSIC_FLOW_DEFAULT_PALETTE"
-                ],
-                "MUSIC_FLOW_HARD_TIMEOUT": 12.0,
-                "HomeAssistantError": RuntimeError,
-            },
-        )
-
-        class FakeCube:
-            def close_fast_socket(self):
-                return None
-
-            async def clear_fx_mode_flag(self):
-                return False
-
-            def close_command_socket(self):
-                return None
-
-            async def send_command_with_recovery(self, command, params):
-                return {"result": ["ok"]}
-
         calls = {"persist": 0, "entities": 0, "preview": 0}
-        device = types.SimpleNamespace(
-            _music_flow_enabled=True,
-            _music_flow_effect="Breathing",
-            _music_flow_restore_power=True,
-            _is_on=True,
-            _cube_matrix=FakeCube(),
-            _in_native_fw_mode=True,
-            hass=None,
-            _refresh_music_flow_entities=lambda: calls.__setitem__(
-                "entities", calls["entities"] + 1
-            ),
-            _notify_camera_preview=lambda: calls.__setitem__(
-                "preview", calls["preview"] + 1
-            ),
-        )
+
+        def count(name):
+            return lambda: calls.__setitem__(name, calls[name] + 1)
 
         async def execute(func, op_name, timeout_override=None):
             try:
@@ -938,60 +896,116 @@ class NativeFeatureTests(unittest.TestCase):
         async def persist_music_flow():
             calls["persist"] += 1
 
-        device._execute_hardware_op = execute
-        device._apply_display_mode_internal = apply_display
-        device._persist_music_flow_runtime_state = persist_music_flow
-        device._fx_mode_is_direct = getattr(device, "_fx_mode_is_direct", False)
-        device._leave_direct_mode = types.MethodType(helpers["_leave_direct_mode"], device)
-        set_music_flow = types.MethodType(helpers["async_set_music_flow"], device)
-
-        with self.assertRaisesRegex(RuntimeError, "could not complete"):
-            asyncio.run(set_music_flow(False))
+        device = make_light(
+            _music_flow_enabled=True, _music_flow_effect="Breathing", _music_flow_restore_power=True,
+            _is_on=True, _in_native_fw_mode=True, _execute_hardware_op=execute,
+            _apply_display_mode_internal=apply_display, _persist_music_flow_runtime_state=persist_music_flow,
+            _refresh_music_flow_entities=count("entities"), _notify_camera_preview=count("preview"),
+        )
+        with self.assertRaises(HomeAssistantError) as failed:
+            run_on_loop(device.async_set_music_flow(False))
+        self.assertIn("could not complete", STRINGS["exceptions"][failed.exception.translation_key]["message"])
 
         self.assertFalse(device._music_flow_enabled)
         self.assertIsNone(device._music_flow_restore_power)
         self.assertEqual({"persist": 1, "entities": 1, "preview": 1}, calls)
 
     def test_music_flow_runtime_state_is_persisted_after_storage_ready(self):
-        attributes = _function_source(LIGHT_SOURCE, "extra_state_attributes")
-        restore = _function_source(LIGHT_SOURCE, "async_added_to_hass")
-        storage = (ROOT / "storage.py").read_text(encoding="utf-8")
-        # Everything saved (immediate or batched) comes from storage_data.
-        save = _function_source(storage, "storage_data")
+        # Published, saved and restored: Music Flow and the power to go back
+        # to after it, read once the shared storage is loaded.
+        light = make_light(_music_flow_enabled=True, _music_flow_restore_power=True)
+        self.assertIs(True, light.extra_state_attributes["music_flow_restore_power"])
+        storage = module("storage")
+        gate = asyncio.Event()
+        saved = {"device_runtime_state": {"entry-1": {
+            "music_flow_enabled": True, "music_flow_effect": "Blossom", "music_flow_restore_power": False,
+        }}}
+
+        class Store:
+            written = []
+
+            def __init__(self, *args):
+                pass
+
+            async def async_load(self):
+                await gate.wait()
+                return saved
+
+            async def async_save(self, data):
+                Store.written.append(data)
+
+        async def two_entries(hass):
+            first = asyncio.create_task(storage.async_load_storage(hass))
+            second = asyncio.create_task(storage.async_load_storage(hass))
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            self.assertFalse(second.done())  # it waits for the first's load
+            gate.set()
+            await asyncio.gather(first, second)
+
+        hass = FakeHass({CONST.DOMAIN: {}})
+        with patch.object(storage, "Store", Store):
+            run_on_loop(two_entries(hass))
+        restored = make_light(hass=hass)
+        restored._restore_music_flow_runtime_state()
+        self.assertTrue(restored._music_flow_enabled)
+        self.assertEqual("Blossom", restored._music_flow_effect)
+        self.assertIs(False, restored._music_flow_restore_power)
+        # Turned off: saved at once, in what is written.
+        restored._music_flow_enabled = False
+        run_on_loop(restored._persist_music_flow_runtime_state())
+        self.assertEqual({}, Store.written[-1]["device_runtime_state"])
         # Every entry's setup loads (or waits for) the shared storage first.
-        self.assertIn(
-            "await async_load_storage(hass)",
-            _function_source(INIT_SOURCE, "async_setup_entry"),
-        )
-        setup = _function_source(storage, "async_load_storage")
-        self.assertIn('"music_flow_restore_power"', attributes)
-        self.assertIn("_restore_music_flow_runtime_state()", restore)
-        self.assertIn('"device_runtime_state"', save)
-        self.assertIn('"device_runtime_state"', setup)
-        self.assertIn("await storage_ready.wait()", setup)
-        self.assertIn("storage_ready.set()", setup)
+        self.assertIn("await async_load_storage(hass)", _function_source(INIT_SOURCE, "async_setup_entry"))
 
     def test_the_lamp_state_is_never_polled(self):
         # Cube Lite answers no get_prop (TCP or UDP): HA's update only
         # refreshes the clock's UTC offset, and never while Music Flow runs.
         # It runs when the light is added, then on the hour (daylight saving
         # changes happen on the hour), not on a 30 s poll.
-        self.assertIn("_attr_should_poll = False", LIGHT_SOURCE)
-        self.assertIn(
-            "self.hass, self._async_hourly_update, minute=0, second=5",
-            LIGHT_SOURCE,
-        )
-        self.assertIn("await self.async_update()", _function_source(LIGHT_SOURCE, "_async_hourly_update"))
-        update = _function_source(LIGHT_SOURCE, "async_update")
-        # Never sent by the lamp or its transport (the diagnostics query
-        # service still lets a user try it).
-        for name in ("light.py", "cube_matrix.py"):
-            self.assertNotIn('"get_prop"', (ROOT / name).read_text(encoding="utf-8"), name)
-        self.assertNotIn("read_properties", update)
-        self.assertLess(
-            update.index("if self._music_flow_enabled:"),
-            update.index("_native_clock_timezone_hours()"),
-        )
+        light_class = LIGHT_MODULE.YeelightCubeLight
+        self.assertFalse(light_class._attr_should_poll)
+        light = make_light(hass=FakeHass())
+        with patch.object(LIFECYCLE_MODULE, "async_track_time_change") as hourly, \
+                patch.object(LIFECYCLE_MODULE, "async_track_time_interval"), \
+                patch.object(light, "async_update", AsyncMock()):
+            run_on_loop(light.async_added_to_hass())
+            run_on_loop(light.async_will_remove_from_hass())
+            hourly.assert_called_once_with(light.hass, light._async_hourly_update, minute=0, second=5)
+            run_on_loop(light._async_hourly_update(None))
+            light.async_update.assert_awaited()
+        # The update itself sends nothing, in any mode; with Music Flow on it
+        # does not even look at the clock's offset.
+        for mode in (CONST.MODE_CLOCK, CONST.MODE_NATIVE_EFFECT, "Solid Color"):
+            light = make_light(_mode=mode, _native_clock_timezone_offset=None)
+            run_on_loop(light.async_update())
+            self.assertEqual([], light._lamp_client.sent, mode)
+        light = make_light(_mode=CONST.MODE_CLOCK, _music_flow_enabled=True, _native_clock_timezone_offset=None)
+        light._native_clock_timezone_hours = Mock(return_value=2)
+        run_on_loop(light.async_update())
+        light._native_clock_timezone_hours.assert_not_called()
+        self.assertIsNone(light._native_clock_timezone_offset)
+        # The transport asks a Cube Lite nothing when told its model; a Cube
+        # Matrix its layout, once (the one get_prop besides probe_model's and
+        # its health check, MATRIX_PROBE_COMMAND).
+        self.assertEqual(("get_prop", ["power"]), HEALTH.MATRIX_PROBE_COMMAND)
+        for model, asked in (("Cube Lite", False), ("CubeMatrix", True)):
+            connection = CUBE.LampClient("192.0.2.10", 55443)
+            with patch.object(connection, "_read_props", return_value=None) as read:
+                connection.set_model(model)
+            self.assertEqual(asked, read.called, model)
+        # A Cube Lite's demo loop is never read (only a Cube Matrix has one).
+        light = make_light()
+        with patch.object(module("light_matrix"), "tcp_request", AsyncMock()) as request:
+            light._check_matrix_demo()
+        self.assertIsNone(light._matrix_demo_task)
+        request.assert_not_called()
+        # An entry with no model asks it once at setup and stores it
+        # (light.async_setup_entry: Home Assistant's platform setup).
+        self.assertIn("model = await timed(\"Asking its model\", lamp_client.probe_model)\n", LIGHT_SOURCE)
+        self.assertIn("            if model:\n"
+                      "                hass.config_entries.async_update_entry(entry, data={**data, CONF_MODEL: model})",
+                      LIGHT_SOURCE)
 
     def test_all_native_effect_previews_are_valid_and_animated(self):
         render = NATIVE_PREVIEW["render_native_effect"]
@@ -1005,6 +1019,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertEqual(3, len(pixel))
                 self.assertTrue(all(channel in range(256) for channel in pixel))
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
     def test_fireworks_matches_rocket_burst_and_special_effect_id(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Fireworks"]
@@ -1012,18 +1027,21 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(71, spec["effect_id"])
         self.assertEqual(10, spec["mode"])
         self.assertEqual("Fireworks", CONSTANTS["CLOCK_MIXER_EFFECTS"][10])
-        self.assertIn('10: "Fireworks"', CLOCK_CARD_SOURCE)
+        self.assertEqual("Fireworks", cards()["mixerEffects"]["10"])
         # The colored confetti only unlocks when the clock command id (1st array
         # element) is overridden to 71; the clock config still uses mode 40.
         self.assertEqual(71, CONSTANTS["CLOCK_MIXER_COMMAND_IDS"][10])
-        activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
-        self.assertIn("CLOCK_MIXER_COMMAND_IDS", activate)
-        style = next(
-            style
-            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+        style_id, style = next(
+            (style_id, style) for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
             if style["mixer"] == 10
         )
         self.assertEqual("Fireworks", style["name"])
+        with instant_sleeps():
+            light = make_light(_mode=CONST.MODE_CLOCK, _native_clock_style=style_id)
+            run_on_loop(light._activate_native_clock())
+        params = light._lamp_client.params("set_fx_effect")
+        self.assertEqual(71, params[0])
+        self.assertEqual(40, params[3]["mode"])
 
         # The preview is the lamp's renderer (test_lamp_renderers):
         # a white flare starts where the strip starts for the direction, Down
@@ -1063,9 +1081,11 @@ class NativeFeatureTests(unittest.TestCase):
         # It animates (scrolls) over time.
         self.assertNotEqual(frame, render("Moving palette", 1.5, "Right"))
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
     def test_named_effects_back_the_clock(self):
         # What the old per-effect tests said of the tables: the reference
         # frames of what the lamp draws now check it (test_lamp_effects).
+        tables = cards()
         mixers = {
             4: "Moving palette", 6: "Particle path", 9: "Triangular palette pulses", 11: "Sine wave",
             18: "Sunrise and sunset", 19: "Heat fire", 22: "Mirrored comets", 24: "Palette sparks", 35: "Tide (slot 35)",
@@ -1075,7 +1095,7 @@ class NativeFeatureTests(unittest.TestCase):
         for mixer, name in mixers.items():
             with self.subTest(name=name):
                 self.assertEqual(name, CONSTANTS["CLOCK_MIXER_EFFECTS"][mixer])
-                self.assertIn(f'{mixer}: "{name}"', CLOCK_CARD_SOURCE)
+                self.assertEqual(name, tables["mixerEffects"][str(mixer)])
                 self.assertEqual(mixer, CONSTANTS["ALL_NATIVE_EFFECTS"][name]["mode"])
                 # The style named like the effect (over the direct form for a
                 # background with a style in each form, CLOCK_FORM_TWINS).
@@ -1087,12 +1107,16 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(
             {"name": "Violet interference", "mixer": 56}, CONSTANTS["NATIVE_CLOCK_STYLES"][15],
         )
-        self.assertIn("15: 56", CLOCK_CARD_SOURCE)
-        self.assertIn('typeof nested === "string"', CLOCK_CARD_SOURCE)
-        self.assertIn("effectName === effect", CLOCK_CARD_SOURCE)
+        self.assertEqual(56, tables["styleMixer"]["15"])
+        # The cards find a style's mixer by the style's name, or by the name
+        # of the effect behind it.
+        styles_by_name = {style["name"]: style["mixer"] for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()}
+        for mixer, name in CONSTANTS["CLOCK_MIXER_EFFECTS"].items():
+            with self.subTest(by_name=name):
+                self.assertEqual(styles_by_name.get(name, mixer), tables["mixerByName"][name])
         # Mode 60 goes dark for long stretches: it never backs the clock.
         self.assertNotIn(60, CONSTANTS["CLOCK_MIXER_EFFECTS"])
-        self.assertNotIn("60:", _js_object(CLOCK_CARD_SOURCE, "CLOCK_MIXER_EFFECTS"))
+        self.assertNotIn("60", tables["mixerEffects"])
         self.assertNotIn(60, {
             style["mixer"] for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
         })
@@ -1122,46 +1146,43 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(len(previews), len(set(previews.values())))
 
     def test_matrix_cameras_use_static_music_flow_previews(self):
-        colors = _function_source(CAMERA_SOURCE, "_get_matrix_colors")
-        preview = _function_source(CAMERA_SOURCE, "_get_music_flow_preview")
-        animated = _function_source(CAMERA_SOURCE, "_is_native_preview_mode")
-        view = _function_source(CAMERA_SOURCE, "_view_frame")
-        self.assertIn('"_music_flow_enabled"', colors)
-        self.assertIn("self._get_music_flow_preview()", colors)
-        self.assertIn("render_music_flow_effect(", preview)
-        self.assertNotIn('"_music_flow_enabled"', animated)
-        # Every mode's frame is turned for the mount once, the cards' rule.
-        self.assertIn("viewer_frame(self._get_matrix_colors(), orientation)", view)
+        # While Music Flow runs, the cameras show its fixed illustration
+        # whatever the mode, and the picture does not animate for it; every
+        # mode's frame is turned for the mount once (matrix_view.viewer_frame).
+        camera_module = module("camera")
+        render = NATIVE_PREVIEW["render_music_flow_effect"]
+        view = module("matrix_view")
+        for mode in (CONST.MODE_CLOCK, "Solid Color"):
+            light = make_light(_mode=mode, _music_flow_enabled=True, _music_flow_effect="Blossom",
+                               _device_orientation="up")
+            camera = camera_module.YeelightCubeMatrixCameraSquare(light, light._config_entry)
+            with patch.object(camera, "_get_music_flow_preview", wraps=camera._get_music_flow_preview) as preview:
+                colors = camera._get_matrix_colors()
+            preview.assert_called_once()
+            self.assertEqual(render("Blossom"), camera._get_music_flow_preview())
+            self.assertEqual(mode == CONST.MODE_CLOCK, camera._is_native_preview_mode())
+            frame = camera._view_frame()[0]
+            self.assertEqual(view.viewer_frame(colors, "up"), frame)
 
     def test_matrix_colors_publish_what_the_lamp_shows(self):
         """matrix_colors never republishes a stale plugin frame: black when
         off, empty while the lamp draws on its own (clock, native effect, music flow)."""
-        fns = _load_standalone_functions(
-            LIGHT_SOURCE, {"_published_matrix_colors", "lamp_draws_matrix"}
-        )
-
-        class Lamp:
-            lamp_draws_matrix = fns["lamp_draws_matrix"]
-            _published_matrix_colors = fns["_published_matrix_colors"]
-
-        lamp = Lamp()
-        lamp._layout = types.SimpleNamespace(device_layout=[object()] * 100)
+        lamp = make_light(_mode="Custom Draw", _is_on=True)
         # The last pixel art the plugin drew, kept after switching away.
         lamp._base_matrix_colors = [(200, 100, 50)] * 100
-        lamp._music_flow_enabled = False
-        lamp._is_on, lamp._mode = True, "Custom Draw"
         # Never darkened: the lamp dims in hardware (the cards scale them).
         self.assertEqual([(200, 100, 50)] * 100, lamp._published_matrix_colors())
+        self.assertEqual(lamp._published_matrix_colors(), lamp.extra_state_attributes["matrix_colors"])
         for mode in ("Clock", "Native Effect"):
             lamp._mode = mode
             self.assertEqual([], lamp._published_matrix_colors(), mode)
+            self.assertEqual([], lamp.extra_state_attributes["matrix_colors"], mode)
         lamp._mode, lamp._music_flow_enabled = "Custom Draw", True
         self.assertEqual([], lamp._published_matrix_colors())
         for mode in ("Clock", "Custom Draw"):
             lamp._is_on, lamp._mode = False, mode
             self.assertEqual([(0, 0, 0)] * 100, lamp._published_matrix_colors())
-        attributes = _function_source(LIGHT_SOURCE, "extra_state_attributes")
-        self.assertIn('attrs["matrix_colors"] = self._published_matrix_colors()', attributes)
+            self.assertEqual([(0, 0, 0)] * 100, lamp.extra_state_attributes["matrix_colors"])
 
     def test_clock_mixer_effects_map_to_supported_native_effects(self):
         mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
@@ -1181,29 +1202,24 @@ class NativeFeatureTests(unittest.TestCase):
         for mixer, effect_name in mixer_effects.items():
             self.assertEqual(mixer, native_effects[effect_name]["mode"])
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
     def test_named_renderable_effects_back_the_clock(self):
         mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         dirs = CONSTANTS["NATIVE_EFFECT_DIRECTIONS"]
+        tables = cards()
         # Named effects must show through the clock (previously only a curated
         # subset did) -- including four-direction effects and direction-less
         # ones like Starry sky (whose blue color previously fell back to the
         # default yellow gradient).
         for name in (
-            "Waterfall",
-            "Aurora",
-            "Fire",
-            "Flower Sea",
-            "Kaleidoscope",
-            "Starry Sky",
-            "Ribbon",
-            "Bouncing Ball",
-            "Tide",
-            "Magic",
-            "Wonderland",
+            "Waterfall", "Aurora", "Fire", "Flower Sea", "Kaleidoscope", "Starry Sky",
+            "Ribbon", "Bouncing Ball", "Tide", "Magic", "Wonderland",
         ):
             self.assertEqual(name, mixer_effects[effects[name]["mode"]])
-            self.assertIn(f'{effects[name]["mode"]}: "{name}"', CLOCK_CARD_SOURCE)
+            self.assertEqual(name, tables["mixerEffects"][str(effects[name]["mode"])])
+        # The cards' table is effect_catalog.py's.
+        self.assertEqual({str(mixer): name for mixer, name in mixer_effects.items()}, tables["mixerEffects"])
         # Every effect with a full/absent direction set (except mostly-black
         # modes) qualifies; partial-direction Hacking and the stored GIF do not.
         for name, spec in effects.items():
@@ -1212,6 +1228,11 @@ class NativeFeatureTests(unittest.TestCase):
                 and spec.get("directions") in (None, dirs)
                 and spec["mode"] not in CONSTANTS["_NON_CLOCK_EFFECT_MODES"]
             )
+            if spec.get("streamed"):
+                # The integration's own effect: a clock style over it by name
+                # (its ``background``), no lamp mixer.
+                self.assertNotIn(spec["mode"], mixer_effects)
+                continue
             self.assertEqual(eligible, spec["mode"] in mixer_effects)
         # Hacking, Meteor, Building Blocks, and Palette are excluded: the
         # lamp rejects these clock/mixer combinations.
@@ -1219,30 +1240,30 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertNotIn(name, mixer_effects.values())
             self.assertNotIn(effects[name]["mode"], mixer_effects)
             style = next(
-                (
-                    s
-                    for s in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
-                    if s.get("mixer") == effects[name]["mode"]
-                ),
+                (s for s in CONSTANTS["NATIVE_CLOCK_STYLES"].values() if s.get("mixer") == effects[name]["mode"]),
                 None,
             )
             self.assertIsNone(style, f"{name} must not have a clock style")
 
     def test_brightness_only_turn_on_keeps_native_mode_running(self):
-        starter = _function_source(LIGHT_SOURCE, "async_turn_on")
-        turn_on = _function_source(LIGHT_SOURCE, "_internal_turn_on")
-        # async_turn_on forwards the prior on-state so the internal handler can
-        # tell a brightness-only change from a genuine (re)activation.
-        self.assertIn("was_on = self._is_on", starter)
-        self.assertIn("_was_on=was_on", starter)
-        self.assertIn('was_on = kwargs.pop("_was_on", False)', turn_on)
-        # Both the clock and native-effect branches only push brightness for a
-        # brightness-only change on an already-running mode -- re-activating
-        # would restart the lamp's animation from the first frame.
-        self.assertEqual(
-            2, turn_on.count('if was_on and set(kwargs) <= {"brightness"}:')
-        )
-        self.assertIn("await self._set_native_mode_brightness()", turn_on)
+        # A brightness change on a running clock or effect only sets the
+        # brightness: activating again would restart the lamp's animation
+        # from its first frame. Turned on from off, the mode is activated.
+        with instant_sleeps():
+            for mode in (CONST.MODE_CLOCK, CONST.MODE_NATIVE_EFFECT):
+                with self.subTest(mode=mode):
+                    light = make_light(_mode=mode, _native_effect="Rainbow", _is_on=True,
+                                       _last_hardware_brightness=100)
+                    run_on_loop(light.async_turn_on(brightness=100))
+                    self.assertEqual(["set_bright"], light._lamp_client.methods())
+                    light = make_light(_mode=mode, _native_effect="Rainbow", _is_on=False)
+                    run_on_loop(light.async_turn_on(brightness=100))
+                    self.assertIn("set_fx_effect", light._lamp_client.methods())
+                    # Already on, a turn_on with more than the brightness activates again.
+                    light = make_light(_mode=mode, _native_effect="Rainbow", _is_on=True,
+                                       _last_hardware_brightness=100)
+                    run_on_loop(light.async_turn_on(brightness=100, rgb_color=(255, 0, 0)))
+                    self.assertNotEqual(["set_bright"], light._lamp_client.methods())
 
 
 
@@ -1254,36 +1275,37 @@ class NativeFeatureTests(unittest.TestCase):
         # be reachable as a clock style whose mixer equals that effect's mode
         # (unless the effect is excluded from the clock entirely), and the
         # shared helper must resolve that color from the style.
-        colored = {
-            name: spec
-            for name, spec in effects.items()
-            if spec.get("color") is not None
-        }
+        colored = {name: spec for name, spec in effects.items() if spec.get("color") is not None}
         self.assertIn("Waterfall", colored)
         non_clock = CONSTANTS["_NON_CLOCK_EFFECT_MODES"]
+        backing = {}
         for name, spec in colored.items():
-            style = next(
-                (s for s in styles.values() if s.get("mixer") == spec["mode"]),
-                None,
+            style_id, style = next(
+                ((i, s) for i, s in styles.items() if s.get("mixer") == spec["mode"]), (None, None),
             )
             if spec["mode"] in non_clock:
                 self.assertIsNone(style, f"{name} must not have a clock style")
                 continue
             self.assertIsNotNone(style, f"no clock style backs {name}")
             self.assertEqual(spec["color"], default_color(style))
+            backing[style_id] = style
         # A solid-color style keeps its own color; a mixer effect without a
         # default color resolves to None.
         self.assertEqual(styles[6]["color"], default_color(styles[6]))
         self.assertIsNone(default_color({"mixer": 39}))
-        # Both clock payload builders resolve the color through the shared
-        # helper so none of them can silently drop the mixer effect's color.
-        resolve = _function_source(LIGHT_SOURCE, "_resolve_native_clock_color")
-        self.assertIn("clock_style_default_color", resolve)
-        activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
-        self.assertIn("_resolve_native_clock_color", activate)
-        self.assertIn("clock_style_colors(", activate)
-        persist = _function_source(LIGHT_SOURCE, "_effect_persist_item")
-        self.assertIn("clock_style_colors(style)", persist)
+        # What is sent with no color chosen, by the activation and by a
+        # button playlist entry: the style's colors (clock_style_colors),
+        # the effect's default color among them.
+        light = make_light(_native_clock_color=None, _native_clock_color_mode="normal")
+        for style_id, style in backing.items():
+            with self.subTest(style=style["name"]):
+                light._native_clock_style = style_id
+                params = light._native_clock_params()
+                self.assertEqual(CONSTANTS["clock_style_colors"](style), params[3]["color"])
+                self.assertEqual(default_color(style), params[3]["color"][0])
+                if style.get("background") not in CONSTANTS["LITE_STREAMED_EFFECTS"]:
+                    item = light._effect_persist_item(CONSTANTS["BUTTON_CLOCK_PREFIX"] + style["name"])
+                    self.assertEqual(CONSTANTS["clock_style_colors"](style), item["effect_params"][0]["color"])
         # clock_style_colors: the one color, or every colour word of a
         # background that draws them (the clock's color first), or none.
         colors = CONSTANTS["clock_style_colors"]
@@ -1297,24 +1319,30 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertLessEqual(len(words), 4)
 
     def test_clock_preview_masks_native_effect_and_keeps_colon_blink(self):
-        clock = _function_source(CAMERA_SOURCE, "_get_clock_preview")
-        # Mixer-effect styles render the effect and mask it to the glyph pixels.
-        self.assertIn("CLOCK_MIXER_EFFECTS", clock)
-        self.assertIn("lamp_clock_settings(", clock)
-        self.assertIn("effect_frame[index]", clock)
-        self.assertIn("clock_digit_pixels(text, colon_visible, digit_flags, turned)", clock)
-        # Colon blink, date/12h/offset handling stay intact (clock_face.py,
-        # shared with the palette clock streamed to the lamp).
-        face = (ROOT / "clock_face.py").read_text(encoding="utf-8")
-        self.assertIn("clock_digit_targets(99 - at if turned else at, digit_flags)", face)
-        self.assertIn('char == ":"', face)
-        self.assertIn("colon_visible", clock)
-        self.assertIn("_native_clock_12_hour", clock)
+        # The camera's clock (masking every style's background to its digits)
+        # is drawn and compared frame by frame in test_clock_presets
+        # (ClockPreviewTests); here the face it masks with (clock_face.py,
+        # shared with the palette clock streamed to the lamp): the colon
+        # blinks, 12-hour time shows 21:05 as 09:05.
+        face = module("clock_face")
+        evening = datetime.datetime(2026, 11, 15, 21, 5, 7)
+        light = make_light(_native_clock_content="time", _native_clock_12_hour=False)
+        self.assertEqual("21:05", face.clock_text(evening, face.clock_content(light), False, True)[0])
+        self.assertEqual("09:05", face.clock_text(evening, face.clock_content(light), True, True)[0])
+        shown = {face.clock_text(evening.replace(second=second), "time", False, True)[1] for second in (6, 7)}
+        self.assertEqual({True, False}, shown)
+        self.assertEqual({True}, {face.clock_text(evening.replace(second=s), "time", False, False)[1] for s in (6, 7)})
+        # The digits turned a half turn on a turned mount are the upright
+        # ones mirrored through the centre (columns shown: 20).
+        upright = {pixel for pixel, *_ in face.clock_digit_pixels("21:05", True, 0, False, 20)}
+        turned = {pixel for pixel, *_ in face.clock_digit_pixels("21:05", True, 0, True, 20)}
+        self.assertEqual({99 - index for index in upright}, turned)
         # The JS card mirrors the same masking and colon-blink behaviour.
         self.assertIn("CLOCK_MIXER_EFFECTS", CLOCK_CARD_SOURCE)
         self.assertIn("lampClockSettings(", CLOCK_CARD_SOURCE)
         self.assertIn("effectFrame[index]", CLOCK_CARD_SOURCE)
-        self.assertIn("clockDigitTargets(turned ? 99 - at : at, digitFlags)", CLOCK_CARD_SOURCE)
+        self.assertIn("const at = turned ? (4 - row) * COLS + (columns - 1 - col) : row * COLS + col;", CLOCK_CARD_SOURCE)
+        self.assertIn("clockDigitTargets(at, digitFlags, columns * 5)", CLOCK_CARD_SOURCE)
         self.assertIn("colonVisible", CLOCK_CARD_SOURCE)
 
     def test_clock_style_sends_and_previews_mixer_direction(self):
@@ -1352,12 +1380,32 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIsNone(resolve("Up", "Magic"))
         self.assertIsNone(resolve("Up", None))
 
-        # The clock activation command carries a lamp direction byte taken
-        # from the selected native-effect direction, remapped per effect.
-        activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
-        self.assertIn("resolve_clock_mixer_direction(", activate)
-        self.assertIn("self._native_effect_direction", activate)
-        self.assertIn('effect_config["direction"] = lamp_direction(self, effect_direction_value(', activate)
+        # What the clock activation sends, style by style (the handed-over
+        # form): no direction byte for a direction-less background, the same
+        # one whatever is selected for a pinned one, else the selected
+        # direction, sent as its background effect is on this mount (the
+        # one-axis effects are chosen for the profile instead).
+        for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
+            effect = CONSTANTS["clock_style_effect"](style)
+            if not effect or CONSTANTS["clock_style_direct"](style) or style.get("background"):
+                continue
+            with self.subTest(style=style["name"]):
+                sent = {}
+                for label in ("Up", "Down", "Left", "Right"):
+                    light = make_light(_mode=CONST.MODE_CLOCK, _native_clock_style=style_id,
+                                       _native_effect_direction=label, _device_orientation="right")
+                    sent[label] = light._native_clock_params()[3].get("direction")
+                    resolved = resolve(label, effect)
+                    if resolved is not None and not effects[effect].get("one_axis") and effect not in fixed:
+                        alone = make_light(_mode=CONST.MODE_NATIVE_EFFECT, _native_effect=effect,
+                                           _native_effect_direction=resolved, _device_orientation="right")
+                        self.assertEqual(alone._native_effect_params()[3]["direction"], sent[label], label)
+                if resolve("Up", effect) is None:
+                    self.assertEqual({None}, set(sent.values()))
+                elif effect in fixed:
+                    self.assertEqual(1, len(set(sent.values())))
+                elif not effects[effect].get("one_axis"):
+                    self.assertEqual(4, len(set(sent.values())))
 
         # The lamp ignores a clock's direction: a raw clock leaves the effects' one.
         lamp = _reflected_fx_lamp(
@@ -1367,59 +1415,80 @@ class NativeFeatureTests(unittest.TestCase):
 
         # The lamp keeps the direction that maps to 0 whatever is sent (mode 40),
         # and both previews draw the background so, whatever the lamp's
-        # native-effect direction (lamp_clock_settings, on the fixture).
+        # native-effect direction (lamp_clock_settings, on the fixture; the
+        # camera's clock is compared with it in test_clock_presets).
         renderers = runpy.run_path(ROOT / "lamp_renderers.py")
         for effect_name in mixer_effects.values():
             self.assertEqual(2, renderers["lamp_clock_settings"](effect_name, 50)["direction"])
-        clock_preview = _function_source(CAMERA_SOURCE, "_get_clock_preview")
-        self.assertIn("lamp_clock_settings(", clock_preview)
-        self.assertIn("lampClockSettings(", CLOCK_CARD_SOURCE)
+        if shutil.which("node"):
+            self.assertEqual({name: 2 for name in mixer_effects.values()}, cards()["clockDirection"])
 
     def test_native_effect_send_keeps_lamp_direction_remap(self):
         # REGRESSION GUARD: the lamp's `direction_remap` on the SEND path is the
         # ground truth that makes the lamp's physical flow match the arrow.
         # Removing it silently flips the lamp's up/down for _SWAP_UP_DOWN effects
         # (Ocean Waves, Rainbow, ...). Previews follow it (lamp_settings).
-        activate = _function_source(LIGHT_SOURCE, "_native_effect_params")
-        self.assertIn("effect_direction_sent(self, spec)", activate)
-        self.assertIn("effect_direction_value(", _function_source(LIGHT_SOURCE, "effect_direction_sent"))
-        # The shared helper applies the remap: Rainbow's "Up" is sent as the
-        # lamp's down value; an effect without a remap sends the label.
         direction = CONSTANTS["effect_direction_value"]
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         values = CONSTANTS["NATIVE_EFFECT_DIRECTION_VALUES"]
         self.assertEqual(values["Down"], direction(effects["Rainbow"], "Up"))
-        self.assertEqual(values["Up"], direction(effects["Aurora"], "Up"))
+        self.assertEqual(values["Up"], direction(effects["Fire"], "Up"))
+        # What is sent, on a lamp at the profile directions are calibrated on
+        # (2: not compensated): Rainbow's "Up" as the lamp's down value, Fire's as up.
+        with instant_sleeps():
+            for effect, wanted in (("Rainbow", "Down"), ("Fire", "Up")):
+                light = make_light(_mode=CONST.MODE_NATIVE_EFFECT, _native_effect=effect,
+                                   _native_effect_direction="Up", _device_orientation="right",
+                                   effect_profile=2)
+                run_on_loop(light._activate_native_effect())
+                self.assertEqual(values[wanted], light._lamp_client.params("set_fx_effect")[3]["direction"], effect)
 
     def test_a_raw_send_reflects_clock_style_for_live_preview(self):
-        handler = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
-        # Everything before the persist blocks is the always-reflect path that
-        # runs even when persist is unchecked (the default),
-        # and refreshes the linked settings controls.
-        reflect = handler.split("persisted = False")[0]
-        self.assertIn("_reflect_fx_effect(", reflect)
-        self.assertIn("target._refresh_linked_entities()", reflect)
-        # Selecting a clock style updates the style itself (not just the
-        # mode), its color and options, so the preview card renders the
-        # correct masked effect / color -- as a normal clock-style selection
-        # from the device page.
+        # The send_fx_effect action shows what it sent on the light, persisted
+        # or not (the default): the clock style itself (not just the mode),
+        # its color and options, so the preview card renders the correct
+        # masked effect / color, as a normal clock-style selection would; the
+        # linked settings controls are refreshed.
+        services = module("light_services_diagnostics")
+        hass = FakeHass({CONST.DOMAIN: {}})
+        LIGHT_MODULE.async_setup_light_services(hass)
+        handler = hass.registered[(CONST.DOMAIN, "send_fx_effect")]
         style = next(iter(CONSTANTS["NATIVE_CLOCK_STYLES"]))
         data = base64.b64encode(bytes([3, 8, 1, 1])).decode("ascii")
-        lamp = _reflected_fx_lamp(True, style, {"mode": 40, "color": [0x123456], "data": data})
-        self.assertEqual(lamp._mode, CONSTANTS["MODE_CLOCK"])
-        self.assertEqual(lamp._native_clock_style, style)
-        self.assertEqual(lamp._native_clock_color, 0x123456)
-        self.assertEqual(lamp._native_clock_content, "date")
-        self.assertTrue(lamp._native_clock_12_hour)
-        self.assertFalse(lamp._native_clock_colon_blink)
+        light = make_light(hass=hass, entity_id="light.cube", _refresh_linked_entities=Mock(),
+                           async_write_ha_state=Mock(), _mode="Solid Color")
+        self.addCleanup(LIGHT_MODULE._ENTITY_REGISTRY.pop, "test-raw-send", None)
+        LIGHT_MODULE._ENTITY_REGISTRY["test-raw-send"] = light
+        params = [CONSTANTS["NATIVE_CLOCK_EFFECT_ID"], style, 2, {"mode": 40, "color": [0x123456], "data": data}]
+        call = types.SimpleNamespace(data={"entity_id": "light.cube", "params": params}, hass=hass,
+                                     context=types.SimpleNamespace(user_id=None))
+        with instant_sleeps("light_services_diagnostics", "light_native", "light_display", "light"):
+            self.assertIs(services, sys.modules[handler.__module__])
+            run_on_loop(handler(call))
+        self.assertEqual(["set_fx_effect"], [m for m in light._lamp_client.methods() if m == "set_fx_effect"])
+        self.assertEqual(light._mode, CONSTANTS["MODE_CLOCK"])
+        self.assertEqual(light._native_clock_style, style)
+        self.assertEqual(light._native_clock_color, 0x123456)
+        self.assertEqual(light._native_clock_content, "date")
+        self.assertTrue(light._native_clock_12_hour)
+        self.assertFalse(light._native_clock_colon_blink)
+        light._refresh_linked_entities.assert_called()
         # A native effect: its speed (clamped) and direction.
         lamp = _reflected_fx_lamp(False, 0, {"rate": 999, "direction": 0}, "Rainbow")
         self.assertEqual((lamp._mode, lamp._native_effect), (CONSTANTS["MODE_NATIVE_EFFECT"], "Rainbow"))
         self.assertEqual(lamp._native_effect_speed, 255)
         # The card derives the effect from clock_style_id, so it must be the
-        # attribute that gets updated.
-        self.assertIn("clock_style_id", CLOCK_CARD_SOURCE)
-        self.assertIn("clockStyleMixer(", CLOCK_CARD_SOURCE)
+        # attribute that gets updated: it resolves every style's mixer, but
+        # the style over the stored GIF, which the cards do not know yet
+        # (clock-preview-utils.js leaves slot 71 out; they draw it as mixer 0).
+        self.assertEqual(style, light.extra_state_attributes["clock_style_id"])
+        if shutil.which("node"):
+            gif = CONSTANTS["LAMP_STORED_GIF_SLOT"]
+            mixers = cards()["mixerById"]
+            self.assertEqual(
+                {str(i): s["mixer"] for i, s in CONSTANTS["NATIVE_CLOCK_STYLES"].items() if s["mixer"] != gif},
+                {i: mixer for i, mixer in mixers.items() if CONSTANTS["NATIVE_CLOCK_STYLES"][int(i)]["mixer"] != gif},
+            )
 
     def test_the_outer_id_of_the_other_effects_installs_what_3_did(self):
         # A command sends its mode, rate, direction and colours: of the preset
@@ -1495,26 +1564,53 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertIn(spec["mode"], CONSTANTS["FORMERLY_NUMBERED_SLOTS"])
         # Official list is untouched; merged is the exact union.
         self.assertEqual(18, len(official))
-        self.assertEqual({**official, **extended, **CONSTANTS["LAMP_ANIMATION_EFFECTS"]}, merged)
+        self.assertEqual(
+            {**official, **extended, **CONSTANTS["LAMP_ANIMATION_EFFECTS"], **CONSTANTS["MATRIX_VERSION_EFFECTS"],
+             **CONSTANTS["STREAMED_EFFECTS"]},
+            merged,
+        )
 
     def test_nothing_offered_is_outside_the_lamp_tables(self):
         # The lamp has no mode above 81: one sent runs something undefined.
+        # The integration's own effects have slots past it, and are only
+        # ever streamed (light_native.names_streamed_slot).
         for spec in CONSTANTS["ALL_NATIVE_EFFECTS"].values():
-            self.assertLess(spec["mode"], 82)
+            if spec.get("streamed"):
+                self.assertTrue(CONSTANTS["streamed_slot"](spec["mode"]))
+            else:
+                self.assertLess(spec["mode"], 82)
         for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values():
-            self.assertLess(style["mixer"], 82)
+            if style.get("background") in CONSTANTS["STREAMED_EFFECTS"]:
+                self.assertTrue(CONSTANTS["streamed_slot"](style["mixer"]))
+            else:
+                self.assertLess(style["mixer"], 82)
+        self.assertFalse(any(CONSTANTS["streamed_slot"](mode) for mode in range(82)))
         # The empty slots draw nothing.
         modes = {spec["mode"] for spec in CONSTANTS["ALL_NATIVE_EFFECTS"].values()}
         self.assertFalse(modes & {12, 13, 29, 78})
 
     def test_a_button_playlist_sends_the_direction_activation_does(self):
-        persist = _function_source(LIGHT_SOURCE, "_effect_persist_item")
-        self.assertIn("effect_direction_sent(self, spec)", persist)
+        # A button entry runs the effect as an activation would send it.
+        with instant_sleeps():
+            for effect in ("Rainbow", "Fire", "Waves"):
+                for label in ("Up", "Left"):
+                    light = make_light(_mode=CONST.MODE_NATIVE_EFFECT, _native_effect=effect,
+                                       _native_effect_direction=label, _device_orientation="down")
+                    run_on_loop(light._activate_native_effect())
+                    sent = light._lamp_client.params("set_fx_effect")[3].get("direction")
+                    item = light._effect_persist_item(effect)
+                    self.assertEqual(sent, item["effect_params"][0].get("direction"), (effect, label))
 
     def test_a_clock_rotation_follows_a_renamed_style(self):
-        rotation = (ROOT / "light_rotation.py").read_text(encoding="utf-8")
-        clock = _function_source(rotation, "_apply_rotation_clock")
-        self.assertIn('canonical_item_name("clock", item["name"])', clock)
+        # A rotation saved with a style's former name shows the style.
+        old, new = next(
+            (old, new) for old, new in CONSTANTS["CLOCK_STYLE_ALIASES"].items()
+            if not old.isdigit() and new != old
+        )
+        light = make_light(_native_clock_style=None, _execute_hardware_op=AsyncMock(return_value=True))
+        with instant_sleeps():
+            run_on_loop(light._apply_rotation_clock({"name": old, "color_mode": "normal"}))
+        self.assertEqual(new, CONSTANTS["NATIVE_CLOCK_STYLES"][light._native_clock_style]["name"])
 
     def test_every_effect_has_one_family(self):
         families = CONSTANTS["EFFECT_FAMILIES"]
@@ -1524,23 +1620,15 @@ class NativeFeatureTests(unittest.TestCase):
             {spec["mode"] for spec in CONSTANTS["ALL_NATIVE_EFFECTS"].values()}, set(slots)
         )
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
     def test_the_cards_family_names_match_the_slots(self):
-        import re
-
-        families = (ROOT / "www" / "effect-families.js").read_text(encoding="utf-8")
-        table = families[families.index("EFFECT_FAMILY_NAMES = {"):families.index("const FAMILY_OF_NAME")]
-        rows = re.findall(r"(\w+): \[(.*?)\]", table, re.DOTALL)
         offline = {
-            name: family for family, names in rows for name in re.findall(r'"([^"]+)"', names)
+            name: family for family, names in cards()["familyNames"].items() for name in names
         }
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         self.assertEqual(
             offline,
-            {
-                name: CONSTANTS["effect_family"](spec)
-                for name, spec in effects.items()
-                if name in offline
-            },
+            {name: CONSTANTS["effect_family"](spec) for name, spec in effects.items() if name in offline},
         )
         self.assertTrue(set(offline) <= set(effects))
 
@@ -1554,17 +1642,16 @@ class NativeFeatureTests(unittest.TestCase):
             dead_ends & {style["mixer"] for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()}
         )
         # Not the same thing as freezing: that command keeps using slot 64.
-        display = (ROOT / "light_services_display.py").read_text(encoding="utf-8")
+        display = (ROOT / "light_actions_display.py").read_text(encoding="utf-8")
         self.assertIn('return [64, 0, 4, {"mode": 64}]', display)
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
     def test_the_lamps_default_speed_is_the_presets(self):
         self.assertEqual(128, CONSTANTS["DEFAULT_NATIVE_EFFECT_SPEED"])
-        self.assertIn(
-            "self._native_effect_speed = DEFAULT_NATIVE_EFFECT_SPEED", LIGHT_SOURCE
-        )
-        renderers = (ROOT / "www" / "lamp-renderers.js").read_text(encoding="utf-8")
-        self.assertIn("export const DEFAULT_EFFECT_SPEED = 128;", renderers)
-        self.assertIn("export const UNDIRECTED_EFFECT_DIRECTION = 0;", renderers)
+        self.assertEqual(128, make_light()._native_effect_speed)
+        self.assertEqual(128, cards()["defaultSpeed"])
+        self.assertEqual(CONSTANTS["UNDIRECTED_EFFECT_DIRECTION"], cards()["undirected"])
+        self.assertEqual(0, cards()["undirected"])
 
     def test_an_undirected_effect_has_its_preset_rows_direction(self):
         import tests.test_lamp_effects as lamp_effects
@@ -1578,8 +1665,15 @@ class NativeFeatureTests(unittest.TestCase):
     def test_a_clock_style_keeps_its_id(self):
         # Saved clock styles are ids: the styles left must not move.
         styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
-        # The two styles over the direct form come last (CLOCK_FORM_TWINS).
-        self.assertEqual(84, max(styles))
+        # The two styles over the direct form come next (CLOCK_FORM_TWINS),
+        # then a style over each of the Cube Matrix's own versions, then over
+        # each of the integration's own effects.
+        self.assertEqual(90, max(styles))
+        self.assertEqual(
+            {85: "Northern Lights", 86: "Rose Sea", 87: "Dark palette pulses", 88: "Knight Rider",
+             89: "Lava Lamp", 90: "Falling Blocks"},
+            {i: styles[i]["name"] for i in (85, 86, 87, 88, 89, 90)},
+        )
         self.assertEqual(
             {36: ("Comet stream", 22, False), 59: ("Music flipped equalizer", 51, False),
              83: ("Mirrored comets", 22, True), 84: ("Music noise equalizer", 51, True)},
@@ -1605,8 +1699,17 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(239, rate(51, 240))
         self.assertEqual(238, rate(51, 238))
         self.assertEqual(255, rate(39, 255))
-        self.assertIn('lamp_rate(style["mixer"], self._native_effect_speed)', LIGHT_SOURCE)
-        self.assertIn('lamp_rate(spec["mode"], self._native_effect_speed)', LIGHT_SOURCE)
+        # What is sent at the top speed: the lamp's limit, for a clock style
+        # and for an effect.
+        clock = next(i for i, s in CONSTANTS["NATIVE_CLOCK_STYLES"].items() if s["mixer"] == 28)
+        effect = next(n for n, s in CONSTANTS["ALL_NATIVE_EFFECTS"].items() if s["mode"] == 51)
+        with instant_sleeps():
+            light = make_light(_mode=CONST.MODE_CLOCK, _native_clock_style=clock, _native_effect_speed=255)
+            run_on_loop(light._activate_native_clock())
+            self.assertEqual(254, light._lamp_client.params("set_fx_effect")[3]["rate"])
+            light = make_light(_mode=CONST.MODE_NATIVE_EFFECT, _native_effect=effect, _native_effect_speed=255)
+            run_on_loop(light._activate_native_effect())
+            self.assertEqual(239, light._lamp_client.params("set_fx_effect")[3]["rate"])
 
     def test_magic_and_neon_are_their_own_slots(self):
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
@@ -1618,13 +1721,17 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertNotIn("directions", effects["Neon sine bands"])
         self.assertIsNone(CONSTANTS["resolve_clock_mixer_direction"]("Right", "Neon sine bands"))
         self.assertEqual("Neon sine bands", CONSTANTS["CLOCK_MIXER_EFFECTS"][75])
-        self.assertIn('canonical_item_name("native", item["name"])', LIGHT_SOURCE)
         self.assertEqual("Magic", CONSTANTS["NATIVE_EFFECT_ALIASES"]["76"])
+        # A rotation saved as "76" (Magic's former name) shows Magic.
+        light = make_light(_native_effect="Rainbow", _execute_hardware_op=AsyncMock(return_value=True))
+        with instant_sleeps():
+            run_on_loop(light._apply_rotation_native({"name": "76", "color_mode": "normal"}))
+        self.assertEqual("Magic", light._native_effect)
 
     def test_spectrum_has_no_speed(self):
         # Slot 17 reads no rate (the lamp; the app hides it too), and does not move.
         self.assertFalse(CONSTANTS["ALL_NATIVE_EFFECTS"]["Spectrum"].get("speed"))
-        render = NATIVE_PREVIEW["render_native_effect_oriented"]
+        render = NATIVE_PREVIEW["render_native_effect"]
         self.assertEqual(render("Spectrum", 0.0, "Up"), render("Spectrum", 40.0, "Up"))
 
     def test_tide_has_directions_and_keeps_its_picture(self):
@@ -1634,7 +1741,7 @@ class NativeFeatureTests(unittest.TestCase):
         # Right, the default mount, is the lamp direction it always ran.
         self.assertEqual({"Right": 0, "Left": 1, "Up": 2, "Down": 3}, {d: value(d) for d in spec["directions"]})
         self.assertEqual("Right", CONSTANTS["resolve_clock_mixer_direction"]("Up", "Tide"))
-        render = NATIVE_PREVIEW["render_native_effect_oriented"]
+        render = NATIVE_PREVIEW["render_native_effect"]
         phase = 3.7
         right, left = render("Tide", phase, "Right"), render("Tide", phase, "Left")
         up, down = render("Tide", phase, "Up"), render("Tide", phase, "Down")
@@ -1647,13 +1754,28 @@ class NativeFeatureTests(unittest.TestCase):
         # No Experimental Features setting any more: the dropdowns offer
         # everything (the animations only while a server delivers the
         # Yeelight commands).
-        for source in (SELECT_SOURCE, SWITCH_SOURCE, LIGHT_SOURCE, SERVICES_SOURCE):
-            self.assertNotIn("_extended_effects_enabled", source)
-            self.assertNotIn("experimental_required", source)
-        self.assertIn('invalid("animation_needs_matter")', SELECT_SOURCE)
-        self.assertNotIn("ExtendedEffectsSwitch", SWITCH_SOURCE)
+        select = module("select")
+        light = make_light()
+        self.assertFalse(hasattr(light, "_extended_effects_enabled"))
+        self.assertFalse(hasattr(module("switch"), "ExtendedEffectsSwitch"))
+        offered = set(select.YeelightCubeNativeEffectSelect(light, None).options)
+        listed = {
+            name for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
+            if not spec.get("hidden") and not spec.get("animation") and name != "Stored GIF"
+            and not spec.get("matrix_version_of")
+        }
+        self.assertLessEqual(listed, offered)
+        self.assertTrue({name for name in offered if CONSTANTS["ALL_NATIVE_EFFECTS"][name].get("extended")})
+        styles = select.YeelightCubeClockStyleSelect(light, None).options
+        self.assertIn(CONSTANTS["NATIVE_CLOCK_STYLES"][15]["name"], styles)
         self.assertIn(15, CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"])
-        self.assertIn("ALL_NATIVE_EFFECTS", LIGHT_SOURCE)
+        self.assertFalse(any("experimental_required" in spec for spec in CONSTANTS["ALL_NATIVE_EFFECTS"].values()))
+        # An animation without the Yeelight commands is refused, with its reason.
+        animation = next(iter(CONSTANTS["LAMP_ANIMATION_EFFECTS"]))
+        effect_select = select.YeelightCubeNativeEffectSelect(make_light(animations_available=False), None)
+        with self.assertRaises(HomeAssistantError) as refused:
+            run_on_loop(effect_select.async_select_option(animation))
+        self.assertEqual("animation_needs_matter", refused.exception.translation_key)
 
     def test_experimental_clock_styles_mirror_native_effect_modes(self):
         clock_styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
@@ -1680,7 +1802,8 @@ class NativeFeatureTests(unittest.TestCase):
         # named modes never appear as a bare number.
         twins = CONSTANTS["CLOCK_FORM_TWINS"]
         mode_to_name = {
-            spec["mode"]: name for name, spec in all_effects.items() if not spec.get("animation")
+            spec["mode"]: name for name, spec in all_effects.items()
+            if not spec.get("animation") and not spec.get("matrix_version_of")
         }
         seen_mixers = set()
         for style_id, style in clock_styles.items():
@@ -1689,9 +1812,12 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertIn(style_id, experimental)
             mixer = style["mixer"]
             direct = style.get("direct", False)
-            self.assertNotIn((mixer, direct), seen_mixers)
-            seen_mixers.add((mixer, direct))
-            if mixer in twins:
+            self.assertNotIn((mixer, direct, style.get("background")), seen_mixers)
+            seen_mixers.add((mixer, direct, style.get("background")))
+            if style.get("background"):
+                # Over a Cube Matrix's own version (effect_catalog.MATRIX_VERSION_EFFECTS).
+                self.assertEqual(style["background"], style["name"])
+            elif mixer in twins:
                 self.assertEqual(twins[mixer][1 if direct else 0], style["name"])
             elif style_id > 15 and mixer in mode_to_name:
                 self.assertEqual(mode_to_name[mixer], style["name"])
@@ -1701,13 +1827,17 @@ class NativeFeatureTests(unittest.TestCase):
 
     def test_dropdowns_sort_by_mode_and_mixer(self):
         # Native effects sort by lamp mode and clock styles by mixer.
-        self.assertIn(
-            'key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"]', SELECT_SOURCE
-        )
-        self.assertIn(
-            'key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"]',
-            SELECT_SOURCE,
-        )
+        select = module("select")
+        light = make_light()
+        effects = select.YeelightCubeNativeEffectSelect(light, None).options
+        modes = [CONSTANTS["ALL_NATIVE_EFFECTS"][name]["mode"] for name in effects]
+        self.assertEqual(sorted(modes), modes)
+        style_ids = {style["name"]: style_id for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()}
+        mixers = [
+            CONSTANTS["NATIVE_CLOCK_STYLES"][style_ids[name]]["mixer"]
+            for name in select.YeelightCubeClockStyleSelect(light, None).options if name in style_ids
+        ]
+        self.assertEqual(sorted(mixers), mixers)
 
     def test_official_gallery_contains_68_valid_drawings(self):
         drawings = PIXEL_ART["get_builtin_pixel_arts"]()
@@ -1723,22 +1853,17 @@ class NativeFeatureTests(unittest.TestCase):
 
 def _reflected_fx_lamp(is_clock, style, config, native_effect_name=None):
     """A lamp after send_fx_effect reflected a raw command on it
-    (light_services_diagnostics._reflect_fx_effect)."""
-    import base64 as _base64
-    names = {"_reflect_fx_effect", "_apply_clock_data"}
-    reflect = _load_standalone_functions(
-        LIGHT_SOURCE, names,
-        {**CONSTANTS, "base64": _base64, "_LOGGER": Mock(),
-         "lamp_direction": lambda light, value: value},
-    )["_reflect_fx_effect"]
-    lamp = types.SimpleNamespace(
+    (light_actions_diagnostics.reflect_lamp_command)."""
+    from tests.fakes import light_state
+
+    lamp = light_state(
         _mode=None, _native_clock_style=None, _native_clock_color=None,
         _native_clock_content="time", _native_clock_show_date=False,
         _native_clock_12_hour=False, _native_clock_colon_blink=True,
         _native_effect=None, _native_effect_speed=50, _native_effect_direction=None,
-        _device_orientation="right",
+        _device_orientation="right", effect_profile=None, is_cube_matrix=False,
     )
-    reflect(lamp, is_clock, style, config, native_effect_name)
+    lamp.reflect_lamp_command(is_clock, style, config, native_effect_name)
     return lamp
 
 

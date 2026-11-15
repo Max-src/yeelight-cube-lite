@@ -11,7 +11,8 @@
  *   yeelight_cube service for all the card's lamps, through that queue.
  * - this._targets: the lamps the card controls (target_entities, else entity);
  *   _primaryEntity(): its main lamp: the first available one, else the
- *   first Home Assistant knows (lampAvailable, service-call-utils.js).
+ *   first Home Assistant knows (lampAvailable, service-call-utils.js). Both
+ *   are worked out once per config (and hass) and shared: never change them.
  * - this._gate: holds the card's renders while the user interacts
  *   (render-gate.js); a held render is made by _renderHeld() (default: a Lit
  *   update).
@@ -20,8 +21,11 @@
  *   shows (Home Assistant hands out a new hass object on every state push
  *   anywhere). What the card reads is its _hassInputs(hass) (default: its
  *   config and its lamps' states; a card reading less or more overrides
- *   it), plus the header's lamp status when shown. Every card's `set hass`
- *   starts with it.
+ *   it), plus the header's lamp status when shown.
+ * - set hass: keeps the new hass at once (service calls use the latest),
+ *   runs _hassReceived(hass, previous) on every push, then
+ *   _hassUpdated(hass, previous) (default: a Lit update) only when
+ *   _hassChanged says so, on the first push, or while _hassPending() does.
  * - _autoResolveSensor(key, kind, hass): fills a collection-sensor option
  *   (palette_sensor, pixelart_sensor) left unset, or naming a sensor that no
  *   longer exists (renamed), with the one found (sensor-lookup.js).
@@ -80,6 +84,22 @@ export function galleryCardSize(style) {
   return 4;
 }
 
+/**
+ * A lamp's state as _hassInputs values, without the attributes that change
+ * on their own while it plays (`skip`; matrix_colors: every second during a
+ * clock or an effect), so a card that does not show them skips those
+ * pushes. Lists and objects compare by content (valueKey).
+ */
+export function lampInputs(state, skip = LIVE_ATTRIBUTES) {
+  if (!state) return [undefined];
+  const inputs = [state.state];
+  for (const [key, value] of Object.entries(state.attributes || {}))
+    if (!skip.includes(key)) inputs.push(key, valueKey(value));
+  return inputs;
+}
+
+const LIVE_ATTRIBUTES = ["matrix_colors"];
+
 export const YeelightCardMixin = (Base) =>
   class extends Base {
     /** [tag, module] of the card's editor, loaded on demand. */
@@ -110,7 +130,18 @@ export const YeelightCardMixin = (Base) =>
     }
 
     get _targets() {
-      return getTargetEntities(this.config || {});
+      // Once per config (its entity and target_entities).
+      const config = this.config || {};
+      const memo = this.__targets;
+      if (memo && memo.config === config && memo.entity === config.entity && memo.list === config.target_entities)
+        return memo.value;
+      this.__targets = {
+        config,
+        entity: config.entity,
+        list: config.target_entities,
+        value: getTargetEntities(config),
+      };
+      return this.__targets.value;
     }
 
     /** The card's render gate (created on first use). */
@@ -128,12 +159,42 @@ export const YeelightCardMixin = (Base) =>
      * else "". */
     _primaryEntity(hass = this._hass) {
       const targets = this._targets;
-      return (
+      // Once per hass push and config: the previews ask on every frame.
+      const memo = this.__primary;
+      if (memo && memo.hass === hass && memo.states === hass?.states && memo.targets === targets)
+        return memo.value;
+      const value =
         targets.find((id) => lampAvailable(hass?.states?.[id])) ??
         targets.find((id) => hass?.states?.[id]) ??
         targets[0] ??
-        ""
-      );
+        "";
+      this.__primary = { hass, states: hass?.states, targets, value };
+      return value;
+    }
+
+    get hass() {
+      return this._hass;
+    }
+
+    set hass(hass) {
+      const previous = this._hass;
+      this._hass = hass;
+      this._hassReceived(hass, previous);
+      if (!this._hassChanged(hass) && previous && !this._hassPending()) return;
+      this._hassUpdated(hass, previous);
+    }
+
+    /** Called on every hass push, before the change check. */
+    _hassReceived() {}
+
+    /** Whether an update waits for the next push whatever it changed. */
+    _hassPending() {
+      return false;
+    }
+
+    /** Called when a hass push changed something the card shows. */
+    _hassUpdated() {
+      this.requestUpdate();
     }
 
     /** Height in masonry dashboards, in 50 px rows (static cardSize). */

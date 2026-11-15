@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 module.exports = async (t) => {
-  const { page, lamp, draw } = t;
+  const { page, draw } = t;
   // --- Draw pixel-art gallery: the shared gallery ---------------------------
   await page.evaluate(
     (tag) =>

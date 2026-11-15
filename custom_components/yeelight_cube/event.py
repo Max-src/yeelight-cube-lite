@@ -15,7 +15,7 @@ from __future__ import annotations
 from homeassistant.components.event import EventDeviceClass, EventEntity  # type: ignore
 from homeassistant.core import callback  # type: ignore
 
-from .entity import CubeDeviceEntity
+from .entity import CubeDeviceEntity, remove_retired_entities
 from .runtime_data import lamp_of
 
 # No limit per platform: the entity only reports.
@@ -41,7 +41,7 @@ class YeelightCubeLampButtonsEvent(CubeDeviceEntity, EventEntity):
 
     def __init__(self, light_entity):
         self._light_entity = light_entity
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_lamp_buttons"
+        self._attr_unique_id = f"{light_entity.unique_id}_lamp_buttons"
 
     @property
     def available(self) -> bool:
@@ -49,7 +49,8 @@ class YeelightCubeLampButtonsEvent(CubeDeviceEntity, EventEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._register_on_light("_lamp_buttons_event")
+        self._listen_to_light("lamp_buttons", self.async_write_ha_state)
+        self._listen_to_light("lamp_button_event", self.lamp_event)
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:
@@ -66,5 +67,9 @@ class YeelightCubeLampButtonsEvent(CubeDeviceEntity, EventEntity):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     light_entity = lamp_of(entry)
-    if light_entity is not None:
+    # The lamp's buttons are read over Matter: a Cube Lite's (device_profile).
+    if light_entity is not None and light_entity.device_profile.matter:
         async_add_entities([YeelightCubeLampButtonsEvent(light_entity)])
+    elif light_entity is not None:
+        # A Cube Matrix entry made before models were told apart had it.
+        remove_retired_entities(hass, "event", [f"{light_entity.unique_id}_lamp_buttons"])

@@ -1,13 +1,13 @@
 /**
- * The native effects' names (const.py, the lamp's own), for the
+ * The native effects' names (effect_catalog.py, the lamp's own), for the
  * cards: every former name of an effect or clock style, so a card config
  * written with an older name (visible or hidden items, item labels,
  * browser-kept favourites) keeps working.
- * tests/test_native_features.py keeps this equal to const.py.
+ * tests/test_native_features.py keeps this equal to effect_catalog.py.
  */
 
 // The order both cards list effects in when the card editor sets none
-// (light._native_effect_catalog): const.py NATIVE_EFFECTS' slots, the official
+// (light._native_effect_catalog): effect_catalog.py NATIVE_EFFECTS' slots, the official
 // effects as the Yeelight app lists them, then every other slot in slot order.
 // The clock card lists its effect styles in it too.
 export const OFFICIAL_EFFECT_SLOTS = Object.freeze([
@@ -20,7 +20,7 @@ export function effectSlotRank(slot) {
   return official >= 0 ? official : OFFICIAL_EFFECT_SLOTS.length + slot;
 }
 
-// const.py FORMERLY_NUMBERED_SLOTS: the slots named by their bare number until
+// effect_catalog.py FORMERLY_NUMBERED_SLOTS: the slots named by their bare number until
 // 1.4.0, and their names today.
 export const FORMERLY_NUMBERED_EFFECT_NAMES = Object.freeze({
   1: "Two-colour alternation",
@@ -59,7 +59,7 @@ export const FORMERLY_NUMBERED_EFFECT_NAMES = Object.freeze({
 });
 
 
-// const.py NATIVE_EFFECT_ALIASES: every former name -> today's, flattened.
+// effect_catalog.py NATIVE_EFFECT_ALIASES: every former name -> today's, flattened.
 // Music Flow has its own names: never looked up here.
 export const NATIVE_EFFECT_ALIASES = Object.freeze({
   // Official effects (the names until 1.4.0).
@@ -133,7 +133,7 @@ export function canonicalLabels(labels, canonical = canonicalEffectName) {
 }
 
 // The effects no clock style is named after: the ones that cannot back the
-// clock (const.py _NON_CLOCK_EFFECT_MODES: slots 46, 47, 49, 60 and 81).
+// clock (effect_catalog.py _NON_CLOCK_EFFECT_MODES: slots 46, 47, 49, 60 and 81).
 const NON_CLOCK_EFFECT_NAMES = new Set([
   "Hacking",
   "Meteor",
@@ -142,10 +142,10 @@ const NON_CLOCK_EFFECT_NAMES = new Set([
   "Palette",
 ]);
 
-// const.py CLOCK_STYLE_ALIASES: a clock style is named after the effect behind
+// effect_catalog.py CLOCK_STYLE_ALIASES: a clock style is named after the effect behind
 // it, so it was renamed with it. A clock style's key in a card config is a name
 // ("custom:<id>" for a saved preset), never a style id.
-// A former name of a background with a style in each form (const.py
+// A former name of a background with a style in each form (effect_catalog.py
 // CLOCK_FORM_TWINS) keeps meaning the style it named: the one over the
 // hand-over.
 const TWIN_HANDOVER_NAMES = {

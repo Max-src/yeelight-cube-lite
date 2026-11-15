@@ -18,10 +18,12 @@ from .const import (
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
 )
+from .device_profile import CUBEMATRIX, MATRIX_ROTATION_ORIENTATIONS
 from .mount_profile import (
     STAR_CHECK_PARAMS,
     SOURCE_MATTER,
     SOURCE_USER,
+    CLOCK_TURNED_ORIENTATIONS,
     clock_turned,
     effective_profile,
     resolve_profile,
@@ -34,12 +36,21 @@ _LOGGER = logging.getLogger(__name__)
 class MountProfileMixin:
     """Resolve, store and apply the lamp's mount profile."""
 
+    def _init_mount_profile_state(self) -> None:
+        """Called by YeelightCubeLight.__init__."""
+        # The mount check running (async_check_mount_profile): what the lamp
+        # showed before it, put back after; None while none runs.
+        self._mount_check = None
+        # A profile the lamp reported over Matter, not yet stored (the
+        # options are written once Home Assistant runs).
+        self._mount_profile_pending = None
+
     @property
     def mount_profile(self) -> tuple[int | None, str]:
         """(profile 0-3 or None, source "matter" / "user" / "unknown")."""
-        entry = getattr(self, "_config_entry", None)
+        entry = self._config_entry
         options = entry.options if entry is not None else {}
-        link = getattr(self, "_matter", None)
+        link = self._matter
         linked = link is not None and link.linked
         return resolve_profile(
             options.get(CONF_MOUNT_PROFILE),
@@ -58,13 +69,27 @@ class MountProfileMixin:
 
     @property
     def lamp_turns_clock(self) -> bool:
-        """Whether the lamp draws its clock a half turn from the
-        calibration's (profiles 0 and 1): the previews turn it too, from the
-        profile being written (_mount_profile_pending) as soon as the Device
-        Orientation changes, so they never show the new orientation with
-        the old profile. Native effects are compensated (light_native), so
-        they never are."""
-        pending = getattr(self, "_mount_profile_pending", None)
+        """Whether the clock's digits are laid out a half turn from the
+        calibration's: the previews turn them too, from the profile being
+        written (_mount_profile_pending) as soon as the Device Orientation
+        changes, so they never show the new orientation with the old
+        profile. A Cube Lite does it itself on its profiles 0 and 1. A Cube
+        Matrix's own clock never does (filmed 2026-11-12: upside down when
+        mounted left, read from the bottom up when mounted up), so there its
+        clock is streamed, turned on the same Device Orientations as a Cube
+        Lite's (CLOCK_TURNED_ORIENTATIONS; light_matrix._matrix_clock_command).
+        Native effects are compensated (light_native), so they never are."""
+        profile = getattr(self, "device_profile", None)
+        if profile is not None and profile.key == CUBEMATRIX:
+            pending = self._mount_profile_pending
+            orientation = (
+                MATRIX_ROTATION_ORIENTATIONS.get(pending) if pending is not None
+                else self._device_orientation
+            )
+            return orientation in CLOCK_TURNED_ORIENTATIONS
+        if profile is not None and not profile.native_effects:
+            return False
+        pending = self._mount_profile_pending
         return clock_turned(self.effect_profile if pending is None else pending)
 
     def _mount_profile_summary(self) -> dict:
@@ -73,8 +98,11 @@ class MountProfileMixin:
         while a Device Orientation is written to the lamp, the one it is
         about to run ("pending", what the previews follow)."""
         profile, source = self.mount_profile
-        summary = {"profile": profile, "source": source, "in_use": effective_profile(profile)}
-        pending = getattr(self, "_mount_profile_pending", None)
+        summary = {"profile": profile, "source": source, "in_use": effective_profile(profile),
+                   # Whether the clock's digits are laid out a half turn round
+                   # (lamp_turns_clock): the cards' previews read it.
+                   "clock_turned": self.lamp_turns_clock}
+        pending = self._mount_profile_pending
         if pending is not None:
             summary["pending"] = pending
         return summary
@@ -82,7 +110,7 @@ class MountProfileMixin:
     def _store_mount_profile(self, profile: int, source: str, node: int | None = None) -> bool:
         """Keep the profile with the entry (and, from Matter, the node it was
         confirmed on); True when that changed what is kept."""
-        entry = getattr(self, "_config_entry", None)
+        entry = self._config_entry
         if entry is None or self.hass is None:
             return False
         options = {
@@ -116,7 +144,7 @@ class MountProfileMixin:
     def _mount_check_active(self) -> bool:
         """The check's stars are on the lamp (async_show_mount_check): what
         the lamp reports meanwhile is the check, not a change of its own."""
-        return getattr(self, "_mount_check", None) is not None
+        return self._mount_check is not None
 
     async def async_show_mount_check(self) -> bool:
         """Play the check's Shooting Star as is (not compensated): the way
@@ -132,21 +160,20 @@ class MountProfileMixin:
                 "on": self._is_on,
                 "display": self._display_attributes(),
                 "rotation": self._running_rotation(),
-                "external": getattr(self, "_external_display", False),
-                "app_content": getattr(self, "_app_content", None),
+                "external": self._external_display,
+                "app_content": self._app_content,
             }
             if self._mount_check["rotation"] is not None:
                 self.stop_effect_rotation()
 
         async def show() -> None:
             await self._leave_direct_mode()
-            await self._cube_matrix.send_raw_command(
+            await self._lamp_client.send_raw_command(
                 "set_fx_effect", list(STAR_CHECK_PARAMS), check_reply=True
             )
             # What runs is not the light's effect: the next one is sent in full.
-            self._cube_matrix.forget_running_effect()
-            self._fx_mode_is_direct = False
-            self._in_native_fw_mode = True
+            self._lamp_client.forget_running_effect()
+            self._entered_builtin_mode()
 
         if await self._execute_hardware_op(show, "mount_check"):
             return True
@@ -159,12 +186,12 @@ class MountProfileMixin:
         Yeelight app's content again when it was the app's and can be sent
         again, the rotation again (in step with the lamps still running it),
         else the content; or off again."""
-        snapshot, self._mount_check = getattr(self, "_mount_check", None), None
+        snapshot, self._mount_check = self._mount_check, None
         if snapshot is None:
             await self._async_reapply_for_mount_profile(lamp_changed=False)
             return
         self._apply_display_attributes(snapshot["display"])
-        self._cube_matrix.forget_running_effect()
+        self._lamp_client.forget_running_effect()
         self._notify_camera_preview()
         if not snapshot["on"]:
             await self.async_turn_off()
@@ -190,8 +217,8 @@ class MountProfileMixin:
         self._notify_camera_preview()
         if self.hass is not None:
             self.async_write_ha_state()
-        if not self._is_on or getattr(self, "_external_display", False) or self._music_flow_enabled:
+        if not self._is_on or self._external_display or self._music_flow_enabled:
             return
         if self._mode == MODE_NATIVE_EFFECT or (lamp_changed and self._mode == MODE_CLOCK):
-            self._cube_matrix.forget_running_effect()
+            self._lamp_client.forget_running_effect()
             await self.async_apply_display_mode(update_type="text_change")

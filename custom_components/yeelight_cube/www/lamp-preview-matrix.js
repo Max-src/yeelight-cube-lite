@@ -5,26 +5,23 @@ import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { rgbToCss } from "./color-utils.js";
 import { createVisibilityTracker, createRafLoop } from "./matrix-animator.js";
 import {
+  LAMP_EFFECTS,
   RENDER_SECONDS,
-  effectDisplayFrame,
   isLampRendered,
-  DEFAULT_EFFECT_SPEED,
-  chosenIntensity,
 } from "./lamp-renderers.js";
 import {
-  clockStyleMixer,
-  clockPreviewEffect,
+  clockStyleEffect,
   clockPhase,
   clockSpeed,
   clockUsesLampRenderer,
   renderClockFrame,
   lookupNativeClockFont,
 } from "./clock-preview-utils.js";
-import { renderNativeEffectOriented } from "./native-effect-preview.js";
-import { adjustmentsOf } from "./color-adjustments.js";
+import { nativeEffectLampFrame } from "./native-effect-card-utils.js";
 import { matrixFrame } from "./matrix-frame.js";
+import { withSpotColours } from "./matrix-modules.js";
+import { contextGrid, previewContext } from "./preview-context.js";
 import {
-  deviceOrientation,
   isVerticalMount,
   matrixView,
   toDisplayOrder,
@@ -48,6 +45,15 @@ function orientedLayout(orientation) {
     orientedLayouts.set(orientation, layout);
   }
   return layout;
+}
+
+// The lamp's effect as the Native Effects card lists it (its catalogue item:
+// the directions it offers), else as the renderers know it.
+function lampEffectItem(attributes, name) {
+  const listed = Array.isArray(attributes?.native_effect_catalog)
+    ? attributes.native_effect_catalog.find((item) => item?.name === name)
+    : null;
+  return listed ?? { name, directions: LAMP_EFFECTS[name]?.directions ?? [] };
 }
 
 export const MatrixPreviewMixin = (Base) => class extends Base {
@@ -154,8 +160,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
   _clockAnimInterval() {
     const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
-    const mixer = attrs ? clockStyleMixer(attrs) : 0;
-    return clockPreviewEffect(mixer) ? 100 : 500;
+    return attrs && clockStyleEffect(attrs) ? 100 : 500;
   }
 
   _stopClockAnimation() {
@@ -241,11 +246,10 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const effect = st.attributes.native_effect || "Ribbon";
     this._setInstantDots(isLampRendered(effect));
     const dir = st.attributes.native_effect_direction || "Right";
-    const orientation = deviceOrientation(st.attributes);
-    const speed = Math.max(
-      1,
-      Math.min(255, Number(st.attributes.native_effect_speed ?? DEFAULT_EFFECT_SPEED)),
-    );
+    // The lamp's settings (speed 0-255 as the lamp's, its mount, its
+    // modules...), as every effect preview reads them.
+    const context = previewContext(st.attributes);
+    const { orientation } = context;
     const now = performance.now();
     const animationKey = `${effect}\u0000${dir}\u0000${orientation}`;
     if (animationKey !== this._nativeAnimKey) {
@@ -265,28 +269,13 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const seconds =
       this._nativeFrozenSeconds ?? (now - this._nativeAnimStartedAt) / 1000;
     if (this._sameRender(seconds, due)) return;
-    // Match the camera's phase mapping (native_effect_preview usage).
-    const phase = seconds * (0.25 + speed / 55.0);
-    // Lamp order (row 0 = physical bottom), like every frame painted here:
+    // The frame the Native Effects card draws (nativeEffectLampFrame), in
+    // lamp order (row 0 = physical bottom), like every frame painted here:
     // _paintDots turns it the way the viewer sees it, once. The lamp's
     // mount profile does not turn it (the sent direction is compensated).
-    const raw = effectDisplayFrame(
-      effect,
-      renderNativeEffectOriented(
-        effect,
-        phase,
-        dir,
-        st.attributes.native_effect_color || null,
-        st.attributes.native_effect_color_mode || "normal",
-        speed,
-        orientation,
-        chosenIntensity(st.attributes),
-        st.attributes.text_colors,
-        st.attributes.stored_gif,
-        st.attributes.animation_layout,
-        adjustmentsOf(st.attributes),
-      ),
-    );
+    // On the columns the lamp shows (a Cube Matrix with fewer blocks), as
+    // its stream is drawn.
+    const raw = nativeEffectLampFrame(lampEffectItem(st.attributes, effect), context, seconds);
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
   }
@@ -302,7 +291,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
     // If the device orientation changed, the grid geometry (rows/cols, tall vs
     // wide) changed too — a color-only update can't fix that, so full re-render.
-    const orientation = deviceOrientation(stateObj?.attributes);
+    const { orientation } = previewContext(stateObj?.attributes);
     if (this._lastPreviewOrientation !== orientation) {
       this._lastPreviewOrientation = orientation;
       this._refresh();
@@ -315,7 +304,10 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // Paint the .lamp-dot nodes directly. The dots have no reactive bindings, so
   // Lit never rewrites what the static preview or the animation loops paint.
   _paintDots(gridColors, orientation, dots = this._getLampDots()) {
-    const colors = this._orientedLayout(orientation).display(gridColors);
+    // A Cube Matrix's spots in the colour the lamp lights them.
+    const colors = this._orientedLayout(orientation).display(
+      withSpotColours(gridColors, previewContext(this._lampAttributes()).lamp, "lamp"),
+    );
 
     dots.forEach((dot, idx) => {
       const color = colors[idx] || "#000000";
@@ -335,6 +327,33 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
         dot.classList.remove("lamp-dot-empty");
       }
     });
+    this._paintModules(gridColors, orientation, dots);
+  }
+
+  // A Cube Matrix's modules (matrix-modules.js moduleGrid): each dot
+  // placed on the grid of its modules, those it has not left out, a spot one
+  // round light over its area (its colour: _paintDots, withSpotColours).
+  _paintModules(gridColors, orientation, dots) {
+    const context = previewContext(this._lampAttributes());
+    const layout = this._orientedLayout(orientation);
+    const key = `${orientation}:${context.moduleKey}:${dots.length}`;
+    if (!dots.length || this._modulesKey === key) return;
+    this._modulesKey = key;
+    const grid = contextGrid(context, layout.tall);
+    const places = grid ? toDisplayOrder(grid.place, layout.tall) : [];
+    dots.forEach((dot, index) => {
+      const place = places[index];
+      dot.style.display = place === null ? "none" : "";
+      dot.style.gridColumn = place ? `${place.column}${place.span > 1 ? ` / span ${place.span}` : ""}` : "";
+      dot.style.gridRow = place ? `${place.row}${place.span > 1 ? ` / span ${place.span}` : ""}` : "";
+      dot.classList.toggle("lamp-dot-spot", !!place?.spot);
+    });
+  }
+
+  // The card's lamp's attributes (its modules, its orientation).
+  _lampAttributes() {
+    const hass = this._hass ?? this.hass;
+    return hass?.states?.[this._primaryEntity?.(hass)]?.attributes;
   }
 
   // Black detection (shared BLACK_THRESHOLD from matrix-const.js) and the
@@ -389,9 +408,15 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
     // Preview geometry follows the physical device orientation; the frame
     // is every preview's (matrix-frame.js), vertical at the same pixel size.
-    const layout = this._orientedLayout(deviceOrientation(stateObj?.attributes));
+    const context = previewContext(stateObj?.attributes);
+    const layout = this._orientedLayout(context.orientation);
+    // A Cube Matrix's modules (matrix-modules.js): their columns at the same
+    // dot size, a narrower frame.
+    const modules = contextGrid(context, layout.tall);
+    const size = this.config.size_pct || 100;
     const frame = matrixFrame({
-      width: `${this.config.size_pct || 100}%`,
+      width: modules && !layout.tall ? `${(size * modules.columns) / 20}%` : `${size}%`,
+      cols: modules?.cols,
       vertical: layout.tall,
       gap: pixelGap,
       padding: 8,
@@ -408,7 +433,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
         // Pixel shape and dot shadow, read by .lamp-dot (lamp-preview-styles.js).
         `--lamp-dot-radius:${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};` +
         `--lamp-dot-shadow:${spacingMode === "subtle" || spacingMode === "normal" ? `0 0 ${frame.length(2)} #0008` : "none"};` +
-        `aspect-ratio:auto;${frame.gridStyle}grid-template-rows: repeat(${layout.rows}, 1fr);`,
+        `aspect-ratio:auto;${frame.gridStyle}grid-template-rows: repeat(${modules ? modules.rows : layout.rows}, 1fr);`,
     };
   }
 
@@ -422,8 +447,10 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   _matrixTemplate(stateObj) {
     const { layout, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);
+    // New dots for a new orientation or module list (_paintModules places them).
+    const context = previewContext(stateObj?.attributes);
     const generation = (this._dotsKey =
-      `${this._dotGeneration}:${deviceOrientation(stateObj?.attributes)}`);
+      `${this._dotGeneration}:${context.orientation}:${context.moduleKey}`);
     const indices = Array.from(
       { length: layout.rows * layout.cols },
       (_, index) => index,

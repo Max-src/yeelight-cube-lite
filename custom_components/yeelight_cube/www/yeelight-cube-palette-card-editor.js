@@ -1,5 +1,5 @@
 import { renderActionButtonSettings } from "./action-button-ui.js";
-import { LitElement, html, css } from "./lib/lit-all.js";
+import { LitElement, html } from "./lib/lit-all.js";
 
 import { sharedEditorStyles, YeelightEditorMixin } from "./editor_ui_utils.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
@@ -38,17 +38,6 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
     this.requestUpdate();
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    // Only trigger render if hass has states
-    if (hass && hass.states) {
-      this.requestUpdate();
-    }
-  }
-
-  get hass() {
-    return this._hass;
-  }
 
   // Nothing to edit before Home Assistant is known (render shows "Loading").
   shouldUpdate() {
@@ -63,9 +52,6 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
         Loading...
       </div>`;
     const config = this._config || {};
-    const sensors = Object.keys(this._hass.states || {}).filter((eid) =>
-      eid.startsWith("sensor."),
-    );
 
     return html`
       <div class="editor-root">

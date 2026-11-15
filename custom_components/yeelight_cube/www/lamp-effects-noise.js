@@ -7,7 +7,6 @@
  */
 
 import {
-  LENGTH,
   SIN8,
   blurColumns,
   convertColour,
@@ -22,6 +21,7 @@ import {
   paletteSpan,
   paletteTable,
   placeStrip,
+  settingsLength,
 } from "./lamp-core.js";
 
 // The gradients of slots 55, 56, 57 and 59 and slot 58's two buffer
@@ -39,6 +39,8 @@ const GRADIENTS = {
     [0, 25, 25, 112], [70, 0, 0, 128], [120, 0, 0, 255], [160, 173, 216, 230],
     [180, 255, 255, 224], [255, 255, 223, 255],
   ],
+  // The Cube Matrix's slot 55 (Rose Sea): red to hot pink to purple.
+  "55matrix": [[0, 255, 0, 0], [128, 255, 105, 180], [255, 128, 0, 128]],
 };
 
 const s16 = (value) => ((value + 0x8000) & 0xffff) - 0x8000;
@@ -87,9 +89,9 @@ const gradientTable = (key) => paletteTable(gradientPalette(GRADIENTS[key]));
 /** The sampler's gain on a sampled table, gain neither 0 nor 255. */
 const gainTable = (table, gain) => table.map((value) => (((gain + 1) & 255) * value) >> 8);
 
-const buffers = () => ({
-  strip: new Uint8Array(3 * LENGTH),
-  panel: new Uint8Array(3 * LENGTH),
+const buffers = (settings) => ({
+  strip: new Uint8Array(3 * settingsLength(settings)),
+  panel: new Uint8Array(3 * settingsLength(settings)),
 });
 
 // ── Slot 34: Fire ─────────────────────────────────────────────────────
@@ -104,7 +106,7 @@ function fireInit(settings) {
     fades: Int32Array.from({ length: height }, (_, row) =>
       Math.floor(((height - row) * 255) / height) & 255,
     ),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -132,7 +134,7 @@ function fireStep(state, settings, clockMs) {
 function oceanInit(settings) {
   const [width, height] = effectGeometry(settings);
   const scale = settings.intensity;
-  const angles = new Uint8Array(LENGTH);
+  const angles = new Uint8Array(width * height);
   for (let row = 0; row < height; row += 1)
     for (let column = 0; column < width; column += 1)
       angles[row * width + column] =
@@ -143,14 +145,14 @@ function oceanInit(settings) {
     speed: settings.rate + 32,
     table: effectColours(settings).table,
     angles,
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
 function oceanStep(state, settings, clockMs) {
   const { table, angles, strip } = state;
   const drift = Math.imul(clockMs >>> 4, state.speed) >>> 7;
-  for (let cell = 0; cell < LENGTH; cell += 1) {
+  for (let cell = 0; cell < angles.length; cell += 1) {
     const from = 3 * SIN8[(angles[cell] + drift) & 255];
     strip[3 * cell] = table[from];
     strip[3 * cell + 1] = table[from + 1];
@@ -169,7 +171,7 @@ function sunsetInit(settings) {
     table: paletteTable(nativePalette(0, 54)), // the lamp's raw wheel
     stepX: Math.floor(16 / width),
     stepY: Math.floor(32 / height),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -202,7 +204,7 @@ function flowerInit(settings) {
     tables: Array.from({ length: height }, (_, row) =>
       gainTable(table, (192 + row * Math.floor(63 / height)) & 255),
     ),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -226,20 +228,55 @@ function flowerStep(state, settings, clockMs) {
   return placeStrip(strip, state.direction, state.panel);
 }
 
+// ── Slot 55 as a Cube Matrix draws it: Rose Sea (lamp_effects_noise.py) ─
+function roseInit(settings) {
+  const [width, height] = effectGeometry(settings);
+  const table = gradientTable("55matrix");
+  return {
+    direction: settings.direction,
+    width,
+    height,
+    tables: Array.from({ length: height }, (_, row) => {
+      const gain = ~(Math.floor(255 / height) * row) & 255;
+      return gain === 255 ? table : gainTable(table, gain);
+    }),
+    ...buffers(settings),
+  };
+}
+
+function roseStep(state, settings, clockMs) {
+  const { width, height, tables, strip } = state;
+  const hundredth = Math.floor(clockMs / 100);
+  const depth = Math.floor(clockMs / 10) & 0xffff;
+  let at = 0;
+  for (let row = 0; row < height; row += 1) {
+    const y = (50 * row + hundredth) & 0xffff;
+    const table = tables[row];
+    for (let column = 0; column < width; column += 1) {
+      const x = (row * (column - width)) & 0xffff;
+      const from = 3 * noiseHeat(inoise8Raw(x, y, depth));
+      strip[at++] = table[from];
+      strip[at++] = table[from + 1];
+      strip[at++] = table[from + 2];
+    }
+  }
+  return placeStrip(strip, state.direction, state.panel);
+}
+
 // ── Slot 56: Violet interference ──────────────────────────────────────
 function carouselInit(settings) {
   const [width, height] = effectGeometry(settings);
-  const angles = new Uint8Array(LENGTH);
+  const angles = new Uint8Array(width * height);
   for (let row = 0; row < height; row += 1)
     for (let column = 0; column < width; column += 1)
       angles[row * width + column] = Math.trunc((SIN8[144 + 4 * row] * (column - 8)) / 4);
-  return { direction: settings.direction, table: gradientTable(56), angles, ...buffers() };
+  return { direction: settings.direction, table: gradientTable(56), angles, ...buffers(settings) };
 }
 
 function carouselStep(state, settings, clockMs) {
   const { table, angles, strip } = state;
   const moved = clockMs >>> 3;
-  for (let cell = 0; cell < LENGTH; cell += 1) {
+  for (let cell = 0; cell < angles.length; cell += 1) {
     const from = 3 * SIN8[(angles[cell] + moved) & 255];
     strip[3 * cell] = table[from];
     strip[3 * cell + 1] = table[from + 1];
@@ -251,26 +288,27 @@ function carouselStep(state, settings, clockMs) {
 // ── Slots 57 and 59: Night-amber waves and Night-sky waves ────────────────────────────
 // Pattern index i is stored at the buffer's cell i and the last pass reads it
 // back through the mapper, so the pattern sits on the panel at any direction.
-const distances = (centre) =>
-  Int32Array.from({ length: LENGTH }, (_, pixel) =>
+const distances = (centre, length) =>
+  Int32Array.from({ length }, (_, pixel) =>
     Math.trunc(f32(f32(Math.abs(f32(pixel - centre)) / centre) * 20)),
   );
 
-function yellowInit() {
+function yellowInit(settings) {
+  const length = settingsLength(settings);
   return {
     table: gradientTable(57),
-    distances: distances(f32(LENGTH / 15)),
-    panel: new Uint8Array(3 * LENGTH),
+    distances: distances(f32(length / 15), length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function yellowStep(state, settings, clockMs) {
-  const { table, panel } = state;
+  const { table, panel, distances } = state;
   const period = Math.floor(clockMs / (100 - Math.floor(settings.rate / 3)));
   const eighth = period >> 3;
   const double = period * 2;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
-    const from = 3 * ((SIN8[(state.distances[pixel] + eighth) & 255] + double) % 255);
+  for (let pixel = 0; pixel < distances.length; pixel += 1) {
+    const from = 3 * ((SIN8[(distances[pixel] + eighth) & 255] + double) % 255);
     panel[3 * pixel] = table[from];
     panel[3 * pixel + 1] = table[from + 1];
     panel[3 * pixel + 2] = table[from + 2];
@@ -278,20 +316,21 @@ function yellowStep(state, settings, clockMs) {
   return panel;
 }
 
-function whiteInit() {
+function whiteInit(settings) {
+  const length = settingsLength(settings);
   return {
     table: gradientTable(59),
-    distances: distances(f32(LENGTH >> 4)),
-    panel: new Uint8Array(3 * LENGTH),
+    distances: distances(f32(length >> 4), length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function whiteStep(state, settings, clockMs) {
-  const { table, panel } = state;
+  const { table, panel, distances } = state;
   const moved = clockMs >>> 7;
   const double = (clockMs >>> 4) * 2;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
-    const from = 3 * ((SIN8[(state.distances[pixel] + moved) & 255] + double) % 255);
+  for (let pixel = 0; pixel < distances.length; pixel += 1) {
+    const from = 3 * ((SIN8[(distances[pixel] + moved) & 255] + double) % 255);
     panel[3 * pixel] = table[from];
     panel[3 * pixel + 1] = table[from + 1];
     panel[3 * pixel + 2] = table[from + 2];
@@ -309,7 +348,7 @@ function iceInit(settings) {
     light: gradientTable(58),
     shade: gainTable(gradientTable("58navy"), 128),
     shades: Int32Array.from({ length: width }, (_, column) => Math.floor((255 * column) / width)),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -340,7 +379,7 @@ function neonInit(settings) {
     height,
     period: settings.rate * -0.5 + 250,
     across: new Int32Array(width),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -375,7 +414,7 @@ function wonderlandInit(settings) {
     height,
     period: Math.ceil((1000 - settings.rate) / 40),
     depth: Math.floor(settings.rate / 20),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -399,7 +438,8 @@ function wonderlandStep(state, settings, clockMs, render) {
 
 // ── Slot 80: Kaleidoscope ─────────────────────────────────────────────
 function kaleidoscopeInit(settings) {
-  const centre = f32(LENGTH / 1.3);
+  const length = settingsLength(settings);
+  const centre = f32(length / 1.3);
   const colours = effectColours(settings);
   return {
     direction: settings.direction,
@@ -407,11 +447,11 @@ function kaleidoscopeInit(settings) {
     span: paletteSpan(colours.palette.length),
     period: Math.floor(((255 - settings.rate) * 40) / 255) + 20,
     every: Math.floor(settings.rate / 85) + 1,
-    halves: Float64Array.from({ length: LENGTH }, (_, pixel) => {
+    halves: Float64Array.from({ length }, (_, pixel) => {
       const distance = Math.abs(Math.trunc(f32(f32(pixel) - centre)));
       return f32(SIN8[Math.trunc(f32(f32(f32(distance) / centre) * 127)) & 255] * 0.5);
     }),
-    ...buffers(),
+    ...buffers(settings),
   };
 }
 
@@ -421,7 +461,7 @@ function kaleidoscopeStep(state, settings, clockMs, render) {
   const offset = (step >> 3) + 128;
   const drift = f32(step);
   const phase = (1 + Math.floor(render / state.every)) & 0xffff;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  for (let pixel = 0; pixel < halves.length; pixel += 1) {
     const second = SIN8[Math.trunc(f32(drift + halves[pixel])) & 255] - 128;
     const third = SIN8[(offset + second) & 255] - 128;
     const from = 3 * ((((third + phase + 128) & 255) * span) >> 8);
@@ -444,4 +484,9 @@ export const SLOTS = [
   { mode: 75, init: neonInit, step: neonStep, warmup: 0 },
   { mode: 77, init: wonderlandInit, step: wonderlandStep, warmup: 0 },
   { mode: 80, init: kaleidoscopeInit, step: kaleidoscopeStep, warmup: 0 },
+];
+// The Cube Matrix's renderers of a slot it draws its own way, by slot and
+// variant (lamp_effects_noise.py VARIANT_SLOTS).
+export const VARIANT_SLOTS = [
+  { mode: 55, variant: "matrix", init: roseInit, step: roseStep, warmup: 0 },
 ];

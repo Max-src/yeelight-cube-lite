@@ -44,7 +44,7 @@ class YeelightCubeForceRefreshButton(CubeDeviceEntity, ButtonEntity):
         self._light_entity = light_entity
         self._config_entry = config_entry
         self._attr_translation_key = "force_refresh"
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_force_refresh"
+        self._attr_unique_id = f"{light_entity.unique_id}_force_refresh"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     async def async_press(self) -> None:
@@ -52,6 +52,6 @@ class YeelightCubeForceRefreshButton(CubeDeviceEntity, ButtonEntity):
         _LOGGER.warning(
             "[FORCE REFRESH BUTTON] Pressed for %s — "
             "triggering raw TCP reconnect",
-            self._light_entity._ip
+            self._light_entity.ip
         )
         await self._light_entity.async_force_refresh()

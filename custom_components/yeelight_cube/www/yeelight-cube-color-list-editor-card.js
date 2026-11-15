@@ -107,10 +107,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     };
   }
 
-  set hass(hass) {
-    const oldHass = this._hass;
-    this._hass = hass;
-
+  _hassReceived(hass, oldHass) {
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
     this._autoResolveSensor("palette_sensor", "palettes", hass, this);
 
@@ -121,13 +118,17 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       });
       this._pendingServiceCalls = [];
     }
+  }
 
-    // Only render when something the card shows changed (card-base
-    // _hassChanged): not on the lamp's other attributes (matrix_colors
-    // changes every second during a clock or an effect). Colors just set
-    // expire on their own (PENDING_COLORS).
-    if (!this._hassChanged(hass) && oldHass && this.config) return;
+  // Only render when something the card shows changed (card-base set hass):
+  // not on the lamp's other attributes (matrix_colors changes every second
+  // during a clock or an effect). Colors just set expire on their own
+  // (PENDING_COLORS).
+  _hassPending() {
+    return !this.config;
+  }
 
+  _hassUpdated() {
     this._gate.request();
   }
 

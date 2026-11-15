@@ -12,22 +12,38 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 
-from .const import CONF_IP, CONF_MATTER_MAC, DOMAIN
-from .matter_link import _attributes, is_cube_lite, matter_client, node_interfaces
+from .const import CONF_IP, CONF_MATTER_MAC, CONF_MODEL, DOMAIN
+from .matter_link import (
+    CUBE_PRODUCTS,
+    _attributes,
+    matter_client,
+    node_interfaces,
+    product_model,
+    yeelight_product,
+)
 
 SCAN_INTERVAL = 600.0
 _SCANNED_AT = "yeelight_cube_matter_scanned_at"
 
 
 def matter_only_lamps(nodes: Iterable[dict], entries: Iterable[dict]) -> list[tuple[str, str]]:
-    """(IP address, MAC) of each Cube Lite node (its attributes) that matches
-    no entry (their data) by IP address or remembered MAC."""
+    """(IP address, MAC) of each Cube Lite or Cube Matrix node (its
+    attributes) that matches no entry (their data) by IP address or
+    remembered MAC."""
+    return [(ip, mac) for ip, mac, _model in matter_only_lamp_models(nodes, entries)]
+
+
+def matter_only_lamp_models(
+    nodes: Iterable[dict], entries: Iterable[dict],
+) -> list[tuple[str, str, str]]:
+    """matter_only_lamps, with each lamp's model ("CubeLite", "CubeMatrix")."""
     entries = list(entries)
     known_ips = {data.get(CONF_IP) for data in entries}
     known_macs = {data.get(CONF_MATTER_MAC) for data in entries} - {None}
     found = []
     for attributes in nodes:
-        if not is_cube_lite(attributes):
+        product = yeelight_product(attributes)
+        if product not in CUBE_PRODUCTS:
             continue
         # Its Wi-Fi interface (the access point one has no MAC).
         interfaces = [(mac, addresses) for mac, addresses in node_interfaces(attributes) if mac and addresses]
@@ -36,7 +52,7 @@ def matter_only_lamps(nodes: Iterable[dict], entries: Iterable[dict]) -> list[tu
         ):
             continue
         mac, addresses = interfaces[0]
-        found.append((addresses[0], mac))
+        found.append((addresses[0], mac, product_model(product)))
     return found
 
 
@@ -54,16 +70,18 @@ def async_offer_matter_lamps(hass) -> None:
         nodes = [_attributes(node) for node in client.get_nodes()]
     except Exception:  # noqa: BLE001 -- the client is not ours
         return
-    lamps = matter_only_lamps(nodes, (entry.data for entry in hass.config_entries.async_entries(DOMAIN)))
+    lamps = matter_only_lamp_models(
+        nodes, (entry.data for entry in hass.config_entries.async_entries(DOMAIN))
+    )
     if not lamps:
         return
     from homeassistant.config_entries import SOURCE_INTEGRATION_DISCOVERY  # type: ignore
     from homeassistant.helpers import discovery_flow  # type: ignore
 
-    for ip, mac in lamps:
+    for ip, mac, model in lamps:
         discovery_flow.async_create_flow(
             hass,
             DOMAIN,
             context={"source": SOURCE_INTEGRATION_DISCOVERY},
-            data={CONF_IP: ip, CONF_MATTER_MAC: mac},
+            data={CONF_IP: ip, CONF_MATTER_MAC: mac, CONF_MODEL: model},
         )

@@ -7,6 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from tests.fakes import light_state, make_light as real_light
 from tests.test_native_features import (
     ROOT, CONSTANTS, LIGHT_SOURCE, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS,
     NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE,
@@ -119,8 +120,8 @@ def _bind(light, helpers, *names):
         setattr(light, name, lambda *args, _f=fn, _s=light, **kwargs: _f(_s, *args, **kwargs))
 
 
-class FakeCubeMatrix:
-    """The CubeMatrix connection-state API the health check uses."""
+class FakeLampClient:
+    """The LampClient connection-state API the health check uses."""
 
     def __init__(self, unreachable=False, reachable=True):
         self.is_unreachable = unreachable
@@ -153,7 +154,7 @@ class FakeCubeMatrix:
 
 
 def make_light(helpers, kind="native", is_on=True):
-    light = SimpleNamespace(
+    light = light_state(
         _ip="192.168.4.102",
         hass=SimpleNamespace(
             data={DOMAIN: {"clock_presets": [
@@ -170,7 +171,7 @@ def make_light(helpers, kind="native", is_on=True):
         _mode="Native Effect",
         _custom_draw_active=False,
         _outage_since=None,  # a ConnectionMixin class attribute
-        _cube_matrix=FakeCubeMatrix(),
+        _lamp_client=FakeLampClient(),
         _music_flow_enabled=False,
         stop_scroll_timer=Mock(),
         _execute_hardware_op=AsyncMock(return_value=True),
@@ -212,7 +213,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 light._rotation_active = True
                 light._last_hardware_brightness = 50
                 light.ensure_fx_ready = AsyncMock()
-                light._cube_matrix = SimpleNamespace(close_fast_socket=Mock())
+                light._lamp_client = SimpleNamespace(close_fast_socket=Mock())
                 light._apply_display_mode_internal = AsyncMock()
                 await self.helpers["_force_refresh_impl"](light)
                 self.assertEqual(light.ensure_fx_ready.await_count, int(mode == "Text"))
@@ -267,7 +268,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_offline_exhaustion_preserves_rotation_for_reconnect(self):
         light = make_light(self.helpers, kind="clock")
-        light._cube_matrix = FakeCubeMatrix(unreachable=True)
+        light._lamp_client = FakeLampClient(unreachable=True)
         light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Device timeout"))
         light._wait_rotation_retry = AsyncMock(return_value=True)
         with self.assertRaises(ValueError):
@@ -287,7 +288,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light.MAX_DISPLAY_RETRIES = 3
         light._hard_timeout_times = []
         light._async_maybe_rediscover = AsyncMock()
-        light._cube_matrix = FakeCubeMatrix(
+        light._lamp_client = FakeLampClient(
             unreachable=light._rotation_waiting_for_reconnect, reachable=reachable
         )
         with patch("asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError()])):
@@ -387,8 +388,13 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 light.stop_effect_rotation()
             elif action == "off":
                 light.async_schedule_update_ha_state = Mock()
+                light._is_scrolling = True
                 await self.helpers["async_turn_off"](light)
                 self.assertFalse(light._rotation_resume_pending)
+                # A scrolling text stops with the lamp (its next step would
+                # draw it again and, with auto-turn-on, turn the lamp on).
+                self.assertFalse(light._is_scrolling)
+                light.stop_scroll_timer.assert_called()
                 light._is_on = True
             elif action == "lock":
                 light._calibration_lock = True
@@ -673,10 +679,19 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             await coro
         self.assertEqual(light._custom_text, "OFF")
 
-    def test_restore_state_service_resumes_the_rotation(self):
-        handler = SERVICES_SOURCE[SERVICES_SOURCE.index("async def handle_restore_state("):]
-        handler = handler[: handler.index("hass.services.async_register(")]
-        self.assertIn("_async_resume_display_rotation()", handler)
+    async def test_restore_state_service_resumes_the_rotation(self):
+        # restore_state (light_actions_display.async_restore_saved_state): the saved
+        # state is drawn, then the rotation saved with it runs again.
+        light = real_light(
+            _restore_display_state=Mock(return_value=True), async_apply_display_mode=AsyncMock(),
+            _async_resume_display_rotation=AsyncMock(),
+        )
+        self.assertTrue(await light.async_restore_saved_state())
+        light.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
+        light._async_resume_display_rotation.assert_awaited_once()
+        light._restore_display_state.return_value = False
+        self.assertFalse(await light.async_restore_saved_state())
+        light._async_resume_display_rotation.assert_awaited_once()
 
     async def test_content_change_cancels_pending_reconnect(self):
         light = make_light(self.helpers)
@@ -1204,9 +1219,9 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native", timeline=None, group=None)
 
     async def test_start_failure_stops_only_the_failing_target(self):
-        ok = SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock())
-        failing = SimpleNamespace(entity_id="light.b", start_effect_rotation=AsyncMock(side_effect=ValueError("Device timeout")), stop_effect_rotation=Mock())
-        failing._rotation_active = True
+        ok = SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock(), rotation_active=False)
+        failing = SimpleNamespace(entity_id="light.b", start_effect_rotation=AsyncMock(side_effect=ValueError("Device timeout")), stop_effect_rotation=Mock(), rotation_active=False)
+        failing.rotation_active = True
         queued = []
         handlers = self._handlers(
             lambda *args: [ok, failing],
@@ -1224,7 +1239,7 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_start_service_preserves_offline_recovery_intent(self):
         light = make_light(_rotation_helpers(), kind="clock")
-        light._cube_matrix = FakeCubeMatrix(unreachable=True)
+        light._lamp_client = FakeLampClient(unreachable=True)
         light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Offline"))
         light._wait_rotation_retry = AsyncMock(return_value=True)
         queued = []
@@ -1256,7 +1271,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "_apply_display_mode_internal",
             "_resolve_native_clock_color", "_set_native_mode_brightness",
             "_native_clock_data_bytes", "stop_scroll_timer",
-            "_leave_direct_mode", "_init_scroll_state",
+            "_leave_direct_mode", "_init_display_state",
             *NATIVE_ACTIVATION_METHODS,
         }
         source = "\n".join(
@@ -1276,12 +1291,12 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
             "note_command_result": NOTE_COMMAND_RESULT,
-            "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR,
+            "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR, "NO_LIMIT_W": 7.0,
         })
         _bind(light, helpers, *methods)
-        # The scroll state as the lamp starts (the rotation's,
+        # The display state as the lamp starts (the rotation's,
         # the hardware queue's and the saved display state come from make_light).
-        light._init_scroll_state()
+        light._init_display_state()
         light._music_flow_enabled = False
         light._in_native_fw_mode = True
         light._fx_mode_is_direct = False
@@ -1300,10 +1315,11 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light._notify_camera_preview = Mock()
         light.async_schedule_update_ha_state = Mock()
         light._maybe_schedule_retry = Mock()
-        light._cube_matrix = SimpleNamespace(
+        light._lamp_client = SimpleNamespace(
             state_summary=lambda: "test transport", summary="test transport", close_fast_socket=Mock(),
             record_success=Mock(), record_failure=Mock(), is_unreachable=False,
             send_raw_command=AsyncMock(), running_effect=None, note_running_effect=Mock(),
+            stream_running=Mock(),
         )
         self.addCleanup(light.stop_effect_rotation)
         return light
@@ -1316,7 +1332,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             if command == "set_fx_effect":
                 commands.put_nowait((params, kwargs))
 
-        light._cube_matrix.send_raw_command.side_effect = send
+        light._lamp_client.send_raw_command.side_effect = send
         await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         first, options = commands.get_nowait()
         self.assertEqual(first[1], light._native_clock_style)
@@ -1336,7 +1352,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_transport_failure_reaches_start_caller(self):
         light = self.make_transport_light()
         light._wait_rotation_retry = AsyncMock(return_value=True)
-        light._cube_matrix.send_raw_command.side_effect = OSError("connection refused")
+        light._lamp_client.send_raw_command.side_effect = OSError("connection refused")
         with self.assertRaisesRegex(ValueError, "connection refused"):
             await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertFalse(light._rotation_active)
@@ -1352,7 +1368,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                 sent.append(params)
                 if len(sent) == 1:
                     raise OSError("connection refused")
-        light._cube_matrix.send_raw_command.side_effect = send
+        light._lamp_client.send_raw_command.side_effect = send
         await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertEqual(len(sent), 2)
         self.assertEqual(sent[0], sent[1])
@@ -1386,7 +1402,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                 if len(refused) < 3:
                     raise quota
 
-        light._cube_matrix.send_raw_command.side_effect = refuse_twice
+        light._lamp_client.send_raw_command.side_effect = refuse_twice
         await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertEqual(len(refused), 3)
         self.assertEqual(len(set(refused)), 1)  # the same item, retried
@@ -1402,7 +1418,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             if command == "set_fx_effect":
                 raise quota
 
-        light._cube_matrix.send_raw_command.side_effect = always_refuse
+        light._lamp_client.send_raw_command.side_effect = always_refuse
         with self.assertRaisesRegex(ValueError, "too many commands"):
             await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertFalse(light._rotation_active)
@@ -1434,7 +1450,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_native_start_reaches_protocol_transport(self):
         light = self.make_transport_light()
         await light.start_effect_rotation(["Rainbow", "Ribbon"], STEADY_INTERVAL, "native")
-        commands = light._cube_matrix.send_raw_command.await_args_list
+        commands = light._lamp_client.send_raw_command.await_args_list
         self.assertEqual([call.args[0] for call in commands], ["set_bright", "set_fx_effect"])
         self.assertEqual(commands[-1].args[1][0], ALL_NATIVE_EFFECTS["Ribbon"]["effect_id"])
         self.assertTrue(light._rotation_active)

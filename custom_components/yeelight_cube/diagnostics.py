@@ -64,28 +64,25 @@ async def async_get_device_diagnostics(
 
 def lamp_diagnostics(light) -> dict[str, Any]:
     """A set-up lamp: the device, its connection and its entity's state."""
-    cube_matrix = light._cube_matrix
+    lamp_client = light.lamp_client
     attributes = dict(light.extra_state_attributes)
     frame = attributes.get("matrix_colors") or []
     state = {key: value for key, value in attributes.items() if key not in LEFT_OUT}
     state["matrix_lit_pixels"] = sum(1 for rgb in frame if tuple(rgb) != (0, 0, 0))
     return {
         "device": {
-            "model": cube_matrix.device_model,
-            "software_version": cube_matrix.software_version,
+            "model": lamp_client.device_model,
+            "software_version": lamp_client.software_version,
             "capabilities": async_redact_data(
-                dict(cube_matrix.capabilities), CAPABILITIES_TO_REDACT
+                dict(lamp_client.capabilities), CAPABILITIES_TO_REDACT
             ),
         },
         "available": light.available,
-        "is_on": light._is_on,
-        "brightness": light._brightness,
+        "is_on": light.is_on,
+        "brightness": light.brightness,
         "connection": {
-            **cube_matrix.connection_state(),
-            "last_connection_error": light._last_connection_error,
-            "display_retries": light._display_retry_count,
-            "recent_hard_timeouts": len(light._hard_timeout_times),
-            "operation": light._hardware_operation_phase,
+            **lamp_client.connection_state(),
+            **light.connection_diagnostics(),
         },
         "state": async_redact_data(state, TO_REDACT),
     }
@@ -101,7 +98,7 @@ def _secrets(entry, light) -> set[str]:
         getattr(getattr(entry, "runtime_data", None), "active_ip", None),
     }
     if light is not None:
-        values |= {light._ip, light._cube_matrix.device_id}
+        values |= {light.ip, light.lamp_client.device_id}
     found = {str(value) for value in values if value}
     return found | {value.replace(".", "_") for value in found}
 

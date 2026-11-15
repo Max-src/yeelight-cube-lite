@@ -24,9 +24,12 @@ import threading
 import time
 import unittest
 import zlib
+import sys
 from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
+sys.path.insert(0, str(TESTS))
+from fakes import slow  # noqa: E402
 ROOT = TESTS.parent / "custom_components" / "yeelight_cube"
 FIXTURE = TESTS / "fixtures" / "lamp_effects.json.gz"
 # Slot 51 (Music noise equalizer) is stored placed through the flags the lamp
@@ -34,13 +37,19 @@ FIXTURE = TESTS / "fixtures" / "lamp_effects.json.gz"
 CHECK = TESTS / "lamp_effects_check.mjs"
 LAMP = runpy.run_path(str(ROOT / "lamp_renderers.py"))
 CORE = runpy.run_path(str(ROOT / "lamp_core.py"))
-CONST = runpy.run_path(str(ROOT / "const.py"))
+CONST = runpy.run_path(str(ROOT / "effect_catalog.py"))
 PREVIEW = runpy.run_path(str(ROOT / "native_effect_preview.py"))
-# The slots named by number until 1.4.0 (const.py FORMERLY_NUMBERED_SLOTS), and
+# The slots named by number until 1.4.0 (effect_catalog.py FORMERLY_NUMBERED_SLOTS), and
 # every slot's name.
 NUMBERED = CONST["FORMERLY_NUMBERED_SLOTS"]
 SLOT_NAME = {spec["mode"]: name for name, spec in CONST["ALL_NATIVE_EFFECTS"].items()}
 EXEMPT = {"Fireworks"}  # its own older fixtures, its shots seeded per shot
+# A Cube Matrix's own renderer, which the model the fixtures come from does not
+# have (lamp_effects_noise.VARIANT_SLOTS): checked in test_cube_matrix_matter.
+NOT_IN_FIXTURE = {"Rose Sea"}
+# The integration's own effects (lamp_effects_streamed): no lamp draws them;
+# checked in test_streamed_effects.
+NOT_IN_FIXTURE |= set(CONST["STREAMED_EFFECTS"])
 RENDERS = 240
 _ALL_CONFIGS = 100
 _QUICK_CONFIGS = ("default", "rate255-left")
@@ -154,6 +163,7 @@ class EffectFrameTests(unittest.TestCase):
     def test_something_is_registered(self):
         self.assertGreaterEqual(len(list(registered())), 30)
 
+    @slow
     def test_every_config_in_python(self):
         for name, key, config, _slot in selected():
             with self.subTest(effect=name, config=key):
@@ -421,6 +431,7 @@ class TimelineTests(unittest.TestCase):
             thread.join()
         self.assertEqual([], errors)
 
+    @slow
     def test_cold_start(self):
         worst = {}
         seen = set()
@@ -431,13 +442,16 @@ class TimelineTests(unittest.TestCase):
             times = []
             for target in (0, 1000, 5000, 7600, 90000):
                 # Best of three fresh timelines: a GC pause or a descheduled
-                # CI runner stalls one call, a slow renderer all of them.
+                # CI runner stalls one call, a slow renderer all of them. One
+                # within the limit settles it (the best can only be lower).
                 attempts = []
                 for _ in range(3):
                     timeline = self.timeline(config)
                     began = time.perf_counter()
                     timeline.frame_at(target)
                     attempts.append((time.perf_counter() - began) * 1000)
+                    if attempts[-1] < 2 * _PYTHON_COLD_MS:
+                        break
                 times.append(min(attempts))
             worst[name] = max(times)
         print("\nPython cold frame_at, worst ms:", {k: round(v, 1) for k, v in worst.items()})
@@ -451,6 +465,7 @@ class TimelineTests(unittest.TestCase):
 
 
 class PerformanceTests(unittest.TestCase):
+    @slow
     def test_python_budget(self):
         medians = {}
         for name, key, config, slot in registered():
@@ -493,7 +508,7 @@ class PerformanceTests(unittest.TestCase):
 class SlotInterfaceTests(unittest.TestCase):
     def test_a_slot_has_the_interface(self):
         for slot in LAMP["REGISTRY"].values():
-            self.assertEqual({"mode", "init", "step", "warmup"}, set(slot) - {"lit"})
+            self.assertEqual({"mode", "init", "step", "warmup"}, set(slot) - {"lit", "live"})
             self.assertGreaterEqual(slot.get("lit", 1), 1)
             warmup = slot["warmup"]
             self.assertTrue(warmup is None or (isinstance(warmup, int) and warmup >= 0))
@@ -595,10 +610,20 @@ class WhatTheLampRunsTests(unittest.TestCase):
                 row["directions"] = list(spec["directions"])
             if spec.get("direction_remap"):
                 row["remap"] = spec["direction_remap"]
+            if spec.get("one_axis"):
+                row["oneAxis"] = True
+            if spec.get("one_axis_low_pair"):
+                row["lowPair"] = True
             if spec.get("color") is not None:
                 row["color"] = spec["color"]
             if spec.get("colors"):
                 row["colors"] = list(spec["colors"])
+            if spec.get("matrix_version_of"):
+                row["matrixVersionOf"] = spec["matrix_version_of"]
+            if spec.get("variant"):
+                row["variant"] = spec["variant"]
+            if spec.get("streamed"):
+                row["streamed"] = True
             expected[name] = row
         self.assertEqual(expected, tables["effects"])
         self.assertEqual(
@@ -653,15 +678,16 @@ class WhatTheLampRunsTests(unittest.TestCase):
             name for name, spec in LAMP["ALL_NATIVE_EFFECTS"].items()
             if spec["mode"] != CONST["LAMP_STORED_GIF_SLOT"]
         }
-        self.assertEqual(70, len(drawn))
+        self.assertEqual(76, len(drawn))
         self.assertEqual(drawn, set(LAMP["LAMP_RENDERED_EFFECTS"]))
-        self.assertEqual(drawn - EXEMPT, {
+        self.assertEqual(drawn - EXEMPT - NOT_IN_FIXTURE, {
             name for name, effect in fixture()["effects"].items() if name not in EXEMPT
         })
         self.assertEqual(
             sorted(LAMP["LAMP_RENDERED_EFFECTS"]), sorted(node()["tables"]["effects"])
         )
 
+    @slow
     def test_a_preview_is_the_fixtures_frame(self):
         preview = PREVIEW["render_native_effect"]
         timelines = preview.__globals__["lamp_settings"].__globals__  # the preview's timelines
@@ -724,7 +750,7 @@ class WhatTheLampRunsTests(unittest.TestCase):
             self.assertEqual([white] * 4, list(CORE["effect_colours"](settings)["words"]))
 
     def test_the_slots_that_draw_their_words_get_them(self):
-        # The lamp's defaults (const._EXTENDED_EFFECT_COLORS), the rest black.
+        # The lamp's defaults (effect_catalog._EXTENDED_EFFECT_COLORS), the rest black.
         convert, black = CORE["convert_colour"], (0, 0, 0)
         for mode, colors in CONST["_EXTENDED_EFFECT_COLORS"].items():
             rgb = [(w >> 16 & 255, w >> 8 & 255, w & 255) for w in colors]
@@ -788,7 +814,7 @@ class WhatTheLampRunsTests(unittest.TestCase):
 
     def test_a_clock_over_a_colour_word_slot_is_checked_coloured(self):
         # Slots 1, 8, 28, 33 and 72 draw their colour words: the clock sends
-        # them all (const.clock_style_colors), with the clock's color first,
+        # them all (effect_catalog.clock_style_colors), with the clock's color first,
         # none under B&W; each form is a fixture run the previews must match.
         clocks = fixture()["clock"]
         settings = LAMP["lamp_clock_settings"]

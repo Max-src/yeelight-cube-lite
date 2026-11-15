@@ -20,7 +20,7 @@
  */
 import { defineOnce } from "./card-registration.js";
 
-export const TILE_ROW = 2; // px
+const TILE_ROW = 2; // px
 
 /** A tile's columns: one for a vertical item, two for any other. */
 export const tileSpan = (item) => `grid-column: span ${item?.vertical ? 1 : 2};`;

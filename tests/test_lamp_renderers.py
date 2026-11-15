@@ -141,7 +141,7 @@ class FireworksLampTests(unittest.TestCase):
                 expected = LAMP["render_fireworks"](seconds, speed, direction)
                 self.assertEqual(
                     expected,
-                    PREVIEW["render_native_effect_oriented"]("Fireworks", phase, name, speed=speed),
+                    PREVIEW["render_native_effect"]("Fireworks", phase, name, speed=speed),
                 )
         # A flare, then coloured sparks, then black between shots.
         flare = PREVIEW["render_native_effect"]("Fireworks", 0.0, "Up")
@@ -161,7 +161,7 @@ class FireworksLampTests(unittest.TestCase):
         # reads the slot's renderer: LED drive on direction 0's box.
         speed, seconds = 24, 5.48
         phase = seconds * (0.25 + speed / 55.0)
-        drive = PREVIEW["render_native_effect_oriented"]("Magic", phase, "Up", speed=speed)
+        drive = PREVIEW["render_native_effect"]("Magic", phase, "Up", speed=speed)
         settings = LAMP["lamp_settings"]("Magic", "Up", speed)
         self.assertEqual(LAMP["renderer_frame"](settings, 137), drive)
 
@@ -190,14 +190,14 @@ class FireworksLampTests(unittest.TestCase):
         script = (
             f"const p = await import({json.dumps(preview_js)});"
             f"process.stdout.write(JSON.stringify({json.dumps(cases)}.map("
-            "([phase, d]) => p.renderNativeEffectOriented('Tide', phase, d))));"
+            "([phase, d]) => p.renderNativeEffect('Tide', phase, d))));"
         )
         result = subprocess.run(
             [shutil.which("node"), "--input-type=module", "-e", script],
             text=True, capture_output=True, check=True,
         )
         expected = [
-            [list(pixel) for pixel in PREVIEW["render_native_effect_oriented"]("Tide", phase, d)]
+            [list(pixel) for pixel in PREVIEW["render_native_effect"]("Tide", phase, d)]
             for phase, d in cases
         ]
         self.assertEqual(expected, json.loads(result.stdout))
@@ -223,7 +223,7 @@ class FireworksLampTests(unittest.TestCase):
             " String(f.ledAppearance(drive)) !== String(shown));"
             "const frame = [[64, 0, 0], [0, 0, 0]];"
             "const attrs = { native_effect_speed: 50 };"
-            "const raw = (name) => p.renderNativeEffectOriented(name, 4.36 * (0.25 + 50 / 55), 'Up', null, 'normal', 50);"
+            "const raw = (name) => p.renderNativeEffect(name, 4.36 * (0.25 + 50 / 55), 'Up', null, 'normal', 50);"
             "process.stdout.write(JSON.stringify({ bad: bad.length,"
             " fireworks: f.effectDisplayFrame('Fireworks', frame),"
             " other: f.effectDisplayFrame('77', frame),"

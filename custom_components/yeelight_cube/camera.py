@@ -21,16 +21,13 @@ from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
     CONF_CAMERA_FOLLOWS_ORIENTATION,
-    DEFAULT_DEVICE_ORIENTATION,
     LAMP_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
-    CLOCK_MIXER_EFFECTS,
+)
+from .effect_catalog import (
+    clock_style_effect,
     DEFAULT_NATIVE_CLOCK_STYLE,
-    DEFAULT_NATIVE_EFFECT,
-    DEFAULT_NATIVE_EFFECT_DIRECTION,
-    DEFAULT_NATIVE_EFFECT_INTENSITY,
-    DEFAULT_NATIVE_EFFECT_SPEED,
     NATIVE_CLOCK_STYLES,
     clock_style_direct,
     PALETTE_COLOR_MODE,
@@ -46,12 +43,12 @@ from .lamp_renderers import (
     lamp_effect_frame,
     led_appearance,
 )
-from .clock_face import clock_content, clock_digit_pixels, clock_text
+from .clock_face import clock_digit_pixels, clock_text
 from .lamp_studio import clock_studio_runs, studio_clock_background_at, studio_drive, studio_render
 from .matrix_view import display_cell, is_vertical_mount, view_size, viewer_frame
 from .native_effect_preview import (
     render_music_flow_effect,
-    render_native_effect_oriented,
+    render_native_effect,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,20 +185,20 @@ async def async_setup_entry(
 
     cam_square = YeelightCubeMatrixCameraSquare(light_entity, entry)
     cam_round = YeelightCubeMatrixCameraRound(light_entity, entry)
-    light_entity._camera_entities = [cam_square, cam_round]
+    light_entity.attach_cameras([cam_square, cam_round])
     async_add_entities([cam_square, cam_round])
     _LOGGER.debug(
         "Matrix preview cameras (square + round) created for %s",
-        light_entity._lamp_name,
+        light_entity.lamp_name,
     )
 
 
 # ── Base camera ────────────────────────────────────────────────────────
 
-def _chosen_intensity(light) -> int:
+def _chosen_intensity(state) -> int:
     """The intensity chosen for the effects (1-255): lamp_settings gives it
     only to those that read it, as light_native sends it."""
-    return int(getattr(light, "_native_effect_intensity", DEFAULT_NATIVE_EFFECT_INTENSITY))
+    return int(state.native_effect_intensity)
 
 class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     """Abstract base for the 20×5 LED matrix live-preview cameras.
@@ -218,7 +215,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self._light_entity = light_entity
         self._config_entry = config_entry
         self._attr_translation_key = self._TRANSLATION_KEY
-        self._attr_unique_id = f"{light_entity._attr_unique_id}{self._UID_SUFFIX}"
+        self._attr_unique_id = f"{light_entity.unique_id}{self._UID_SUFFIX}"
         self._attr_is_streaming = False
         # MJPEG poll interval of the HA camera proxy (a live view): the lamp's
         # render, the fastest a frame can change. async_camera_image answers
@@ -248,10 +245,9 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     # ── Lifecycle ──────────────────────────────────────────────────────
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # The light tells its cameras of new frames (light._camera_entities,
+        # The light tells its cameras of new frames (light.attach_cameras,
         # set up with them) until this one is removed.
-        cameras = self._light_entity._camera_entities
-        self.async_on_remove(lambda: self in cameras and cameras.remove(self))
+        self.async_on_remove(lambda: self._light_entity.detach_camera(self))
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:
@@ -335,34 +331,43 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         it is drawn vertical (the lamp stands on one end and the "Camera
         follows orientation" option is on), and whether it is drawn small for
         a live stream of an effect the lamp renders itself (_LIVE_VIEWS)."""
-        orientation = getattr(
-            self._light_entity, "_device_orientation", DEFAULT_DEVICE_ORIENTATION
-        )
+        orientation = self._state().orientation
         vertical = is_vertical_mount(orientation) and bool(
             self._config_entry.options.get(CONF_CAMERA_FOLLOWS_ORIENTATION, False)
         )
         live = self._live_streams > 0 and self._shows_lamp_renderer()
-        return viewer_frame(self._get_matrix_colors(), orientation), vertical, live
+        colors = self._get_matrix_colors()
+        return viewer_frame(colors, orientation), vertical, live
+
+    def _state(self, state=None):
+        """The light's state a frame is drawn from (light_actions.
+        preview_state), read once per frame: the one given, or read now."""
+        return state if state is not None else self._light_entity.preview_state()
+
+    def _columns(self, state=None) -> int | None:
+        """The columns the lamp shows, which its effects are drawn on, as it
+        draws them (device_profile.columns; None: all 20)."""
+        return self._state(state).columns
 
     def _is_native_preview_mode(self) -> bool:
         """Return whether the preview changes without an HA state update."""
-        return getattr(self._light_entity, "_mode", None) in LAMP_MODES
+        return self._light_entity.mode in LAMP_MODES
 
-    def _shows_lamp_renderer(self) -> bool:
+    def _shows_lamp_renderer(self, state=None) -> bool:
         """Whether the lamp shows an effect drawn by its own renderer (as the
         preview reproduces it), alone or behind the clock."""
-        le = self._light_entity
-        if getattr(le, "_music_flow_enabled", False):
+        state = self._state(state)
+        if state.music_flow_enabled:
             return False
-        mode = getattr(le, "_mode", None)
+        mode = state.mode
         if mode == MODE_NATIVE_EFFECT:
-            effect = getattr(le, "_native_effect", DEFAULT_NATIVE_EFFECT)
+            effect = state.native_effect
         elif mode == MODE_CLOCK:
             style = NATIVE_CLOCK_STYLES.get(
-                int(getattr(le, "_native_clock_style", 6)),
+                int(state.clock_style),
                 NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
             )
-            effect = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+            effect = clock_style_effect(style)
         else:
             return False
         return effect in LAMP_RENDERED_EFFECTS
@@ -375,30 +380,30 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             effective = FLOOR + (1 - FLOOR) × (brightness/255)^GAMMA
             pixel     = min(255, round(v × effective))
         """
-        le = self._light_entity
-        if not getattr(le, "_is_on", False):
+        state = self._state()
+        if not state.is_on:
             return [(0, 0, 0)] * 100
 
-        mode = getattr(le, "_mode", None)
-        if getattr(le, "_music_flow_enabled", False):
-            base = self._get_music_flow_preview()
+        mode = state.mode
+        if state.music_flow_enabled:
+            base = self._get_music_flow_preview(state)
         elif mode == MODE_CLOCK:
-            base = self._get_clock_preview()
+            base = self._get_clock_preview(state)
         elif mode == MODE_NATIVE_EFFECT:
             # Compensated for the lamp's mount profile (light_native): drawn
             # as calibrated, whatever the lamp's own direction setting.
-            base = self._get_native_effect_preview()
+            base = self._get_native_effect_preview(state)
         else:
-            base = getattr(le, "_base_matrix_colors", None)
+            base = state.base_matrix_colors
         if not base or len(base) != 100:
             return [(0, 0, 0)] * 100
         # The lamp renderer's frame is LED drive: shown as those LEDs look.
         # Display only (simulated_lamp_frame keeps the lamp's values).
-        if self._shows_lamp_renderer():
+        if self._shows_lamp_renderer(state):
             base = [led_appearance(rgb) for rgb in base]
 
         # --- Compute the effective multiplier (same net result as JS) ---
-        brightness = getattr(le, "_brightness", 255) or 255
+        brightness = state.brightness or 255
         t = brightness / 255.0                                  # 0..1
         effective = _FLOOR + (1 - _FLOOR) * math.pow(t, _PREVIEW_BRIGHTNESS_GAMMA)
 
@@ -407,7 +412,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         for rgb in base:
             try:
                 r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
-            except Exception:
+            except (TypeError, ValueError, IndexError):  # not a colour
                 result.append((0, 0, 0))
                 continue
 
@@ -439,28 +444,29 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
           its estimate is rougher.
         In an executor (light.py): it may replay a renderer's history.
         """
-        le = self._light_entity
-        if getattr(le, "_music_flow_enabled", False):
-            return self._get_music_flow_preview()
-        mode = getattr(le, "_mode", None)
+        state = self._state()
+        if state.music_flow_enabled:
+            return self._get_music_flow_preview(state)
+        mode = state.mode
         if mode == MODE_CLOCK:
-            return self._get_clock_preview()
+            return self._get_clock_preview(state)
         if mode == MODE_NATIVE_EFFECT:
-            return self._get_native_effect_preview()
+            return self._get_native_effect_preview(state)
         return None
 
-    def _preview_speed(self) -> int:
+    def _preview_speed(self, state=None) -> int:
         """The rate the lamp gets (1-255), which previews take as it is."""
-        return max(0, min(255, int(getattr(self._light_entity, "_native_effect_speed", DEFAULT_NATIVE_EFFECT_SPEED))))
+        return max(0, min(255, int(self._state(state).native_effect_speed)))
 
-    def _get_native_effect_preview(self) -> list[tuple[int, int, int]]:
+    def _get_native_effect_preview(self, state=None) -> list[tuple[int, int, int]]:
         """The active built-in animation as the lamp draws it: LED drive for an
         effect the lamp renders (render_native_effect)."""
         le = self._light_entity
-        speed = self._preview_speed()
-        effect = getattr(le, "_native_effect", DEFAULT_NATIVE_EFFECT)
-        direction = getattr(le, "_native_effect_direction", DEFAULT_NATIVE_EFFECT_DIRECTION)
-        orientation = getattr(le, "_device_orientation", DEFAULT_DEVICE_ORIENTATION)
+        state = self._state(state)
+        speed = self._preview_speed(state)
+        effect = state.native_effect
+        direction = state.native_effect_direction
+        orientation = state.orientation
         with self._preview_lock:
             now = _time.monotonic()
             animation_key = (effect, direction, orientation)
@@ -469,7 +475,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                 self._native_preview_started_at = now
                 self._frozen_background_seconds = None
             # While frozen, hold the frame the lamp is holding; resume seamlessly.
-            if getattr(le, "_display_frozen", False):
+            if state.display_frozen:
                 if self._frozen_background_seconds is None:
                     self._frozen_background_seconds = now - self._native_preview_started_at
                 seconds = self._frozen_background_seconds
@@ -478,42 +484,41 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                     self._native_preview_started_at = now - self._frozen_background_seconds
                     self._frozen_background_seconds = None
                 seconds = now - self._native_preview_started_at
-        frame = render_native_effect_oriented(
+        frame = render_native_effect(
             effect,
             seconds * (0.25 + speed / 55.0),
             direction,
-            color_mode=getattr(le, "_native_effect_color_mode", "normal"),
-            color_override=getattr(le, "_native_effect_color", None),
+            color_mode=state.native_effect_color_mode,
+            color_override=state.native_effect_color,
             speed=speed,
             orientation=orientation,
-            intensity=_chosen_intensity(le),
-            palette=getattr(le, "_text_colors", None),
-            stored=getattr(le, "_stored_gif", None),
-            layout=getattr(le, "_animation_layout", None),
+            intensity=_chosen_intensity(state),
+            palette=state.text_colors,
+            stored=state.stored_gif,
+            layout=state.animation_layout,
             # An animation is uploaded with them (light_native._store_animation).
             adjustments=le.color_adjustments() if hasattr(le, "color_adjustments") else None,
+            columns=self._columns(state),
         )
         # Lamp order (row 0 = physical bottom), like every frame: _view_frame
         # turns it the way the viewer sees it, once.
         return frame
 
-    def _get_music_flow_preview(self) -> list[tuple[int, int, int]]:
+    def _get_music_flow_preview(self, state=None) -> list[tuple[int, int, int]]:
         """Render a fixed illustration of the active Music Flow effect."""
-        return render_music_flow_effect(
-            getattr(self._light_entity, "_music_flow_effect", "Breathing")
-        )
+        return render_music_flow_effect(self._state(state).music_flow_effect)
 
-    def _get_clock_preview(self) -> list[tuple[int, int, int]]:
+    def _get_clock_preview(self, state=None) -> list[tuple[int, int, int]]:
         """Render the active built-in clock face into a 20x5 matrix: its
         digits (clock_face, as the lamp lays them out) showing the style's
         color, or its background effect through them."""
-        le = self._light_entity
+        state = self._state(state)
         text, colon_visible = clock_text(
-            dt_util.now(), clock_content(le),
-            bool(getattr(le, "_native_clock_12_hour", False)),
-            bool(getattr(le, "_native_clock_colon_blink", False)),
+            dt_util.now(), state.clock_content,
+            bool(state.clock_12_hour),
+            bool(state.clock_colon_blink),
         )
-        style_id = int(getattr(le, "_native_clock_style", 6))
+        style_id = int(state.clock_style)
         matrix = [(0, 0, 0)] * 100
 
         # Styles whose mixer is a native effect show that effect through the lit
@@ -524,7 +529,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         )
         # A color override (ARGB int): sent to the mixer's renderer, which takes
         # it or not as on the lamp; a style with no effect shows it flat.
-        override_int = getattr(le, "_native_clock_color", None)
+        override_int = state.clock_color
         override_rgb = (
             (
                 (override_int >> 16) & 255,
@@ -534,10 +539,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             if override_int is not None
             else None
         )
-        effect_name = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+        effect_name = clock_style_effect(style)
         # A palette color mode (e.g. B&W) takes precedence over the override.
-        color_mode = getattr(le, "_native_clock_color_mode", "normal") or "normal"
-        palette = getattr(le, "_text_colors", None)
+        color_mode = state.clock_color_mode or "normal"
+        palette = state.text_colors
         # Palette with more colors than the background takes on the lamp:
         # streamed, the background recolored in the whole palette (light_studio).
         streamed = clock_studio_runs(effect_name, color_mode, palette)
@@ -553,21 +558,21 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         effect_frame = None
         if streamed:
             effect_frame = studio_drive(studio_clock_background_at(
-                effect_name, studio_render(self._clock_background_seconds()),
-                self._preview_speed(), _chosen_intensity(le), palette,
-                clock_style_direct(style),
+                effect_name, studio_render(self._clock_background_seconds(state)),
+                self._preview_speed(state), _chosen_intensity(state), palette,
+                clock_style_direct(style), columns=self._columns(state),
             ))
         elif effect_name is not None:
             # The mixer's renderer behind the clock overlay, on the command
             # light_native sends: the user's speed, the mode 40 direction.
             effect_frame = lamp_effect_frame(
                 lamp_clock_settings(
-                    effect_name, self._preview_speed(), override_rgb, color_mode,
-                    _chosen_intensity(self._light_entity), palette,
+                    effect_name, self._preview_speed(state), override_rgb, color_mode,
+                    _chosen_intensity(state), palette,
                     # Handed over or direct: the style's form, as light_native sends it.
-                    clock_style_direct(style),
+                    clock_style_direct(style), self._columns(state),
                 ),
-                self._clock_background_seconds(),
+                self._clock_background_seconds(state),
             )
         # A palette mode overrides the custom color, so don't flat-fill with it.
         flat_override = None if mode_active else override_rgb
@@ -581,8 +586,11 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # lamp_turns_clock), the lamp lays the text out a half turn round; the
         # background stays where it is on the panel.
         digit_flags = clock_digit_flags(style.get("mixer", 0), clock_style_direct(style))
-        turned = bool(getattr(le, "lamp_turns_clock", False))
-        for index, char_index, col in clock_digit_pixels(text, colon_visible, digit_flags, turned):
+        turned = bool(state.lamp_turns_clock)
+        # Within the columns the lamp shows (a Cube Matrix with fewer than 4
+        # blocks streams this frame: device_profile.columns).
+        columns = self._columns(state) or 20
+        for index, char_index, col in clock_digit_pixels(text, colon_visible, digit_flags, turned, columns):
             if effect_frame is not None:
                 matrix[index] = effect_frame[index]
             elif solo_bw_fallback:
@@ -595,19 +603,19 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # Lamp order, like every frame (_view_frame turns it for the viewer).
         return matrix
 
-    def _clock_background_seconds(self) -> float:
+    def _clock_background_seconds(self, state=None) -> float:
         """Seconds into the clock's background animation. While frozen it holds
         the frame the lamp is holding; the clock digits/colon (rendered from
         real time) still advance. Anchored to the freeze instant so the frozen
         frame is exact; resumes seamlessly from it."""
-        le = self._light_entity
+        state = self._state(state)
         with self._preview_lock:
             now = _time.monotonic()
             if self._clock_preview_started_at is None:
                 self._clock_preview_started_at = now
-            if getattr(le, "_display_frozen", False):
+            if state.display_frozen:
                 if self._frozen_background_seconds is None:
-                    frozen_at = getattr(le, "_display_frozen_at", None)
+                    frozen_at = state.display_frozen_at
                     reference = (
                         _time.time() - frozen_at
                         if isinstance(frozen_at, (int, float))

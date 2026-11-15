@@ -29,6 +29,15 @@ export const LAMP_PREVIEW_CSS = `
          as every preview's (lamp-preview-matrix.js _matrixGeometry). */
       .lamp-preview-css {
         display: grid;
+        position: relative;
+      }
+      /* A Cube Matrix's missing columns (fewer than 4 modules) and its
+         spots, one light over the 5 x 5 area each covers (matrix-modules.js). */
+      .lamp-dot.lamp-dot-spot {
+        border-radius: 50%;
+        width: 90%;
+        height: 90%;
+        outline: 2px solid #ffffff55;
       }
       .lamp-dot {
         width: 100%;

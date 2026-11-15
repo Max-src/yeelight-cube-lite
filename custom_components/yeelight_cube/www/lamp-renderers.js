@@ -42,6 +42,8 @@ import {
   framePixels,
   ledAppearance,
   panelToFrame,
+  segmentLengthFor,
+  settingsLength,
   sourceWord,
   stripFrame,
   truncU16,
@@ -52,6 +54,7 @@ import * as noiseEffects from "./lamp-effects-noise.js";
 import * as sparksEffects from "./lamp-effects-sparks.js";
 import * as trailsEffects from "./lamp-effects-trails.js";
 import * as musicEffects from "./lamp-effects-music.js";
+import * as streamedEffects from "./lamp-effects-streamed.js";
 import { FORMERLY_NUMBERED_EFFECT_NAMES } from "./effect-names.js";
 
 export {
@@ -64,6 +67,7 @@ export {
   ledAppearance,
   panelIndex,
   segmentGeometry,
+  segmentLengthFor,
   sourceWord,
   stripFrame,
 } from "./lamp-core.js";
@@ -115,9 +119,20 @@ export function registerSlot(slot) {
   REGISTRY.set(slot.mode, slot);
 }
 
+// The Cube Matrix's renderers of slots it draws its own way, by
+// "mode,variant" (lamp_renderers.py VARIANTS).
+export const VARIANTS = new Map();
+
 /** Every slot of a lamp-effects-<family> module. */
 export function registerFamily(module) {
   module.SLOTS.forEach(registerSlot);
+  (module.VARIANT_SLOTS ?? []).forEach((slot) => VARIANTS.set(`${slot.mode},${slot.variant}`, slot));
+}
+
+/** The renderer a command's settings run: the slot's, or its variant's. */
+export function slotFor(settings) {
+  const variant = settings.variant && VARIANTS.get(`${settings.mode},${settings.variant}`);
+  return variant || REGISTRY.get(settings.mode);
 }
 
 // ── Timeline (lamp_renderers.py) ──────────────────────────────────
@@ -180,9 +195,16 @@ export class Timeline {
 
   cursorFor(target) {
     const { warmup } = this.slot;
+    const live = Boolean(this.slot.live);
     // A fresh cursor starts a warmup behind: one that can't reach as far would be
-    // given up before it arrives, again and again.
-    const reach = warmup === null ? REPLAY_LIMIT : Math.max(CURSOR_REACH, warmup + 1);
+    // given up before it arrives, again and again. A live simulation (Lava Lamp)
+    // goes on from a cursor close behind, else starts afresh where it is asked
+    // (lamp_renderers.py).
+    const reach = live
+      ? CURSOR_REACH
+      : warmup === null
+        ? REPLAY_LIMIT
+        : Math.max(CURSOR_REACH, warmup + 1);
     let best = null;
     for (const cursor of this.cursors) {
       const behind = target - cursor.render;
@@ -195,8 +217,9 @@ export class Timeline {
         best = cursor;
     }
     if (best) return best;
-    const start =
-      warmup === null
+    const start = live
+      ? target
+      : warmup === null
         ? target > REPLAY_LIMIT ? target - REPLAY_LIMIT : 0
         : Math.max(0, target - warmup);
     if (this.cursors.length >= CURSORS) {
@@ -245,9 +268,11 @@ export const hasRenderer = (mode) => REGISTRY.has(mode);
 
 /** The run of `settings`, the most recently used last. */
 export function timelineFor(settings) {
-  const { mode, selector, intensity, rate, direction, primary, coloured, colours, handover } = settings;
-  const key = `${mode},${selector},${intensity},${rate},${direction},${primary},${Boolean(coloured)},${colours ?? ""},${Boolean(handover)}`;
-  const timeline = effectTimelines.get(key) ?? new Timeline(REGISTRY.get(mode), settings);
+  const { mode, selector, intensity, rate, direction, primary, coloured, colours, handover, variant, seed } = settings;
+  // seed: a simulation's run (Lava Lamp), a new one for each; the segment
+  // drawn on (a Cube Matrix's columns).
+  const key = `${mode},${selector},${intensity},${rate},${direction},${primary},${Boolean(coloured)},${colours ?? ""},${Boolean(handover)},${variant ?? ""},${seed ?? ""},${settingsLength(settings)}`;
+  const timeline = effectTimelines.get(key) ?? new Timeline(slotFor(settings), settings);
   effectTimelines.delete(key);
   effectTimelines.set(key, timeline);
   if (effectTimelines.size > EFFECT_TIMELINE_LIMIT)
@@ -268,7 +293,7 @@ export const lampFrame = (settings, render) =>
  * preview starts at Timeline.firstShown. */
 export function lampEffectFrame(settings, seconds) {
   if (settings.mode === FIREWORKS_MODE)
-    return renderFireworks(seconds, settings.rate, settings.direction);
+    return renderFireworks(seconds, settings.rate, settings.direction, undefined, settingsLength(settings));
   const timeline = timelineFor(settings);
   const bytes = timeline.frameAt(timeline.firstShown() + Math.trunc(seconds / RENDER_SECONDS));
   if (timeline.shownBytes !== bytes) {
@@ -282,7 +307,7 @@ export function lampEffectFrame(settings, seconds) {
  * from the slot's warmup (from render 0 when it has none), no timeline, no ring
  * and no time limit. */
 export function* exactFrames(settings, first, count) {
-  const slot = REGISTRY.get(settings.mode);
+  const slot = slotFor(settings);
   const start = slot.warmup === null ? 0 : Math.max(0, first - slot.warmup);
   const state = slot.init(settings);
   for (let render = start; render < first + count; render += 1) {
@@ -488,8 +513,7 @@ export function shotSource(shot) {
   return () => sourceWord(draw++);
 }
 
-export function fireworksShotLength(shot, rate) {
-  const n = LENGTH;
+export function fireworksShotLength(shot, rate, n = LENGTH) {
   const grav = fireworksGravity(n, rate);
   const peakByte = sourceWord(shot * SHOT_READS) & 0xff;
   const peak =
@@ -515,8 +539,8 @@ export function fireworksShotLength(shot, rate) {
 const SHOT_LIMIT = 6;
 
 // A shot's renders so far, and what it takes to go on.
-const fireworksShot = (shot) => ({
-  state: fireworksState(),
+const fireworksShot = (shot, length) => ({
+  state: fireworksState(length),
   read: shotSource(shot),
   draws: [],
 });
@@ -524,8 +548,9 @@ const fireworksShot = (shot) => ({
 // Shot starts for one rate and the last shots' renders: previews of one rate
 // each have their own clock, so a shot is computed once and read at any render.
 class FireworksTimeline {
-  constructor(rate) {
+  constructor(rate, length = LENGTH) {
     this.rate = rate;
+    this.length = length;
     this.starts = [0];
     this.shots = new Map();
   }
@@ -534,7 +559,7 @@ class FireworksTimeline {
     while (this.starts[this.starts.length - 1] <= render) {
       const shot = this.starts.length - 1;
       this.starts.push(
-        this.starts[this.starts.length - 1] + fireworksShotLength(shot, this.rate),
+        this.starts[this.starts.length - 1] + fireworksShotLength(shot, this.rate, this.length),
       );
     }
     let low = 0;
@@ -550,7 +575,7 @@ class FireworksTimeline {
   drawsAt(render) {
     const [shot, offset] = this.shotAt(render);
     // The most recently used last: the oldest goes first.
-    const record = this.shots.get(shot) ?? fireworksShot(shot);
+    const record = this.shots.get(shot) ?? fireworksShot(shot, this.length);
     this.shots.delete(shot);
     this.shots.set(shot, record);
     if (this.shots.size > SHOT_LIMIT)
@@ -558,7 +583,7 @@ class FireworksTimeline {
     while (record.draws.length <= offset)
       record.draws.push(
         fireworksStep(
-          record.state, LENGTH, this.rate, FIREWORKS_INTENSITY,
+          record.state, this.length, this.rate, FIREWORKS_INTENSITY,
           FIREWORKS_SELECTOR, 0, record.read,
         ),
       );
@@ -570,34 +595,49 @@ const timelines = new Map();
 const TIMELINE_LIMIT = 8;
 
 /** The 20 x 5 frame (lamp order) Fireworks shows `seconds` after it was
- * applied, at `rate` (0-255) and the lamp's `direction` (0-3). */
-export function renderFireworks(seconds, rate, direction, profile = REFERENCE_PROFILE) {
+ * applied, at `rate` (0-255) and the lamp's `direction` (0-3), on a segment
+ * of `length` pixels (its first columns). */
+export function renderFireworks(seconds, rate, direction, profile = REFERENCE_PROFILE, length = LENGTH) {
   rate = Math.max(0, Math.min(255, Math.trunc(Number(rate)) || 0));
-  let timeline = timelines.get(rate);
+  const key = `${rate},${length}`;
+  let timeline = timelines.get(key);
   if (!timeline) {
     if (timelines.size >= TIMELINE_LIMIT)
       timelines.delete(timelines.keys().next().value);
-    timeline = new FireworksTimeline(rate);
-    timelines.set(rate, timeline);
+    timeline = new FireworksTimeline(rate, length);
+    timelines.set(key, timeline);
   }
   const render = Math.max(0, Math.floor(seconds / RENDER_SECONDS));
   const shown = timeline.shown;
   if (shown?.render === render && shown.direction === direction && shown.profile === profile)
     return shown.frame;
-  const frame = stripFrame(timeline.drawsAt(render), direction, profile);
+  const frame = stripFrame(timeline.drawsAt(render), direction, profile, timeline.length);
   timeline.shown = { render, direction, profile, frame };
   return frame;
 }
 
-// ── What a command installs (const.py and lamp_renderers.py) ──────
-// The effects as the integration sends them: this side has no const.py.
+// ── What a command installs (effect_catalog.py and lamp_renderers.py) ──────
+// The effects as the integration sends them: this side has no effect_catalog.py.
 // tests/test_lamp_renderers.py keeps this equal to it.
-// const.py EXTENDED_EFFECT_COMMAND_ID: the outer id of the effects the
+// effect_catalog.py EXTENDED_EFFECT_COMMAND_ID: the outer id of the effects the
 // Yeelight app does not offer (3 made the app show Ribbon).
 const EXTENDED_EFFECT_ID = 63;
 const ALL_DIRECTIONS = ["Up", "Down", "Left", "Right"];
 const SWAP_UP_DOWN = { Up: "Down", Down: "Up" };
-// const.py _EXTENDED_EFFECT_NO_SPEED / _NO_DIRECTION for the slots named by
+// effect_catalog.py _REVERSED, _QUARTER_TURN, _QUARTER_TURN_BACK (filmed 2026-11-11).
+const REVERSED = { Up: "Down", Down: "Up", Left: "Right", Right: "Left" };
+const QUARTER_TURN = { Up: "Left", Down: "Right", Left: "Down", Right: "Up" };
+const QUARTER_TURN_BACK = { Up: "Right", Down: "Left", Left: "Up", Right: "Down" };
+// effect_catalog.py _EXTENDED_DIRECTION_REMAPS and ONE_AXIS_SLOTS.
+const SLOT_REMAPS = {
+  6: QUARTER_TURN, 8: QUARTER_TURN, 14: QUARTER_TURN, 23: QUARTER_TURN, 28: QUARTER_TURN, 21: QUARTER_TURN_BACK,
+  19: QUARTER_TURN, 33: REVERSED, 56: QUARTER_TURN_BACK, 7: QUARTER_TURN_BACK,
+  65: REVERSED, 68: REVERSED, 60: REVERSED,
+};
+const ONE_AXIS_SLOTS = new Set([4, 11]);
+// effect_catalog.py ONE_AXIS_LOW_PAIR_SLOTS.
+const ONE_AXIS_LOW_PAIR_SLOTS = new Set([4, 11]);
+// effect_catalog.py _EXTENDED_EFFECT_NO_SPEED / _NO_DIRECTION for the slots named by
 // number until 1.4.0 (the others say it in their row), and
 // _EXTENDED_EFFECT_COLORS.
 const NUMBERED_NO_SPEED = new Set([20, 27, 33, 38, 44, 52, 65, 66, 68, 69, 72, 73]);
@@ -609,11 +649,14 @@ const SLOT_COLORS = {
   33: [0x01ff563d],
   72: [0x01ff3010, 0x0110ff40, 0x012050ff, 0x01e0c0a0],
 };
-// const.py LAMP_INTENSITY_SLOTS (what intensity sets on each is listed there)
+// effect_catalog.py LAMP_INTENSITY_SLOTS (what intensity sets on each is listed there)
 // and LAMP_INTENSITY_MINIMUMS.
 export const LAMP_INTENSITY_SLOTS = new Set([
   4, 5, 6, 7, 9, 11, 14, 15, 18, 23, 25, 26, 28, 30, 32, 37, 42, 43, 45, 47,
   49, 51, 60, 61, 70, 73,
+  100, // effect_catalog.py STREAMED_EFFECTS: Knight Rider's trail length
+  101, // Lava Lamp: how much wax
+  102, // Falling Blocks: how well it plays
 ]);
 export const LAMP_INTENSITY_MINIMUMS = { 15: 13, 70: 1 };
 // The effects that read the intensity get `intensity: true`, like `speed`.
@@ -621,7 +664,13 @@ const withIntensity = (effects) =>
   Object.fromEntries(
     Object.entries(effects).map(([name, spec]) => [
       name,
-      LAMP_INTENSITY_SLOTS.has(spec.mode) ? { ...spec, intensity: true } : spec,
+      {
+        ...spec,
+        ...(LAMP_INTENSITY_SLOTS.has(spec.mode) ? { intensity: true } : {}),
+        ...(spec.directions && SLOT_REMAPS[spec.mode] ? { remap: SLOT_REMAPS[spec.mode] } : {}),
+        ...(spec.directions && ONE_AXIS_SLOTS.has(spec.mode) ? { oneAxis: true } : {}),
+        ...(spec.directions && ONE_AXIS_LOW_PAIR_SLOTS.has(spec.mode) ? { lowPair: true } : {}),
+      },
     ]),
   );
 export const LAMP_EFFECTS = withIntensity({
@@ -629,19 +678,20 @@ export const LAMP_EFFECTS = withIntensity({
   "Starry Sky": { mode: 5, effectId: 5, speed: true, color: 255 },
   Spectrum: { mode: 17, effectId: 17, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
   Waves: { mode: 42, effectId: 42, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
-  Rainbow: { mode: 39, effectId: 39, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
-  Waterfall: { mode: 32, effectId: 32, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN, color: 255 },
-  Aurora: { mode: 15, effectId: 15, speed: true, directions: ALL_DIRECTIONS, color: 16842496 },
-  Fire: { mode: 34, effectId: 34, speed: true, directions: ALL_DIRECTIONS, remap: { Right: "Down", Down: "Right", Left: "Up", Up: "Left" } },
+  Rainbow: { mode: 39, effectId: 39, speed: true, directions: ALL_DIRECTIONS, remap: REVERSED },
+  Waterfall: { mode: 32, effectId: 32, speed: true, directions: ALL_DIRECTIONS, remap: REVERSED, color: 255 },
+  Aurora: { mode: 15, effectId: 15, speed: true, directions: ALL_DIRECTIONS, remap: QUARTER_TURN_BACK, color: 16842496 },
+  Fire: { mode: 34, effectId: 34, speed: true, directions: ALL_DIRECTIONS },
   "Bouncing Ball": { mode: 37, effectId: 37, speed: true },
-  Meteor: { mode: 47, effectId: 47, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
+  Meteor: { mode: 47, effectId: 47, speed: true, directions: ALL_DIRECTIONS, remap: REVERSED },
   Tide: { mode: 48, effectId: 48, speed: true, directions: ALL_DIRECTIONS, remap: { Right: "Up", Left: "Down", Up: "Left", Down: "Right" } },
-  "Building Blocks": { mode: 49, effectId: 49, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN, color: 16777471 },
-  Hacking: { mode: 46, effectId: 46, speed: true, directions: ["Up", "Down"] },
+  "Building Blocks": { mode: 49, effectId: 49, speed: true, directions: ALL_DIRECTIONS, color: 16777471 },
+  // effect_catalog.py: along the long side, forward on drawn 0, back on 1.
+  Hacking: { mode: 46, effectId: 46, speed: true, directions: ["Up", "Down"], oneAxis: true, lowPair: true },
   "Flower Sea": { mode: 55, effectId: 91, speed: true, directions: ALL_DIRECTIONS },
   Magic: { mode: 76, effectId: 92, speed: true },
   Wonderland: { mode: 77, effectId: 94, speed: true },
-  Kaleidoscope: { mode: 80, effectId: 95, speed: true, directions: ALL_DIRECTIONS, remap: SWAP_UP_DOWN },
+  Kaleidoscope: { mode: 80, effectId: 95, speed: true, directions: ALL_DIRECTIONS, remap: QUARTER_TURN_BACK },
   Palette: { mode: 81, effectId: 96, speed: true, directions: ALL_DIRECTIONS },
   "Moving palette": { mode: 4, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
   "Particle path": { mode: 6, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
@@ -663,6 +713,16 @@ export const LAMP_EFFECTS = withIntensity({
   "Palette stripes": { mode: 70, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS },
   "Neon sine bands": { mode: 75, effectId: EXTENDED_EFFECT_ID, speed: true },
   "Violet twinkles": { mode: 79, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS },
+  // effect_catalog.py MATRIX_VERSION_EFFECTS: the Cube Matrix's own versions of three
+  // slots, sharing them with the effects they come from.
+  "Northern Lights": { mode: 15, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS, remap: REVERSED, matrixVersionOf: "Aurora" },
+  "Rose Sea": { mode: 55, effectId: EXTENDED_EFFECT_ID, directions: ALL_DIRECTIONS, matrixVersionOf: "Flower Sea", variant: "matrix" },
+  "Dark palette pulses": { mode: 9, effectId: EXTENDED_EFFECT_ID, speed: true, directions: ALL_DIRECTIONS, matrixVersionOf: "Triangular palette pulses", variant: "matrix" },
+  // effect_catalog.py STREAMED_EFFECTS: the integration's own effects, in no lamp
+  // (lamp-effects-streamed.js), streamed to every lamp.
+  "Knight Rider": { mode: 100, effectId: EXTENDED_EFFECT_ID, speed: true, intensity: true, directions: ALL_DIRECTIONS, remap: REVERSED, color: 0xff0000, streamed: true },
+  "Lava Lamp": { mode: 101, effectId: EXTENDED_EFFECT_ID, speed: true, intensity: true, directions: ALL_DIRECTIONS, remap: REVERSED, color: 0xff4000, streamed: true },
+  "Falling Blocks": { mode: 102, effectId: EXTENDED_EFFECT_ID, speed: true, intensity: true, directions: ALL_DIRECTIONS, streamed: true },
   // The slots named by number until 1.4.0 (effect-names.js). Not 71: it plays
   // the lamp's stored GIF.
   ...Object.fromEntries(
@@ -680,7 +740,7 @@ export const LAMP_EFFECTS = withIntensity({
   ),
 });
 export const DIRECTION_VALUES = { Up: 0, Down: 1, Left: 2, Right: 3 };
-// const.py MOUNT_DIRECTION_VALUES: what keeps an effect flowing the same way for
+// effect_catalog.py MOUNT_DIRECTION_VALUES: what keeps an effect flowing the same way for
 // the viewer once the lamp is turned.
 export const MOUNT_DIRECTION_VALUES = {
   right: [0, 1, 2, 3],
@@ -701,7 +761,7 @@ export const LAMP_RATE_LIMITS = { 28: 254, 51: 239 };
 // The lamp's stored presets, by command id, as far as the commands sent use
 // them: [colour selector, intensity, rate, direction]. A command starts from
 // the row, then only the sent keys change.
-// const.py DEFAULT_NATIVE_EFFECT_SPEED, DEFAULT_NATIVE_EFFECT_INTENSITY,
+// effect_catalog.py DEFAULT_NATIVE_EFFECT_SPEED, DEFAULT_NATIVE_EFFECT_INTENSITY,
 // SPEED_RANGE, INTENSITY_RANGE and UNDIRECTED_EFFECT_DIRECTION.
 export const DEFAULT_EFFECT_SPEED = 128;
 export const DEFAULT_EFFECT_INTENSITY = 128;
@@ -747,7 +807,7 @@ export const CLOCK_BACKGROUND_DIRECTION = DIRECTION_TABLE[REFERENCE_PROFILE].ind
 export const lampRate = (mode, rate) =>
   Math.min(rate, LAMP_RATE_LIMITS[mode] ?? rate);
 
-/** const.py lamp_intensity: the intensity sent for slot `mode`. */
+/** effect_catalog.py lamp_intensity: the intensity sent for slot `mode`. */
 export function lampIntensity(mode, intensity) {
   const value = Math.max(
     INTENSITY_RANGE.min,
@@ -792,6 +852,8 @@ export const COLOR_OVERRIDE_EFFECTS = new Set([
   "Triangular palette pulses", "Bouncing Ball", "Mirrored comets",
   "Sunrise and sunset", "Rainbow", "Moving palette", "Meteor", "Heat fire",
   "Spectrum", "Palette stripes", "Starry Sky", "Ribbon", "Tide", "Waterfall",
+  "Northern Lights", "Dark palette pulses",
+  "Knight Rider", "Lava Lamp", "Falling Blocks",
   "Two-colour alternation", "Rotating colour bands", "Scrolling bands",
   "Rising wisps", "Random scatter",
   "Breathing", "Dual scan", "Palette trails", "Drop and bounce",
@@ -807,11 +869,12 @@ export const COLOR_OVERRIDE_EFFECTS = new Set([
 // number until 1.4.0, per their renderers; the five that draw their colour
 // words go white, as without them.
 export const COLOR_MODE_BW_EFFECTS = new Set([
+  "Knight Rider", "Lava Lamp", "Falling Blocks", // the integration's own (lamp-effects-streamed.js presetColours)
   "Aurora", "Fire", "Tide (slot 35)", "Particle glows", "Kaleidoscope",
   "Sine wave", "Waves", "Triangular palette pulses", "Bouncing Ball",
   "Mirrored comets", "Sunrise and sunset", "Rainbow", "Moving palette",
   "Heat fire", "Spectrum", "Palette stripes", "Starry Sky", "Ribbon", "Tide",
-  "Waterfall",
+  "Waterfall", "Northern Lights",
   "Two-colour alternation", "Rotating colour bands", "Scrolling bands",
   "Rising wisps", "Random scatter", "Dual scan", "Palette trails",
   "Drop and bounce", "Music level glow", "Stacking blocks",
@@ -824,6 +887,7 @@ export const COLOR_MODE_BW_EFFECTS = new Set([
 // palette modes. From Dual scan on, the slots named by number until
 // 1.4.0, per their renderers.
 const COLOR_PALETTE_EFFECTS = new Set([
+  "Knight Rider", "Lava Lamp", "Falling Blocks", // the integration's own (lamp-effects-streamed.js presetColours)
   "Tide (slot 35)", "Kaleidoscope", "Triangular palette pulses",
   "Mirrored comets", "Rainbow", "Moving palette", "Spectrum", "Palette stripes",
   "Ribbon", "Tide",
@@ -838,7 +902,7 @@ const COLOR_PALETTE_MODES = new Set([
 export const effectSupportsColorOverride = (effect) =>
   COLOR_OVERRIDE_EFFECTS.has(effect);
 
-// const.py PALETTE_COLOR_MODE: the native effects' own color mode, the
+// effect_catalog.py PALETTE_COLOR_MODE: the native effects' own color mode, the
 // lamp's palette (its text_colors attribute).
 export const PALETTE_COLOR_MODE = "palette";
 
@@ -851,7 +915,7 @@ export const effectSupportsColorMode = (effect, mode) =>
   // The palette's colors reach every effect that takes a color.
   (mode === PALETTE_COLOR_MODE && COLOR_OVERRIDE_EFFECTS.has(effect));
 
-// const.py PALETTE_MUSIC_FLOWS and MUSIC_PALETTE_SIZE.
+// effect_catalog.py PALETTE_MUSIC_FLOWS and MUSIC_PALETTE_SIZE.
 export const PALETTE_MUSIC_FLOWS = {
   "Music Gather": "Gather",
   "Music Breathing": "Breathing",
@@ -867,9 +931,18 @@ const paletteColours = (palette) =>
 
 /** The colour words (0xRRGGBB) an effect is sent for `palette`, a list of
  * [r, g, b]; empty when the palette is (lamp_renderers.py palette_words). */
+// effect_catalog.py STREAMED_EFFECT_PALETTE_LIMIT: the palette colours an effect of
+// the integration's own takes.
+export const STREAMED_EFFECT_PALETTE_LIMIT = 32;
+
 export function paletteWords(effect, palette) {
   const colours = paletteColours(palette);
   if (!colours.length) return [];
+  // The integration's own renderer takes the palette itself.
+  if (LAMP_EFFECTS[effect].streamed)
+    return colours
+      .slice(0, STREAMED_EFFECT_PALETTE_LIMIT)
+      .map(([r, g, b]) => ((r & 255) << 16) | ((g & 255) << 8) | (b & 255));
   const count = (LAMP_EFFECTS[effect].colors ?? []).length || 1;
   return Array.from({ length: count }, (_, index) => {
     const [r, g, b] = colours[index % colours.length];
@@ -917,6 +990,7 @@ export const LAMP_MUSIC_EFFECTS = new Set(
 export function paletteFits(effect, palette) {
   const colours = paletteColours(palette);
   if (!colours.length || Object.hasOwn(PALETTE_MUSIC_FLOWS, effect)) return true;
+  if (LAMP_EFFECTS[effect]?.streamed) return true;
   if (!effectSupportsColorMode(effect, PALETTE_COLOR_MODE)) return false;
   return colours.length <= ((LAMP_EFFECTS[effect]?.colors ?? []).length || 1);
 }
@@ -930,8 +1004,9 @@ export const paletteMusicFlow = (effect, colorMode, palette) =>
 
 /** The fields a renderer reads, from what a command sends. */
 // `word`: the first colour word sent (null: no color key), `more` the others,
-// `sent` the intensity sent (null: the preset row's).
-function commandSettings(mode, commandId, direction, rate, word, more = [], sent = null) {
+// `sent` the intensity sent (null: the preset row's), `columns` the columns
+// the lamp shows (null: all 20).
+function commandSettings(mode, commandId, direction, rate, word, more = [], sent = null, columns = null) {
   const [selector, rowIntensity] = PRESET_ROWS[commandId];
   const intensity = sent ?? rowIntensity;
   const coloured = word !== null;
@@ -945,20 +1020,49 @@ function commandSettings(mode, commandId, direction, rate, word, more = [], sent
     coloured,
   };
   if (coloured && more.length) settings.colours = [rgb(word), ...more.map(rgb)];
+  // A lamp showing fewer columns (a Cube Matrix with fewer blocks): the
+  // segment its effects are drawn on.
+  const length = segmentLengthFor(columns);
+  if (length !== LENGTH) settings.length = length;
   return settings;
 }
 
 const rgb = (word) => [(word >>> 16) & 255, (word >>> 8) & 255, word & 255];
 
-// const.py effect_direction_value.
+// mount_profile.py BODY_DIRECTIONS, ACROSS_LINE.
+const BODY_DIRECTIONS = {
+  up: { Up: "Up", Down: "Down", Left: "Left", Right: "Right" },
+  right: { Up: "Left", Down: "Right", Left: "Down", Right: "Up" },
+  down: { Up: "Down", Down: "Up", Left: "Right", Right: "Left" },
+  left: { Up: "Right", Down: "Left", Left: "Up", Right: "Down" },
+};
+const ACROSS_LINE = { Left: "Up", Right: "Down", Up: "Left", Down: "Right" };
+const OPPOSITE = { Up: "Down", Down: "Up", Left: "Right", Right: "Left" };
+
+// mount_profile.py HIGH_PAIR / LOW_PAIR and one_axis_direction.
+const HIGH_PAIR = [3, 2];
+const LOW_PAIR = [0, 1];
+export function oneAxisDirection(label, orientation, rotation, forward, pair = HIGH_PAIR) {
+  const turn = BODY_DIRECTIONS[orientation ?? "right"] ?? BODY_DIRECTIONS.right;
+  let body = turn[label] ?? forward;
+  if (body !== forward && body !== OPPOSITE[forward]) body = turn[ACROSS_LINE[label] ?? "Up"];
+  const table = DIRECTION_TABLE[rotation] ?? DIRECTION_TABLE[3];
+  return table.indexOf(body === forward ? pair[0] : pair[1]);
+}
+
+// effect_catalog.py effect_direction_value (lamp_renderers.lamp_settings for a one-axis effect).
 function effectDirectionValue(spec, label, orientation) {
+  if (spec.oneAxis)
+    return oneAxisDirection(label, orientation, REFERENCE_PROFILE, "Up", spec.lowPair ? LOW_PAIR : HIGH_PAIR);
   const value = (name) => DIRECTION_VALUES[spec.remap?.[name] ?? name];
   const own = value(label);
   const turned = (MOUNT_DIRECTION_VALUES[orientation] ?? MOUNT_DIRECTION_VALUES.right)[own];
   return spec.directions.some((name) => value(name) === turned) ? turned : own;
 }
 
-/** What the lamp runs for a native effect (lamp_renderers.py). */
+/** What the lamp runs for a native effect (lamp_renderers.py). `columns`:
+ * the columns the lamp shows (a Cube Matrix's matrix_columns; null: all 20,
+ * a Cube Lite). */
 export function lampSettings(
   effect,
   direction,
@@ -968,6 +1072,7 @@ export function lampSettings(
   orientation = null,
   intensity = null,
   lampPalette = null,
+  columns = null,
 ) {
   const spec = LAMP_EFFECTS[effect];
   const palette = effectSupportsColorMode(effect, colorMode)
@@ -992,8 +1097,9 @@ export function lampSettings(
   }
   const settings = commandSettings(
     spec.mode, commandId, value, rate, words[0] ?? null, words.slice(1),
-    sentIntensity(spec, intensity),
+    sentIntensity(spec, intensity), columns,
   );
+  if (spec.variant) settings.variant = spec.variant;
   if (paletteMusicFlow(effect, colorMode, lampPalette)) {
     // The music mode: the whole palette, at the effect's own speed and
     // intensity (the music mode takes none).
@@ -1003,7 +1109,7 @@ export function lampSettings(
   return settings;
 }
 
-// const.py CLOCK_SETUP_FLAGS: the flags these backgrounds set in their first
+// effect_catalog.py CLOCK_SETUP_FLAGS: the flags these backgrounds set in their first
 // render, which the clock's digits go through when they are started directly.
 export const CLOCK_SETUP_FLAGS = Object.freeze({ 22: 0x0a, 51: 0x42 });
 
@@ -1013,7 +1119,7 @@ export function clockDigitFlags(mixer, direct) {
   return 0x05 | (direct ? CLOCK_SETUP_FLAGS[mixer] ?? 0 : 0);
 }
 
-// const.py CLOCK_DIRECT_BACKGROUNDS: sent as themselves under the clock
+// effect_catalog.py CLOCK_DIRECT_BACKGROUNDS: sent as themselves under the clock
 // overlay; mode 40 hands over to every other background.
 export const CLOCK_DIRECT_BACKGROUNDS = new Set([24, 33, 46, 47, 49, 60, 66, 69, 71, 72, 81]);
 
@@ -1021,7 +1127,8 @@ export const CLOCK_DIRECT_BACKGROUNDS = new Set([24, 33, 46, 47, 49, 60, 66, 69,
  * (lamp_renderers.py); `handover` when mode 40 hands over to it (it starts
  * past its first render, on the hand-over's flags). `direct`: the style runs
  * it as itself under the clock overlay (by default the
- * CLOCK_DIRECT_BACKGROUNDS do). */
+ * CLOCK_DIRECT_BACKGROUNDS do). `columns`: the columns the lamp shows
+ * (lampSettings). */
 export function lampClockSettings(
   effect,
   speed,
@@ -1030,13 +1137,15 @@ export function lampClockSettings(
   intensity = null,
   lampPalette = null,
   direct = null,
+  columns = null,
 ) {
-  const settings = clockSettings(effect, speed, colorOverride, colorMode, intensity, lampPalette);
+  const settings = clockSettings(effect, speed, colorOverride, colorMode, intensity, lampPalette, columns);
+  if (LAMP_EFFECTS[effect].variant) settings.variant = LAMP_EFFECTS[effect].variant;
   if (!(direct ?? CLOCK_DIRECT_BACKGROUNDS.has(settings.mode))) settings.handover = true;
   return settings;
 }
 
-function clockSettings(effect, speed, colorOverride, colorMode, intensity, lampPalette) {
+function clockSettings(effect, speed, colorOverride, colorMode, intensity, lampPalette, columns) {
   const spec = LAMP_EFFECTS[effect];
   // The palette color mode: the palette's colours to a background that takes
   // them, else as the normal mode (lamp_renderers.py).
@@ -1048,7 +1157,7 @@ function clockSettings(effect, speed, colorOverride, colorMode, intensity, lampP
       const rate = spec.speed ? lampRate(spec.mode, speed) : PRESET_ROWS[commandId][2];
       return commandSettings(
         spec.mode, commandId, CLOCK_BACKGROUND_DIRECTION, rate, sent[0], sent.slice(1),
-        sentIntensity(spec, intensity),
+        sentIntensity(spec, intensity), columns,
       );
     }
   }
@@ -1079,7 +1188,7 @@ function clockSettings(effect, speed, colorOverride, colorMode, intensity, lampP
   const more = !active && word !== null ? words.slice(1) : [];
   return commandSettings(
     spec.mode, commandId, CLOCK_BACKGROUND_DIRECTION, rate, word, more,
-    sentIntensity(spec, intensity),
+    sentIntensity(spec, intensity), columns,
   );
 }
 
@@ -1090,3 +1199,4 @@ registerFamily(noiseEffects);
 registerFamily(sparksEffects);
 registerFamily(trailsEffects);
 registerFamily(musicEffects);
+registerFamily(streamedEffects);

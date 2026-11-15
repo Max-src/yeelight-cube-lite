@@ -5,7 +5,6 @@ import { matrixPreviewStyles, renderMatrixPreview } from "./gallery-display-util
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import {
   clockAppearancePresets,
-  clockSectionAppearance,
   APPEARANCE_PROFILES,
   normalizePreviewAppearance,
 } from "./preview-appearance.js";
@@ -688,7 +687,7 @@ export const clockAppearanceEditorStyles = css`
   }
 `;
 
-export class PreviewAppearanceEditor extends LitElement {
+class PreviewAppearanceEditor extends LitElement {
   static properties = {
     config: { attribute: false },
     profile: { type: String },

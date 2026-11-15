@@ -90,8 +90,16 @@ module.exports = async (t) => {
   );
   assert.ok(!JSON.stringify(errorReport).includes("token=secret"));
   await startup.unroute(dependency);
+  // Once the module answers again, the same page: a browser that keeps a
+  // failed module until a reload (Chromium up to about 145, CI's) still
+  // blocks every card; a newer one (Edge 157) fetches it again and every
+  // card loads. Never some cards and not others.
   const sameDocument = await startup.evaluate(loadCards);
-  assert.ok(sameDocument.registered.every((registered) => !registered));
+  assert.ok(
+    sameDocument.registered.every((registered) => !registered) ||
+      sameDocument.registered.every(Boolean),
+    `all the cards or none after the module answers again: ${sameDocument.registered}`,
+  );
   await startup.reload();
   await startup.evaluate(
     () =>
@@ -102,9 +110,11 @@ module.exports = async (t) => {
   const recoveredReport = await startup.evaluate(() =>
     window.yeelightCubeDiagnostics.report(),
   );
+  // The report of the page before the reload: its cards as they ended.
+  const recoveredInPlace = sameDocument.registered.every(Boolean);
   assert.ok(
     Object.values(recoveredReport.previous.cards).every(
-      (registered) => !registered,
+      (registered) => registered === recoveredInPlace,
     ),
   );
   assert.ok(Object.values(recoveredReport.current.cards).every(Boolean));
@@ -123,6 +133,6 @@ module.exports = async (t) => {
   });
   await startup.close();
   console.log(
-    "PASS injected shared-module failure blocks all seven main cards until reload; standalone Font Editor survives",
+    "PASS injected shared-module failure blocks every main card (until a reload, or until it answers again on a newer browser); standalone Font Editor survives",
   );
 };

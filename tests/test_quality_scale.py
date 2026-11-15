@@ -75,7 +75,7 @@ class QualityScaleTests(unittest.TestCase):
             edit("entity.py", "    _attr_has_entity_name = True\n", "")
             edit("button.py", 'self._attr_translation_key = "force_refresh"',
                  'self._attr_translation_key = "force_refresh_gone"\n        self._attr_name = "Refresh"')
-            edit("text.py", 'self._register_on_light("_text_input_entity")',
+            edit("text.py", 'self._listen_to_light("text_input")',
                  "self._light_entity._text_input_entity = self")
             problems = QS["verify"](rules, copy)
         joined = "\n".join(problems)
@@ -98,15 +98,15 @@ class QualityScaleTests(unittest.TestCase):
 
             # A plain error text, an unknown error key, an icon in the code,
             # an issue without its text, a reconfigure step that skips the lamp.
-            edit("select.py", 'raise invalid("lamp_off")', 'raise HomeAssistantError("Off")')
+            edit("light_actions_display.py", 'raise invalid("lamp_off")', 'raise HomeAssistantError("Off")')
             edit("light_services_native.py", 'raise invalid("rotation_too_few")', 'raise invalid("no_such_message")')
             edit("button.py", 'self._attr_translation_key = "force_refresh"',
                  'self._attr_translation_key = "force_refresh"\n        self._attr_icon = "mdi:refresh"')
-            edit("issues.py", 'ISSUES = ("lamp_unreachable", "lamp_not_responding", "udp_blocked", "lan_control_off", "orientation_unknown")', 'ISSUES = ("lamp_unreachable", "lamp_not_responding", "udp_gone", "lan_control_off", "orientation_unknown")')
+            edit("issues.py", 'ISSUES = ("lamp_unreachable", "lamp_not_responding", "udp_blocked",', 'ISSUES = ("lamp_unreachable", "lamp_not_responding", "udp_gone",')
             edit("config_flow.py", "elif not await _lamp_answers(ip_address):\n                errors[\"base\"] = \"cannot_connect\"\n            else:\n                # A manually",
                  "elif False:\n                pass\n            else:\n                # A manually")
             joined = "\n".join(QS["verify"](rules, copy))
-        self.assertIn("exception-translations: select.py: an untranslated error", joined)
+        self.assertIn("exception-translations: light_actions_display.py: an untranslated error", joined)
         self.assertIn("exception-translations: light_services_native.py: error no_such_message has no message", joined)
         self.assertIn("icon-translations: button.py sets an icon in the code", joined)
         self.assertIn("repair-issues: issue udp_gone has no title and description", joined)

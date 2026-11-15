@@ -21,7 +21,7 @@
             },
             "matter_confirm": {
                 "title": "Yeelight Cube Lite found via Matter",
-                "description": "A Yeelight Cube Lite in Home Assistant's Matter integration, at **{host}**, is not set up here yet. Add it to control it over your local network too (pixel art, text, effects).\n\nIts LAN Control must be on: in the Yeelight app, open the lamp's settings and turn on LAN Control."
+                "description": "A Yeelight Cube ({name}) in Home Assistant's Matter integration, at **{host}**, is not set up here yet. Add it to control it over your local network too (pixel art, text, effects).\n\nIts LAN Control must be on: in the Yeelight app, open the lamp's settings and turn on LAN Control."
             },
             "orientation": {
                 "title": "How is the lamp mounted?",
@@ -50,6 +50,7 @@
         },
         "abort": {
             "already_configured": "This device is already configured",
+            "no_address": "The lamp's Matter node does not report an address it can be reached at yet.",
             "not_cube_device": "This device is not a Yeelight Cube Lite",
             "reconfigure_successful": "The lamp's IP address was changed."
         }
@@ -106,6 +107,9 @@
             "power_on_state": {
                 "name": "Power-on behavior"
             },
+            "drawing_animation": {
+                "name": "Drawing animation"
+            },
             "palette": {
                 "name": "Matrix: Palette"
             },
@@ -128,6 +132,9 @@
         "number": {
             "native_effect_speed": {
                 "name": "Effect speed"
+            },
+            "drawing_animation_speed": {
+                "name": "Drawing animation speed"
             },
             "native_effect_intensity": {
                 "name": "Effect intensity"
@@ -199,6 +206,25 @@
             },
             "buttons_wake_lamp": {
                 "name": "Buttons: Wake Lamp When Off"
+            }
+        },
+        "binary_sensor": {
+            "needs_power_cycle": {
+                "name": "Power cycle",
+                "state": {
+                    "off": "Not needed",
+                    "on": "Needed"
+                },
+                "state_attributes": {
+                    "reason": {
+                        "name": "Reason",
+                        "state": {
+                            "lamp_not_responding": "Stopped answering",
+                            "matrix_lan_stuck": "Local network connection stuck",
+                            "udp_unanswered": "Stopped answering over UDP"
+                        }
+                    }
+                }
             }
         },
         "sensor": {
@@ -288,9 +314,33 @@
             "title": "{name} stopped answering",
             "description": "{name} ({ip}) is on the network (it accepts connections) but has not answered a command for over a minute: the lamp itself is stuck, and only turning its power off and on again fixes it. Unplug it (or switch it off at the mains) for a few seconds, then plug it back in; Home Assistant reconnects by itself. **Force Refresh** cannot help here.\n\nThis message goes away by itself once the lamp answers again."
         },
+        "demo_mode": {
+            "title": "{name} is in demo mode",
+            "description": "{name} ({ip}) runs the Yeelight Cube's demo loop: every 30 seconds it shows its next effect by itself and saves it, so anything it shows itself (its own effects, clock and drawings over Matter) lasts no more than 30 seconds, and the demo comes back after a power cut. It starts after about ten quick presses of the lamp's button; neither the Yeelight app nor Home Assistant can turn it off.\n\nMeanwhile Home Assistant draws everything itself and sends it over your local network, which the demo does not interrupt: effects and the clock run at about 5 frames a second instead of the lamp's own smooth ones.\n\nOnly a factory reset ends it: hold the lamp's button for about 5 seconds within a minute of plugging it in. That also erases its Wi-Fi and Matter pairing: add the lamp to the Yeelight app again, set its modules (4 × Matrix) and share it to Home Assistant's Matter integration again. This message goes away by itself once the demo is off."
+        },
         "udp_blocked": {
             "title": "{name} uses its slower connection",
             "description": "Home Assistant has not reached {name} ({ip}) over UDP (port 55444) for over 15 minutes, while the lamp answers over TCP (port 55443): something on the network blocks UDP between them (a firewall, a VLAN rule, a container network). Everything still works, with more delay between changes.\n\nAllow UDP port 55444 between Home Assistant and the lamp. This message goes away by itself once UDP works again."
+        },
+        "udp_unanswered": {
+            "title": "{name} stopped answering over UDP",
+            "description": "For over 15 minutes {name} ({ip}) has opened UDP sessions with Home Assistant (port 55444) but answered no command sent in them, while it still answers over TCP (port 55443). The network lets UDP through: the lamp itself stopped handling it. Its own effects and clock still work; what Home Assistant streams (effects drawn by Home Assistant, scrolling text) runs at a few frames a second, or holds a frame.\n\nTurn the lamp off at the mains for a few seconds (unplug it), then plug it back in; Home Assistant reconnects by itself. Force Refresh cannot help here. This message goes away by itself once UDP works again."
+        },
+        "music_blocked": {
+            "title": "{name} cannot open its fast connection",
+            "description": "For over 15 minutes {name} ({ip}) has not connected back to Home Assistant for its fast connection (music mode), while it answers over TCP (port 55443). A Cube Matrix opens that connection itself, from the lamp to Home Assistant (TCP, port 55450): something on the network blocks it (a firewall, a VLAN rule, a container network without host networking). Its own effects, clock and drawings over Matter still work; what Home Assistant draws (text, pictures, the effects the lamp does not have) cannot be shown.\n\nAllow TCP connections from the lamp to Home Assistant on port 55450. Home Assistant tries again after 30 seconds, then 5 and 30 minutes. This message goes away by itself once the connection works."
+        },
+        "matrix_lan_stuck": {
+            "title": "{name}'s local network connection is stuck",
+            "description": "{name} ({ip}) accepts connections on the local network but closes them without answering: its network part is stuck. Its own effects, clock, drawings and brightness over Matter still work; what Home Assistant draws itself and streams over the local network (text, pictures, the effects the lamp does not have) cannot be shown. Only turning its power off and on again fixes it: unplug it (or switch it off at the mains) for a few seconds, then plug it back in. Home Assistant reconnects by itself, and **Force Refresh** cannot help here.\n\nThis message goes away by itself once the lamp answers again."
+        },
+        "firmware_too_old": {
+            "title": "{name} needs a firmware update",
+            "description": "{name} ({ip}) runs a firmware older than 1.11.57, which takes no pictures over the LAN: text, pixel art and everything Home Assistant draws cannot be shown. Update the lamp in the Yeelight app (the lamp's settings, firmware update).\n\nThis message goes away by itself once the lamp reports the update."
+        },
+        "factory_modules": {
+            "title": "{name} still has its factory module list",
+            "description": "{name} ({ip}) still reports the module list it left the factory with: its modules and direction were never set in the Yeelight app. Until they are, its own clock cannot show (it needs 4 Matrix modules), its effects run over hidden rows, and the way it is mounted is a guess.\n\nIn the Yeelight app, open the lamp's module settings, set the modules it has (for example 4 x Matrix) and the side its power supply is on. This message goes away by itself once that is saved."
         },
         "lan_control_off": {
             "title": "LAN Control is off on {name}",
@@ -428,6 +478,12 @@
         "unknown_clock_style": {
             "message": "Unknown clock style: {style}"
         },
+        "needs_microphone": {
+            "message": "{effect} listens to the lamp's microphone, and this lamp has none."
+        },
+        "power_on_needs_matter": {
+            "message": "The Cube Matrix's power-on behavior is set over Matter: share the lamp to Home Assistant's Matter integration."
+        },
         "animation_needs_matter": {
             "message": "Animations are uploaded to the lamp over Matter: link the lamp to a Matter server that delivers the Yeelight commands."
         },
@@ -442,6 +498,15 @@
         },
         "button_effects_remote_on": {
             "message": "Turn Buttons: Right as Remote off first: it keeps the button playlist black, and puts your playlist back when turned off."
+        },
+        "matrix_modules_not_matrix": {
+            "message": "Only a Cube Matrix has modules to set."
+        },
+        "matrix_modules_invalid": {
+            "message": "Name 1 to {count} modules, each matrix, spot or panel, in order from the base."
+        },
+        "matrix_modules_need_matter": {
+            "message": "The Cube Matrix's modules are set over Matter: link the lamp to a Matter server that delivers the Yeelight commands."
         }
     },
     "services": {
@@ -1352,6 +1417,20 @@
                 "entity_id": {
                     "name": "Entity",
                     "description": "Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls."
+                }
+            }
+        },
+        "set_matrix_modules": {
+            "name": "Set Cube Matrix modules",
+            "description": "Tell a Cube Matrix which modules it has, from the base, as the Yeelight app's module splicing does (over Matter). The lamp cannot detect them; it keeps the list and lays its own effects and clock out for it.",
+            "fields": {
+                "entity_id": {
+                    "name": "Entity",
+                    "description": "The Cube Matrix's light entity."
+                },
+                "modules": {
+                    "name": "Modules",
+                    "description": "The modules in chain order from the base: matrix (5 x 5), spot or panel; 1 to 6."
                 }
             }
         },

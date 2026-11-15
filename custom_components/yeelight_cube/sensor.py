@@ -242,7 +242,7 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
 
     def __init__(self, light_entity):
         self._light_entity = light_entity
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_estimated_power"
+        self._attr_unique_id = f"{light_entity.unique_id}_estimated_power"
 
     @property
     def native_value(self):
@@ -256,7 +256,7 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._register_on_light("_power_sensor")
+        self._listen_to_light("power")
         await super().async_will_remove_from_hass()
 
     @callback
@@ -280,7 +280,7 @@ class YeelightCubeMatterLinkSensor(CubeDeviceEntity, SensorEntity):
 
     def __init__(self, light_entity):
         self._light_entity = light_entity
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_matter_link"
+        self._attr_unique_id = f"{light_entity.unique_id}_matter_link"
 
     @property
     def native_value(self):
@@ -292,7 +292,7 @@ class YeelightCubeMatterLinkSensor(CubeDeviceEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._register_on_light("_matter_link_sensor")
+        self._listen_to_light("matter_link", self.async_write_ha_state)
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:
@@ -319,7 +319,7 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
 
     def __init__(self, light_entity):
         self._light_entity = light_entity
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_estimated_energy"
+        self._attr_unique_id = f"{light_entity.unique_id}_estimated_energy"
         self._meter = EnergyMeter()
         self._unsub_interval = None
 
@@ -333,7 +333,7 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
         if last is not None and isinstance(last.native_value, (int, float)):
             self._meter.total_kwh = float(last.native_value)
         self._meter.update(time.monotonic(), self._light_entity.estimated_power)
-        self._register_on_light("_energy_sensor")
+        self._listen_to_light("energy", self.power_changed)
         self._unsub_interval = async_track_time_interval(
             self.hass, self._tick, self.UPDATE_INTERVAL
         )

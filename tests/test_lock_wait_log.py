@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 from tests.test_native_features import ROOT, LIGHT_SOURCE, _load_standalone_functions
 
-CUBE_MATRIX_SOURCE = (ROOT / "cube_matrix.py").read_text(encoding="utf-8")
+PROTOCOL_SOURCE = (ROOT / "lamp_protocol.py").read_text(encoding="utf-8")
 ERRORS_SOURCE = (ROOT / "command_errors.py").read_text(encoding="utf-8")
 
 
@@ -30,7 +30,7 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
         }
         self.namespace.update(
             _load_standalone_functions(
-                CUBE_MATRIX_SOURCE, {"is_quota_error"}, {"BulbException": bulb_exception}
+                PROTOCOL_SOURCE, {"is_quota_error"}, {"BulbException": bulb_exception}
             )
         )
         self.namespace.update(
@@ -38,7 +38,7 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
         )
         fns = _load_standalone_functions(
             LIGHT_SOURCE,
-            {"_execute_hardware_op", "_get_device_lock", "_init_connection_state"},
+            {"_execute_hardware_op", "_get_device_lock", "_init_connection_state", "_direct_mode_lost"},
             self.namespace,
         )
         # The loaded functions share one globals dict: tests tweak that one.
@@ -47,13 +47,14 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
         class Lamp:
             _execute_hardware_op = fns["_execute_hardware_op"]
             _init_connection_state = fns["_init_connection_state"]
+            _direct_mode_lost = fns["_direct_mode_lost"]
 
         self.lamp = Lamp()
         # The queue's own state, as the lamp starts with it.
         self.lamp._init_connection_state()
         self.lamp.__dict__.update(
             _ip="192.168.4.104", _is_on=True, _fx_mode_is_direct=True,
-            _cube_matrix=SimpleNamespace(
+            _lamp_client=SimpleNamespace(
                 state_summary=lambda: "", summary="", record_success=Mock(), record_failure=Mock(),
                 close_fast_socket=Mock(),
             ),
@@ -127,7 +128,7 @@ class CoalescedRedrawTests(LampTestCase):
         # skipped redraws report success: the newest one draws the same state
         self.assertEqual([True, True, True], results)
         self.assertEqual({}, self.namespace["_DEVICE_LOCK_HOLDERS"])
-        self.lamp._cube_matrix.record_success.assert_called()
+        self.lamp._lamp_client.record_success.assert_called()
 
     async def test_other_operations_are_never_skipped(self):
         ran, _ = await self._queue_behind_running(
@@ -178,8 +179,8 @@ class HardTimeoutTests(LampTestCase):
 
         self.assertFalse(await self.lamp._execute_hardware_op(refused, "display:pixel_art"))
         self.assertEqual([], self.lamp._hard_timeout_times)
-        self.lamp._cube_matrix.close_fast_socket.assert_not_called()
-        self.lamp._cube_matrix.record_failure.assert_called_once()
+        self.lamp._lamp_client.close_fast_socket.assert_not_called()
+        self.lamp._lamp_client.record_failure.assert_called_once()
         self.lamp._maybe_schedule_retry.assert_called_once()
         self.logger.error.assert_not_called()
 
@@ -190,13 +191,9 @@ class HardTimeoutTests(LampTestCase):
         self.assertFalse(await self.lamp._execute_hardware_op(
             hangs, "display:pixel_art", timeout_override=0.02))
         self.assertEqual(1, len(self.lamp._hard_timeout_times))
-        self.lamp._cube_matrix.close_fast_socket.assert_called_once()
+        self.lamp._lamp_client.close_fast_socket.assert_called_once()
         self.assertIn("HARD TIMEOUT", self.logger.error.call_args.args[0])
         self.assertEqual({}, self.namespace["_DEVICE_LOCK_HOLDERS"])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class RefusedCommandTests(LampTestCase):
@@ -259,7 +256,7 @@ class RefusedCommandTests(LampTestCase):
 
     async def test_a_lamp_not_reached_is_not_named(self):
         lost = self.namespace["CubeConnectionError"]("unreachable")
-        lost.message = "unreachable"  # like cube_matrix's
+        lost.message = "unreachable"  # like lamp_protocol's
 
         async def offline():
             raise lost
@@ -277,7 +274,7 @@ class RawReplyTests(unittest.TestCase):
 
         self.socket = socket
         self.reply_error = _load_standalone_functions(
-            CUBE_MATRIX_SOURCE,
+            PROTOCOL_SOURCE,
             {"_raw_reply_error"},
             {"socket": socket, "json": json, "time": time, "RAW_REPLY_TIMEOUT": 0.3},
         )["_raw_reply_error"]
@@ -313,3 +310,7 @@ class RawReplyTests(unittest.TestCase):
         self.assertIsNone(self.answer(b'{"id":1,"result":["ok"]}\r\n'))
         self.assertIsNone(self.answer(b""))  # closed without answering
         self.assertIsNone(self.answer(b"", close=False))  # no answer in time
+
+
+if __name__ == "__main__":
+    unittest.main()

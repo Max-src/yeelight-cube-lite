@@ -43,7 +43,7 @@
   };
   const card = document.createElement("yeelight-cube-clock-card");
   const editor = document.createElement("yeelight-cube-clock-card-editor");
-  const config = { ...card.constructor.getStubConfig(hass), entity: "light.preview", target_entities: ["light.preview"], title: "Desk Clock", show_actions: false, show_animation_speed: false, show_color_modes: false, show_favourites: true, show_rotation: false, show_search: false, show_content_toggle: false, show_format_toggles: false, visible_styles: ["Rainbow", "White", "Tide", "Streamer"], items_per_page: 4 };
+  const config = { ...card.constructor.getStubConfig(hass), entity: "light.preview", target_entities: ["light.preview"], title: "Desk Clock", style_selector_style: "preview-grid", show_actions: false, show_animation_speed: false, show_color_modes: false, show_favourites: true, show_rotation: false, show_search: false, show_content_toggle: false, show_format_toggles: false, visible_styles: ["Rainbow", "White", "Tide", "Streamer"], items_per_page: 4 };
   const updateCard = async value => {
     card.setConfig(value); card.hass = hass;
     card._controls.favourites = [{ key: "Rainbow", colorMode: "normal" }, { key: "White", colorMode: "normal" }];

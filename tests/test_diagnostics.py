@@ -9,6 +9,7 @@ import unittest
 from types import SimpleNamespace
 
 from tests.test_native_features import CONSTANTS, ROOT, _load_standalone_functions
+from tests.fakes import light_state
 
 REDACTED = "**REDACTED**"
 IP = "192.168.4.145"
@@ -48,7 +49,7 @@ DIAGNOSTICS = _load_diagnostics()
 
 
 def _lamp():
-    cube_matrix = SimpleNamespace(
+    lamp_client = SimpleNamespace(
         device_model="Cube Lite", software_version="17", device_id=DEVICE_ID,
         capabilities={"id": DEVICE_ID, "model": "cubelite", "fw_ver": "17", "name": "Desk"},
         connection_state=lambda: {"transport": "udp", "consecutive_failures": 0},
@@ -63,8 +64,8 @@ def _lamp():
         "matrix_colors": [(255, 0, 0), (0, 0, 0), (0, 9, 0)],
         "native_effect_catalog": [{"name": "Rainbow"}],
     }
-    return SimpleNamespace(
-        _cube_matrix=cube_matrix, _ip=IP, extra_state_attributes=attributes,
+    return light_state(
+        _lamp_client=lamp_client, _ip=IP, extra_state_attributes=attributes,
         available=True, _is_on=True, _brightness=128,
         _last_connection_error=f"Cannot reach {IP}:55443",
         _display_retry_count=0, _hard_timeout_times=[], _hardware_operation_phase=None,
@@ -123,14 +124,14 @@ class DiagnosticsTests(unittest.TestCase):
 
 class ConnectionStateTests(unittest.TestCase):
     """One source for the connection's state: the diagnostics and the logs'
-    summary (cube_matrix.connection_state, state_summary)."""
+    summary (LampClient.connection_state, state_summary)."""
 
     def test_the_log_summary_shows_the_connection_state(self):
         fns = _load_standalone_functions(
-            (ROOT / "cube_matrix.py").read_text(encoding="utf-8"),
+            (ROOT / "lamp_client_health.py").read_text(encoding="utf-8"),
             {"connection_state", "state_summary"}, {"time": time},
         )
-        cube = SimpleNamespace(
+        cube = light_state(
             _ip=IP, transport="udp", _udp=SimpleNamespace(sessions_opened=2),
             _fast_socket=None, _fast_socket_time=0.0, _consecutive_failures=1,
             _reconnect_cooldown=5.0, _device_unreachable=False, _connection_healthy=True,

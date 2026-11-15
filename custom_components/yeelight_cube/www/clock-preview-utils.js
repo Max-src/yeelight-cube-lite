@@ -6,12 +6,12 @@
 // the lamp-preview card and the dedicated clock card so there is a SINGLE
 // source of truth for the clock previews (no duplication).
 //
-// Mirrors Python `camera.py:_get_clock_preview()` / `const.py`. The clock draws
+// Mirrors Python `camera.py:_get_clock_preview()` / `effect_catalog.py`. The clock draws
 // digit/colon glyphs; styles whose `mixer` is a native effect render
 // that effect across the whole panel and let it through only on the lit glyph
 // pixels (a mask), so the characters animate with the effect.
 //
-// Keep the mixer tables and glyph handling in sync with const.py.
+// Keep the mixer tables and glyph handling in sync with effect_catalog.py.
 
 import {
   effectOffersColorMode,
@@ -33,6 +33,7 @@ import {
   isLampRendered,
 } from "./lamp-renderers.js";
 import { flipMatrixVertical, lampTurnsClock } from "./matrix-view.js";
+import { shownColumns, withSpotColours } from "./matrix-modules.js";
 import { effectFamilyOfName } from "./effect-families.js";
 import {
   FORMERLY_NUMBERED_EFFECT_NAMES,
@@ -43,7 +44,7 @@ import {
 
 export { canonicalClockStyleName };
 
-// The lamp's color-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
+// The lamp's color-mode palette presets (mirrors effect_catalog.py CLOCK_COLOR_MODES).
 // Selecting one forces the outer command id so compatible effects re-map their
 // palette; "normal" keeps each effect's own colors. Which effects respond is
 // verified on hardware (previews are adjusted per effect separately).
@@ -63,7 +64,7 @@ export const CLOCK_COLOR_MODES = [
     icon: "mdi:palette-swatch",
   },
 ];
-// The Clock and Native Effects cards' color modes (const.py
+// The Clock and Native Effects cards' color modes (effect_catalog.py
 // NATIVE_COLOR_MODES): the lamp's presets and Palette, the lamp's palette
 // (its text_colors).
 export const NATIVE_COLOR_MODES = [
@@ -141,7 +142,7 @@ export function lookupNativeClockFont(states, cache) {
 export { flipMatrixVertical };
 
 // Clock styles whose mixer is a native effect: the effect is rendered across
-// the whole panel and masked to the lit glyph pixels (mirrors const.py).
+// the whole panel and masked to the lit glyph pixels (mirrors effect_catalog.py).
 export const CLOCK_MIXER_EFFECTS = {
   4: "Moving palette",
   6: "Particle path",
@@ -164,7 +165,7 @@ export const CLOCK_MIXER_EFFECTS = {
   59: "Night-sky waves",
   61: "Particle glows",
   70: "Palette stripes",
-  // Official effects that also support all four directions (mirrors const.py).
+  // Official effects that also support all four directions (mirrors effect_catalog.py).
   32: "Waterfall",
   15: "Aurora",
   34: "Fire",
@@ -187,7 +188,7 @@ export const CLOCK_MIXER_EFFECTS = {
   // omitted: the lamp rejects these mixer/clock combinations.
 };
 
-// The speed when a lamp reports none (const.py's default).
+// The speed when a lamp reports none (effect_catalog.py's default).
 export const DEFAULT_CLOCK_SPEED = DEFAULT_EFFECT_SPEED;
 
 /** The rate the lamp's clock background runs at: previews take it as it is. */
@@ -215,7 +216,7 @@ export const CLOCK_STYLE_MIXER = {
   15: 56,
 };
 
-// ── Full clock-style registry (mirrors const.py NATIVE_CLOCK_STYLES) ────────
+// ── Full clock-style registry (mirrors effect_catalog.py NATIVE_CLOCK_STYLES) ────────
 // Base styles 1-15 plus generated experimental styles (every native-effect
 // mode not already used as a base mixer). style_id > 10 is experimental (the
 // cards' badge); all are offered. Solid styles (mixer 0) render a
@@ -291,7 +292,7 @@ const _BASE_CLOCK_MIXERS = new Set(_BASE_CLOCK_STYLES.map((s) => s.mixer));
 // a solid style is a fixed color.
 const _clockFamily = (name, mixer) =>
   mixer ? effectFamilyOfName(_MODE_TO_EFFECT_NAME[mixer] ?? name) : "still";
-// const.py CLOCK_FORM_TWINS: a background that looks different in each form.
+// effect_catalog.py CLOCK_FORM_TWINS: a background that looks different in each form.
 // Its style over the hand-over is named for that look; a style over the
 // direct form, added after the others, shows the effect.
 const _CLOCK_FORM_TWINS = {
@@ -301,6 +302,17 @@ const _CLOCK_FORM_TWINS = {
 // Modes the lamp rejects as a clock mixer (mirrors _NON_CLOCK_EFFECT_MODES).
 const _NON_CLOCK_EFFECT_MODES = new Set([60, 46, 47, 49, 81]);
 const _NATIVE_CLOCK_EFFECT_ID = 40;
+// effect_catalog.py MATRIX_VERSION_EFFECTS: a style over each, after every other one;
+// it names its own background (it shares its mixer with another effect).
+// Then STREAMED_EFFECTS: the integration's own effects.
+const _MATRIX_VERSION_BACKGROUNDS = [
+  ["Northern Lights", 15],
+  ["Rose Sea", 55],
+  ["Dark palette pulses", 9],
+  ["Knight Rider", 100],
+  ["Lava Lamp", 101],
+  ["Falling Blocks", 102],
+];
 
 function _buildClockStyles() {
   const styles = _BASE_CLOCK_STYLES.map((s) => ({
@@ -350,6 +362,18 @@ function _buildClockStyles() {
     });
     nextId += 1;
   }
+  for (const [name, mode] of _MATRIX_VERSION_BACKGROUNDS) {
+    styles.push({
+      id: nextId,
+      name,
+      mixer: mode,
+      background: name,
+      family: effectFamilyOfName(name),
+      solid: false,
+      experimental: true,
+    });
+    nextId += 1;
+  }
   return styles;
 }
 
@@ -362,7 +386,7 @@ export const CLOCK_STYLES = _buildClockStyles();
  * (light_native.shown_effect_reads for the clock).
  */
 export function clockStyleTakes(style, setting) {
-  const effect = CLOCK_MIXER_EFFECTS[style?.mixer];
+  const effect = style?.background ?? CLOCK_MIXER_EFFECTS[style?.mixer];
   return !!(effect && LAMP_EFFECTS[effect]?.[setting]);
 }
 
@@ -410,7 +434,7 @@ export function clockStyleColorModeState(style, mode, override = null) {
       : known?.name === "White";
     return alreadyWhite ? "unchanged" : "responds";
   }
-  const effect = CLOCK_MIXER_EFFECTS[mixer];
+  const effect = style.presetId ? null : known.background ?? CLOCK_MIXER_EFFECTS[mixer];
   return effect
     ? effectOffersColorMode(effect, mode)
       ? "responds"
@@ -429,7 +453,7 @@ export function clockStyleRespondsToCustomColor(style) {
     _CLOCK_STYLE_BY_ID.get(style.id) || _CLOCK_STYLE_BY_NAME.get(style.name);
   if (!known) return false;
   if (known.mixer === 0) return true;
-  const effect = CLOCK_MIXER_EFFECTS[known.mixer];
+  const effect = known.background ?? CLOCK_MIXER_EFFECTS[known.mixer];
   return effect ? effectSupportsColorOverride(effect) : false;
 }
 
@@ -437,7 +461,7 @@ export function clockStyleRespondsToCustomColor(style) {
 export const clockPreviewEffect = (mixer) => CLOCK_MIXER_EFFECTS[mixer];
 
 /** Whether the style of `attrs` runs its background as itself under the clock
- * overlay (const.py clock_style_direct): its own `direct`, else null (by its
+ * overlay (effect_catalog.py clock_style_direct): its own `direct`, else null (by its
  * background, lampClockSettings). */
 export function clockStyleDirect(attrs) {
   const id = attrs.clock_style_id;
@@ -449,10 +473,21 @@ export function clockStyleDirect(attrs) {
   return style?.direct ?? null;
 }
 
+/** The effect behind the clock style of `attrs` (effect_catalog.py
+ * clock_style_effect): the style's own background, else its mixer's. */
+export function clockStyleEffect(attrs) {
+  const id = attrs.clock_style_id;
+  const style =
+    (typeof id === "number" && _CLOCK_STYLE_BY_ID.get(id)) ||
+    (typeof attrs.clock_style === "string" &&
+      _CLOCK_STYLE_BY_NAME.get(canonicalClockStyleName(attrs.clock_style))) ||
+    (typeof attrs.clock_style?.name === "string" && _CLOCK_STYLE_BY_NAME.get(attrs.clock_style.name));
+  return (style && style.background) || clockPreviewEffect(clockStyleMixer(attrs));
+}
+
 // Resolve the lamp's mixer for a set of light attributes (or a style object).
 // Whether a clock style's background is an effect the lamp draws itself.
-export const clockUsesLampRenderer = (attrs) =>
-  isLampRendered(clockPreviewEffect(clockStyleMixer(attrs)));
+export const clockUsesLampRenderer = (attrs) => isLampRendered(clockStyleEffect(attrs));
 
 export function clockStyleMixer(attrs) {
   const id = attrs.clock_style_id;
@@ -594,7 +629,6 @@ function _clockPixelColor(styleId, charIndex, col) {
 export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = null) {
   const COLS = 20;
   const now = new Date();
-  const tsSec = now.getTime() / 1000;
 
   // 3-way clock content (byte 0): time | time_date (alternate) | date.
   // Fall back to the legacy show_date boolean for older backends.
@@ -604,7 +638,9 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   }
   let datePhase;
   if (content === "date") datePhase = true;
-  else if (content === "time_date") datePhase = Math.floor(tsSec / 5) % 2 === 1;
+  // The time 6 s, then the date 4 s (seconds ending in 6-9), as the lamps'
+  // own clocks (clock_face.py clock_text).
+  else if (content === "time_date") datePhase = now.getSeconds() % 10 >= 6;
   else datePhase = false;
 
   let text;
@@ -632,7 +668,7 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   // Styles whose mixer is a native effect show that effect through the lit
   // glyph pixels; render it once and mask it below.
   const mixer = clockStyleMixer(attrs);
-  const effectName = clockPreviewEffect(mixer);
+  const effectName = clockStyleEffect(attrs);
   // Preview callers may supply either a decoded [r,g,b] (clock_color_rgb) or the
   // raw ARGB integer the lamp exposes as clock_color; decode the
   // latter exactly like camera.py so every card renders the same override.
@@ -664,13 +700,17 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   // (light_native): it takes the color or not as on the lamp. Styles with no
   // effect fall back to the flat override color.
   const rate = speed ?? clockSpeed(attrs);
+  // The columns the lamp shows (a Cube Matrix with fewer blocks): the
+  // background is drawn on them and the digits centred in them, as on the
+  // lamp (clock_face.py clock_digit_pixels).
+  const columns = shownColumns(attrs);
   const effectFrame = streamed
     ? effectDisplayFrame(
         effectName,
         studioDrive(
           studioClockBackgroundAt(
             effectName, studioRender(phase / (0.25 + rate / 55)), rate, chosenIntensity(attrs),
-            attrs.text_colors, clockStyleDirect(attrs),
+            attrs.text_colors, clockStyleDirect(attrs), columns,
           ),
         ),
       )
@@ -680,7 +720,7 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
         lampEffectFrame(
           lampClockSettings(
             effectName, rate, override, colorMode, chosenIntensity(attrs), attrs.text_colors,
-            clockStyleDirect(attrs),
+            clockStyleDirect(attrs), columns,
           ),
           phase / (0.25 + rate / 55),
         ),
@@ -707,8 +747,19 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
     _clockCharAdvance(chars[i], g, metrics),
   );
   // Total drawn width = sum of advances minus the trailing gap of the last glyph.
-  const totalWidth = Math.max(0, advances.reduce((a, b) => a + b, 0) - 1);
-  let offset = Math.max(0, Math.floor((COLS - totalWidth) / 2));
+  let totalWidth = Math.max(0, advances.reduce((a, b) => a + b, 0) - 1);
+  // Wider than the columns shown: the gaps either side of the separator close.
+  for (let i = 0; i < chars.length && totalWidth > columns; i++) {
+    if ((chars[i] === ":" || chars[i] === ".") && i > 0 && advances[i - 1] > 1) {
+      advances[i - 1] -= 1;
+      totalWidth -= 1;
+      if (totalWidth > columns && advances[i] > 1) {
+        advances[i] -= 1;
+        totalWidth -= 1;
+      }
+    }
+  }
+  let offset = Math.max(0, Math.floor((columns - totalWidth) / 2));
 
   for (let i = 0; i < chars.length; i++) {
     const advance = advances[i];
@@ -719,11 +770,12 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
     for (const pos of glyphs[i]) {
       const col = (pos % COLS) + offset;
       const row = Math.floor(pos / COLS);
-      if (col >= 0 && col < COLS && row >= 0 && row < 5) {
+      if (col >= 0 && col < columns && row >= 0 && row < 5) {
         // Where the lamp draws it: a background started directly may turn or
-        // mirror the digits (clockDigitFlags).
-        const at = row * COLS + col;
-        for (const index of clockDigitTargets(turned ? 99 - at : at, digitFlags)) {
+        // mirror the digits (clockDigitFlags); turned, a half turn within the
+        // columns shown.
+        const at = turned ? (4 - row) * COLS + (columns - 1 - col) : row * COLS + col;
+        for (const index of clockDigitTargets(at, digitFlags, columns * 5)) {
           matrix[index] = effectFrame
             ? effectFrame[index]
             : soloBwFallback
@@ -736,5 +788,6 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
     }
     offset += advance;
   }
-  return matrix;
+  // A Cube Matrix's spots shown as the lamp lights them (matrix-modules.js).
+  return withSpotColours(matrix, attrs, "lamp");
 }

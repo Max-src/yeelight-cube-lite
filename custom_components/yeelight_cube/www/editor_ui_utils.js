@@ -24,11 +24,13 @@ import { notifyUnreported } from "./notify-utils.js";
 import {
   USER_COLLECTIONS,
   CollectionStore,
+  collectionSensor,
   collectionThumbnail,
   singleMove,
 } from "./user-collections.js";
 import { withItemLabel } from "./card-config.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
+import { cubeLampEntities } from "./card-base.js";
 
 // A folded list (YeelightEditorMixin._foldedList), opened, scrolls past this
 // height (px).
@@ -40,13 +42,13 @@ const FOLDED_LIST_HEIGHT = 360;
  * prevents the value/label drift that previously caused "Rounded" to map to
  * different stored values across cards.
  */
-export const SHAPE_OPTIONS = [
+const SHAPE_OPTIONS = [
   { value: "square", label: "Square" },
   { value: "rounded", label: "Rounded" },
   { value: "round", label: "Round" },
 ];
 
-export const PIXEL_STYLE_CHOICES = [
+const PIXEL_STYLE_CHOICES = [
   { value: "rounded", label: "Rounded" },
   { value: "circle", label: "Circle" },
   { value: "square", label: "Square" },
@@ -170,7 +172,7 @@ export function renderSelectorShapeRows(cfg, onChange, options = {}) {
  * Dispatch a custom event, compatible with Home Assistant's event system.
  * Shared across all editor cards to avoid duplicating this helper.
  */
-export function fireEvent(node, type, detail, options) {
+function fireEvent(node, type, detail, options) {
   options = options || {};
   detail = detail === null || detail === undefined ? {} : detail;
   const event = new CustomEvent(type, {
@@ -257,6 +259,38 @@ export const YeelightEditorMixin = (Base) =>
   class extends EditorSectionsMixin(Base) {
     getConfig() {
       return this._config;
+    }
+
+    get hass() {
+      return this._hass;
+    }
+
+    /** Home Assistant hands out a new hass on every state push anywhere: the
+     * editor renders again only when what it shows from it changed
+     * (_hassInputs, compared value by value). */
+    set hass(hass) {
+      this._hass = hass;
+      if (!hass?.states) return;
+      const inputs = this._hassInputs(hass);
+      const last = this.__hassInputs;
+      this.__hassInputs = inputs;
+      if (
+        !last ||
+        last.length !== inputs.length ||
+        inputs.some((value, index) => value !== last[index])
+      )
+        this.requestUpdate();
+    }
+
+    /** What the editor shows from hass: the lamp picker's lamps, and the
+     * sensors of the collections it arranges (_arrangeSettings). */
+    _hassInputs(hass) {
+      return [
+        cubeLampEntities(hass).join(","),
+        ...[...(this.__arranged || [])].map(
+          (kind) => hass.states[collectionSensor(hass, this._config, kind)],
+        ),
+      ];
     }
 
     /** Report the edited config: a bubbling, composed config-changed from
@@ -402,6 +436,7 @@ export const YeelightEditorMixin = (Base) =>
         kind,
         { onChange: () => this.requestUpdate() },
       ));
+      (this.__arranged ||= new Set()).add(kind);
       store.update(this._hass, this._config);
       const items = store.items(this._hass, this._config);
       return renderSettingsBox(

@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 module.exports = async (t) => {
-  const { page, lamp, draw, gradient } = t;
+  const { page } = t;
   // --- The shared card frame (card-shell.js) on every card and editor ----
   const CARDS = {
     clock: {},

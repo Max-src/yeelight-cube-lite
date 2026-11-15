@@ -16,7 +16,8 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.exceptions import ConfigEntryNotReady  # type: ignore
 from homeassistant.helpers.storage import Store  # type: ignore
 
-from .const import DOMAIN, clock_style_name_saved_by_1_4
+from .const import DOMAIN
+from .effect_catalog import clock_style_name_saved_by_1_4
 from .errors import failed
 from .name_utils import normalize_display_name
 from .pixel_art_storage import is_grouped, stored_pixel_art
@@ -91,7 +92,7 @@ def _saved_by_1_4(stored: dict) -> bool:
 
 def migrate_clock_names(stored: dict) -> bool:
     """Read the clock styles of favourites and rotations saved by 1.4.0 or
-    earlier as they meant then (const.CLOCK_STYLE_NAMES_IN_1_4), in place;
+    earlier as they meant then (effect_catalog.CLOCK_STYLE_NAMES_IN_1_4), in place;
     whether one changed. Data saved since (NAMES_VERSION) is today's."""
     if not _saved_by_1_4(stored):
         return False

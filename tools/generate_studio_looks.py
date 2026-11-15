@@ -29,7 +29,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "custom_components", "yeelight_cube"))
 
-from const import ALL_NATIVE_EFFECTS, DEFAULT_NATIVE_EFFECT_SPEED  # noqa: E402
+from effect_catalog import ALL_NATIVE_EFFECTS, DEFAULT_NATIVE_EFFECT_SPEED  # noqa: E402
 from lamp_animations import animation_frames  # noqa: E402
 from lamp_studio import MIN_HUE_SPAN, _Source, hue_byte, level_step, studio_recolors  # noqa: E402
 

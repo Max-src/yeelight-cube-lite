@@ -8,7 +8,6 @@ from __future__ import annotations
 
 try:
     from .lamp_core import (
-        LENGTH,
         SIN8,
         U32,
         blur_columns,
@@ -24,6 +23,7 @@ try:
         palette_span,
         palette_table,
         place_strip,
+        settings_length,
     )
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
@@ -31,7 +31,6 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from lamp_core import (
-        LENGTH,
         SIN8,
         U32,
         blur_columns,
@@ -47,6 +46,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         palette_span,
         palette_table,
         place_strip,
+        settings_length,
     )
 
 # The gradients of slots 55, 56, 57 and 59 and slot 58's two buffer
@@ -64,6 +64,8 @@ _GRADIENTS = {
         (0, 25, 25, 112), (70, 0, 0, 128), (120, 0, 0, 255), (160, 173, 216, 230),
         (180, 255, 255, 224), (255, 255, 223, 255),
     ),
+    # The Cube Matrix's slot 55 (Rose Sea): red to hot pink to purple.
+    "55matrix": ((0, 255, 0, 0), (128, 255, 105, 180), (255, 128, 0, 128)),
 }
 _SATURATE = bytes(min(value, 255) for value in range(511))
 
@@ -217,6 +219,34 @@ def flower_step(state, settings, clock_ms, render) -> bytes:
     return place_strip(b"".join(strip), state["direction"])
 
 
+# ── Slot 55 as a Cube Matrix draws it: Rose Sea ────────────────────────
+# Its own constants (a Cube Lite's Flower Sea above): the noise at
+# (row (column - width), 50 row + clock / 100, clock / 10), the clock not
+# scaled by the speed (it reads none), its own gradient, and the rows
+# dimming towards the far end: row r at gain ~(255 / height r).
+def rose_init(settings) -> dict:
+    width, height = effect_geometry(settings)
+    table = _gradient_table("55matrix")
+    rows = []
+    for row in range(height):
+        gain = ~((255 // height) * row) & 255
+        rows.append((
+            [(row * (column - width)) & 0xFFFF for column in range(width)],
+            _cells(table if gain == 255 else _gain_table(table, gain)),
+        ))
+    return {"direction": settings["direction"], "rows": rows}
+
+
+def rose_step(state, settings, clock_ms, render) -> bytes:
+    hundredth, depth = clock_ms // 100, (clock_ms // 10) & 0xFFFF
+    strip = []
+    for row, (xs, cells) in enumerate(state["rows"]):
+        y = (50 * row + hundredth) & 0xFFFF
+        for x in xs:
+            strip.append(cells[noise_heat(inoise8_raw(x, y, depth))])
+    return place_strip(b"".join(strip), state["direction"])
+
+
 # ── Slot 56: Violet interference ────────────────────────────────────────
 def carousel_init(settings) -> dict:
     width, height = effect_geometry(settings)
@@ -240,12 +270,13 @@ def carousel_step(state, settings, clock_ms, render) -> bytes:
 # ── Slots 57 and 59: Night-amber waves and Night-sky waves ────────────────────────────
 # Pattern index i is stored at the buffer's cell i and the last pass reads it
 # back through the mapper, so the pattern sits on the panel at any direction.
-def _distances(centre: float) -> list:
-    return [int(f32(f32(abs(f32(pixel - centre)) / centre) * 20)) for pixel in range(LENGTH)]
+def _distances(centre: float, length: int) -> list:
+    return [int(f32(f32(abs(f32(pixel - centre)) / centre) * 20)) for pixel in range(length)]
 
 
 def yellow_init(settings) -> dict:
-    return {"cells": _cells(_gradient_table(57)), "distances": _distances(f32(LENGTH / 15))}
+    length = settings_length(settings)
+    return {"cells": _cells(_gradient_table(57)), "distances": _distances(f32(length / 15), length)}
 
 
 def yellow_step(state, settings, clock_ms, render) -> bytes:
@@ -257,7 +288,8 @@ def yellow_step(state, settings, clock_ms, render) -> bytes:
 
 
 def white_init(settings) -> dict:
-    return {"cells": _cells(_gradient_table(59)), "distances": _distances(f32(LENGTH >> 4))}
+    length = settings_length(settings)
+    return {"cells": _cells(_gradient_table(59)), "distances": _distances(f32(length >> 4), length)}
 
 
 def white_step(state, settings, clock_ms, render) -> bytes:
@@ -282,7 +314,7 @@ def ice_init(settings) -> dict:
 def ice_step(state, settings, clock_ms, render) -> bytes:
     light, shade, saturate = state["light"], state["shade"], _SATURATE
     across, up = clock_ms >> 4, clock_ms >> 2
-    strip = bytearray(3 * LENGTH)
+    strip = bytearray(3 * len(state["shades"]) * state["height"])
     at = 0
     for row in range(state["height"]):
         y = (up + 70 * row) & 0xFFFF
@@ -356,10 +388,11 @@ def wonderland_step(state, settings, clock_ms, render) -> bytes:
 
 # ── Slot 80: Kaleidoscope ───────────────────────────────────────────────
 def kaleidoscope_init(settings) -> dict:
-    centre = f32(LENGTH / 1.3)
+    length = settings_length(settings)
+    centre = f32(length / 1.3)
     colours = effect_colours(settings)
     halves = []
-    for pixel in range(LENGTH):
+    for pixel in range(length):
         distance = abs(int(f32(f32(pixel) - centre)))
         halves.append(f32(SIN8[int(f32(f32(f32(distance) / centre) * 127)) & 255] * 0.5))
     return {
@@ -397,4 +430,9 @@ SLOTS = (
     {"mode": 75, "init": neon_init, "step": neon_step, "warmup": 0},
     {"mode": 77, "init": wonderland_init, "step": wonderland_step, "warmup": 0},
     {"mode": 80, "init": kaleidoscope_init, "step": kaleidoscope_step, "warmup": 0},
+)
+# The Cube Matrix's renderers of a slot it draws its own way (const.
+# MATRIX_VERSION_EFFECTS): by slot and ``variant``.
+VARIANT_SLOTS = (
+    {"mode": 55, "variant": "matrix", "init": rose_init, "step": rose_step, "warmup": 0},
 )

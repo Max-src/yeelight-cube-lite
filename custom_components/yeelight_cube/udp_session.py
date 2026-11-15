@@ -21,13 +21,14 @@ stream session on one lamp can freeze it. When the lamp drops a session and a
 new one is opened, what must hold in every session (``session_setup``: direct
 mode, while it is on) is sent in it first, so the change never shows.
 
-No Home Assistant or yeelight import: cube_matrix.CubeMatrix turns
+No Home Assistant or yeelight import: lamp_client.LampClient turns
 an error reply into its exception and falls back to TCP on UdpUnavailable.
 """
 
 from __future__ import annotations
 
 import asyncio
+import collections
 import itertools
 import json
 import logging
@@ -63,6 +64,10 @@ _UNANSWERED = frozenset({"update_leds"})
 # until a power cycle; 8 Nov 2026 again during the Studio stream). The
 # keep-alive does not wait: the lamp's network chip answers it, not the lamp.
 FRAME_QUIET = 0.2
+# The stream's statistics (stream_stats): gaps between frames longer than
+# this are counted, over the last STATS_WINDOW seconds.
+GAP_COUNTED = 0.1
+STATS_WINDOW = 60.0
 
 
 class UdpUnavailable(Exception):
@@ -111,12 +116,17 @@ class UdpSession:
         self._last_answer = 0.0
         # When the last frame (update_leds) was sent (FRAME_QUIET).
         self._last_frame = 0.0
+        # Counted for stream_stats: frames sent, and the gaps between frames
+        # over GAP_COUNTED (when it ended, how long), the last STATS_WINDOW
+        # seconds.
+        self.frames_sent = 0
+        self._gaps: collections.deque = collections.deque()
         # Sessions opened so far (a new one after the first: the lamp lost the
         # previous one, so what it was told in it, e.g. direct mode, is gone).
         self.sessions_opened = 0
         # Commands (method, params) every new session is sent first, before
         # the command that needed it: what must hold in whichever session
-        # the lamp is in (set by CubeMatrix: direct mode, while it is on).
+        # the lamp is in (set by LampClient: direct mode, while it is on).
         self.session_setup: list[tuple[str, list]] = []
 
     @property
@@ -134,13 +144,27 @@ class UdpSession:
                 continue
             if not isinstance(message, dict):
                 continue
+            future = self._waiting.get(message.get("id"))
+            error = message.get("error")
+            if (
+                future is None and isinstance(error, dict) and error.get("code") == _TOKEN_REFUSED
+                and message.get("method") != "udp_sess_token"
+            ):
+                # A frame refused (frames have no waiter): the lamp dropped
+                # the session, so every frame in it is refused from now on.
+                # Not an answer: the next frame opens a new session (and puts
+                # it in direct mode again, session_setup) at once, rather than
+                # the lamp going without frames until the next command.
+                if self._token is not None:
+                    _LOGGER.debug("[UDP] [%s] A frame's session was refused: opening a new one", self._ip)
+                self._token = None
+                continue
             self._last_answer = time.monotonic()
             if message.get("method") == "udp_sess_token":
                 token = (message.get("params") or {}).get("token")
                 if self._handshake is not None and not self._handshake.done() and token:
                     self._handshake.set_result(token)
                 continue
-            future = self._waiting.get(message.get("id"))
             if future is not None and not future.done():
                 future.set_result(message)
 
@@ -220,7 +244,7 @@ class UdpSession:
 
     async def _set_up(self) -> None:
         """Send session_setup in the session just opened; a command it does
-        not take makes the session unusable (CubeMatrix falls back to TCP)."""
+        not take makes the session unusable (LampClient falls back to TCP)."""
         for method, params in list(self.session_setup):
             answer = await self._answer(
                 {"id": next(self._ids), "method": method, "params": params, "token": self._token}
@@ -242,7 +266,13 @@ class UdpSession:
                     await self._confirm()
                     message["token"] = self._token
                 await self._send(message)
-                self._last_frame = time.monotonic()
+                now = time.monotonic()
+                if self._last_frame and now - self._last_frame > GAP_COUNTED:
+                    self._gaps.append((now, now - self._last_frame))
+                while self._gaps and now - self._gaps[0][0] > STATS_WINDOW:
+                    self._gaps.popleft()
+                self._last_frame = now
+                self.frames_sent += 1
                 return None
             answer = await self._answer(message)
             if answer is None:
@@ -275,6 +305,19 @@ class UdpSession:
         datagram the lamp would drop)."""
         async with self._lock:
             return await self._call(method, list(params or []))
+
+    def stream_stats(self) -> dict:
+        """What was sent lately, for the log of a lamp that stopped answering:
+        frames since the session object was made, and the gaps between frames
+        over GAP_COUNTED in the last STATS_WINDOW seconds."""
+        now = time.monotonic()
+        gaps = [gap for at, gap in self._gaps if now - at <= STATS_WINDOW]
+        return {
+            "frames": self.frames_sent,
+            "gaps_over_100ms": len(gaps),
+            "longest_gap_s": round(max(gaps), 2) if gaps else 0.0,
+            "since_last_frame_s": round(now - self._last_frame, 2) if self._last_frame else None,
+        }
 
     async def ping(self) -> bool:
         """Whether the lamp answers in the session (opening one if needed)."""

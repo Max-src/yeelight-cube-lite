@@ -23,6 +23,7 @@ import {
   placeStrip,
   readBackFlags,
   HANDOVER_FLAGS,
+  settingsLength,
   sin16Unsigned,
   sourceWord,
   stripBlur,
@@ -32,8 +33,8 @@ import {
 const read = (state) => sourceWord(state.reads++);
 
 /** The seed scan: from the cursor, the first palette entry that is not black, or
- * black after `pixels` attempts. */
-function scanColour(state, pixels = LENGTH, wrap = 2 ** 32) {
+ * black after `pixels` attempts (the segment's length). */
+function scanColour(state, pixels = state.length, wrap = 2 ** 32) {
   const { palette, cursor } = state;
   let colour = [0, 0, 0];
   let attempt = 0;
@@ -51,6 +52,7 @@ function twinkleInit(settings, keepBase) {
   const { rate } = settings;
   const grow = (rate >> 2) + 8;
   const fade = (keepBase - Math.floor(rate / 7)) & 255;
+  const length = settingsLength(settings);
   const sums = new Int32Array(256);
   const keep = new Uint8Array(256);
   for (let value = 0; value < 256; value += 1) {
@@ -59,19 +61,20 @@ function twinkleInit(settings, keepBase) {
   }
   return {
     direction: settings.direction,
+    length,
     reads: 0,
-    stars: new Uint8Array(3 * LENGTH),
-    growing: new Uint8Array(LENGTH),
+    stars: new Uint8Array(3 * length),
+    growing: new Uint8Array(length),
     sums,
     keep,
-    panel: new Uint8Array(3 * LENGTH),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 /** Growing: s = c + (c * k >> 8) + 1; a channel at 255 ends the growth, and a
  * channel that did not change doubles the sums. Else c * keep >> 8. */
 function twinklePass({ stars, growing, sums, keep }) {
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  for (let pixel = 0, length = growing.length; pixel < length; pixel += 1) {
     const at = 3 * pixel;
     const red = stars[at];
     const green = stars[at + 1];
@@ -170,12 +173,12 @@ const seedStar = (state, target, colour) => {
 
 function starryStep(state, settings) {
   twinklePass(state);
-  const { stars } = state;
-  for (let chance = 0; chance < Math.floor(LENGTH / 50) + 1; chance += 1) {
+  const { stars, length } = state;
+  for (let chance = 0; chance < Math.floor(length / 50) + 1; chance += 1) {
     if ((read(state) & 255) > settings.intensity) continue;
     read(state); // unused
     for (let attempt = 1; ; attempt += 1) {
-      const target = ((read(state) & 0xffff) * LENGTH) >>> 16;
+      const target = ((read(state) & 0xffff) * length) >>> 16;
       if (occupied(stars, target)) {
         if (attempt < ((read(state) >>> 7) & 1) + 1) continue;
         break;
@@ -206,26 +209,28 @@ function wheel(byte) {
 }
 
 function chaseInit(settings) {
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
+    length,
     divisor: 256 - settings.rate,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function chaseStep(state, settings, clockMs, render) {
-  const { strip, divisor } = state;
-  fadeTowards(strip, settings.intensity);
+  const { strip, divisor, length } = state;
+  fadeTowards(strip, settings.intensity, 0, length);
   const quotient = Math.floor(clockMs / divisor);
   if (!render || quotient !== Math.floor((clockMs - 40) / divisor)) {
     // The first render always steps.
     const steps =
       divisor <= 40 ? render : quotient - Math.floor((clockMs - 40 * render) / divisor);
     const colour = wheel(quotient & 255);
-    for (let start = 0; start < LENGTH; start += LENGTH >> 2) {
-      const position = (start + steps) % (LENGTH + 1);
-      if (position < LENGTH) {
+    for (let start = 0; start < length; start += length >> 2) {
+      const position = (start + steps) % (length + 1);
+      if (position < length) {
         strip[3 * position] = colour[0];
         strip[3 * position + 1] = colour[1];
         strip[3 * position + 2] = colour[2];
@@ -237,8 +242,7 @@ function chaseStep(state, settings, clockMs, render) {
 
 // ── Slot 22: Mirrored comets ──────────────────────────────────────────
 // lamp_effects_sparks.py tells how it runs, and behind the clock
-// (`handover`): no mirror, all 100 pixels, 17 comets.
-const PRISM_PIXELS = 50;
+// (`handover`): no mirror, the whole segment (17 comets on 100).
 // The lamp's 1/99.
 const PRISM_SCALE = (() => {
   const view = new DataView(new ArrayBuffer(8));
@@ -256,9 +260,11 @@ function prismInit(settings) {
   const handover = !!settings.handover;
   const mapped = handover ? 0 : DIRECTION_TABLE[REFERENCE_PROFILE][settings.direction];
   const flags = handover ? HANDOVER_FLAGS : readBackFlags(22, mapped) | 0x0a;
-  const pixels = handover ? LENGTH : PRISM_PIXELS;
+  const length = settingsLength(settings);
+  const pixels = handover ? length : length >> 1;
   const { rate } = settings;
   return {
+    length,
     reads: 0,
     timer: 0,
     cursor: 0,
@@ -266,7 +272,7 @@ function prismInit(settings) {
     palette: effectColours(settings).palette,
     // A comet's two pixels reach past the strip.
     targets: Array.from({ length: pixels + 2 }, (_, pixel) =>
-      flaggedTargets(pixel, LENGTH, mapped, flags).map((index) => 3 * index),
+      flaggedTargets(pixel, length, mapped, flags).map((index) => 3 * index),
     ),
     timing: rate ? prismTiming((rate >> 2) + 1, pixels) : null,
     comets: Array.from({ length: Math.floor(pixels / 6) + 1 }, () => ({
@@ -275,7 +281,7 @@ function prismInit(settings) {
       speed: 0,
       colour: null,
     })),
-    panel: new Uint8Array(3 * LENGTH),
+    panel: new Uint8Array(3 * length),
   };
 }
 
@@ -317,10 +323,10 @@ function prismStep(state, settings, clockMs, render) {
 }
 
 // ── Slot 24: Palette sparks ───────────────────────────────────────────
-const EMBER_SPARKS = LENGTH >> 1;
-const EMBER_TRIES = 14; // trunc((N + 8) / 8 + 0.5)
-
+// N >> 1 sparks; a render spawns up to trunc((N + 8) / 8 + 0.5) of them.
 function emberInit(settings) {
+  const length = settingsLength(settings);
+  const sparks = length >> 1;
   const { table } = effectColours(settings);
   const colours = new Uint8Array(3 * 256);
   for (let level = 0; level < 256; level += 1) {
@@ -333,21 +339,24 @@ function emberInit(settings) {
   }
   return {
     direction: settings.direction,
+    length,
+    sparks,
+    tries: Math.trunc((length + 8) / 8 + 0.5),
     reads: 0,
     colours,
     active: 0,
-    status: new Uint8Array(EMBER_SPARKS),
-    levels: new Int32Array(EMBER_SPARKS),
-    positions: new Int32Array(EMBER_SPARKS),
-    ups: new Int32Array(EMBER_SPARKS),
-    downs: new Int32Array(EMBER_SPARKS),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    status: new Uint8Array(sparks),
+    levels: new Int32Array(sparks),
+    positions: new Int32Array(sparks),
+    ups: new Int32Array(sparks),
+    downs: new Int32Array(sparks),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
-function emberDraw({ status, levels, positions, colours, strip }) {
-  for (let spark = 0; spark < EMBER_SPARKS; spark += 1) {
+function emberDraw({ sparks, status, levels, positions, colours, strip }) {
+  for (let spark = 0; spark < sparks; spark += 1) {
     if (!status[spark]) continue;
     const at = 3 * positions[spark];
     const level = 3 * levels[spark];
@@ -358,24 +367,24 @@ function emberDraw({ status, levels, positions, colours, strip }) {
 }
 
 function emberStep(state) {
-  const { status, levels, ups, downs, strip } = state;
+  const { status, levels, ups, downs, strip, length, sparks, tries } = state;
   read(state); // discarded before the spawn calculation
   let attempts = 0;
-  while (state.active < EMBER_SPARKS) {
+  while (state.active < sparks) {
     const spark = status.indexOf(0);
     levels[spark] = (read(state) >>> 4) & 15;
-    state.positions[spark] = ((read(state) & 255) * LENGTH) >> 8;
+    state.positions[spark] = ((read(state) & 255) * length) >> 8;
     downs[spark] = (((read(state) & 255) * 15) >> 8) + 1;
     ups[spark] = (((read(state) & 255) * 15) >> 8) + 1;
     status[spark] = 1;
     state.active += 1;
     attempts += 1;
-    if (attempts > (((read(state) & 255) * EMBER_TRIES) >> 8)) break;
+    if (attempts > (((read(state) & 255) * tries) >> 8)) break;
   }
   emberDraw(state);
-  stripBlur(strip, 64);
+  stripBlur(strip, 64, length);
   emberDraw(state);
-  for (let spark = 0; spark < EMBER_SPARKS; spark += 1) {
+  for (let spark = 0; spark < sparks; spark += 1) {
     if (status[spark] === 1) {
       levels[spark] += ups[spark];
       if (levels[spark] >= 255) {
@@ -401,40 +410,42 @@ const TRAIL_COLOURS = [[0x65, 0xfa, 0xff], [0x7e, 0xff, 0x32]]; // slot 23's, by
 
 function trailInit(settings) {
   const { intensity, rate } = settings;
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
+    length,
     reads: 0,
     cursor: 0,
     palette: effectColours(settings).palette,
-    amount: (intensity + Math.trunc(((1 - Math.floor(LENGTH / 40)) * (intensity ^ 255)) / 2)) & 255,
-    period: Math.floor(((rate ^ 255) * (LENGTH + 40) * 4) / 200) + 1,
+    amount: (intensity + Math.trunc(((1 - Math.floor(length / 40)) * (intensity ^ 255)) / 2)) & 255,
+    period: Math.floor(((rate ^ 255) * (length + 40) * 4) / 200) + 1,
     bucket: 0,
     points: null,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function trailPass(state, clockMs, seed) {
-  const { strip } = state;
-  fadeTowards(strip, state.amount);
+  const { strip, length } = state;
+  fadeTowards(strip, state.amount, 0, length);
   const bucket = Math.floor(clockMs / state.period) >>> 0;
   if (bucket !== state.bucket) {
     state.bucket = bucket;
     if (!state.points)
       state.points = Array.from({ length: TRAIL_POINTS }, () => {
-        const position = ((read(state) & 0xffff) * LENGTH) >>> 16;
+        const position = ((read(state) & 0xffff) * length) >>> 16;
         return { position, colour: seed(state) };
       });
     for (const point of state.points) {
       const { position } = point;
-      if (position < LENGTH) {
+      if (position < length) {
         const { colour } = point;
         strip[3 * position] = colour[0];
         strip[3 * position + 1] = colour[1];
         strip[3 * position + 2] = colour[2];
         point.position = position + 1;
-      } else if ((((read(state) & 0xffff) * (LENGTH + 4)) & 0x7fff0000) === 0) {
+      } else if ((((read(state) & 0xffff) * (length + 4)) & 0x7fff0000) === 0) {
         point.position = 0;
         point.colour = seed(state);
       }
@@ -443,7 +454,7 @@ function trailPass(state, clockMs, seed) {
   return placeStrip(strip, state.direction, state.panel);
 }
 
-const paletteSeed = (state) => scanColour(state, LENGTH, 0x10000);
+const paletteSeed = (state) => scanColour(state, state.length, 0x10000);
 const aquaLimeSeed = (state) => TRAIL_COLOURS[(read(state) >>> 7) & 1];
 const trailStep = (state, settings, clockMs) => trailPass(state, clockMs, paletteSeed);
 const aquaLimeStep = (state, settings, clockMs) => trailPass(state, clockMs, aquaLimeSeed);
@@ -451,20 +462,22 @@ const aquaLimeStep = (state, settings, clockMs) => trailPass(state, clockMs, aqu
 // ── Slot 16: Drop and bounce ──────────────────────────────────────────
 function dropInit(settings) {
   const { rate } = settings;
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
+    length,
     reads: 0,
     cursor: 0,
     palette: effectColours(settings).palette,
     gain: Math.floor(rate / 51) + 1,
-    pull: f32(f32(LENGTH) * f32(rate / -100000 + -0.001)),
+    pull: f32(f32(length) * f32(rate / -100000 + -0.001)),
     phase: 0, // 0 new, 1 waiting, 2 falling, 5 bounced
     position: 0,
     speed: 0,
     counter: 0,
     colour: [0, 0, 0],
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
@@ -476,11 +489,11 @@ function dropDraw({ strip, position, colour }) {
 }
 
 function dropStep(state) {
-  fadeTowards(state.strip, 251);
+  fadeTowards(state.strip, 251, 0, state.length);
   let { phase } = state;
   let moving = phase >= 2;
   if (phase === 0) {
-    state.position = f32(LENGTH - 1);
+    state.position = f32(state.length - 1);
     state.speed = 0;
     state.counter = 12;
     state.colour = scanColour(state);
@@ -543,11 +556,11 @@ function wispsInit(settings) {
     reads: 0,
     blends,
     wisps: new Array(WISPS).fill(null),
-    sums: new Int32Array(LENGTH),
-    counts: new Int32Array(LENGTH),
+    sums: new Int32Array(width * height),
+    counts: new Int32Array(width * height),
     waves: new Uint8Array(width),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * width * height),
+    panel: new Uint8Array(3 * width * height),
   };
 }
 
@@ -612,7 +625,7 @@ function wispsStep(state) {
     wisp.age += 1;
     if (f32(wisp.position + wisp.half) < 0 || wisp.age >= 256) wisps[index] = null;
   }
-  for (let cell = 0; cell < LENGTH; cell += 1) {
+  for (let cell = 0, cells = counts.length; cell < cells; cell += 1) {
     const at = 3 * (counts[cell] ? Math.floor(sums[cell] / counts[cell]) : 0);
     strip[3 * cell] = blends[at];
     strip[3 * cell + 1] = blends[at + 1];
@@ -622,36 +635,38 @@ function wispsStep(state) {
 }
 
 // ── Slot 60: Flicker sweep ────────────────────────────────────────────
-const CRUMBLE_SPAN = 5 * LENGTH; // the spark run sweeps a virtual length of 5N
-const CRUMBLE_RUN = Math.floor(LENGTH / 10) + 1;
-
+// A run of N / 10 + 1 sparks sweeps a virtual length of 5N.
 function crumbleInit(settings) {
   const colours = effectColours(settings);
   const { table } = colours;
   const span = paletteSpan(colours.palette.length);
-  const bases = new Uint8Array(3 * LENGTH);
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
-    const index = 3 * (((Math.floor((pixel * 255) / (LENGTH - 1)) & 255) * span) >> 8);
+  const length = settingsLength(settings);
+  const bases = new Uint8Array(3 * length);
+  for (let pixel = 0; pixel < length; pixel += 1) {
+    const index = 3 * (((Math.floor((pixel * 255) / (length - 1)) & 255) * span) >> 8);
     bases[3 * pixel] = table[index];
     bases[3 * pixel + 1] = table[index + 1];
     bases[3 * pixel + 2] = table[index + 2];
   }
   return {
     direction: settings.direction,
+    length,
+    span: 5 * length,
+    run: Math.floor(length / 10) + 1,
     reads: 0,
     bases,
-    heat: new Uint8Array(LENGTH),
+    heat: new Uint8Array(length),
     sweep: 0,
     step: Math.floor((settings.rate * 180) / 255) + 50,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
 function crumbleStep(state, settings) {
-  const { heat, bases, strip } = state;
+  const { heat, bases, strip, length, span, run } = state;
   const limit = 255 - settings.intensity;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  for (let pixel = 0; pixel < length; pixel += 1) {
     const value = heat[pixel];
     if (value === 0 || (read(state) & 255) > limit) continue;
     let stored = (value + 3 - (((read(state) & 255) * 24) >> 8)) & 255;
@@ -663,10 +678,10 @@ function crumbleStep(state, settings) {
     strip[at + 1] = (bases[at + 1] * gain) >> 8;
     strip[at + 2] = (bases[at + 2] * gain) >> 8;
   }
-  const position = Math.floor(((CRUMBLE_SPAN - 1) * ((state.sweep >>> 6) & 255)) / 255);
-  for (let offset = position; offset < position + CRUMBLE_RUN; offset += 1) {
-    const pixel = offset >= CRUMBLE_SPAN ? offset - CRUMBLE_SPAN : offset;
-    if (pixel < LENGTH) {
+  const position = Math.floor(((span - 1) * ((state.sweep >>> 6) & 255)) / 255);
+  for (let offset = position; offset < position + run; offset += 1) {
+    const pixel = offset >= span ? offset - span : offset;
+    if (pixel < length) {
       strip[3 * pixel] = bases[3 * pixel];
       strip[3 * pixel + 1] = bases[3 * pixel + 1];
       strip[3 * pixel + 2] = bases[3 * pixel + 2];
@@ -678,19 +693,21 @@ function crumbleStep(state, settings) {
 }
 
 // ── Slot 61: Particle glows ───────────────────────────────────────────
-const DRIFT_WIDTH = (LENGTH >> 2) - 2;
-
+// A glow reaches N / 4 - 2 pixels either side.
 function driftInit(settings) {
   const colours = effectColours(settings);
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
+    length,
+    width: (length >> 2) - 2,
     reads: 0,
     words: [colours.primary, colours.secondary],
     speed: f32(Math.floor((settings.rate * 205) / 255) + 50),
     particles: null,
-    mixed: new Int32Array(3 * LENGTH),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    mixed: new Int32Array(3 * length),
+    strip: new Uint8Array(3 * length),
+    panel: new Uint8Array(3 * length),
   };
 }
 
@@ -700,7 +717,7 @@ function driftSpawn(state, particle) {
   particle.life = (((read(state) & 0xffff) * 1000) >>> 16) + 500;
   particle.scale = f32(f32((((read(state) & 0xffff) * 41) >>> 16) + 60) / 100);
   particle.age = 0;
-  particle.position = f32(f32(LENGTH) * f32(f32(((read(state) & 0xffff) * 101) >>> 16) / 100));
+  particle.position = f32(f32(state.length) * f32(f32(((read(state) & 0xffff) * 101) >>> 16) / 100));
   particle.back = !((read(state) >>> 15) & 1);
   particle.speed = f32(f32(f32(f32(((read(state) >>> 12) & 15) + 15) / 100) * 4) / 255);
   return particle;
@@ -712,8 +729,7 @@ function driftStep(state, settings) {
     state.particles = Array.from({ length: Math.trunc((intensity * 8) / 255 + 2) }, () =>
       driftSpawn(state, {}),
     );
-  const { particles, mixed, strip } = state;
-  const width = DRIFT_WIDTH;
+  const { particles, mixed, strip, width, length } = state;
   for (const particle of particles) {
     const move = f32(state.speed * particle.speed);
     const position = f32(particle.position + (particle.back ? -move : move));
@@ -722,13 +738,13 @@ function driftStep(state, settings) {
     if (particle.age > particle.life) driftSpawn(state, particle);
     else if (particle.back) {
       if (!(f32(position + width) >= 0)) particle.back = false;
-    } else if (!(f32(position - width) <= LENGTH)) particle.back = true;
+    } else if (!(f32(position - width) <= length)) particle.back = true;
   }
   // By particle, not by pixel: the adds are >= 0, so the cap can wait.
   mixed.fill(0);
   for (const { position, life, age, scale, colour } of particles) {
     const first = Math.max(0, Math.ceil(f32(position - width)));
-    const last = Math.min(LENGTH - 1, Math.floor(f32(position + width)));
+    const last = Math.min(length - 1, Math.floor(f32(position + width)));
     if (first > last || !age) continue;
     const envelope = f32((f32(age / life) >= 0.5 ? life - age : age) / (life * 0.5));
     const [red, green, blue] = colour;
@@ -741,20 +757,20 @@ function driftStep(state, settings) {
       mixed[3 * cell + 2] += Math.trunc(f32(blue * share));
     }
   }
-  for (let at = 0; at < 3 * LENGTH; at += 1) strip[at] = Math.min(255, mixed[at]);
-  stripBlur(strip, intensity);
+  for (let at = 0; at < 3 * length; at += 1) strip[at] = Math.min(255, mixed[at]);
+  stripBlur(strip, intensity, length);
   return placeStrip(strip, state.direction, state.panel);
 }
 
 // ── Slot 63: Centre bursts ────────────────────────────────────────────
-// lamp_effects_sparks.py tells how it runs.
+// lamp_effects_sparks.py tells how it runs: on 100 pixels, the first N shown.
 function burstInit(settings) {
   return {
     reads: 0,
     period: Math.trunc((settings.rate * -3.0) / 255.0 + 4.0),
     colour: effectColours(settings).primary,
     work: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    panel: new Uint8Array(3 * settingsLength(settings)),
   };
 }
 
@@ -784,7 +800,7 @@ function burstStep(state, settings, clockMs, render) {
     work[at + 1] = tail[1];
     work[at + 2] = tail[2];
   }
-  for (let at = 0; at < 3 * LENGTH; at += 1) panel[at] = (work[at] * 255) >> 8; // brightness 255
+  for (let at = 0; at < panel.length; at += 1) panel[at] = (work[at] * 255) >> 8; // brightness 255
   return panel;
 }
 
@@ -793,8 +809,9 @@ function burstStep(state, settings, clockMs, render) {
 // the render.
 function scatterInit(settings) {
   const { words } = effectColours(settings);
-  const strip = new Uint8Array(3 * LENGTH);
-  for (let draw = 0; draw < LENGTH; draw += 1) strip.set(words[sourceWord(draw) & 3], 3 * draw);
+  const length = settingsLength(settings);
+  const strip = new Uint8Array(3 * length);
+  for (let draw = 0; draw < length; draw += 1) strip.set(words[sourceWord(draw) & 3], 3 * draw);
   return { panel: placeStrip(strip, settings.direction) };
 }
 
@@ -816,11 +833,11 @@ function twinkleInit79(settings) {
 
 function twinkleStep(state) {
   twinklePass(state);
-  const { stars } = state;
-  for (let chance = 0; chance < Math.floor(LENGTH / 25) + 1; chance += 1) {
+  const { stars, length } = state;
+  for (let chance = 0; chance < Math.floor(length / 25) + 1; chance += 1) {
     read(state); // unused
     for (let attempt = 0; ; ) {
-      const target = ((read(state) & 0xffff) * LENGTH) >>> 16;
+      const target = ((read(state) & 0xffff) * length) >>> 16;
       if (!occupied(stars, target)) {
         seedStar(state, target, state.seeds[TWINKLE_ENTRIES[read(state) & 15]]);
         break;
@@ -840,7 +857,7 @@ const GAMMA = Uint8Array.from({ length: 256 }, (_, index) =>
 
 /** Flat, nearest first: distances squared, their f32 roots, where each one's
  * offsets start and the offsets (dy, dx): a radius stays below 7 on the
- * 20-high box. */
+ * 20-high box (a lower box's is smaller). */
 const DISC = (() => {
   const cells = new Map();
   for (let dy = -7; dy <= 7; dy += 1)
@@ -872,9 +889,9 @@ function paletteInit(settings) {
     span: paletteSpan(colours.palette.length),
     reads: 0,
     blobs: null,
-    mixed: new Int32Array(3 * LENGTH),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: new Uint8Array(3 * LENGTH),
+    mixed: new Int32Array(3 * width * height),
+    strip: new Uint8Array(3 * width * height),
+    panel: new Uint8Array(3 * width * height),
   };
 }
 
@@ -940,7 +957,7 @@ function paletteStep(state, settings, clockMs) {
       }
     }
   }
-  for (let at = 0; at < 3 * LENGTH; at += 1) strip[at] = Math.min(255, mixed[at]);
+  for (let at = 0; at < mixed.length; at += 1) strip[at] = Math.min(255, mixed[at]);
   return placeStrip(strip, state.direction, state.panel);
 }
 

@@ -118,7 +118,7 @@ const ORIENTATION_GLYPHS = { right: "\u2192", down: "\u2193", left: "\u2190", up
 /**
  * What an effect's direction row shows: null when hidden or the effect has
  * none, else the orientation row's button style and one arrow per direction it
- * offers. `current` is a direction label (const.py NATIVE_EFFECT_DIRECTIONS).
+ * offers. `current` is a direction label (effect_catalog.py NATIVE_EFFECT_DIRECTIONS).
  */
 export function effectDirectionControlModel(config, directions, current, unavailable = false) {
   const offered = ORIENTATION_ORDER.filter((value) =>

@@ -836,6 +836,12 @@ export class ModeControlsController {
     this.notify();
   }
 
+  /** The orientation the previews and the Lamp mounted control show: the
+   * one being set (the lamp's until it confirms), else the lamp's. */
+  shownOrientation() {
+    return this.pendingOrientation || this.adapter.orientation?.();
+  }
+
   // The orientation being set, which the card's previews follow at once:
   // their layout too (a lamp standing on its end draws them upright), so the
   // card renders again (adapter.orientationShown) whenever it changes, never

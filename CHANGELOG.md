@@ -6,6 +6,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Cube Matrix Modules card** (`custom:yeelight-cube-matrix-modules-card`):
+  each chosen Cube Matrix's modules as fitted from its power supply, and the
+  side the power supply is on, set as on the Yeelight app's module page (add a
+  Matrix, Spot or Panel module, remove one, pick Left, Right, Down or Up), saved
+  with `set_matrix_modules` and the matching Device Orientation. The light's new
+  `matrix_module_list` attribute lists every module by name.
+- **Yeelight Cube Matrix** (the original Yeelight Cube: a base and 5×5
+  modules, LAN model `CubeMatrix`): discovered and set up like a Cube Lite
+  (also when found in Home Assistant's Matter integration), its model stored
+  in the entry. Text, drawings, pixel art, gradients and colours work as on
+  the Cube Lite, in the Cube Matrix's own pixel order. Shared to Home
+  Assistant's Matter integration, it shows its **own** 13 effects (speed,
+  direction, colour or a one-colour palette), its clock (styles 1–14, time
+  from the Internet, the UTC offset sent again when daylight saving time
+  changes it) and drawings (changed in place), smoothly, over Matter, and 35
+  more of its built-in effects the integration has too (Fireworks, Sunrise
+  and sunset, Rainbow noise, the fill-ins and wipe-outs...).
+  Everything else is drawn by Home Assistant as the Cube Lite shows it and
+  streamed as the lamp's drawing over Matter, its pixels changed 25 times a
+  second (without Matter: over the LAN, music mode, 5 frames a second), in the colours before the Cube Lite's conversion (the Cube Matrix
+  converts them itself), with direct mode sent again every 2 seconds so a
+  stream never freezes. The lamp's rotation (set in the Yeelight app) is the
+  light's Device Orientation, so a Cube Matrix standing on its base shows
+  pictures and vertical pixel arts upright, and choosing an orientation
+  writes the Cube Matrix's own rotation value. A lamp in its **demo mode** (a 30-second loop only a factory reset
+  ends) is reported in Repairs and streamed to. What it cannot have
+  (microphone effects, Music Flow, power-on behaviour, the Cube Lite's
+  buttons) is not offered, and Cube Lite commands are refused before they are
+  sent. An entry made by an earlier version for a Cube Matrix learns its model
+  at the next start and loses its Cube-Lite-only entities. See
+  docs/CUBE_MATRIX.md.
+- **A lamp paired to Matter again** (after a factory reset) is linked to its
+  new node even while the server still lists the old one, and the old node is
+  removed from Home Assistant's Matter server once the new one answers (same
+  Wi-Fi MAC only). Before, the link could stay on the dead node, and the
+  lamp's Matter features stayed unavailable.
 - **Palette shows every effect in the whole palette:** an effect the lamp
   cannot show in all the palette's colors itself (more colors than it takes,
   or none at all) is drawn by Home Assistant as the lamp would, in the
@@ -25,8 +61,335 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   the same frames. Speed, direction, intensity, Lamp mounted, favourites,
   rotation and Freeze work as for any effect; over TCP the lamp holds its
   last frame until UDP answers again.
+- **Cube Matrix settings** (with Matter): **Power-on behavior** (Always on /
+  Always off: the lamp's Matter `StartUpOnOff`; set to off, the lamp is not
+  switched back on after a power cut) and **Drawing animation** (Static,
+  Scroll, Breathe, Flash, Reveal) with its speed: the lamp animates the
+  text or picture it shows itself.
+- **Three effects from the Cube Matrix**, on both lamps, with a clock style
+  over each: **Northern Lights** (the Cube Matrix's Aurora, in the aurora's
+  own colours where Aurora is green), **Rose Sea** (its Flower Sea: red to
+  hot pink to purple, rows dimming towards the far end) and **Dark palette
+  pulses** (its Triangular palette pulses, on black). The Cube Matrix showed
+  them under the Cube Lite's names though they look like other effects: it
+  now shows these itself and streams the Cube Lite's Aurora, Flower Sea and
+  Triangular palette pulses, so each name looks the same on both lamps. A
+  Cube Lite shows Northern Lights itself and streams the other two (drawn by
+  Home Assistant, over UDP).
+- **Effects of the integration's own**, in no lamp: drawn by Home Assistant
+  and streamed, to a Cube Lite over the LAN (UDP) and to a Cube Matrix over
+  Matter (else the LAN). They are listed with the lamps' effects on the
+  Native Effects card, the effect select and `set_native_effect`, with a
+  clock style over each, and work as any effect: previews, camera, estimated
+  power, speed, direction, intensity, Lamp mounted, favourites, rotation,
+  Freeze. They are never sent to a lamp as an effect, so they can't be on a
+  Cube Lite's physical button. The first is **Knight Rider**: a light running
+  back and forth along the direction's line, leaving a fading trail; red or
+  the colour chosen, the speed setting a sweep's time and the intensity the
+  trail's length (at the most it outlasts a sweep). Under Palette each sweep
+  takes the palette's next colour; under Vivid, Retro Orange, Tropical or
+  Violet & Gold, colours spread along the preset; under Black & White, white.
+  A clock over it takes the clock's colour, palette or preset.
+  The second is **Lava Lamp**: wax heated in a pool at the direction's start
+  swells into blobs that rise, cool near the top and sink back to melt in
+  again, merging and parting on the way. It is a simulation, not a loop:
+  each blob heats, cools and drifts in its own way, nudged at random at
+  every frame, so it never repeats, and each time it starts it is a new run.
+  Orange, or the colour chosen; the speed sets its pace, the intensity how
+  much wax. Under Palette or a preset the blobs take the first colours and
+  the liquid glows in the last; under Black & White, white.
+  The third is **Falling Blocks**: a falling-block puzzle that plays itself.
+  Pieces of four cells fall along the direction; a player turns them and
+  moves them sideways to complete lines as they fall at a steady pace. A full line
+  flashes and goes, the stack above coming down, and when no piece can come
+  in any more the stack is wiped away row by row and a new game starts. Pieces come
+  in shuffled sets of the seven shapes, and each run is a new game. The
+  speed sets how fast pieces fall, the intensity how well the player plays.
+  The player takes its time: a piece's turns and moves are spread over its fall
+  (it reaches its place about halfway down), and it keeps falling at the
+  same pace to the bottom, never dropped faster.
+  Its own colour for each shape, or the colour chosen in shades; under
+  Palette or a preset their colours; under Black & White, shades of white.
+- **Power cycle** sensor for each lamp (diagnostic, a problem binary
+  sensor): **Needed** while the lamp has a Repair that only turning its power
+  off and on fixes (**stopped answering**, **stopped answering over UDP**, a Cube
+  Matrix's **local network connection is stuck**), with the Repair in its
+  `reason` attribute; **Not needed** once the lamp answers again. A lamp on a smart plug
+  can be recovered by an automation that switches the plug off and on.
+
+### Changed
+- **Streams to a Cube Lite are a steady 25 frames a second:** every frame is
+  sent, the same as the last one or not (only the changed ones were before, so
+  a still moment was a pause), and while anything streams (an effect, a clock,
+  scrolling text) the last frame is sent again 25 times a second between new
+  ones. The lamp's hang was tied to its traffic stopping and starting, never to
+  a steady stream.
+- **Cube Matrix modules:** a lamp with other modules than 4 Matrix ones (set in the
+  Yeelight app's module splicing) is drawn for them. A **Spot** module (one bright
+  light) now shows the blend of the picture on either side of it (it was always
+  dark when Home Assistant drew), so a moving effect passes through it. With fewer
+  than 4 Matrix or Panel modules the lamp shows fewer than 20 columns: text is laid
+  out and scrolled within them, the streamed clock fits them (its digits closer),
+  and the lamp preview card hides the missing columns and draws each Spot where it
+  is. New action **`set_matrix_modules`** sets the module list from Home Assistant
+  (over Matter, the app's own command). The light's `matrix_modules` and
+  `matrix_columns` attributes describe the layout.
+- A new Native Effects or Clock card starts on the **Original** gallery, as a
+  grid, 10 items a page (was the live previews, all on one page). Cards
+  already on a dashboard keep their settings.
+- The Native Effects card shows its **Color Modes & Controls** by default;
+  turn **Show Color Modes** off in its editor to hide them.
+- **Log names:** the lamp connection's messages now come from
+  `custom_components.yeelight_cube.lamp_client` and its `lamp_client_*`
+  parts (was `…yeelight_cube.cube_matrix`), and some of the light's from new
+  `light_*` parts. A `logger:` setting for `custom_components.yeelight_cube`
+  covers them all, as before; one naming `…cube_matrix` should name
+  `…lamp_client` instead.
 
 ### Fixed
+- The **`ignore_yeelight_discovery`** action failed every time; it now
+  dismisses the core Yeelight integration's pending discovery of the IP
+  address given.
+- **A Cube Matrix's previews show its modules**: the effect, clock and
+  gradient galleries, the favourites and the Lamp Preview drew every Cube
+  Matrix as a 20 x 5 lamp, whatever its modules. They now show the modules
+  it is set to (Matrix + Spot: 10 columns), each Spot one round light in the
+  colour it lights, lying flat or standing, either way up. The Clock card's
+  styles lay their digits out in those columns, as the lamp shows them (they
+  were laid out for 20 columns and cut).
+- **A Cube Matrix's Spot takes a module's place**: it covers 5 columns of
+  the picture like a block and lights in their colour (their average, as
+  bright as their brightest pixel). It was a light squeezed between two
+  blocks, so Matrix, Matrix, Spot, Matrix showed 15 columns and left the
+  last block's worth of every effect empty; it now runs the whole 20.
+- **A Cube Matrix with fewer than 4 modules** shows its effects within them:
+  effects were drawn 20 columns wide and the columns it does not have cut
+  off, so what moves finished out of sight (Falling Blocks landing past the
+  last block, stacks piling up in hidden columns, meteors and fills running
+  on unseen). Every effect is now drawn on the columns the lamp shows (5 a
+  module), as the lamp draws its own on a shorter strip, in its streams, its
+  preview camera and the cards' previews alike;
+  the clock's background too, its digits mirrored or turned within those
+  columns. The Angle, Radial and full-panel gradients span the columns shown,
+  so their last colour shows, and the Draw card marks the pixels the lamp
+  has no module for.
+- A streamed effect that draws each frame from the ones before (Aurora,
+  Northern Lights, Particle glows, the music effects...) no longer
+  fast-forwards for a moment when its intensity or palette changes: the
+  picture holds while the effect catches up, then goes on.
+- A Cube Lite stuck while it scrolls a text is reported (Repairs, the Power
+  cycle sensor) as one stuck while it streams an effect: the lamp is checked
+  whatever streams to it.
+- A light keeps its settings (effect, colours, mode...) across a Home
+  Assistant restart while its lamp is unreachable: they were lost, as Home
+  Assistant saves an unavailable entity's state without them.
+- A streamed Cube Lite whose UDP session the lamp dropped had every frame
+  refused until the next command, up to 30 seconds without a picture: the
+  next frame now opens a new session at once. After a UDP failure the stream
+  is back on UDP within about a second (was 15 s or more), and a lamp whose
+  check went unanswered is asked again every 5 seconds, not 30.
+- Turning a light off stops its scrolling text (with auto-turn-on, the next
+  step drew the text again and turned the lamp back on).
+- An effect change the lamp refused, back to a streamed effect, streams it
+  again (the lamp was left black).
+- The colour adjustment sliders no longer restart the lamp's own effect,
+  clock or a streamed effect at every step (none of them takes the
+  adjustments); an animation still takes them.
+- An animation's file is drawn without holding up Home Assistant (a second
+  or more on a slow host, pausing every other lamp's stream).
+- A Cube Matrix stream no longer ends for good when its music connection is
+  closed while opening.
+- A Cube Lite that stopped answering while Home Assistant streamed to it (an
+  effect it does not have, a palette, a clock) was not noticed: frames are never
+  answered, so it stayed "on" for minutes. The stream now asks the lamp for an
+  answer every 30 s; when none comes, frames pause, the **stopped answering**
+  Repair and the **Power cycle** sensor follow within about a minute, and the
+  stream goes on by itself once the lamp answers again (after a power cycle).
+- A lamp that accepts a connection and closes it without answering (a Cube
+  Matrix whose local network connection is stuck) could make a command over
+  TCP wait forever: the python-yeelight library read the closed connection
+  again and again. It now fails at once (and the Repair asks for a power
+  cycle). On 2026-11-14 a Cube Matrix in that state never finished its setup
+  when Home Assistant started; setup steps slower than 10 s are now named in
+  the log.
+- A stream never leaves a Cube Lite silent while it should be showing
+  frames: while the effect or clock stream or the text scroll runs, any
+  pause in its frames (a slow or failed drawing, the scroll's pause at each
+  end, which reached 4 s) is filled by sending the last frame again every
+  0.4 s, as the 3 s after a stream's frames already were; after a minute
+  without a new frame it stops and says so in the log. A frame that cannot
+  be drawn no longer ends the stream (it is logged and drawn again), and a
+  stream that stopped on an error starts again. Every effect and clock style
+  that can be streamed is drawn by the tests in every color mode.
+- A Cube Matrix whose Matter command failed once (for example while the
+  network or Home Assistant's Matter server restarted) streamed what was
+  selected over the LAN, at about 5 frames a second, until something else was
+  chosen, even its own effects. Matter is now tried again: as soon as the
+  Matter link is back, else after a minute, then twice as long after each
+  failure in a row (up to 30 minutes).
+- **A Cube Lite that stops answering over UDP is no longer blamed on the
+  network.** When it keeps opening UDP sessions (it answers their opening
+  itself, so UDP passes) but answers no command in them, a new Repair says the
+  lamp stopped handling UDP and needs a power cycle, instead of "something on
+  the network blocks UDP". The diagnostics show the sessions opened meanwhile.
+- **Palette on several lamps:** each lamp draws its own palette, so a Native
+  Effects or Clock card applying the Palette color mode to lamps holding
+  different palettes showed other colours on some of them than on the card.
+  The card now first gives every available lamp the palette it shows.
+- **A lamp stuck at startup no longer keeps its entry from loading:** the
+  light redrew what the lamp showed before it was added, and waited for it.
+  A Cube Matrix accepting connections but answering nothing held the setup
+  past Home Assistant's 60 s, and the entry failed. The redraw now runs in the
+  background, then the saved rotation resumes as before.
+- **Effect directions on the Cube Lite** run the way chosen, and the same way as on a Cube Matrix (filmed side by
+  side, standing, at every Device Orientation): Rainbow, Waterfall and Meteor ran Left and Right the wrong way round;
+  Fire, Particle path, Rotating colour bands, Palette trails, Aqua-lime trails, Scrolling bands, Stacking blocks and
+  Kaleidoscope ran a quarter turn off; Building Blocks ran Up and Down the wrong way round; Heat fire, Dual scan,
+  Violet interference and Aurora ran a quarter turn off and Rising wisps backwards; the Rainbow and White
+  fill-ins filled from the far side. Flicker sweep sweeps as on a Cube Matrix, along the lamp for Left and Right
+  and across it for Up and Down (it ran down the lamp row by row). Moving palette, Sine wave and Hacking run along
+  the lamp's long side only: their value now follows the lamp's rotation, so they keep the way chosen on every mount (a direction
+  across that line runs along it: Left as Up, Right as Down). Moving palette and Sine wave move as bands across
+  the lamp travelling along it, at any intensity (before, depending on the intensity, they could seem to roll
+  across it). Hacking Down (it fell Up whatever was chosen) works. Previews follow and draw what the lamp draws.
+- **Cube Matrix directions**: Building Blocks and Waves ran each way backwards, Flicker sweep and Rising wisps
+  across the one chosen; Spectrum takes a direction (it showed the Up gradient for every one). Its other built-in
+  effects (Fireworks, Sunrise and sunset, the fill-ins and wipe-outs, Dot with fading trail, Sine plotter…) now
+  draw what a Cube Lite draws for the same Device Orientation, as the effects already filmed on both did (some
+  ran a quarter turn off, the fill-ins and wipe-outs across the lamp). Moving palette, Sine wave and Hacking run
+  along the lamp as on a Cube Lite and follow its rotation, so Hacking falls Down on a lamp mounted lying too.
+- **Cube Matrix colours**: Breathing, Sine wave, Centre bursts, Particle glows, Dot with fading trail and Fireworks'
+  flare were amber where a Cube Lite shows them white: the Cube Matrix was sent the Cube Lite's LED white, which it
+  converts again. It is now sent white, which it turns into its own LED white.
+- **Cube Matrix brightness** goes over Matter when a server delivers its commands (as the Yeelight app's slider),
+  over the LAN only without one. The lamp's LAN can stop reading commands (every connection reset) while Matter
+  goes on: the brightness slider then did nothing until the lamp was power-cycled.
+- **Cube Matrix orientation after a power cut**: the lamp keeps a newly written rotation only once it handles another
+  command, and not while its music mode is on, so after a power cut it could come back with the previous one (and
+  Home Assistant followed it as if it had been changed in the Yeelight app). A rotation the lamp reports as it
+  restarts is now written back to the Device Orientation instead, and Home Assistant's own music connection is closed
+  before a rotation is written.
+- **Cube Matrix with a stuck LAN** gets its own repair ("local network connection is stuck": power-cycle it). It
+  was told a firewall blocked its fast connection, because it accepts connections and only then closes them. While
+  that connection fails, the lamp is now asked a command over TCP every minute to tell the two apart.
+- **Cube Matrix clock mounted left or up**: the lamp's own clock never turns its digits, so it read upside down
+  on a lamp mounted left and from the bottom up on a lamp mounted up (a Cube Lite reads upright and from the top
+  down). On those two orientations the clock is now drawn by Home Assistant, turned as a Cube Lite's, and
+  streamed; mounted right or down it stays the lamp's own. The Clock card's preview of a Cube Matrix showed its
+  clock turned on right and down: the light now tells the cards whether a lamp's clock is turned
+  (`mount_profile.clock_turned`).
+- **Cube Matrix effects that showed nothing** (Sine wave, Moving palette,
+  Palette trails…): the lamp was sent an all-black colour list, which on a
+  Cube Matrix blacks out an effect's colours and palette. It is now sent the
+  colour you picked, else the effect's own colours, else the Cube Lite's warm
+  white for effects drawn in colours, else no list so the effect shows its own
+  palette. The Cube Lite's own effects (Palette stripes, Magic,
+  Kaleidoscope…) are streamed instead of starting a white wipe on the lamp.
+  Triangular palette pulses runs on the lamp itself (on its black
+  background). Fire, Flower Sea, Triangular palette pulses, Night-amber
+  waves and Flicker sweep are marked as the Cube Matrix's own versions. See
+  docs/CUBE_MATRIX.md.
+- **Cube Matrix: nothing shown when its stream could not start.** Without
+  its music connection the integration sent frames and direct mode over
+  plain TCP, which the lamp refuses, and kept a connection open in one of
+  its 3 slots, so the music connection could not come back. Frames now wait
+  for the music connection; other commands use short connections, at most
+  50 a minute, with a 30 s pause when the lamp still refuses one. The music
+  connection listens on TCP port 55450, is tried again after 30 s, then 5
+  and 30 minutes, and a **Repair** says to let the lamp connect to Home
+  Assistant (not the Cube Lite's UDP 55444). A write the lamp does not take
+  within 2 s gives the connection up instead of freezing every control.
+  The lamp's error answers (not JSON) and its quota refusal (code 5) are
+  now read.
+- **Cube Matrix commands that must never reach it** are refused, debug
+  services included: `set_default`, `set_adjust` on colour temperature
+  (restarts the lamp), `set_segment_rgb`, `cron_*`, `get_prop` of its stored
+  effects. Without SSDP its known 30 commands apply (no Cube Lite command is
+  sent to it). The button playlist service is refused on a Cube Matrix: it
+  wrote Cube Lite items into the lamp's memory.
+- **Cube Matrix model and address:** a Cube Matrix slow to answer at a start
+  was stored as a Cube Lite for good; now no answer is asked again (a Cube
+  Lite is stored after 3 starts without one). A lamp moved to a new address
+  by DHCP is followed from the address its Matter node reports, as it was
+  from discovery (a usable address only: a Cube Matrix reports 0.0.0.0
+  after a power-on); rediscovery also matches a lamp found through Matter
+  by its MAC.
+- **Cube Matrix effects:**
+  - directions run the way chosen: the app's 13 effects and the other
+    built-in ones take different direction values (filmed: Waterfall ran
+    backwards and Palette trails across the lamp); the lamp turns its own
+    effects for its rotation;
+  - turned off, then on again, the lamp shows its effect again (the same
+    effect was taken for a live change with nothing to change, and the lamp
+    stayed dark);
+  - a late report of the effect Home Assistant had started is no longer
+    taken for the lamp's button (the light's effect went back to the
+    previous one);
+  - after a power cut, even a few seconds long, Home Assistant's content is
+    shown again: the lamp's restart is seen in its Matter reboot count (the
+    effect it starts with was taken for its button, and text or pictures
+    never came back); text and pictures are watched like effects, and a
+    lamp back after an outage is sent everything in full;
+  - Lamp mounted turns the effect or clock the lamp shows at once: the
+    lamp's rotation was written, but the lamp turns an effect only when it
+    starts it, and nothing was sent again;
+  - after a restart of Home Assistant the lamp's mounting is read from the
+    lamp itself: Home Assistant's Matter data still held the rotation from
+    before Home Assistant last wrote it, so the light showed the wrong
+    Device Orientation and Lamp mounted could skip its write;
+  - back after a power cut, the content is redrawn once Matter reaches the
+    lamp again (its restart report), instead of redraw attempts that time
+    out until then; a lamp that did not restart is left as it is (redrawn
+    after 4 minutes when nothing is reported);
+  - Freeze works: the Cube Lite's freeze command, which a Cube Matrix does
+    not have, was refused and nothing froze. An effect or clock the lamp
+    shows itself is replaced by a still picture of the frame held (a frozen
+    clock keeps its time); a streamed one stops being sent. The cards offer
+    Freeze on every effect, and on every clock style over a background;
+  - Refresh sends the effect or clock again: unchanged, it was taken for a
+    live change with nothing to change, and nothing was sent;
+  - an effect in a color mode the lamp lacks (B&W, Vivid, Retro Orange,
+    Tropical, Violet & Gold) or a palette, and every other streamed effect or
+    clock, is streamed over Matter as the lamp's drawing, 25 frames a second:
+    over the LAN the lamp shows about 5, which looked choppy next to its own
+    effects; brightness changes then go over TCP, which leaves the stream
+    alone;
+  - a brightness change (and any other command sent on a short TCP
+    connection) is no longer lost now and then: the connection was closed
+    before the lamp had read it (2 of 6 lost); its answer is now waited for;
+  - speed and direction changes are sent live: the effect goes on and is not
+    saved to the lamp at every step;
+  - Particle glows with a colour no longer has half its glows black, and no
+    longer starts dim (sent twice, 0.15 s apart); effects drawn in colours
+    get the Cube Lite's warm white for the colours not picked;
+  - Sunrise and sunset at speed 0 shows its whole picture, as on a Cube Lite;
+  - music effects are no longer listed on the cards (no microphone) and are
+    refused with a clear message;
+  - clock styles over a background (Rainbow, Waves, Spectrum, 11–14) are
+    sent no colour, as the Yeelight app does, so the background keeps its
+    colours; leaving the clock for something not saved clears it as the
+    lamp's start-up effect, so a power cut no longer brings it back; in a
+    half-hour time zone the clock is streamed (the lamp takes whole hours);
+  - a drawing is sent no colour list; Scrolling bands never gets a
+    speed its renderer cannot take (255).
+- **Cube Matrix, from what the lamp was filmed or measured doing:**
+  - Solid red and Centre bursts run on the lamp itself;
+  - intensity is sent with the app's effects that take it (Starry Sky,
+    Waves, Waterfall, Aurora, Bouncing Ball, Meteor, Building Blocks);
+  - no speed control for the effects whose speed does nothing on a Cube
+    Matrix (24, 33 and the backgrounds 54–59);
+  - an effect or the clock started by the lamp's button or the Yeelight app
+    is shown as the light's;
+  - its firmware shows as `1.12.92` (was `92`), and a Repair asks to update
+    one too old to take frames (before 1.11.57).
+- **The clock's time and date alternate 6 s / 4 s** (was 5 s / 5 s), as the
+  lamps' own clocks do, in the streamed clock and the card previews.
+- **Cube Matrix still on its factory module list:** a Repair asks to set its
+  modules in the Yeelight app, and its factory rotation is no longer taken as
+  its mounting. A module list changed in the app is followed over Matter.
+- Color mode buttons (Native Effects and Clock cards) no longer squeeze onto
+  one line with their names broken letter by letter: each keeps its width
+  and the row wraps, in every button style.
 - **A lamp that stops answering is told apart:** the lamp's network part
   keeps accepting connections when the lamp itself has stopped handling
   commands, which only a power cycle fixes. Home Assistant took it for back

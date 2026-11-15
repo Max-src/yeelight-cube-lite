@@ -292,7 +292,7 @@ module.exports = async (t) => {
     }
     // Speed and intensity show only while what the lamp runs reads them:
     // Starry Sky and the Waves clock both, Rainbow no intensity, a solid
-    // clock style neither (const.py LAMP_INTENSITY_SLOTS, clockStyleTakes).
+    // clock style neither (effect_catalog.py LAMP_INTENSITY_SLOTS, clockStyleTakes).
     const catalogue = [
       { name: "Rainbow", speed: true, intensity: false, directions: [] },
       { name: "Starry Sky", speed: true, intensity: true, directions: [] },

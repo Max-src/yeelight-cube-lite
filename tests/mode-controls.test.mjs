@@ -244,6 +244,7 @@ test("favourites preview frames render at current time, not phase 0", () => {
     "renderMatrixPreview",
     "performance",
     "isVerticalMount",
+    "previewContext",
     `return function(favourite) {${match[1]}}`,
   )(
     (strings, ...values) => ({ strings, values }),
@@ -251,10 +252,12 @@ test("favourites preview frames render at current time, not phase 0", () => {
     () => "",
     { now: () => 12345 },
     () => false,
+    () => null,
   );
   const view = {
     model: {
       config: {},
+      shownOrientation: () => "right",
       adapter: {
         frame: (key, phase, colorMode, color) => {
           phases.push([phase, colorMode, color]);

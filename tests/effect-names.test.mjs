@@ -1,6 +1,6 @@
 // The cards read a former effect or clock style name as today's (card
 // configs, browser-kept favourites), and list the slots once named by number.
-// tests/test_effect_names.py checks these tables equal const.py's.
+// tests/test_effect_names.py checks these tables equal effect_catalog.py's.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {

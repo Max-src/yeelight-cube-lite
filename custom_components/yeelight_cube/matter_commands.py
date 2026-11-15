@@ -87,7 +87,8 @@ class MatterCommands:
         reasons: list[str] = []
         link = self._link
         if link is not None and link.linked and link.client is not None:
-            key = _server_key(link.client)
+            # Per node too: a lamp paired again is a new node to check.
+            key = (*_server_key(link.client), link.node_id)
             if key not in self._checked and time.monotonic() >= self._check_again_at.get(key, 0.0):
                 delivers = await self._delivers(link.client, link.node_id)
                 if delivers is None:  # could not tell: checked again later
@@ -127,11 +128,12 @@ class MatterCommands:
         return True
 
     @staticmethod
-    async def _send(client, node_id: int, cluster_id: int, name: str, payload: dict):
+    async def _send(client, node_id: int, cluster_id: int, name: str, payload: dict,
+                    endpoint_id: int = VENDOR_ENDPOINT):
         return await client.send_command(
             "device_command",
             node_id=node_id,
-            endpoint_id=VENDOR_ENDPOINT,
+            endpoint_id=endpoint_id,
             cluster_id=cluster_id,
             command_name=name,
             payload=payload,
@@ -145,12 +147,16 @@ class MatterCommands:
             return False
         return True
 
-    async def async_command(self, cluster_id: int, name: str, payload: dict | None = None):
-        """Send a Yeelight command (field names as in the cluster definition);
-        returns its response, if any. MatterCommandsUnavailable: no server."""
+    async def async_command(self, cluster_id: int, name: str, payload: dict | None = None,
+                            endpoint_id: int = VENDOR_ENDPOINT):
+        """Send a Yeelight command (field names as in the cluster definition;
+        a standard cluster's on its own endpoint); returns its response, if
+        any. MatterCommandsUnavailable: no server."""
         backend, client, node_id = await self._route()
         self.backend = backend
-        return await self._send(client, node_id, cluster_id, name, payload or {})
+        if endpoint_id == VENDOR_ENDPOINT:
+            return await self._send(client, node_id, cluster_id, name, payload or {})
+        return await self._send(client, node_id, cluster_id, name, payload or {}, endpoint_id)
 
     async def async_write(self, path: str, value) -> Any:
         """Write a Yeelight attribute ("endpoint/cluster/attribute", as

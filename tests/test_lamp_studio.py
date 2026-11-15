@@ -5,7 +5,9 @@ streamed to the lamp (light_studio.py), a clock over such an effect too; an
 animation's GIF recolored; the microphone's effects left to the lamp."""
 
 import asyncio
+import sys
 import json
+import random
 from datetime import datetime
 import runpy
 import shutil
@@ -13,13 +15,17 @@ import subprocess
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 from tests.test_activation_timing import _table as activation_timing
 from tests.test_native_features import (
     CONSTANTS, LAMP_RENDERERS, NATIVE_PREVIEW, ROOT, _load_standalone_functions,
     import_pure_module,
 )
+from fakes import FakeHass, instant_sleeps, light_state, make_light, module, run
+
+# The stream draws its frames inside lamp_core.full_replay (the real one).
+LAMP_CORE_FULL = sys.modules[LAMP_RENDERERS["replays_in_full"].__module__].drawn_in_full
 
 STUDIO = runpy.run_path(ROOT / "lamp_studio.py")
 ANIMATION_MODULE = runpy.run_path(ROOT / "lamp_animations.py")
@@ -51,11 +57,15 @@ def nearest_entry(pixel, palette):
 def lit_colours(effect, palette, seconds=17.0, step=0.12):
     """The palette entries an effect shows within ``seconds``."""
     seen = set()
+    entries = {}  # each colour once: frames repeat them
     for render in range(int(seconds / step)):
         for pixel in studio_frame(effect, render * step, "Right", 128, None, None, palette):
-            entry = nearest_entry(pixel, palette)
+            if (entry := entries.get(pixel, -1)) == -1:
+                entry = entries[pixel] = nearest_entry(pixel, palette)
             if entry is not None:
                 seen.add(entry)
+        if len(seen) == len(palette):
+            break  # every entry seen: nothing more to find
     return seen
 
 
@@ -79,7 +89,10 @@ class StudioRuleTests(unittest.TestCase):
         self.assertIn("Hacking", offered)  # takes none on the lamp: streamed
         self.assertIn("Snowfall", offered)  # its GIF recolored
         streamed = {name for name in EFFECTS if STUDIO["effect_supports_studio"](name)}
-        self.assertEqual(streamed, set(DRAWN) - MUSIC)
+        # The integration's own effects take the palette in their renderer.
+        own = set(CONSTANTS["STREAMED_EFFECTS"])
+        self.assertEqual(streamed, set(DRAWN) - MUSIC - own)
+        self.assertTrue(own <= offered)
         self.assertEqual(set(LOOKS), streamed | ANIMATIONS)
         self.assertEqual(len(MUSIC), 12)
         # The other modes offer what the lamp takes, as before.
@@ -318,9 +331,36 @@ class AnimationTests(unittest.TestCase):
                 ANIMATION_MODULE["lamp_gif"](key, "left", layout, 200, None, many)
 
     def test_the_lamp_gets_its_gif_again_when_the_palette_changes(self):
-        native = (ROOT / "light_native.py").read_text(encoding="utf-8")
-        self.assertIn('and stored.get("palette") == look["palette"]', native)
-        self.assertIn('"palette": palette,', native)
+        class Channel:
+            """The lamp's Matter commands, acknowledging every GIF packet."""
+
+            def __init__(self):
+                self.ends = 0  # uploads finished (their end marker)
+
+            async def async_available(self):
+                return True
+
+            async def async_command(self, cluster, name, payload):
+                self.ends += payload["data"] == "BA=="
+                return {"status": 6}
+
+        channel = Channel()
+        light = make_light(matter_commands=channel, _native_effect="Snowfall",
+                           _native_effect_color_mode="palette", _text_colors=[RED, GREEN])
+        run(light._store_animation("snowfall"))
+        self.assertEqual(1, channel.ends)
+        self.assertEqual([list(RED), list(GREEN)], light._stored_gif["palette"])
+        run(light._store_animation("snowfall"))  # the same palette: there already
+        self.assertEqual(1, channel.ends)
+        light._text_colors = [BLUE, GREEN]
+        run(light._store_animation("snowfall"))
+        self.assertEqual(2, channel.ends)
+        self.assertEqual([list(BLUE), list(GREEN)], light._stored_gif["palette"])
+        # Out of the palette color mode: its own colors again.
+        light._native_effect_color_mode = "normal"
+        run(light._store_animation("snowfall"))
+        self.assertEqual(3, channel.ends)
+        self.assertIsNone(light._stored_gif["palette"])
         # Played by the lamp, not streamed: smooth, in the chosen layout.
         self.assertFalse(STUDIO["studio_runs"]("Snowfall", "palette", PALETTE))
 
@@ -424,20 +464,67 @@ class PaletteAcceptedTests(unittest.TestCase):
     """The palette color mode is the one mode wherever one is read."""
 
     def test_the_action_offers_what_palette_can_color(self):
-        services = (ROOT / "light_services_native.py").read_text(encoding="utf-8")
-        self.assertIn('vol.Optional("color_mode"): vol.In(list(NATIVE_COLOR_MODES))', services)
-        self.assertIn("not effect_offers_color_mode(name, color_mode)", services)
-        restore = (ROOT / "light_restore.py").read_text(encoding="utf-8")
-        self.assertIn('"_native_effect_color_mode", _member_of(NATIVE_COLOR_MODES)', restore)
-        for name in ("services.yaml", "light_native.py", "light_rotation.py", "light_restore.py"):
-            # No "studio" mode value left (light_studio's names are the stream's).
-            self.assertNotIn('"studio"', (ROOT / name).read_text(encoding="utf-8"), name)
-            self.assertNotIn("value: studio", (ROOT / name).read_text(encoding="utf-8"), name)
+        modes = CONSTANTS["NATIVE_COLOR_MODES"]
+        self.assertIn("palette", modes)
+        self.assertNotIn("studio", modes)
+        # The action takes the color modes (voluptuous here records what
+        # each validator was built with), and refuses one the effect lacks.
+        hass = FakeHass({CONSTANTS["DOMAIN"]: {}})
+        schemas = {}
+
+        def register(domain, name, handler, schema=None, **kwargs):
+            hass.registered[(domain, name)] = handler
+            schemas[name] = schema
+
+        hass.services.async_register = register
+        module("light_services_native").async_register_native_services(hass)
+        for name in ("set_native_effect", "set_clock_style"):
+            fields = schemas[name]._stub_args[0]
+            chosen, = [value for key, value in fields.items()
+                       if type(key).__name__ == "Optional" and key._stub_args == ("color_mode",)]
+            self.assertEqual((list(modes),), chosen._stub_args, name)
+        handler = hass.registered[(CONSTANTS["DOMAIN"], "set_native_effect")]
+        light = make_light(hass=hass, entity_id="light.cube", _is_on=True,
+                           request_native_effect=Mock(return_value=()), async_send_native_effect=Mock())
+        registry = module("light")._ENTITY_REGISTRY
+        self.addCleanup(registry.pop, "test-color-mode", None)
+        registry["test-color-mode"] = light
+        call = lambda **data: SimpleNamespace(  # noqa: E731
+            data={"entity_id": "light.cube", "activate": False, **data}, hass=hass,
+            context=SimpleNamespace(user_id=None))
+        for effect, mode in (("Meteor", "bw"), ("Rainbow", "studio")):
+            with self.assertRaises(module("errors").ServiceValidationError, msg=(effect, mode)):
+                run(handler(call(effect=effect, color_mode=mode)))
+        light.request_native_effect.assert_not_called()
+        for effect, mode in (("Meteor", "palette"), ("Rainbow", "bw")):
+            run(handler(call(effect=effect, color_mode=mode)))
+            self.assertEqual(mode, light.request_native_effect.call_args.kwargs["color_mode"])
+        # A saved color mode comes back after a restart, an older "studio"
+        # does not; a rotation's entry takes it, or the effect's own colors.
+        restored = {name: convert for name, _attr, convert in module("light_restore")._RESTORED_ATTRIBUTES}
+        for name in ("native_effect_color_mode", "clock_color_mode"):
+            self.assertEqual("palette", restored[name]("palette"))
+            self.assertIs(module("light_restore")._INVALID, restored[name]("studio"))  # the default kept
+        normalized = make_light()._normalize_rotation_items([
+            {"name": "Rainbow", "color_mode": "palette"}, {"name": "Rainbow", "color_mode": "studio"},
+        ])
+        self.assertEqual(["palette", "normal"], [item["color_mode"] for item in normalized])
+        # The UI's choices are the same modes.
+        import yaml
+
+        actions = yaml.safe_load((ROOT / "services.yaml").read_text(encoding="utf-8"))
+        for name in ("set_native_effect", "set_clock_style"):
+            options = actions[name]["fields"]["color_mode"]["selector"]["select"]["options"]
+            self.assertEqual(list(modes), [option["value"] if isinstance(option, dict) else option for option in options], name)
 
     def test_a_streamed_clock_starts_like_a_streamed_effect(self):
-        native = (ROOT / "light_native.py").read_text(encoding="utf-8")
-        clock = native[native.index("async def _activate_native_clock"):native.index("def _native_clock_params")]
-        self.assertIn("await self._start_studio_stream()", clock)
+        for streamed in (True, False):
+            light = make_light(_mode=CONSTANTS["MODE_CLOCK"], studio_selected=lambda streamed=streamed: streamed,
+                               _start_studio_stream=AsyncMock())
+            with instant_sleeps():
+                run(light._activate_native_clock())
+            self.assertEqual(streamed, light._start_studio_stream.await_count == 1)
+            self.assertEqual(not streamed, "set_fx_effect" in light._lamp_client.methods(), streamed)
 
     def test_the_lamp_reports_its_drawing_mode_while_streaming(self):
         from tests.test_matter_link import MATTER, FakeLight
@@ -476,12 +563,14 @@ STREAM_NAMES = {
     "studio_selected", "studio_streaming", "_studio_render_at", "_studio_payload",
     "_chosen_effect_intensity", "_start_studio_stream", "_native_effect_streamed",
     "_studio_loop", "stop_studio_stream", "_clock_style", "studio_clock_frame",
+    "_run_studio_loop", "_start_matrix_stream", "_stream_probe",
+    "_streams_changed", "_stream_watchdog", "stream_report",
 }
 CLOCK_FACE = import_pure_module("clock_face")
 # A clock style over Fire.
 FIRE_CLOCK = next(
     style_id for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
-    if CONSTANTS["CLOCK_MIXER_EFFECTS"].get(style["mixer"]) == "Fire"
+    if CONSTANTS["clock_style_effect"](style) == "Fire"
 )
 
 
@@ -497,19 +586,25 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
 
         fns = _load_standalone_functions(
             (ROOT / "light_studio.py").read_text(encoding="utf-8"), STREAM_NAMES, {
-                "asyncio": asyncio, "time": time, "_LOGGER": Mock(),
+                "asyncio": asyncio, "time": time, "random": random, "_LOGGER": Mock(),
                 "MODE_NATIVE_EFFECT": CONSTANTS["MODE_NATIVE_EFFECT"],
                 "DEFAULT_NATIVE_EFFECT_INTENSITY": CONSTANTS["DEFAULT_NATIVE_EFFECT_INTENSITY"],
                 "studio_frame_at": frame_at, "studio_runs": STUDIO["studio_runs"],
                 "encode_rgb_frame": lambda frame: tuple(map(tuple, frame)),
                 "trace_frame": Mock(), "hardware_brightness_for": lambda value: 100,
+                "drawn_in_full": LAMP_CORE_FULL,
                 "_get_device_lock": lambda ip: self.lock,
                 "ACTIVATION_TIMING": activation_timing(),
                 "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05,
+                "STUDIO_PROBE_SECONDS": 0.05, "STUDIO_SILENT_PROBE_SECONDS": 0.05, "STUDIO_RESTART_MOST": 0.2,
+                "STUDIO_SILENT_AFTER": 3,
+                # A Cube Lite: every render is sent (device_profile.max_fps None).
+                "studio_stride": lambda max_fps: 1,
                 # The clock.
                 **{name: CONSTANTS[name] for name in (
                     "MODE_CLOCK", "CLOCK_MIXER_EFFECTS", "NATIVE_CLOCK_STYLES",
-                    "DEFAULT_NATIVE_CLOCK_STYLE", "clock_style_direct",
+                    "DEFAULT_NATIVE_CLOCK_STYLE", "clock_style_direct", "clock_style_effect",
+                    "LITE_STREAMED_EFFECTS", "ALL_NATIVE_EFFECTS",
                 )},
                 "clock_studio_runs": STUDIO["clock_studio_runs"],
                 "studio_clock_background_at": STUDIO["studio_clock_background_at"],
@@ -526,7 +621,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         async def send(command, params):
             self.sent.append((command, params))
 
-        light = SimpleNamespace(
+        light = light_state(
             _ip="test", hass=SimpleNamespace(async_add_executor_job=executor),
             _is_on=True, _mode=CONSTANTS["MODE_NATIVE_EFFECT"], _native_effect="Rainbow",
             _native_effect_color_mode="palette", _text_colors=[[255, 0, 0], [0, 0, 255]],
@@ -536,8 +631,13 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             _display_frozen=False, _in_native_fw_mode=True, _fx_mode_is_direct=False,
             _brightness=255, _last_hardware_brightness=None, _last_fx_mode_time=0.0,
             _studio_task=None, _studio_key=None, _studio_origin=0.0, _studio_last_render=-1,
-            _cube_matrix=SimpleNamespace(transport="udp", is_connected=lambda: True,
-                                         send_command_fast=send),
+            _lamp_client=SimpleNamespace(transport="udp", is_connected=lambda: True,
+                                         send_command_fast=send, owners=set(),
+                                         stream_running=self.stream_running,
+                                         streams_running=False, stream_silent=False,
+                                         probe=self.probe, answers=True,
+                                         # A Cube Lite: its own effects (device_profile).
+                                         profile=SimpleNamespace(streams_effects=False)),
             _brightness_stages=lambda frame: frame, _lamp_frame=lambda frame: frame,
             _notify_camera_preview=Mock(), async_schedule_update_ha_state=Mock(),
             _direct_mode_trusted=lambda: light._fx_mode_is_direct,
@@ -558,11 +658,178 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             setattr(light, name, fns[name].__get__(light))
         self.light = light
 
+    async def probe(self, answering=False):
+        """The fake transport's answered probe (LampClient.probe)."""
+        self.sent.append(("probe", answering))
+        return self.light._lamp_client.answers
+
+    def stream_running(self, owner, running):
+        """The fake transport's lease (LampClient.stream_running)."""
+        matrix = self.light._lamp_client
+        before = bool(matrix.owners)
+        (matrix.owners.add if running else matrix.owners.discard)(owner)
+        matrix.streams_running = bool(matrix.owners)
+        if matrix.streams_running != before:
+            self.light._streams_changed()  # LampClient.on_stream_change
+
     def frames(self):
         return [entry for entry in self.sent if entry[0] == "update_leds"]
 
     async def run_for(self, seconds):
         await asyncio.sleep(seconds)
+
+    async def test_the_transport_keeps_its_pauses_busy_only_while_it_streams(self):
+        # LampClient.stream_running: a slow or failed render never leaves a
+        # Cube Lite silent mid-stream; once stopped, the stream's end is
+        # the lamp's usual one.
+        await self.light._start_studio_stream()
+        await self.run_for(0.03)
+        self.assertEqual({"studio"}, self.light._lamp_client.owners)
+        self.light._is_on = False  # stops at its next frame
+        await self.run_for(0.05)
+        self.assertEqual(set(), self.light._lamp_client.owners)
+        self.assertIsNone(self.light._studio_task)
+
+    async def test_a_lamp_that_stops_answering_mid_stream_is_seen_and_reported(self):
+        # 2026-11-14: frames are never answered, so a Cube Lite stuck while
+        # streamed stayed "on" for minutes. Every STUDIO_PROBE_SECONDS it is
+        # asked for an answer of its own; silent: frames pause, the problem
+        # check runs, logged once; answering again: the stream goes on, in
+        # direct mode again.
+        checks = []
+        self.light.hass = SimpleNamespace(async_add_executor_job=self.light.hass.async_add_executor_job)
+        self.light._async_check_problems = lambda: checks.append(1)
+        logger = self.light._studio_loop.__func__.__globals__["_LOGGER"]
+        logger.reset_mock()
+        await self.light._start_studio_stream()
+        await self.run_for(0.12)
+        self.assertIn(("probe", True), self.sent)
+        self.assertEqual([], checks)
+        self.light._lamp_client.answers = False
+        # One or two lost answers (a weak link): the frames go on
+        # (STUDIO_SILENT_AFTER: a pause is a stream end, when lamps hang),
+        # logged at INFO.
+        await self.run_for(0.06)
+        going = len(self.frames())
+        await self.run_for(0.03)
+        self.assertGreater(len(self.frames()), going)
+        self.assertEqual(0, logger.warning.call_count)
+        self.assertTrue(logger.info.called)
+        # The third in a row: frames pause, logged once.
+        await self.run_for(0.2)
+        stopped = len(self.frames())
+        await self.run_for(0.15)
+        self.assertEqual(stopped, len(self.frames()))  # paused
+        self.assertGreaterEqual(len(checks), 3)
+        self.assertEqual(1, logger.warning.call_count)
+        self.assertIn("effect", logger.warning.call_args[0][-1])  # stream_report
+        self.light._lamp_client.answers = True
+        activations = self.sent.count(("activate_fx_mode", None))
+        await self.run_for(0.2)
+        self.assertGreater(len(self.frames()), stopped)  # going on
+        self.assertGreater(self.sent.count(("activate_fx_mode", None)), activations)
+        self.light.stop_studio_stream()
+
+    async def test_a_scrolling_text_is_checked_too(self):
+        # The check belongs to whatever streams to the lamp (the transport's
+        # leases), not to the effect stream: a Cube Lite stuck while a text
+        # scrolls is reported as well.
+        checks = []
+        self.light._async_check_problems = lambda: checks.append(1)
+        self.stream_running("scroll", True)
+        await self.run_for(0.12)
+        self.assertIn(("probe", True), self.sent)
+        self.light._lamp_client.answers = False
+        await self.run_for(0.25)  # STUDIO_SILENT_AFTER checks
+        self.assertTrue(checks)
+        self.assertTrue(self.light._lamp_client.stream_silent)
+        self.stream_running("scroll", False)
+        await self.run_for(0.12)
+        self.assertFalse(self.light._lamp_client.stream_silent)  # the check ended
+        self.assertIsNone(getattr(self.light, "_stream_watchdog_task", None))
+        probes = self.sent.count(("probe", True))
+        await self.run_for(0.12)
+        self.assertEqual(probes, self.sent.count(("probe", True)))
+
+    async def test_a_cube_matrix_has_its_own_lan_check(self):
+        self.light.is_cube_matrix = True
+        self.stream_running("scroll", True)
+        await self.run_for(0.12)
+        self.assertNotIn(("probe", True), self.sent)
+        self.stream_running("scroll", False)
+
+    async def test_a_frame_that_cannot_be_drawn_does_not_end_the_stream(self):
+        # A renderer's bug: logged once, the frame skipped, drawing tried
+        # again; the stream (and its lease) goes on.
+        draw, failures = self.light._studio_payload, [3]  # the first frame's too
+
+        async def flaky(render):
+            if failures[0]:
+                failures[0] -= 1
+                raise ZeroDivisionError("a renderer's bug")
+            return await draw(render)
+
+        self.light._studio_payload = flaky
+        logger = self.light._studio_loop.__func__.__globals__["_LOGGER"]
+        logger.reset_mock()
+        await self.light._start_studio_stream()
+        await self.run_for(0.4)
+        self.assertEqual(0, failures[0])
+        self.assertTrue(self.frames())  # drawn again once it could be
+        self.assertFalse(self.light._studio_task.done())
+        self.assertEqual({"studio"}, self.light._lamp_client.owners)
+        self.assertEqual(2, logger.exception.call_count)  # the first frame, then once in the loop
+        self.light.stop_studio_stream()
+
+    async def test_a_stream_that_stopped_on_an_error_starts_again(self):
+        # Anything else failing in the loop: it stops, then starts again
+        # while the stream is still wanted.
+        render_at, calls, failures = self.light._studio_render_at, [0], [1]
+
+        def broken(due):
+            calls[0] += 1
+            if calls[0] == 3 and failures[0]:  # in the loop, past the first frame
+                failures[0] -= 1
+                raise RuntimeError("unexpected")
+            return render_at(due)
+
+        self.light._studio_render_at = broken
+        await self.light._start_studio_stream()
+        first = self.light._studio_task
+        await self.run_for(0.3)
+        self.assertEqual(0, failures[0])
+        self.assertIsNotNone(self.light._studio_task)
+        self.assertIsNot(first, self.light._studio_task)
+        self.assertFalse(self.light._studio_task.done())
+        before = len(self.frames())
+        await self.run_for(0.05)
+        self.assertGreater(len(self.frames()), before)  # streaming again
+        self.assertEqual({"studio"}, self.light._lamp_client.owners)
+        self.light.stop_studio_stream()
+
+    async def test_a_stream_that_keeps_crashing_is_restarted_ever_more_slowly(self):
+        # A bug that ends every stream at once (2026-11-14: a missing
+        # constant) must not restart it in a tight loop.
+        starts = []
+        render_at = self.light._studio_render_at
+        calls = [0]
+
+        def broken(due):
+            calls[0] += 1
+            if calls[0] > 1:  # the first frame draws; the loop always fails
+                starts.append(asyncio.get_running_loop().time())
+                raise RuntimeError("always")
+            return render_at(due)
+
+        self.light._studio_render_at = broken
+        await self.light._start_studio_stream()
+        await self.run_for(0.9)
+        self.light._is_on = False
+        gaps = [b - a for a, b in zip(starts, starts[1:])]
+        self.assertGreaterEqual(len(gaps), 3)
+        self.assertLess(gaps[0], gaps[1])  # 0.05, then 0.1, ...
+        self.assertLessEqual(max(gaps), 0.2 + 0.1)  # never past the most
+        await self.run_for(0.3)
 
     async def test_a_start_enters_direct_mode_then_streams(self):
         await self.light._start_studio_stream()
@@ -575,6 +842,26 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         await self.run_for(0.1)
         self.assertGreater(len(self.frames()), 3)
         self.light.stop_studio_stream()
+
+    async def test_a_still_frame_is_sent_at_the_stream_s_steady_rate(self):
+        """A still moment is not a pause: the stream sends every render, the
+        same frame or not (the owner's rule: a steady 25 a second)."""
+        timing = self.light._studio_payload.__func__.__globals__
+        drawn = timing["studio_frame_at"]
+        timing["studio_frame_at"] = lambda *args: [(10, 20, 30)] * 100
+        try:
+            await self.light._start_studio_stream()
+            await self.run_for(0.2)  # ~40 renders
+            self.light.stop_studio_stream()
+        finally:
+            timing["studio_frame_at"] = drawn
+        self.assertGreater(len(self.frames()), 20)  # ~40 renders, all sent
+        # A changing effect too.
+        self.sent.clear()
+        await self.light._start_studio_stream()
+        await self.run_for(0.1)
+        self.light.stop_studio_stream()
+        self.assertGreater(len(self.frames()), 5)
 
     async def test_the_stream_starts_the_effect_from_scratch(self):
         calls = []
@@ -623,6 +910,82 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(0, self.renders)
         self.light.stop_studio_stream()
 
+    def over_matter(self, fail=0):
+        """A Cube Matrix whose Matter drawing takes the stream (light_matrix):
+        its frames recorded as ("matter", render); ``fail`` frames refused."""
+        light, failures = self.light, [fail]
+        light.is_cube_matrix = True  # its own LAN check, no stream check
+        light.matrix_streams_over_matter = lambda: not light._matrix_native_refused
+        light._matrix_native_refused = False
+
+        async def pixels(render):
+            self.renders.append(render)
+            return render
+
+        async def send(render):
+            if failures[0]:
+                failures[0] -= 1
+                raise RuntimeError("refused")
+            self.sent.append(("matter", render))
+
+        light._matrix_stream_pixels, light._send_matrix_stream_frame = pixels, send
+        light._refuse_matrix_native = lambda: setattr(light, "_matrix_native_refused", True)
+
+    def matter_frames(self):
+        return [entry[1] for entry in self.sent if entry[0] == "matter"]
+
+    async def test_over_matter_every_render_is_sent_and_nothing_over_the_lan(self):
+        """2026-11-11 on the Cube Matrix: Retro Orange looked choppy, the
+        LAN stream showing ~5 frames a second (its limit ~6) against ~30 for
+        the lamp's own effects; its drawing over Matter took ~45 a second.
+        Every render goes there, whatever the LAN's stride."""
+        self.over_matter()
+        timing = self.light._studio_loop.__func__.__globals__
+        # At the real pace (a test's 5 ms is below some systems' timer).
+        timing["studio_stride"], timing["STUDIO_FRAME_SECONDS"] = lambda max_fps: 5, 0.04
+        try:
+            await self.light._start_studio_stream()
+            await self.run_for(0.5)
+            self.light.stop_studio_stream()
+        finally:
+            timing["studio_stride"], timing["STUDIO_FRAME_SECONDS"] = lambda max_fps: 1, 0.005
+        frames = self.matter_frames()
+        self.assertEqual(0, frames[0])
+        self.assertGreater(len(frames), 5)
+        self.assertEqual({1}, {after - before for before, after in zip(frames, frames[1:])})
+        self.assertEqual([], [entry for entry in self.sent if entry[0] != "matter"])
+        self.assertFalse(self.light._fx_mode_is_direct)    # the drawing, not direct mode
+        self.assertFalse(self.light._in_native_fw_mode)
+
+    async def test_a_running_stream_over_matter_is_kept(self):
+        self.over_matter()
+        await self.light._start_studio_stream()
+        task = self.light._studio_task
+        await self.light._start_studio_stream()
+        self.assertIs(self.light._studio_task, task)
+        self.assertEqual([], [entry for entry in self.sent if entry[0] != "matter"])
+        self.light.stop_studio_stream()
+
+    async def test_a_first_frame_refused_over_matter_streams_over_the_lan(self):
+        self.over_matter(fail=1)
+        await self.light._start_studio_stream()
+        self.assertTrue(self.light._matrix_native_refused)
+        self.assertEqual(("activate_fx_mode", None), self.sent[0])
+        await self.run_for(0.05)
+        self.assertTrue(self.frames())
+        self.assertEqual([], self.matter_frames())
+        self.light.stop_studio_stream()
+
+    async def test_a_stream_over_matter_goes_to_the_lan_when_matter_goes(self):
+        self.over_matter()
+        await self.light._start_studio_stream()
+        await self.run_for(0.03)
+        self.light._matrix_native_refused = True           # light_matrix: frames failed
+        await self.run_for(0.05)
+        self.light.stop_studio_stream()
+        self.assertIn(("activate_fx_mode", None), self.sent)  # direct mode first
+        self.assertTrue(self.frames())
+
     async def test_a_running_stream_is_kept(self):
         await self.light._start_studio_stream()
         task = self.light._studio_task
@@ -668,12 +1031,12 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_over_tcp_it_holds_then_enters_direct_mode_again(self):
         await self.light._start_studio_stream()
-        self.light._cube_matrix.transport = "tcp"
+        self.light._lamp_client.transport = "tcp"
         await self.run_for(0.02)
         count = len(self.frames())
         await self.run_for(0.05)
         self.assertEqual(len(self.frames()), count)
-        self.light._cube_matrix.transport = "udp"
+        self.light._lamp_client.transport = "udp"
         activations = self.sent.count(("activate_fx_mode", None))
         await self.run_for(0.05)
         self.assertEqual(self.sent.count(("activate_fx_mode", None)), activations + 1)
@@ -688,7 +1051,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             failures.append(time.monotonic())
             raise OSError("unreachable")
 
-        self.light._cube_matrix.send_command_fast = fail
+        self.light._lamp_client.send_command_fast = fail
         await self.run_for(0.12)
         self.assertLessEqual(len(failures), 3)
         self.light.stop_studio_stream()
@@ -735,10 +1098,51 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
 
 class StudioFreezeTests(unittest.TestCase):
     def test_freeze_pauses_the_stream_without_a_lamp_command(self):
-        source = (ROOT / "light_services_display.py").read_text(encoding="utf-8")
-        freeze = source[source.index("async def _freeze_one"):source.index("async def _do_send")]
-        self.assertIn('getattr(target, "studio_streaming", None)', freeze)
-        self.assertIn("return", freeze)
+        # freeze_display (light_actions_display.async_freeze_display) while streaming:
+        # the stream pauses on the frame the lamp holds, nothing is sent.
+        light = make_light(studio_streaming=lambda: True, async_write_ha_state=Mock())
+        run(light.async_freeze_display())
+        self.assertTrue(light._display_frozen)
+        self.assertIsNotNone(light._display_frozen_at)
+        self.assertEqual([], light._lamp_client.methods())
+
+
+class MatrixSegmentTests(unittest.TestCase):
+    """A Cube Matrix showing fewer columns has its effects drawn on them
+    (device_profile.columns), not 20 columns cut short: Falling Blocks
+    landed in its hidden columns (2026-11-15, 3 blocks: 15 columns)."""
+
+    def setUp(self):
+        self.light = make_light(
+            _mode=CONSTANTS["MODE_NATIVE_EFFECT"], _native_effect="Falling Blocks",
+            _native_effect_speed=200, _native_effect_intensity=128, _studio_seed=3,
+            device_profile=SimpleNamespace(columns=15, raw_colours=True),
+        )
+
+    def lit_columns(self, effect, renders):
+        self.light._native_effect = effect
+        lit = set()
+        for render in range(0, renders, 3):
+            frame = self.light._own_effect_frame(render)
+            lit |= {index % 20 for index, colour in enumerate(frame) if any(colour)}
+        return lit
+
+    def test_effects_run_on_the_columns_shown(self):
+        # Falling Blocks reaches the last column shown, never past it.
+        blocks = self.lit_columns("Falling Blocks", 1500)
+        self.assertIn(14, blocks)
+        self.assertTrue(blocks <= set(range(15)), sorted(blocks))
+        for effect in ("Meteor", "Building Blocks", "Rainbow"):
+            with self.subTest(effect):
+                lit = self.lit_columns(effect, 300)
+                self.assertTrue(lit and lit <= set(range(15)), sorted(lit))
+
+    def test_a_cube_lite_keeps_its_20_columns(self):
+        self.light = make_light(
+            _mode=CONSTANTS["MODE_NATIVE_EFFECT"], _native_effect_speed=200, _studio_seed=3,
+        )
+        self.assertEqual(20, self.light.device_profile.columns)
+        self.assertIn(19, self.lit_columns("Rainbow", 30))
 
 
 if __name__ == "__main__":

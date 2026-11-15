@@ -24,7 +24,7 @@ const { drawingPixels, pixelArtColorData } = await import(
 );
 const { nativeEffectFrame } = await import(`${www}native-effect-card-utils.js`);
 const { effectDisplayFrame } = await import(`${www}lamp-renderers.js`);
-const { renderNativeEffectOriented } = await import(
+const { renderNativeEffect } = await import(
   `${www}native-effect-preview.js`
 );
 
@@ -145,7 +145,7 @@ test("native effect previews show an upside-down lamp turned", () => {
     viewerFrame(
       effectDisplayFrame(
         "Rainbow",
-        renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50),
+        renderNativeEffect("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50),
       ),
       "left",
     ),
@@ -267,6 +267,23 @@ test("the lamp's clock as it draws it: turned by its mount profile", () => {
       // Without a server the lamp's clock does not follow the pick.
       const lan = { ...lamp, matter: null };
       assert.equal(withPendingMount(lan, "left"), lan);
+      // The light says it (mount_profile.clock_turned): a Cube Matrix numbers
+      // its rotations otherwise (right 0, down 1, left 2, up 3) and its clock
+      // is streamed turned on left and up, as a Cube Lite's (filmed 2026-11-12).
+      const matrix = (orientation, rotation, turned) => ({
+        device_orientation: orientation,
+        matter: { commands: "matter" },
+        mount_profile: { profile: rotation, in_use: rotation, clock_turned: turned },
+      });
+      assert.equal(lampTurnsClock(matrix("right", 0, false)), false);
+      assert.equal(lampTurnsClock(matrix("down", 1, false)), false);
+      assert.equal(lampTurnsClock(matrix("left", 2, true)), true);
+      assert.equal(lampTurnsClock(matrix("up", 3, true)), true);
+      // A card's own pick: the same Device Orientations on both models.
+      for (const [pick, turned] of [["left", true], ["up", true], ["right", false], ["down", false]]) {
+        assert.equal(lampTurnsClock(withPendingMount(matrix("right", 0, false), pick)), turned, pick);
+        assert.equal(lampTurnsClock(withPendingMount({ ...lamp, device_orientation: "x" }, pick)), turned, pick);
+      }
     },
   );
 });

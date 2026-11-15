@@ -11,13 +11,15 @@ import logging
 import asyncio
 import random
 import time
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
 
 from homeassistant.core import callback  # type: ignore
 from yeelight import BulbException  # type: ignore
 
 from .command_errors import note_command_result
 from .const import LAMP_MODES
-from .cube_matrix import (
+from .lamp_protocol import (
+    LAMP_ERRORS,
     CubeConnectionError,
     RECONNECT_COOLDOWN_INITIAL,
     RECOVERY_CONNECT_TIMEOUT,
@@ -78,6 +80,11 @@ class ConnectionMixin:
         """The hardware queue, retry, circuit breaker, health check and calibration lock state. Called by YeelightCubeLight.__init__."""
         # The last hardware failure, in words (a rotation step reports it).
         self._last_connection_error = None
+        # When the current outage was first logged (time.time()), or None: an
+        # outage is logged once when it starts and once when it ends.
+        self._outage_since = None
+        # Whether this outage's "stuck, power-cycle it" was logged (probe).
+        self._silence_logged = False
         # The last change this lamp failed to apply (a refusal or an error,
         # not "not reached"), for the cards (note_command_result).
         self._last_command_error = None
@@ -173,7 +180,7 @@ class ConnectionMixin:
             "(is_on=%s, fx_direct=%s) "
             "[%s]",
             op_id, self._ip, op_name, self._is_on, self._fx_mode_is_direct,
-            self._cube_matrix.summary
+            self._lamp_client.summary
         )
         is_display_op = op_name.startswith('display:')
         try:
@@ -234,11 +241,11 @@ class ConnectionMixin:
                         op_id, self._ip, op_name, effective_timeout,
                         self._hardware_operation_phase
                     )
-                    self._fx_mode_is_direct = False
-                    self._cube_matrix.close_fast_socket()
+                    self._direct_mode_lost()
+                    self._lamp_client.close_fast_socket()
                     self._last_connection_error = f"Hard timeout: {op_name}"
                     self._hard_timeout_times.append(time.time())
-                    self._cube_matrix.record_failure()
+                    self._lamp_client.record_failure()
                     # Only schedule display retries for display operations
                     if is_display_op:
                         self._maybe_schedule_retry()
@@ -259,7 +266,7 @@ class ConnectionMixin:
             failed = self._last_command_error
             if is_display_op or (failed and failed.get("service") == op_name.lower()):
                 note_command_result(self, op_name)
-            self._cube_matrix.record_success()
+            self._lamp_client.record_success()
             # Clear circuit breaker on any success
             self._hard_timeout_times.clear()
             return True
@@ -280,7 +287,7 @@ class ConnectionMixin:
                 op_id, self._ip, op_name,
             )
             self._last_connection_error = "Device timeout"
-            self._cube_matrix.record_failure()
+            self._lamp_client.record_failure()
             if is_display_op:
                 self._maybe_schedule_retry()
         except OSError as e:
@@ -290,7 +297,7 @@ class ConnectionMixin:
             _LOGGER.warning(
                 "[OP #%s] [%s] Connection error: %s", op_id, self._ip, e
             )
-            self._cube_matrix.record_failure()
+            self._lamp_client.record_failure()
             if is_display_op:
                 self._maybe_schedule_retry()
         except BulbException as e:
@@ -314,19 +321,15 @@ class ConnectionMixin:
             )
             # Answered, not applied: named on the cards until a change works.
             note_command_result(self, op_name, refused)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- the lamp's queue: a failed operation is reported, never raised
             _LOGGER.error(
-                "[OP #%s] [%s] Unexpected error in %s: %s", op_id, self._ip, op_name, e
+                "[OP #%s] [%s] Unexpected error in %s: %s", op_id, self._ip, op_name, e,
+                exc_info=True,
             )
             note_command_result(self, op_name, e)
         return False
 
     MAX_DISPLAY_RETRIES = 3  # 3 retries ~= 20s total, then health check takes over
-    # When the current outage was first logged (time.time()), or None: an
-    # outage is logged once when it starts and once when it ends.
-    _outage_since = None
-    # Whether this outage's "stuck, power-cycle it" was logged (probe).
-    _silence_logged = False
 
     # Calibration lock auto-release: if the wizard is abandoned (browser closed
     # without exiting), the lamp would stay frozen forever. The lock auto-releases
@@ -335,7 +338,7 @@ class ConnectionMixin:
     CALIBRATION_LOCK_TIMEOUT = 900  # 15 minutes
 
     @callback
-    def _set_calibration_lock(self, enabled: bool):
+    def set_calibration_lock(self, enabled: bool):
         """Enable/disable the exclusive calibration lock and (re)arm the safety
         auto-release timer. Re-enabling acts as a heartbeat that pushes back the
         auto-release."""
@@ -417,7 +420,7 @@ class ConnectionMixin:
                 "[RETRY] [%s] Stopping auto-retry after %s consecutive failures. "
                 "The lamp appears to be offline. Display will resume on next user action or HA restart. "
                 "[%s]",
-                self._ip, self.MAX_DISPLAY_RETRIES, self._cube_matrix.summary
+                self._ip, self.MAX_DISPLAY_RETRIES, self._lamp_client.summary
             )
             return
         
@@ -430,7 +433,7 @@ class ConnectionMixin:
         # hiccups before engaging exponential backoff.  Subsequent retries use
         # the device's current cooldown + buffer.
         QUICK_RETRY_DELAY = 1.5  # seconds -- fast enough to recover from a 1-2s WiFi hiccup
-        cooldown = self._cube_matrix.reconnect_cooldown
+        cooldown = self._lamp_client.reconnect_cooldown
         if self._display_retry_count == 1:
             delay = QUICK_RETRY_DELAY
         else:
@@ -450,21 +453,23 @@ class ConnectionMixin:
                     "waiting %.1fs before retry "
                     "[%s]",
                     self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                    delay, self._cube_matrix.summary
+                    delay, self._lamp_client.summary
                 )
                 await asyncio.sleep(delay)
                 
                 _LOGGER.debug(
                     "[RETRY] [%s] Retrying display update now (attempt %s) "
                     "[%s]",
-                    self._ip, self._display_retry_count, self._cube_matrix.summary
+                    self._ip, self._display_retry_count, self._lamp_client.summary
                 )
                 await self.async_apply_display_mode(update_type='display_retry')
                 _LOGGER.debug("[RETRY] [%s] Display retry sent", self._ip)
             except asyncio.CancelledError:
                 _LOGGER.debug("[RETRY] [%s] Display retry CANCELLED", self._ip)
-            except Exception as e:
-                _LOGGER.warning("[RETRY] [%s] Unexpected error in display retry: %s", self._ip, e)
+            except Exception as e:  # noqa: BLE001 -- a background task: logged, the health check goes on
+                _LOGGER.warning(
+                    "[RETRY] [%s] Unexpected error in display retry: %s", self._ip, e, exc_info=True,
+                )
         
         self._retry_display_task = self._create_tracked_task(
             _delayed_retry(), name=f"yeelight_cube_display_retry_{self._ip}"
@@ -473,7 +478,7 @@ class ConnectionMixin:
             "[RETRY] [%s] Scheduled retry %s/%s "
             "in %.1fs (cooldown=%.0fs, failures=%s)",
             self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES, delay,
-            cooldown, self._cube_matrix.consecutive_failures
+            cooldown, self._lamp_client.consecutive_failures
         )
 
     async def _periodic_health_check(self):
@@ -504,8 +509,8 @@ class ConnectionMixin:
                 #  - 15s when device was online recently (monitor mode)
                 #  - 60s when device has been down a while (reduce noise)
                 has_active_issues = (
-                    self._cube_matrix.is_unreachable or
-                    self._cube_matrix.consecutive_failures > 0 or
+                    self._lamp_client.is_unreachable or
+                    self._lamp_client.consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
                 # "Silent" built-in modes (Clock / Native Effect / Music Flow)
@@ -515,14 +520,25 @@ class ConnectionMixin:
                 # fixed cadence so we reliably catch the brief unreachable window
                 # and re-assert the mode on return -- exactly the re-apply that a
                 # Home Assistant restart performs (which the user confirmed works).
+                # A Cube Matrix showing something itself over Matter (a
+                # drawing too: text, pictures) gets no frame either.
+                matrix_shown = self._matrix_shown
                 silent_mode = self._is_on and (
                     self._mode in LAMP_MODES
                     or self._music_flow_enabled
+                    or matrix_shown is not None
                 )
-                last_success = self._cube_matrix.last_success_time
+                last_success = self._lamp_client.last_success_time
                 time_since_success = time.time() - last_success if last_success > 0 else 999
                 if has_active_issues:
                     interval = 10  # Aggressive probing during failures
+                elif silent_mode and matrix_shown is not None and matrix_shown[1].get("apply") in (1, 2):
+                    # A Cube Matrix showing its own effect or clock saved it
+                    # (apply 1 / 2) and shows it again after a power cut by
+                    # itself: no need to catch the cut; fewer connections. (A
+                    # drawing, shown only, is lost: probed every 10 s; a
+                    # shorter cut is seen as its reboot count, light_matrix.)
+                    interval = 60
                 elif silent_mode:
                     interval = 10  # Catch power-cut outages while in a native mode
                 elif time_since_success < 300:  # online within last 5 minutes
@@ -541,8 +557,8 @@ class ConnectionMixin:
                     "failures=%s, "
                     "interval=%ss",
                     self._ip, self._brightness, self._last_hardware_brightness, self._is_on,
-                    self._fx_mode_is_direct, self._cube_matrix.is_unreachable,
-                    self._cube_matrix.consecutive_failures, interval
+                    self._fx_mode_is_direct, self._lamp_client.is_unreachable,
+                    self._lamp_client.consecutive_failures, interval
                 )
                 await asyncio.sleep(interval)
                 
@@ -558,10 +574,10 @@ class ConnectionMixin:
                     or time.time() >= self._rotation_retry_at
                 )
                 is_stuck = (
-                    self._cube_matrix.is_unreachable or
+                    self._lamp_client.is_unreachable or
                     rotation_due or
                     self._display_retry_count >= self.MAX_DISPLAY_RETRIES or
-                    self._cube_matrix.consecutive_failures > 0 or
+                    self._lamp_client.consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
                 if not is_stuck and not silent_mode:
@@ -577,9 +593,9 @@ class ConnectionMixin:
                     "retries=%s/%s, "
                     "failures=%s, "
                     "interval=%ss)",
-                    self._ip, self._cube_matrix.is_unreachable,
+                    self._ip, self._lamp_client.is_unreachable,
                     self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                    self._cube_matrix.consecutive_failures, interval
+                    self._lamp_client.consecutive_failures, interval
                 )
                 
                 # Quick TCP probe -- use longer timeout for recovery.
@@ -588,12 +604,12 @@ class ConnectionMixin:
                 probe_timeout = RECOVERY_CONNECT_TIMEOUT
                 # Recovering: the lamp itself must answer, not only its
                 # network part (a stuck lamp still accepts connections).
-                if not await self._cube_matrix.probe(probe_timeout, answering=recovering):
+                if not await self._lamp_client.probe(probe_timeout, answering=recovering):
                     # The lamp is not answering -- record it so the next
                     # successful probe knows to re-assert the mode. This is what
                     # lets a mains power cut, detected proactively in a silent
                     # mode, recover on return.
-                    became_unreachable = self._cube_matrix.mark_unreachable()
+                    became_unreachable = self._lamp_client.mark_unreachable()
                     if self._rotation_resume_pending:
                         self._rotation_waiting_for_reconnect = True
                         # Unreachable now: resume as soon as it answers.
@@ -613,14 +629,16 @@ class ConnectionMixin:
                             "answers; further failures are logged at debug level",
                             self._ip, interval,
                         )
-                    if self._cube_matrix.silent_for and not self._silence_logged:
+                    if self._lamp_client.silent_for and not self._silence_logged:
                         # Its network part answers, the lamp does not: stuck.
                         self._silence_logged = True
+                        report = getattr(self, "stream_report", None)
                         _LOGGER.warning(
                             "[HEALTH] [%s] The lamp accepts connections but answers no "
                             "command: it is stuck and needs a power cycle (unplug it "
-                            "for a few seconds); Force Refresh cannot fix this",
+                            "for a few seconds); Force Refresh cannot fix this%s",
                             self._ip,
+                            f". Last stream: {report()}" if callable(report) else "",
                         )
                     _LOGGER.debug(
                         "[HEALTH] [%s] Probe failed -- still unreachable "
@@ -628,7 +646,7 @@ class ConnectionMixin:
                         "failures=%s, "
                         "timeout=%ss)",
                         self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                        self._cube_matrix.consecutive_failures, probe_timeout
+                        self._lamp_client.consecutive_failures, probe_timeout
                     )
                     # The lamp may have moved to a new DHCP address: scan for
                     # it by hardware id and remap the config entry (throttled).
@@ -658,17 +676,21 @@ class ConnectionMixin:
                     "Resetting failures (%s -> 0), "
                     "retries (%s -> 0), "
                     "cooldown (%.0fs -> %ss)",
-                    self._ip, self._cube_matrix.consecutive_failures,
-                    self._display_retry_count, self._cube_matrix.reconnect_cooldown,
+                    self._ip, self._lamp_client.consecutive_failures,
+                    self._display_retry_count, self._lamp_client.reconnect_cooldown,
                     RECONNECT_COOLDOWN_INITIAL
                 )
-                self._cube_matrix.mark_recovered()  # Fresh socket, backoff reset
+                self._lamp_client.mark_recovered()  # Fresh socket, backoff reset
                 self._display_retry_count = 0
-                self._fx_mode_is_direct = False  # Force FX mode re-send
+                self._direct_mode_lost()  # Force FX mode re-send
                 if outage is not None:
                     # It was unreachable (maybe restarted): its brightness is
                     # sent again, right after direct mode, before any frame.
-                    self._last_hardware_brightness = None
+                    self._forget_hardware_brightness()
+                    # A Cube Matrix that restarted no longer shows what it
+                    # was sent: the redraw sends it in full (not as a live
+                    # change, nor a drawing's new pixels only).
+                    self._matrix_shown = None
                 self._hard_timeout_times.clear()  # Clear circuit breaker
                 # Its whole requested state is applied again below.
                 self._last_command_error = None
@@ -676,7 +698,7 @@ class ConnectionMixin:
                     # Publishes the light and its controls as available again.
                     self.async_write_ha_state()
 
-                if getattr(self, "_external_display", False):
+                if self._external_display:
                     # Matter saw a button or another app change the lamp
                     # (light_matter): after a power cut the lamp restores
                     # that itself (its saved colour or effect). Home
@@ -686,9 +708,29 @@ class ConnectionMixin:
                         "or a button's content", self._ip,
                     )
                     continue
+                if getattr(self, "is_cube_matrix", False) and self._matrix_power_on == "off":
+                    # Set to stay off at power-on (Matter StartUpOnOff): the
+                    # lamp came back off, and is not switched on again here.
+                    _LOGGER.info("[HEALTH] [%s] Not redrawn: set to stay off at power-on", self._ip)
+                    self._is_on = False
+                    if self.hass is not None:
+                        self.async_write_ha_state()
+                    continue
                 if self._resume_rotation_after_reconnect():
                     continue
                 if self._rotation_active:
+                    continue
+                waits = getattr(self, "matrix_redraw_waits_for_restart", None)
+                if outage is not None and waits is not None and waits():
+                    # A Cube Matrix showing its content over Matter: Matter
+                    # reaches a restarted lamp ~90 s after power-on, so a
+                    # redraw now only times out. Its restart report redraws
+                    # (light_matrix); a lamp that did not restart still shows it.
+                    _LOGGER.info(
+                        "[HEALTH] [%s] Redrawn once the lamp's restart is reported over Matter",
+                        self._ip,
+                    )
+                    self.matrix_await_restart()
                     continue
 
                 if self._music_flow_enabled:
@@ -711,8 +753,10 @@ class ConnectionMixin:
             except asyncio.CancelledError:
                 _LOGGER.debug("[HEALTH] [%s] Health check cancelled", self._ip)
                 break
-            except Exception as e:
+            except LAMP_ERRORS as e:
                 _LOGGER.debug("[HEALTH] [%s] Health check error: %s", self._ip, e)
+            except Exception:  # noqa: BLE001 -- the health check loop must outlive any error
+                _LOGGER.warning("[HEALTH] [%s] Health check error", self._ip, exc_info=True)
         
         _LOGGER.debug("[HEALTH] [%s] Health check stopped", self._ip)
 
@@ -742,7 +786,7 @@ class ConnectionMixin:
                     "updated, reloading with the new address",
                     self._ip, new_ip,
                 )
-        except Exception as exc:
+        except (OSError, HomeAssistantError) as exc:
             _LOGGER.debug(
                 "[HEALTH] [%s] Runtime rediscovery failed: %s", self._ip, exc
             )
@@ -767,7 +811,7 @@ class ConnectionMixin:
         
         while self._pending_brightness is not None:
             # Wait for connection to be available
-            if not self._cube_matrix.is_connected():
+            if not self._lamp_client.is_connected():
                 await asyncio.sleep(0.5)  # Check every 500ms
                 continue
             
@@ -804,11 +848,16 @@ class ConnectionMixin:
                 # Success - clear pending
                 self._pending_brightness = None
                 _LOGGER.debug("[BRIGHTNESS RETRY] Successfully queued brightness retry %s", pending_value)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- the retry loop must outlive any error
                 # Failed again - will retry later
-                _LOGGER.debug("[BRIGHTNESS RETRY] Retry failed for brightness %s: %s", pending_value, e)
+                if isinstance(e, LAMP_ERRORS):
+                    _LOGGER.debug("[BRIGHTNESS RETRY] Retry failed for brightness %s: %s", pending_value, e)
+                else:
+                    _LOGGER.warning(
+                        "[BRIGHTNESS RETRY] Retry failed for brightness %s", pending_value, exc_info=True,
+                    )
                 # If connection is down again, wait longer
-                if not self._cube_matrix.is_connected():
+                if not self._lamp_client.is_connected():
                     await asyncio.sleep(1)
                 else:
                     # Other error - clear pending to avoid infinite retry

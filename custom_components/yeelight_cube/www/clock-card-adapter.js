@@ -17,6 +17,7 @@ import {
 import {
   clockPhase,
   clockUsesLampRenderer,
+  getClockStyles,
   renderClockFrame,
 } from "./clock-preview-utils.js";
 import { lampTakesMount, viewerFrame } from "./matrix-view.js";
@@ -78,6 +79,8 @@ export function createClockCardAdapter(card) {
     disabled: () => !availableTargets(card._hass, card.config).length,
     on: () => card._stateObj()?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
+    // The lamp's attributes (a Cube Matrix's previews show its modules).
+    attributes: () => card._attrs(),
     // The clock follows the Lamp mounted setting only where it reaches a lamp
     // (its digits turn with the mount profile): any of the card's lamps.
     orientationApplies: () =>
@@ -114,7 +117,12 @@ export function createClockCardAdapter(card) {
       saveSharedRotationInterval(card, "clock", seconds),
     refresh: () =>
       card._commands.execute(card._hass, card.config, "force_refresh"),
-    freezable: () => effectSupportsFreeze(card._currentStyle()?.name),
+    // A Cube Matrix (its matrix_own_versions attribute) holds any style's
+    // background (a still drawing with the time kept, or streamed).
+    freezable: () =>
+      effectSupportsFreeze(card._currentStyle()?.name) ||
+      (!!card._attrs().matrix_own_versions &&
+        !!getClockStyles().find((s) => s.id === card._attrs().clock_style_id)?.mixer),
     startRotation: (items, intervalSeconds) =>
       card._command(
         "start_effect_rotation",

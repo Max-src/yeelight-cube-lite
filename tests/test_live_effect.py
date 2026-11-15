@@ -9,6 +9,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from tests.fakes import light_state, module
 from tests.test_native_features import (
     CONSTANTS, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS, NATIVE_PREVIEW, ROOT,
     _load_standalone_functions,
@@ -29,9 +30,12 @@ FNS = _load_standalone_functions(
         "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
         "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
         "rgb_to_argb": lambda rgb: 0xFF000000 | (rgb[0] << 16) | (rgb[1] << 8) | rgb[2],
+        "LAMP_ERRORS": module("lamp_protocol").LAMP_ERRORS,
     },
 )
 changes = FNS["live_effect_changes"]
+# What the lamp raises when it refuses a command.
+REFUSED = module("lamp_protocol").BulbException
 
 
 class LiveEffectChangesTests(unittest.TestCase):
@@ -86,7 +90,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         async def send(command, params, **kwargs):
             self.sent.append((command, params))
             if command in self.refuse:
-                raise RuntimeError("refused")
+                raise REFUSED({"code": -5000, "message": "refused"})
 
         cube = SimpleNamespace(running_effect=None, send_raw_command=send, fx_mode_flag_maybe_set=True)
         cube.note_running_effect = lambda params: setattr(cube, "running_effect", params)
@@ -100,13 +104,13 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
             return True
 
         cube.clear_fx_mode_flag = clear_fx_mode_flag
-        self.lamp = SimpleNamespace(
+        self.lamp = light_state(
             _ip="t", _is_on=True, _in_native_fw_mode=False, _fx_mode_is_direct=True,
             _native_effect="Rainbow", _native_effect_speed=50,
             _native_effect_direction="Up", _device_orientation="none",
             _native_effect_direction_select_entity=None,
             _native_effect_color_mode="normal", _native_effect_color=None,
-            hass=None, _last_fx_mode_time=1.0, _cube_matrix=cube,
+            hass=None, _last_fx_mode_time=1.0, _lamp_client=cube,
             _leave_direct_mode=AsyncMock(), _notify_camera_preview=Mock(),
             # Its brightness: not known yet (sent with the first activation).
             _brightness=255, _last_hardware_brightness=None,
@@ -143,7 +147,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             ["set_bright", "set_fx_effect", "update_fx_effect"], self.commands(brightness=True)
         )
-        self.assertEqual(90, self.lamp._cube_matrix.running_effect[3]["rate"])
+        self.assertEqual(90, self.lamp._lamp_client.running_effect[3]["rate"])
 
     async def test_an_intensity_change_sets_the_effect_in_full(self):
         # Several effects read it only when they start (how many glows or
@@ -186,7 +190,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         await self.lamp._activate_native_effect()
         self.assertEqual(["deactivate_fx_mode", "set_fx_effect", "update_fx_effect"], self.commands())
         # Set again (a drawing): cleared again, and the effect set in full.
-        self.lamp._cube_matrix.fx_mode_flag_maybe_set = True
+        self.lamp._lamp_client.fx_mode_flag_maybe_set = True
         self.lamp._native_effect_speed = 120
         await self.lamp._activate_native_effect()
         self.assertEqual("deactivate_fx_mode", self.commands()[-2])
@@ -207,7 +211,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
             if spec["mode"] not in music:
                 continue
             with self.subTest(effect=name):
-                self.lamp._cube_matrix.fx_mode_flag_maybe_set = True
+                self.lamp._lamp_client.fx_mode_flag_maybe_set = True
                 self.lamp._native_effect = name
                 await self.lamp._activate_native_effect()
                 self.assertEqual(["deactivate_fx_mode", "set_fx_effect"], self.commands()[-2:])
@@ -215,7 +219,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
             if style["mixer"] not in music:
                 continue
             with self.subTest(clock=style["name"]):
-                self.lamp._cube_matrix.fx_mode_flag_maybe_set = True
+                self.lamp._lamp_client.fx_mode_flag_maybe_set = True
                 self.lamp._native_clock_style = style_id
                 await self.lamp._activate_native_clock()
                 self.assertEqual(["deactivate_fx_mode", "set_fx_effect"], self.commands()[-2:])
@@ -237,7 +241,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_unknown_running_effect_activates_in_full(self):
         await self.lamp._activate_native_effect()
-        self.lamp._cube_matrix.running_effect = None  # another command since
+        self.lamp._lamp_client.running_effect = None  # another command since
         self.lamp._native_effect_speed = 90
         await self.lamp._activate_native_effect()
         self.assertEqual(["set_fx_effect", "set_fx_effect"], self.commands())

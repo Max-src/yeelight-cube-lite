@@ -24,7 +24,7 @@
 import { cardSpacing } from "./card-layout-utils.js";
 import { contrastInk } from "./color-utils.js";
 
-export function getActionButtonClass(type, style = "modern") {
+function getActionButtonClass(type, style = "modern") {
   const TYPE_TO_CLASS = {
     export: "export-btn",
     import: "import-btn",
@@ -55,7 +55,7 @@ export const DEFAULT_BUTTON_CONTENT_MODE = "icon_text";
 // an unset key, and the Clock card/editor pass their own Modern defaults via
 // independentActionConfig.
 export const DEFAULT_ACTION_BUTTON_STYLE = "classic";
-export const DEFAULT_ACTION_BUTTON_CONTENT_MODE = "icon";
+const DEFAULT_ACTION_BUTTON_CONTENT_MODE = "icon";
 // Favourites shown as buttons (`collection_buttons_*`).
 export const DEFAULT_COLLECTION_BUTTON_STYLE = "classic";
 export const DEFAULT_COLLECTION_BUTTON_CONTENT_MODE = "icon_text";

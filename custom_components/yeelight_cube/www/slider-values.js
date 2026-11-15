@@ -46,8 +46,8 @@ export function sliderRawToPct(raw, min, max) {
 // is the lamp's lowest level. Every effect takes speed 0; intensity 0 is
 // raised for the few effects with a minimum (lamp-renderers.js lampIntensity).
 export const BRIGHTNESS_RAW = Object.freeze({ min: 0, max: 255 }); // HA brightness
-export const SPEED_RAW = Object.freeze({ min: 0, max: 255 }); // const.py SPEED_RANGE
-export const INTENSITY_RAW = Object.freeze({ min: 0, max: 255 }); // const.py INTENSITY_RANGE
+export const SPEED_RAW = Object.freeze({ min: 0, max: 255 }); // effect_catalog.py SPEED_RANGE
+export const INTENSITY_RAW = Object.freeze({ min: 0, max: 255 }); // effect_catalog.py INTENSITY_RANGE
 
 export const brightnessPctToRaw = (pct) =>
   sliderPctToRaw(pct, BRIGHTNESS_RAW.min, BRIGHTNESS_RAW.max);

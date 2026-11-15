@@ -27,7 +27,11 @@ jobs:
         with:
           python-version: "3.13"
       - run: npm ci
-      - run: python -m pip install pillow pyyaml
+      - run: python -m pip install pillow pyyaml ruff
+
+      # Lint: ruff and eslint (ruff.toml, eslint.config.mjs).
+      - name: Lint
+        run: npm run lint
 
       # The committed Lit bundle must be what `npm run build:lit` produces.
       - name: Lit bundle is up to date
@@ -53,11 +57,12 @@ jobs:
 
       # The real cards in a browser against a fake Home Assistant backend.
       - run: npx playwright install --with-deps chromium
+      # The same list as `npm run check` (scripts/browser-checks.mjs).
       - name: Browser checks
         env:
           BROWSER_CHANNEL: chromium
-        run: |
-          node tests/card-events-browser.cjs
-          node tests/card-sync-browser.cjs
-          node tests/matrix-surface-browser.cjs
-          node tests/card-ui-parity.cjs
+        run: node scripts/browser-checks.mjs
+
+      # The README's card galleries match the screenshot catalogue.
+      - name: Documentation galleries
+        run: node tests/card-docs-readme.cjs --check

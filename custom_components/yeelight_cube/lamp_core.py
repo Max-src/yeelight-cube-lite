@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import math
 import struct
+import threading
+from contextlib import contextmanager
 
 try:
     from .mount_profile import DIRECTION_TABLE, REFERENCE_PROFILE
@@ -62,11 +64,6 @@ def f32_from_bits(bits: int) -> float:
 def trunc_u16(value: float) -> int:
     """C's (uint16_t)(int)value: toward zero, NaN and infinities as 0."""
     return int(value) & 0xFFFF if math.isfinite(value) else 0
-
-
-def f32_trunc(value: float) -> int:
-    """Toward zero, NaN as 0."""
-    return 0 if math.isnan(value) else int(value)
 
 
 def sx8(value: int) -> int:
@@ -424,9 +421,89 @@ def _convert(red: int, green: int, blue: int) -> tuple[int, int, int]:
     return _pack([_round_word(value) for value in gamut_words(x, y, scalar)])
 
 
+# Raw colours (raw_colours): the renderers then draw the colours they are
+# given, not the converter's LED drive. A Cube Matrix (device_profile)
+# converts every streamed pixel itself, as it does its own effects' colours:
+# it is streamed the frames before the converter.
+_RAW = threading.local()
+
+
+@contextmanager
+def raw_colours():
+    """While inside, in this thread, convert_colour returns its colour as it
+    is: the renderers draw raw colours (each cache keeps them apart:
+    colours_raw is in its key)."""
+    before = getattr(_RAW, "on", False)
+    _RAW.on = True
+    try:
+        yield
+    finally:
+        _RAW.on = before
+
+
+def colours_raw() -> bool:
+    """Whether this thread renders raw colours (raw_colours)."""
+    return getattr(_RAW, "on", False)
+
+
+# A frame a stream sends (full_replay): an effect that draws each frame from
+# the ones before replays its history in full when its settings change (a new
+# intensity, palette...), rather than a slice of it at each frame -- which
+# showed the effect fast-forwarding for a moment. Meanwhile the lamp keeps the
+# last frame (the transport sends it again): the picture holds, then goes on.
+_REPLAY = threading.local()
+
+
+@contextmanager
+def full_replay():
+    """While inside, in this thread, a renderer reaches the frame asked for
+    whatever the time it takes (lamp_renderers.Timeline)."""
+    before = getattr(_REPLAY, "on", False)
+    _REPLAY.on = True
+    try:
+        yield
+    finally:
+        _REPLAY.on = before
+
+
+def replays_in_full() -> bool:
+    """Whether this thread replays in full (full_replay)."""
+    return getattr(_REPLAY, "on", False)
+
+
+# The segment a lamp's effects are drawn on: the columns it shows, 5 pixels
+# each. A Cube Lite shows its 20 (LENGTH, 100 pixels); a Cube Matrix as many
+# as its blocks (device_profile.columns: 3 blocks, 15). The renderers draw on
+# that segment as the lamp's own do on a shorter one (the mapper and its
+# segment test take its length), so what moves stops at the last column
+# shown, not 5 columns past it. The settings carry it (lamp_renderers.
+# lamp_settings' ``columns``; settings_length reads it).
+def segment_length_for(columns) -> int:
+    """The pixels of a segment of ``columns`` columns (1 to 20, else 100)."""
+    try:
+        columns = int(columns)
+    except (TypeError, ValueError):
+        return LENGTH
+    return columns * ROWS if 1 <= columns <= COLS else LENGTH
+
+
+def settings_length(settings) -> int:
+    """The segment a renderer's settings are for (lamp_settings sets it)."""
+    return settings.get("length", LENGTH)
+
+
+def drawn_in_full(draw, *args):
+    """``draw(*args)`` inside full_replay: a stream's frame, in an executor."""
+    with full_replay():
+        return draw(*args)
+
+
 def convert_colour(colour) -> tuple[int, int, int]:
-    """An RGB colour as the LED drive the lamp's converter gives it."""
+    """An RGB colour as the LED drive the lamp's converter gives it (as it
+    is inside raw_colours)."""
     red, green, blue = colour[0], colour[1], colour[2]
+    if getattr(_RAW, "on", False):
+        return (red, green, blue)
     key = (red << 16) | (green << 8) | blue
     out = _CONVERTED.get(key)
     if out is None:
@@ -455,6 +532,8 @@ _HUE_DRIVE: list = [None] * 360
 
 def hue_drive(hue: int) -> tuple[int, int, int]:
     """hue_colour through the converter, for a whole hue 0-359."""
+    if getattr(_RAW, "on", False):
+        return hue_colour(hue)
     out = _HUE_DRIVE[hue]
     if out is None:
         out = _HUE_DRIVE[hue] = convert_colour(hue_colour(hue))
@@ -617,9 +696,13 @@ _COLOURS_LIMIT = 64
 
 def installed_words(settings) -> list:
     """Colour words R+536..R+548, converted: the colors this component sends
-    (one, or the list of const._EXTENDED_EFFECT_COLORS), 0 past them; with no
-    color key the lamp sets all four to 0xffffffff, so white."""
+    (one, or the list of effect_catalog._EXTENDED_EFFECT_COLORS), 0 past them; with no
+    color key the lamp sets all four to 0xffffffff, so white; a Cube
+    Matrix leaves them 0, black (``variant`` "matrix": its own version of a
+    slot, effect_catalog.MATRIX_VERSION_EFFECTS)."""
     mode, coloured = settings["mode"], settings["coloured"]
+    if not coloured and settings.get("variant") == "matrix":
+        return [(0, 0, 0)] * 4
     if mode in _WORDLESS_MODES or not coloured:
         return [convert_colour((255, 255, 255))] * 4
     words = [convert_colour(tuple(colour)) for colour in settings.get("colours", ())[:4]]
@@ -635,9 +718,9 @@ def effect_colours(settings) -> dict:
     mode, selector, intensity = settings["mode"], settings["selector"], settings["intensity"]
     coloured, primary = settings["coloured"], tuple(settings["primary"])
     key = (
-        mode, selector, intensity >= 128, coloured, primary,
+        colours_raw(), mode, selector, intensity >= 128, coloured, primary,
         tuple(map(tuple, settings.get("colours", ()))),
-        tuple(map(tuple, settings.get("palette", ()))),
+        tuple(map(tuple, settings.get("palette", ()))), settings.get("variant"),
     )
     out = _COLOURS.get(key)
     if out is not None:
@@ -725,8 +808,11 @@ def effective_direction(settings) -> int:
 
 
 def effect_geometry(settings) -> tuple[int, int]:
-    """The segment's (width, height): 5 x 20, or 20 x 5 when transposed."""
-    return segment_geometry(LENGTH, DIRECTION_TABLE[REFERENCE_PROFILE][effective_direction(settings)])
+    """The segment's (width, height): 5 x 20, or 20 x 5 when transposed (a
+    shorter segment: 5 x its columns)."""
+    return segment_geometry(
+        settings_length(settings), DIRECTION_TABLE[REFERENCE_PROFILE][effective_direction(settings)],
+    )
 
 
 # ── Geometry and the mapper ─────────────────────────────────────────────
@@ -768,33 +854,45 @@ def frame_index(buffer_index: int) -> int:
     return row * COLS + column
 
 
-_FRAME_ORDER = [0] * (3 * LENGTH)  # lamp-order byte -> panel byte
-for _pixel in range(LENGTH):
-    for _channel in range(3):
-        _FRAME_ORDER[3 * frame_index(_pixel) + _channel] = 3 * _pixel + _channel
+_FRAME_ORDERS: dict[int, tuple] = {}  # by segment length: lamp-order byte -> panel byte
 _PLACEMENTS: dict[tuple, tuple] = {}
 _READ_BACKS: dict[tuple, tuple] = {}
 
 
-def pixel_map(direction: int, profile: int = REFERENCE_PROFILE) -> tuple:
-    """Logical pixel -> panel index, for every pixel (a renderer's pixel
-    map; a permutation on the full segment)."""
-    key = (direction, profile)
+def _frame_order(length: int) -> tuple:
+    """Lamp-order byte -> panel byte for a segment of ``length`` pixels (a
+    shorter one: its columns first, the rest pointing past it: black)."""
+    order = _FRAME_ORDERS.get(length)
+    if order is None:
+        table = [3 * length] * (3 * LENGTH)
+        for pixel in range(length):
+            for channel in range(3):
+                table[3 * frame_index(pixel) + channel] = 3 * pixel + channel
+        order = _FRAME_ORDERS[length] = tuple(table)
+    return order
+
+
+def pixel_map(direction: int, profile: int = REFERENCE_PROFILE, length: int = LENGTH) -> tuple:
+    """Logical pixel -> panel index, for every pixel of a segment of
+    ``length`` (a renderer's pixel map; a permutation on the segment)."""
+    key = (direction, profile, length)
     out = _READ_BACKS.get(key)
     if out is None:
         out = _READ_BACKS[key] = tuple(
-            mapper_index(pixel, LENGTH, direction, profile) for pixel in range(LENGTH)
+            mapper_index(pixel, length, direction, profile) for pixel in range(length)
         )
     return out
 
 
 def place_strip(strip, direction: int, profile: int = REFERENCE_PROFILE) -> bytes:
-    """A logical strip or grid on the panel: the renderers' last pass."""
-    key = (direction, profile)
+    """A logical strip or grid on the panel: the renderers' last pass (the
+    segment as long as the strip)."""
+    length = len(strip) // 3
+    key = (direction, profile, length)
     order = _PLACEMENTS.get(key)
     if order is None:
-        table = [0] * (3 * LENGTH)
-        for pixel, index in enumerate(pixel_map(direction, profile)):
+        table = [0] * (3 * length)
+        for pixel, index in enumerate(pixel_map(direction, profile, length)):
             for channel in range(3):
                 table[3 * index + channel] = 3 * pixel + channel
         order = _PLACEMENTS[key] = tuple(table)
@@ -803,16 +901,22 @@ def place_strip(strip, direction: int, profile: int = REFERENCE_PROFILE) -> byte
 
 def read_back(work, direction: int, profile: int = REFERENCE_PROFILE) -> bytes:
     """The read-back pass of a renderer that stores in panel order: logical
-    pixel i from the buffer at mapper(i)."""
-    out = bytearray(3 * LENGTH)
-    for pixel, index in enumerate(pixel_map(direction, profile)):
+    pixel i from the buffer at mapper(i) (the segment as long as the buffer)."""
+    length = len(work) // 3
+    out = bytearray(3 * length)
+    for pixel, index in enumerate(pixel_map(direction, profile, length)):
         out[3 * pixel:3 * pixel + 3] = work[3 * index:3 * index + 3]
     return bytes(out)
 
 
 def panel_to_frame(panel) -> bytes:
-    """A panel as a lamp frame."""
-    return bytes(map(panel.__getitem__, _FRAME_ORDER))
+    """A panel as a lamp frame (20 x 5, a shorter segment's panel in its
+    first columns, the rest black)."""
+    length = len(panel) // 3
+    if length == LENGTH:
+        return bytes(map(panel.__getitem__, _frame_order(LENGTH)))
+    padded = bytes(panel) + bytes(3)
+    return bytes(map(padded.__getitem__, _frame_order(length)))
 
 
 def frame_pixels(frame) -> list:
@@ -820,12 +924,13 @@ def frame_pixels(frame) -> list:
     return list(zip(frame[0::3], frame[1::3], frame[2::3]))
 
 
-def strip_frame(draws, direction: int, profile: int = REFERENCE_PROFILE) -> list:
+def strip_frame(draws, direction: int, profile: int = REFERENCE_PROFILE, length: int = LENGTH) -> list:
     """The frame a renderer's pixel writes draw (logical index, r, g, b,
-    in order: a later write wins) after its clear to black."""
+    in order: a later write wins) after its clear to black, on a segment of
+    ``length``."""
     frame = [(0, 0, 0)] * LENGTH
     for pixel, red, green, blue in draws:
-        index = panel_index(pixel, LENGTH, direction, profile)
+        index = panel_index(pixel, length, direction, profile)
         if index is not None:
             frame[frame_index(index)] = (red, green, blue)
     return frame
@@ -845,18 +950,19 @@ def read_back_flags(mode: int, mapped: int, mixer: int = 0) -> int:
     return flags | 0x42 if mode == 51 else flags
 
 
-def clock_digit_targets(index: int, flags: int) -> list:
+def clock_digit_targets(index: int, flags: int, length: int = LENGTH) -> list:
     """Where the lamp draws the clock digits' pixel at frame ``index`` (lamp
     order) on the flags its clock runs with: the writer turns them like any
     pixel, and on the mirror bit draws only the first half of the strip (and
-    its mirror). On the clock's own 0x05: where it is."""
+    its mirror), on a segment of ``length`` (the columns shown). On the
+    clock's own 0x05: where it is."""
     if flags == HANDOVER_FLAGS:
         return [index]
     row, column = divmod(index, COLS)
     pixel = column * ROWS + row
-    if flags & 0x08 and pixel >= LENGTH // 2:
+    if pixel >= length or flags & 0x08 and pixel >= length // 2:
         return []
-    return [frame_index(target) for target in flagged_targets(pixel, LENGTH, 0, flags)]
+    return [frame_index(target) for target in flagged_targets(pixel, length, 0, flags)]
 
 
 def flags_index(pixel: int, length: int, flags: int) -> int:

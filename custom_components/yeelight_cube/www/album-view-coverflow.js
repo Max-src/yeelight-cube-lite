@@ -30,7 +30,7 @@ import { defineOnce } from "./card-registration.js";
  * album wrapper): --yc-album-width, --yc-album-radius, --yc-album-pad,
  * --yc-album-perspective.
  */
-export function albumStyleVars(config = {}) {
+function albumStyleVars(config = {}) {
   return [
     `--yc-album-width:${albumCardWidth(config)}px`,
     `--yc-album-radius:${roundedCardsRadius(config.rounded_cards)}px`,
@@ -187,7 +187,7 @@ export function albumStyles(classPrefix = "album") {
 }
 
 /** A card's place in the coverflow, `offset` cards from the centred one. */
-export function albumItemPlace(offset, enable3D) {
+function albumItemPlace(offset, enable3D) {
   const distance = Math.abs(offset);
   if (offset === 0)
     return "transform: translateY(-50%) translateX(0) translateZ(0) rotateY(0deg) scale(1); z-index: 200; opacity: 1;";

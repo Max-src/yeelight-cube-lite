@@ -14,6 +14,10 @@ import assert from "node:assert/strict";
 import { colorModeSelectorModel } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 import test from "node:test";
 import { createPendingValue } from "../custom_components/yeelight_cube/www/pending-value.js";
+import {
+  CLOCK_CARD_COLORS,
+  ColorModeController,
+} from "../custom_components/yeelight_cube/www/color-mode-controller.js";
 import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
 import {
   VISIBILITY_KEYS,
@@ -23,9 +27,6 @@ import {
 import { readFileSync } from "node:fs";
 import { withPendingMount } from "../custom_components/yeelight_cube/www/matrix-view.js";
 import { PreviewVisibility } from "../custom_components/yeelight_cube/www/preview-visibility.js";
-import {
-  actionButtonGroupModel,
-} from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import {
   clockStylesWithPresets,
   clockPresetKey,
@@ -69,7 +70,8 @@ test("all clock styles display the lamp's background whatever the native directi
     renderClockFrame({ clock_style_id: 6 }, null, null),
   );
   for (const style of getClockStyles()) {
-    const effect = CLOCK_MIXER_EFFECTS[style.mixer];
+    // A style over a Cube Matrix's own version names its background.
+    const effect = style.background ?? CLOCK_MIXER_EFFECTS[style.mixer];
     if (!effect) continue;
     for (const seconds of [0, 0.75, 2.5]) {
       for (const [mode, override] of [
@@ -638,14 +640,15 @@ test("Custom stays selectable and built-in selections respect the active color m
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
-    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
+    // The card's Color Modes row (color-mode-controller.js).
+    get _colors() {
+      return (this.__colors ||= new ColorModeController(this, CLOCK_CARD_COLORS));
+    },
     requestUpdate: () => renders++,
     ...cardMethods(
       [
         "_applyStyle",
         "_applyColorMode",
-        "_showColorPick",
-        "_dropColorPick",
         "_currentColorMode",
         "_activeStylePreset",
         "_currentStyle",
@@ -944,13 +947,14 @@ test("card color actions leave Custom empty until a pick and ignore deleted pres
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
-    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
+    // The card's Color Modes row (color-mode-controller.js).
+    get _colors() {
+      return (this.__colors ||= new ColorModeController(this, CLOCK_CARD_COLORS));
+    },
     requestUpdate() {},
   };
   for (const name of [
     "_applyColorMode",
-    "_showColorPick",
-    "_dropColorPick",
     "_applyColor",
     "_applyColorPreset",
     "_currentColorMode",
@@ -1023,13 +1027,14 @@ test("saving a custom color as a clock style forgets it as the Custom color", ()
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
-    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
+    // The card's Color Modes row (color-mode-controller.js).
+    get _colors() {
+      return (this.__colors ||= new ColorModeController(this, CLOCK_CARD_COLORS));
+    },
     requestUpdate() {},
     ...cardMethods(
       [
         "_applyColorMode",
-        "_showColorPick",
-        "_dropColorPick",
         "_applyColor",
         "_currentColorMode",
         "_activeStylePreset",
@@ -1100,14 +1105,15 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
-    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
+    // The card's Color Modes row (color-mode-controller.js).
+    get _colors() {
+      return (this.__colors ||= new ColorModeController(this, CLOCK_CARD_COLORS));
+    },
     requestUpdate() {},
     ...cardMethods(
       [
         "_applyStyle",
         "_applyColorMode",
-        "_showColorPick",
-        "_dropColorPick",
         "_currentColorMode",
         "_activeStylePreset",
         "_onPresetSaved",
@@ -1265,7 +1271,7 @@ test("the card offers a style over every slot, a formerly numbered one too, not 
   assert.equal(clockPreviewEffect(71), undefined); // the GIF stored in the lamp
   assert.equal(clockPreviewEffect(0), undefined);
   const styles = getClockStyles();
-  assert.equal(styles.length, 74);
+  assert.equal(styles.length, 80);
   assert.ok(!styles.some((style) => style.mixer === 71));
   // The ids after it keep the backend's: Random scatter (72) is style 74.
   assert.equal(styles.find((style) => style.mixer === 72)?.id, 74);
@@ -1280,4 +1286,19 @@ test("the card offers a style over every slot, a formerly numbered one too, not 
     [83, "Mirrored comets", true, "motion"],
     [84, "Music noise equalizer", true, "music"],
   ]);
+  // Then a style over each of the Cube Matrix's own versions, its background
+  // named (it shares its mixer with the effect it comes from).
+  assert.deepEqual(
+    styles.filter((style) => style.background).map(({ id, name, mixer, background }) => [id, name, mixer, background])
+      .sort((a, b) => a[0] - b[0]),
+    [
+      [85, "Northern Lights", 15, "Northern Lights"],
+      [86, "Rose Sea", 55, "Rose Sea"],
+      [87, "Dark palette pulses", 9, "Dark palette pulses"],
+      // Then over each of the integration's own effects (effect_catalog.py STREAMED_EFFECTS).
+      [88, "Knight Rider", 100, "Knight Rider"],
+      [89, "Lava Lamp", 101, "Lava Lamp"],
+      [90, "Falling Blocks", 102, "Falling Blocks"],
+    ],
+  );
 });

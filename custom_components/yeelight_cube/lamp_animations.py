@@ -29,8 +29,12 @@ from pathlib import Path
 try:
     from .color_adjustments import adjust_color
     from .const import (
-        ANIMATION_LAYOUT_APP, DEFAULT_NATIVE_EFFECT_SPEED, DEVICE_ORIENTATION_TO_FLIP,
+        DEVICE_ORIENTATION_TO_FLIP,
         ORIENTATION_FLIPPED,
+    )
+    from .effect_catalog import (
+        ANIMATION_LAYOUT_APP,
+        DEFAULT_NATIVE_EFFECT_SPEED,
     )
     from .lamp_studio import studio_animation_frames, studio_look, studio_palette
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
@@ -40,8 +44,12 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from color_adjustments import adjust_color
     from const import (
-        ANIMATION_LAYOUT_APP, DEFAULT_NATIVE_EFFECT_SPEED, DEVICE_ORIENTATION_TO_FLIP,
+        DEVICE_ORIENTATION_TO_FLIP,
         ORIENTATION_FLIPPED,
+    )
+    from effect_catalog import (
+        ANIMATION_LAYOUT_APP,
+        DEFAULT_NATIVE_EFFECT_SPEED,
     )
     from lamp_studio import studio_animation_frames, studio_look, studio_palette
 

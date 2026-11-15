@@ -11,7 +11,7 @@ import {
 } from "./service-call-utils.js";
 import { rgbToHex } from "./color-utils.js";
 
-export const ANGLE_UPDATE_DEBOUNCE_MS = 150;
+const ANGLE_UPDATE_DEBOUNCE_MS = 150;
 
 export class AngleCommandController {
   constructor(onApplied = () => {}, onError = () => {}) {

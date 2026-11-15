@@ -79,6 +79,8 @@ export function createNativeCardAdapter(card) {
     disabled: () => card._disabled(),
     on: () => card._state?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
+    // The lamp's attributes (a Cube Matrix's previews show its modules).
+    attributes: () => card._attrs(),
     // The previews follow an orientation being set: layout included.
     orientationShown: () => card.requestUpdate(),
     directions: () => card._effect()?.directions || [],
@@ -110,9 +112,11 @@ export function createNativeCardAdapter(card) {
     refresh: () =>
       card._commands.execute(card._hass, card.config, "force_refresh"),
     // A streamed palette effect: the stream pauses and the lamp holds its
-    // last frame, any effect.
+    // last frame, any effect. A Cube Matrix (its matrix_own_versions
+    // attribute) holds any effect: shown as a still drawing, or streamed.
     freezable: () =>
       effectSupportsFreeze(card._effect()?.name) ||
+      !!card._attrs().matrix_own_versions ||
       studioRuns(card._effect()?.name, card._attrs().native_effect_color_mode, card._attrs().text_colors),
     startRotation: (items, intervalSeconds) =>
       card._command(

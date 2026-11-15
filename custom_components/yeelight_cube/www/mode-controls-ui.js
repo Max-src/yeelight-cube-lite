@@ -38,6 +38,7 @@ import {
   actionButtonOrder,
 } from "./mode-controls-controller.js";
 import { defineOnce } from "./card-registration.js";
+import { previewContext } from "./preview-context.js";
 import {
   createRafLoop,
   createVisibilityTracker,
@@ -224,7 +225,7 @@ class YeelightModeControls extends LitElement {
     ];
     const target = step
       ? nextOrientation(
-          model.pendingOrientation || model.adapter.orientation(),
+          model.shownOrientation(),
           step,
           orientationOptions(model.config).directions,
         )
@@ -278,6 +279,8 @@ class YeelightModeControls extends LitElement {
       ${unsafeHTML(
         renderMatrixPreview(pixels, {
           forceAspectRatio: true,
+          // A Cube Matrix's modules only (preview-context.js).
+          context: previewContext(this.model.adapter.attributes?.()),
           proportionalSpacing: true,
           pixelStyle: config.effect_pixel_style || "square",
           pixelGap:
@@ -295,7 +298,7 @@ class YeelightModeControls extends LitElement {
             config.effect_ignore_black_pixels === true,
           // Standing up while the lamp does, like the frames (matrix-view.js).
           vertical: isVerticalMount(
-            this.model.pendingOrientation || this.model.adapter.orientation?.(),
+            this.model.shownOrientation(),
           ),
         }),
       )}
@@ -448,7 +451,7 @@ class YeelightModeControls extends LitElement {
     if (this.area === "orientation")
       return renderOrientationControls(
         config,
-        model.pendingOrientation || adapter.orientation(),
+        model.shownOrientation(),
         model.busy || adapter.disabled(),
         (event) => this.handleOrientationControl(event),
         "Lamp mounted",

@@ -1475,6 +1475,31 @@ set_rotation_interval:
           domain: light
           multiple: true
 
+set_matrix_modules:
+  name: Set Cube Matrix modules
+  description: Tell a Cube Matrix which modules it has, from the base, as the Yeelight app's module splicing does (over Matter). The lamp cannot detect them; it keeps the list and lays its own effects and clock out for it.
+  fields:
+    entity_id:
+      description: The Cube Matrix's light entity.
+      example: "light.cubematrix_6a80"
+      required: true
+      selector:
+        entity:
+          domain: light
+          integration: yeelight_cube
+    modules:
+      description: 'The modules in chain order from the base: matrix (5 x 5), spot or panel; 1 to 6.'
+      example: '["matrix", "matrix", "spot", "matrix"]'
+      required: true
+      selector:
+        select:
+          multiple: true
+          custom_value: false
+          options:
+            - matrix
+            - spot
+            - panel
+
 stop_effect_rotation:
   name: Stop Effect Rotation
   description: Stop the server-side effect rotation on the target lamps.

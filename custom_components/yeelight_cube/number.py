@@ -12,7 +12,8 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import INTENSITY_RANGE, MODE_CLOCK, MODE_NATIVE_EFFECT, SPEED_RANGE
+from .const import MODE_NATIVE_EFFECT
+from .effect_catalog import INTENSITY_RANGE, LAMP_ANIMATION_EFFECTS, SPEED_RANGE
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
 from .lamp_power import BASE_W, NO_LIMIT_W
@@ -25,13 +26,13 @@ PARALLEL_UPDATES = 0
 
 
 class CubeNumber(CubeControlEntity, NumberEntity):
-    """A slider of one lamp. The light keeps it in ``_slot`` and pushes every
-    change made elsewhere through async_update_from_light, so it never
+    """A slider of one lamp. It listens to the light's ``_topic`` (light_state):
+    every change made elsewhere comes through async_update_from_light, so it never
     polls. Named by its translation key, after the lamp's name."""
 
     _attr_should_poll = False
     _attr_mode = NumberMode.SLIDER
-    _slot = None
+    _topic = None
 
     def __init__(
         self, light_entity, config_entry: ConfigEntry, unique_suffix: str,
@@ -40,7 +41,7 @@ class CubeNumber(CubeControlEntity, NumberEntity):
     ):
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_{unique_suffix}"
+        self._attr_unique_id = f"{light_entity.unique_id}_{unique_suffix}"
         self._attr_native_min_value = float(low)
         self._attr_native_max_value = float(high)
         self._attr_native_step = float(step)
@@ -62,8 +63,8 @@ class CubeNumber(CubeControlEntity, NumberEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        if self._slot:
-            self._register_on_light(self._slot)
+        if self._topic:
+            self._listen_to_light(self._topic)
         self.async_update_from_light()
 
     @callback
@@ -75,8 +76,7 @@ class CubeNumber(CubeControlEntity, NumberEntity):
 
 async def _restart_scroll(light) -> None:
     """A new interval takes effect at once while the text scrolls."""
-    if light._is_scrolling:
-        light.start_scroll_timer()
+    await light.async_restart_scroll()
 
 
 async def _redraw_with_power_limit(light) -> None:
@@ -84,15 +84,21 @@ async def _redraw_with_power_limit(light) -> None:
     draws are limited: built-in modes (clock, native effects, Music Flow)
     are left running. A user change, unlike a background "display_update":
     never suppressed, and not animated."""
-    if light._is_on and not light.lamp_draws_matrix:
+    if light.is_on and not light.lamp_draws_matrix:
         await light.async_apply_display_mode(update_type="power_limit")
 
 
 async def _redraw_in_background(light) -> None:
-    """Re-render (the lamp's adjustments) without holding up the slider."""
-    light._create_tracked_task(
-        light.async_apply_display_mode(), name=f"yeelight_cube_adjustments_{light._ip}"
-    )
+    """Re-render (the lamp's adjustments) without holding up the slider.
+    Not while the lamp runs its own effect, clock or music, or a streamed
+    effect: none takes the adjustments, and sending it again would restart
+    it at each step. An animation does (its GIF is uploaded again)."""
+    if light.lamp_draws_matrix and not (
+        light.mode == MODE_NATIVE_EFFECT and light.native_effect in LAMP_ANIMATION_EFFECTS
+        and not light.music_flow_enabled
+    ):
+        return
+    light.redraw_in_background("yeelight_cube_adjustments")
 
 
 @dataclass(frozen=True)
@@ -111,7 +117,7 @@ class SettingNumber:
     digits: int | None = None
     translation_key: str | None = None
     category: EntityCategory | None = None
-    slot: str | None = None
+    topic: str | None = None
     after: Callable[[object], Awaitable[None]] | None = None
 
 
@@ -119,7 +125,7 @@ SETTING_NUMBERS = (
     SettingNumber(
         "scroll_speed", "_scroll_speed", 0.05, 2.0, 0.05, 0.2,
         unit="s", digits=2, translation_key="scroll_speed", category=EntityCategory.CONFIG,
-        slot="_scroll_speed_entity", after=_restart_scroll,
+        topic="scroll_speed", after=_restart_scroll,
     ),
     # Frames the integration draws are dimmed so the lamp's estimated draw
     # stays under this many watts (7 W = no limit; the lamp never draws more
@@ -158,6 +164,20 @@ PREVIEW_ADJUSTMENTS = (
 )
 
 
+async def _matrix_drawing_live(light) -> None:
+    await light.async_matrix_drawing_changed()
+
+
+# A Cube Matrix's drawing animation speed (light_matrix; the Drawing
+# animation select): the lamp's raw speed, 1-255.
+MATRIX_NUMBERS = (
+    SettingNumber(
+        "drawing_animation_speed", "_matrix_drawing_speed", 1, 255, 1, 128,
+        translation_key="drawing_animation_speed", after=_matrix_drawing_live,
+    ),
+)
+
+
 class CubeSettingNumber(CubeNumber):
     """A slider of one lamp setting (SETTING_NUMBERS, PREVIEW_ADJUSTMENTS)."""
 
@@ -167,19 +187,19 @@ class CubeSettingNumber(CubeNumber):
             spec.low, spec.high, spec.step, spec.unit, spec.translation_key,
         )
         self._spec = spec
-        self._slot = spec.slot
+        self._topic = spec.topic
         if spec.category:
             self._attr_entity_category = spec.category
 
     @property
     def native_value(self) -> float:
         spec = self._spec
-        return float(getattr(self._light_entity, spec.attr, spec.default))
+        return float(self._light_entity.setting(spec.attr, spec.default))
 
     async def async_set_native_value(self, value: float) -> None:
         spec = self._spec
         value = int(value) if spec.digits is None else round(value, spec.digits)
-        setattr(self._light_entity, spec.attr, max(spec.low, min(spec.high, value)))
+        self._light_entity.set_setting(spec.attr, max(spec.low, min(spec.high, value)))
         self._write_states()
         if spec.after:
             await spec.after(self._light_entity)
@@ -188,10 +208,7 @@ class CubeSettingNumber(CubeNumber):
         await super().async_added_to_hass()
         if self._spec in PREVIEW_ADJUSTMENTS:
             # The adjustments service updates them all at once (until removed).
-            entities = self._light_entity._preview_number_entities
-            key = self._spec.unique_suffix
-            entities[key] = self
-            self.async_on_remove(lambda: entities.get(key) is self and entities.pop(key))
+            self._listen_to_light("preview_adjustments")
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:
@@ -210,7 +227,7 @@ async def async_setup_entry(
 
     # The matrix transition settings of an earlier version (transitions removed).
     remove_retired_entities(hass, "number", [
-        f"{light_entity._attr_unique_id}_{key}" for key in ("transition_steps", "transition_duration")
+        f"{light_entity.unique_id}_{key}" for key in ("transition_steps", "transition_duration")
     ])
     async_add_entities([
         YeelightCubeGradientAngleNumber(light_entity, entry),
@@ -220,6 +237,10 @@ async def async_setup_entry(
             CubeSettingNumber(light_entity, entry, spec)
             for spec in (*SETTING_NUMBERS, *PREVIEW_ADJUSTMENTS)
         ),
+        *(
+            CubeSettingNumber(light_entity, entry, spec) for spec in MATRIX_NUMBERS
+            if light_entity.is_cube_matrix
+        ),
     ])
     return True
 
@@ -227,7 +248,7 @@ async def async_setup_entry(
 class YeelightCubeGradientAngleNumber(CubeNumber):
     """Number entity for controlling the gradient angle (0-360°) on the Yeelight Cube Lite."""
 
-    _slot = "_angle_number_entity"
+    _topic = "angle"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the gradient angle number entity."""
@@ -244,16 +265,14 @@ class YeelightCubeGradientAngleNumber(CubeNumber):
         full-precision ``_angle`` used for rendering.
         """
         try:
-            return round(float(getattr(self._light_entity, '_angle', 0.0)), 1)
+            return round(float(self._light_entity.angle), 1)
         except (TypeError, ValueError):
             return 0.0
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the gradient angle and apply to the lamp."""
-        _LOGGER.debug("[ANGLE NUMBER] User set angle to %s° for %s", value, self._light_entity._ip)
-
-        self._light_entity._angle = value
-        await self._light_entity.async_apply_display_mode(update_type='color_change')
+        _LOGGER.debug("[ANGLE NUMBER] User set angle to %s° for %s", value, self._light_entity.ip)
+        await self._light_entity.async_set_gradient_angle_value(value)
         self._write_states()
 
 
@@ -273,18 +292,12 @@ class _EffectSettingNumber(CubeNumber):
 
     @property
     def native_value(self) -> float:
-        return float(getattr(self._light_entity, self._attr))
+        return float(self._light_entity.setting(self._attr))
 
     async def async_set_native_value(self, value: float) -> None:
         light = self._light_entity
         low, high = int(self._attr_native_min_value), int(self._attr_native_max_value)
-        setattr(light, self._attr, max(low, min(high, int(value))))
-        if (
-            light._is_on
-            and light._mode in (MODE_CLOCK, MODE_NATIVE_EFFECT)
-            and light.effect_setting_applies(self._setting)
-        ):
-            await light.async_apply_display_mode(update_type="color_change")
+        await light.async_set_effect_setting(self._attr, max(low, min(high, int(value))), self._setting)
         self._write_states()
 
 
@@ -292,7 +305,7 @@ class YeelightCubeNativeEffectSpeedNumber(_EffectSettingNumber):
     """Control the rate used by built-in animations."""
 
     _attr_translation_key = "native_effect_speed"
-    _slot = "_native_effect_speed_entity"
+    _topic = "native_effect_speed"
     _setting = "speed"
     _attr = "_native_effect_speed"
 
@@ -302,10 +315,10 @@ class YeelightCubeNativeEffectSpeedNumber(_EffectSettingNumber):
 
 class YeelightCubeNativeEffectIntensityNumber(_EffectSettingNumber):
     """Control the intensity of built-in animations (what it sets depends on
-    the effect: const.LAMP_INTENSITY_SLOTS)."""
+    the effect: effect_catalog.LAMP_INTENSITY_SLOTS)."""
 
     _attr_translation_key = "native_effect_intensity"
-    _slot = "_native_effect_intensity_entity"
+    _topic = "native_effect_intensity"
     _setting = "intensity"
     _attr = "_native_effect_intensity"
 

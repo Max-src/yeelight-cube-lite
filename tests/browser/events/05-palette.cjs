@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 module.exports = async (t) => {
-  const { page, waitForCall, lamp } = t;
+  const { page, waitForCall } = t;
   // --- Palette card: the shared gallery with the card's own previews -------
   await page.evaluate(() => {
     window.savedPalettes = hass.states["sensor.pal"];

@@ -8,17 +8,24 @@ import logging
 import copy
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
+from homeassistant.helpers.restore_state import ExtraStoredData  # type: ignore
 
 from .const import (
+    DEVICE_ORIENTATIONS,
+    DEVICE_ORIENTATION_TO_FLIP,
+    LAMP_MODES,
+    MATRIX_DISPLAY_MODES,
+    ORIENTATION_FLIPPED,
+    ORIENTATION_NORMAL,
+    LEGACY_POWER_ON_STATES,
+    POWER_ON_STATES,
+)
+from .effect_catalog import (
     ALL_NATIVE_EFFECTS,
     ANIMATION_LAYOUTS,
     LAMP_ANIMATION_EFFECTS,
     NATIVE_COLOR_MODES,
     DEFAULT_NATIVE_EFFECT_DIRECTION,
-    DEVICE_ORIENTATIONS,
-    DEVICE_ORIENTATION_TO_FLIP,
-    LAMP_MODES,
-    MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
@@ -28,10 +35,6 @@ from .const import (
     canonical_button_effect_name,
     clock_style_name_saved_by_1_4,
     canonical_effect_name,
-    ORIENTATION_FLIPPED,
-    ORIENTATION_NORMAL,
-    LEGACY_POWER_ON_STATES,
-    POWER_ON_STATES,
     SPEED_RANGE,
 )
 from .color_adjustments import active_adjustments
@@ -109,7 +112,7 @@ def _stored_gif(value):
         "upside_down": value.get("upside_down") is True,
         "interrupted": value.get("interrupted") is True,
     }
-    # Its layout (const.ANIMATION_LAYOUTS); none before layouts existed: upright.
+    # Its layout (effect_catalog.ANIMATION_LAYOUTS); none before layouts existed: upright.
     if value.get("layout") in ANIMATION_LAYOUTS:
         stored["layout"] = value["layout"]
     # Its speed and color adjustments; none before they were in it: the
@@ -283,7 +286,7 @@ class StateRestoreMixin:
             self._brightness = max(1, min(255, restored_brightness))
             # The lamp's own brightness is not known after a restart: the
             # first update sends it (right after direct mode, before frames).
-            self._last_hardware_brightness = None
+            self._forget_hardware_brightness()
             _LOGGER.debug(
                 "[BRIGHTNESS_DIAG] [%s] RESTORE -- raw=%s -> user=%s/255",
                 self._ip, restored_brightness, self._brightness,
@@ -310,17 +313,17 @@ class StateRestoreMixin:
 
         # Mode and custom_draw_active (old states: mode 'Custom Draw')
         if attributes.get("custom_draw_active") is not None:
-            self._custom_draw_active = bool(attributes["custom_draw_active"])
+            self._enter_mode(custom_draw=bool(attributes["custom_draw_active"]))
         else:
-            self._custom_draw_active = attributes.get("mode") == "Custom Draw"
+            self._enter_mode(custom_draw=attributes.get("mode") == "Custom Draw")
         restored_mode = attributes.get("mode")
         if restored_mode in MATRIX_DISPLAY_MODES or restored_mode in LAMP_MODES:
-            self._mode = restored_mode
+            self._enter_mode(restored_mode)
         matrix_mode = attributes.get("matrix_mode")
         if matrix_mode in MATRIX_DISPLAY_MODES:
-            self._matrix_mode = matrix_mode
+            self._enter_mode(matrix_mode=matrix_mode)
         elif self._mode in MATRIX_DISPLAY_MODES:
-            self._matrix_mode = self._mode
+            self._enter_mode(matrix_mode=self._mode)
 
         # Clock content (3-way): restore directly if present, otherwise
         # migrate from the legacy boolean show_date flag, then keep the compat
@@ -465,7 +468,7 @@ class StateRestoreMixin:
         longer runs and the lamp is on. Started alone, it joins the lamps
         still running it (same item, same steps). True when it started."""
         if saved is None:
-            saved = getattr(self, "_saved_display_rotation", None)
+            saved = self._saved_display_rotation
         if (
             not saved
             or self._rotation_active
@@ -487,3 +490,14 @@ class StateRestoreMixin:
                 "[RESTORE_STATE] [%s] Could not resume the %s rotation: %s",
                 self._ip, saved["kind"], err,
             )
+
+
+class SavedSettings(ExtraStoredData):
+    """A light's settings as saved for a restart apart from its state
+    (light.extra_restore_state_data): kept while the lamp is unreachable."""
+
+    def __init__(self, settings: dict) -> None:
+        self._settings = settings
+
+    def as_dict(self) -> dict:
+        return self._settings

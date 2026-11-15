@@ -1,6 +1,14 @@
 """The waits around direct mode (light_display.ACTIVATION_TIMING), by the
 connection in use: the values from the watched tests (18 Oct 2026), and
 the only place they are written."""
+import sys as _sys
+
+# Other test files import this one as tests.test_activation_timing, test discovery as
+# test_activation_timing: one module under both names, so its setup runs once and a patch
+# of it is seen by all.
+for _name in ("test_activation_timing", "tests.test_activation_timing"):
+    _sys.modules.setdefault(_name, _sys.modules[__name__])
+
 import ast
 import re
 import unittest
@@ -28,11 +36,11 @@ class ActivationTimingTests(unittest.TestCase):
         }, _table())
 
     def test_every_wait_is_read_from_the_table_for_the_connection(self):
-        light = (ROOT / "light.py").read_text(encoding="utf-8")
+        light = (ROOT / "light_onoff.py").read_text(encoding="utf-8")
         self.assertIn('await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["native_exit_settle"])', light)
         self.assertIn('await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["direct_mode_settle"])', light)
-        self.assertIn('ACTIVATION_TIMING[self._cube_matrix.transport]["native_exit_resend"]', DISPLAY)
-        self.assertIn('staleness = ACTIVATION_TIMING[self._cube_matrix.transport]["staleness"]', DISPLAY)
+        self.assertIn('ACTIVATION_TIMING[self._lamp_client.transport]["native_exit_resend"]', DISPLAY)
+        self.assertIn('staleness = ACTIVATION_TIMING[self._lamp_client.transport]["staleness"]', DISPLAY)
         self.assertIn("if staleness is not None and fx_age > staleness:", DISPLAY)
         for source in (light, DISPLAY):
             self.assertEqual([], re.findall(r"asyncio\.sleep\(0\.(?:3|15|12)\)", source))

@@ -4,63 +4,21 @@ from unittest.mock import AsyncMock, Mock
 
 from tests.test_native_features import (
     SERVICES_SOURCE,
-    CONSTANTS,
     LIGHT_SOURCE,
     ROOT,
     _load_standalone_functions,
 )
+from fakes import FakeEntry, FakeHass, ServiceValidationError, make_light
 
 DOMAIN = "yeelight_cube"
 
 
-def lamp_class():
-    fns = _load_standalone_functions(
-        LIGHT_SOURCE,
-        {
-            "_normalize_rotation_items",
-            "_normalize_favourites",
-            "canonical_item_name",
-            "_former_names",
-            "_favourites_store",
-            "_device_store",
-            "_restore_favourites",
-            "async_set_favourites",
-            "_music_flow_runtime_storage_key",
-        },
-        {
-            "DOMAIN": DOMAIN,
-            "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
-            "NATIVE_COLOR_MODES": CONSTANTS["NATIVE_COLOR_MODES"],
-            "FAVOURITE_KINDS": ("native", "clock"),
-            "MAX_FAVOURITES": 100,
-            "MAX_FAVOURITE_NAME": 100,
-            "HomeAssistantError": ValueError,
-            "CLOCK_PRESET_PREFIX": "custom:",
-            **{name: CONSTANTS[name] for name in (
-                "canonical_clock_style_name",
-                "canonical_effect_name",
-            )},
-        },
-    )
-
-    class Lamp:
-        pass
-
-    for name, fn in fns.items():
-        if callable(fn) and not name.startswith("__"):
-            setattr(Lamp, name, fn)
-    return Lamp
-
-
 def make_lamp(hass_data, entry_id="entry-1"):
-    lamp = lamp_class()()
-    lamp.hass = SimpleNamespace(data=hass_data)
-    lamp._config_entry = SimpleNamespace(entry_id=entry_id)
-    lamp._ip = "192.168.4.104"
-    lamp._favourites = {}
-    lamp.async_write_ha_state = Mock()
-    lamp._schedule_integration_save = Mock()
-    return lamp
+    """The real light on `hass_data`, its state writes and saves recorded."""
+    return make_light(
+        hass=FakeHass(hass_data), entry=FakeEntry(entry_id),
+        async_write_ha_state=Mock(), _schedule_integration_save=Mock(),
+    )
 
 
 class FavouritesTests(unittest.IsolatedAsyncioTestCase):
@@ -102,8 +60,9 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
         # Present but empty: cards know the list was set and do not migrate
         # an old browser-stored list over it.
         self.assertEqual({"native": []}, lamp._favourites)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ServiceValidationError) as refused:
             await lamp.async_set_favourites("gradient", [])
+        self.assertEqual("unknown_kind", refused.exception.translation_key)
 
     async def test_the_list_is_capped(self):
         lamp = make_lamp({DOMAIN: {}})

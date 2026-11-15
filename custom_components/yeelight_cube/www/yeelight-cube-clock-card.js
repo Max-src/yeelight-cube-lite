@@ -1,8 +1,10 @@
 import {
+  followPreviewState,
   previewOnly,
   previewAttributes,
   setPreviewAttributes,
 } from "./offline-preview-state.js";
+import { CLOCK_CARD_COLORS, ColorModeController } from "./color-mode-controller.js";
 import { createClockCardAdapter } from "./clock-card-adapter.js";
 import {
   resolveClockAppearance,
@@ -28,7 +30,7 @@ import {
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import { galleryCardSize, YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { galleryCardSize, YeelightCardMixin, cubeLampEntities, lampInputs } from "./card-base.js";
 import {
   cardNotice,
   cardShell,
@@ -38,27 +40,23 @@ import {
 import { LampSliders } from "./lamp-sliders.js";
 import { createPendingValue } from "./pending-value.js";
 import { LitElement, html, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
-import "./collection-gallery.js";
-import "./color-mode-ui.js";
+import { modeGallery } from "./collection-gallery.js";
+import { colorModeRow } from "./color-mode-ui.js";
 import { matchingColorOption } from "./color-mode-selector-utils.js";
 import "./mode-controls-ui.js";
 import "./clock-preset-manager.js";
 import {
   clockPresetLibrary,
   editClockPreset,
-  watchClockPresets,
   clockColorToRgb,
-  clockColorModeOptions,
   clockPresetKey,
   clockStylesWithPresets,
   visibleClockStyles,
   matchingClockPreset,
   clockStyleAction,
-  clockPresetsByKind,
   clockColorPresetAction,
   matchingClockColorPreset,
 } from "./clock-preset-utils.js";
-import { closeColorPicker } from "./color-picker-utils.js";
 import {
   renderSliderGroup,
   lightSliderConfig,
@@ -75,7 +73,6 @@ import {
 } from "./slider-control-utils.js";
 import { TEXT_SELECTOR_STYLES, PREVIEW_SELECTOR_STYLES } from "./selector-shared-styles.js";
 import {
-  NATIVE_COLOR_MODES,
   clockStyleColorModeState,
   clockStyleRespondsToCustomColor,
   clockStyleByName,
@@ -98,6 +95,7 @@ import { FamilyFilter, GallerySort, familyBadge, matchesEffectFamily } from "./e
 import { ITEM_BADGES } from "./item-badges.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
 import { rgbToHex } from "./color-utils.js";
+import { previewContext } from "./preview-context.js";
 import { itemLabel, itemMatchesQuery, normalizeCardOptions } from "./card-config.js";
 
 const CONTENT_OPTIONS = [
@@ -126,6 +124,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       onExpire: () => this.isConnected && this.requestUpdate(),
       yieldToLamp: true,
     });
+    // The Color Modes row (color-mode-controller.js).
+    this._colors = new ColorModeController(this, CLOCK_CARD_COLORS);
     this._elapsed = 0;
     this._lastPhaseTs = null;
     this._animLoop = null;
@@ -296,7 +296,10 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       // freshly-added card applies changes to every lamp until narrowed down.
       entity: allEntities[0] || "",
       target_entities: allEntities,
-      style_selector_style: "preview-grid",
+      // A new card: the Original gallery, as a grid, 10 styles a page.
+      style_selector_style: "original",
+      effect_view: "grid",
+      items_per_page: 10,
       preview_appearance: { ...APPEARANCE_PRESETS.classic },
     };
   }
@@ -305,19 +308,15 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return galleryCardSize(this._selectorStyle());
   }
 
-  set hass(hass) {
-    if (!this._hassChanged(hass) && this.hasUpdated && this._stateSignature !== null) {
-      // Nothing this card reads was replaced: keep the fresh hass object (for
-      // service calls) but skip attribute reads, controller updates and the
-      // state-signature work. Drag previews still drop once the drag ends.
-      this._hass = hass;
-      return;
-    }
-    this._attrs();
-    const wasPreviewOnly = previewOnly(this);
-    this._hass = hass;
-    if (wasPreviewOnly && !previewOnly(this)) {
-      this._offlinePreviewDraft = null;
+  // A push waits for nothing once the card rendered its state (card-base
+  // set hass): one that changed nothing it reads is skipped.
+  _hassPending() {
+    return !this.hasUpdated || this._stateSignature === null;
+  }
+
+  _hassUpdated() {
+    // Back online: the offline picks go.
+    if (followPreviewState(this)) {
       this._customMode = undefined;
       this._customDraft = null;
       this._customPresetColor = null;
@@ -337,44 +336,33 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     }
   }
 
-  get hass() {
-    return this._hass;
-  }
-
-  // Home Assistant hands out a new hass object on every state push anywhere.
-  // Everything this card reads comes from the config, the primary/target lamp
-  // states, the clock preset library (cached per hass.states and resolved via
-  // its remembered sensor), the native font sensor and the service registry;
-  // when all of those are the same references as the last processed update
-  // (and the first render is done) the update can be skipped entirely.
-  // What the clock shows from hass (card-base _hassChanged).
+  // What the clock shows from hass (card-base _hassChanged): the config, the
+  // target lamps (not their matrix_colors: lampInputs), the clock preset
+  // library (cached per hass.states and resolved via its remembered
+  // sensor), the native font sensor and the service registry.
   _hassInputs(hass) {
     const states = hass?.states;
-    const primary = this._primaryEntity();
     return [
       this.config,
       hass?.services,
       clockPresetLibrary(hass),
       this._nativeFontState(states),
-      primary ? states?.[primary] : undefined,
-      ...this._targets.map((entity) => states?.[entity]),
+      ...this._targets.flatMap((entity) => lampInputs(states?.[entity])),
     ];
   }
 
   connectedCallback() {
     super.connectedCallback();
-    // The shared preset library changed here (clock-preset-utils.js).
-    this._presetsOff = watchClockPresets(this);
+    this._colors.connect();
     this._startAnimation();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._presetsOff?.();
+    this._colors.disconnect();
     this._commands.reset();
     this._pendingStyle.clear();
     this._controls?.disconnect();
-    closeColorPicker(this);
     this._stopAnimation();
     this._lampSliders.destroy();
   }
@@ -584,35 +572,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
 
   // The color-mode selector value: a built-in palette when one is active,
   // otherwise "custom" when a free custom RGB override is set, else "normal".
-  // A clicked color mode or saved color (pending-value.js): highlighted at
-  // once, kept until the lamp reports it (or another: another dashboard
-  // wins), or for 5 s; dropped if the request fails (like the Native card's).
-  get _pendingColorMode() {
-    return (this.__pendingColorMode ||= createPendingValue({
-      onExpire: () => this.isConnected && this.requestUpdate(),
-      yieldToLamp: true,
-    }));
-  }
-
-  // Another color command replaces a pending pick (its echo is not awaited).
-  _dropColorPick() {
-    this._colorClick = (this._colorClick || 0) + 1;
-    this._pendingColorMode.clear();
-  }
-
-  // Show `value` at once for the request `sent` (a promise of success; sent
-  // first, so its _callSetClock drops the previous pick, not this one).
-  _showColorPick(value, sent) {
-    const click = (this._colorClick = (this._colorClick || 0) + 1);
-    this._pendingColorMode.hold(value);
-    Promise.resolve(sent).then((ok) => {
-      if (this._colorClick !== click) return; // a newer click owns it
-      if (ok) this._pendingColorMode.set(value);
-      else this._pendingColorMode.clear();
-      this.requestUpdate();
-    });
-  }
-
   _currentColorMode(a) {
     if (this._customMode) return "custom";
     const mode = a.clock_color_mode || "normal";
@@ -647,20 +606,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     );
   }
 
-  // Selector options: Custom sits right after Normal, ahead of the palettes.
-  _colorModeOptions() {
-    return clockColorModeOptions(
-      NATIVE_COLOR_MODES,
-      clockPresetLibrary(this._hass),
-      this.config,
-    );
-  }
-
   // The orientation the previews follow: the one being set (the lamp's until
   // it confirms). The lamp's clock never turns, so an upside-down or
   // standing lamp shows it so (matrix-view.js viewerFrame).
   _previewOrientation() {
-    return this._controls?.pendingOrientation || deviceOrientation(this._attrs());
+    return this._controls?.shownOrientation() ?? deviceOrientation(this._attrs());
   }
 
   // Build the attrs object a preview needs, mixing the current format settings
@@ -685,6 +635,10 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       native_effect_intensity: this._animationIntensity(),
       // The one a Lamp mounted pick is about to give it (withPendingMount).
       mount_profile: withPendingMount(a, this._controls?.pendingOrientation).mount_profile,
+      // A Cube Matrix's modules: the digits laid out in its columns, its
+      // spots lit (renderClockFrame, matrix-modules.js).
+      matrix_columns: a.matrix_columns,
+      matrix_modules: a.matrix_modules,
     };
   }
 
@@ -744,7 +698,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   async _callSetClock(data, managed = false, options = {}) {
     // A style, color or color mode sent replaces a pending color pick.
     if ("color_mode" in data || "color" in data || "style" in data)
-      this._dropColorPick();
+      this._colors.drop();
     if (previewOnly(this)) {
       const style = this._controlStyles().find(
         (item) => item.id === data.style || item.name === data.style,
@@ -776,9 +730,10 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     );
   }
 
-  // One of the card's commands, rotation-aware (mode controller send).
+  // One of the card's commands, rotation-aware, the shown palette shared
+  // first in the Palette color mode (color-mode-controller.js send).
   _command(service, data, domain = "yeelight_cube", managed = false, options = {}) {
-    return this._controls.send(service, data, { domain, managed, ...options });
+    return this._colors.send(service, data, { domain, managed, ...options });
   }
 
   _applyStyle(name, managed = false) {
@@ -823,12 +778,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     );
     if (!style) return false;
     const action = clockStyleAction(style);
-    action.color_mode =
-      favourite.colorMode === "custom" ? "normal" : favourite.colorMode;
-    action.color =
-      favourite.colorMode === "custom"
-        ? favourite.color
-        : action.color || "clear";
+    Object.assign(action, this._colors.favouriteColor(favourite, action.color || "clear"));
     const context = this._controls.context;
     if (
       !(await this._callSetClock(action, true)) ||
@@ -878,11 +828,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._pendingStyleColor = null;
     if (mode === "custom") {
       // Custom is local (its flag): no pending highlight.
-      this._dropColorPick();
+      this._colors.drop();
       this._customDraft = currentColor || null;
       if (!wasCustom) this._customPresetColor = null;
     } else if (mode === "normal") {
-      this._showColorPick(
+      // Sent first, so its _callSetClock drops the previous pick, not this.
+      this._colors.show(
         mode,
         this._callSetClock({
           color_mode: "normal",
@@ -890,7 +841,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         }),
       );
     } else {
-      this._showColorPick(mode, this._callSetClock({ color_mode: mode }));
+      this._colors.show(mode, this._callSetClock({ color_mode: mode }));
     }
     if (mode !== "custom") {
       this._customDraft = null;
@@ -914,10 +865,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   }
 
   _applyColorPreset(id) {
-    const preset = clockPresetsByKind(
-      clockPresetLibrary(this._hass),
-      "color_mode",
-    ).find((item) => item.id === id);
+    const preset = this._colors.preset(`custom:${id}`);
     if (!preset) return;
     this._selectedColorPresetId = preset.id;
     this._selectedColorPresetName = null;
@@ -1097,7 +1045,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       ></yeelight-mode-controls>`;
   }
 
-  // The shared gallery (collection-gallery.js), used exactly like the Native
+  // The shared gallery (collection-gallery.js modeGallery), as the Native
   // Effects card's. While a rotation runs with "Highlight the playing clock
   // mode" off, it keeps the selection from before it started (displayed()).
   // It stays live while a pick is sent: quick picks only send the latest.
@@ -1105,27 +1053,17 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     // The lamp's style, or a pick it doesn't show yet.
     const live = clockPresetKey(current);
     this._pendingStyle.settle(live);
-    return html`<yc-collection-gallery
-      .config=${this.config}
-      .items=${this._previewItems()}
-      .active=${offline
-        ? null
-        : this._controls.displayed("key", this._pendingStyle.value ?? live)}
-      .model=${this._controls}
-      .filter=${this._families.gallery(this._availableStyles())}
-      .sort=${this._sort.gallery()}
-      .revealKey=${revealKey}
-      searchLabel="Search clock modes"
-      actionLabel="Show on the lamp"
-      .onSelect=${(name) => this._controls.choose(name)}
-      .onQuery=${(query) => {
-        this._searchQuery = query;
-        this._controls?.notify();
-      }}
-      .onRename=${(key, name) => this._renamePreset(key, name)}
-      .onDelete=${(key) => this._deletePreset(key)}
-      @gallery-updated=${this._onGalleryUpdated}
-    ></yc-collection-gallery>`;
+    return modeGallery(this, {
+      items: this._previewItems(),
+      active: offline ? null : this._controls.displayed("key", this._pendingStyle.value ?? live),
+      filter: this._families.gallery(this._availableStyles()),
+      revealKey,
+      searchLabel: "Search clock modes",
+      actionLabel: "Show on the lamp",
+      onRename: (key, name) => this._renamePreset(key, name),
+      onDelete: (key) => this._deletePreset(key),
+      onUpdated: () => this._onGalleryUpdated(),
+    });
   }
 
   // A custom clock style of the gallery (key custom:<id>), or undefined.
@@ -1209,6 +1147,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         orientation,
       ),
       vertical,
+      // A Cube Matrix's modules only (preview-context.js).
+      context: previewContext(this._attrs(), { pendingOrientation: orientation }),
       dataMode: clockPresetKey(s),
       // Custom styles are the user's own: renamed and deleted in the gallery.
       editable: !!s.presetId,
@@ -1323,7 +1263,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
 
   _renderColorMode(a) {
     const mode = this._currentColorMode(a);
-    const options = this._colorModeOptions();
+    const options = this._colors.options();
     const saved =
       mode === "custom" && !this._customDraft
         ? matchingColorOption(
@@ -1333,25 +1273,18 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
             this._selectedColorPresetName,
           )
         : null;
-    const lamp = mode === "custom" ? saved?.value : mode;
-    this._pendingColorMode.settle(lamp);
-    const cur = this._pendingColorMode.value ?? lamp;
-    const draft = this._customMode && this._customDraft;
     return html` <div
       class="section"
       style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #7c5cbf);"
     >
-      <yeelight-color-mode
-        .config=${this.config}
-        .options=${options}
-        .selected=${this._controls.displayed("color", cur)}
-        .draft=${draft || null}
-        .hass=${this._hass}
-        .saveKinds=${this._saveKinds()}
-        .previewAttrs=${this._previewAttrs(this._currentStyle())}
-        .onSelect=${(value) => this._applyColorMode(value)}
-        .onSaved=${(detail) => this._onPresetSaved(detail)}
-      ></yeelight-color-mode>
+      ${colorModeRow(this, {
+        options,
+        lamp: mode === "custom" ? saved?.value : mode,
+        draft: this._customMode && this._customDraft,
+        saveKinds: this._saveKinds(),
+        previewAttrs: this._previewAttrs(this._currentStyle()),
+        onSaved: (detail) => this._onPresetSaved(detail),
+      })}
     </div>`;
   }
 
@@ -1440,9 +1373,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // The trailing "+" choice opens the native picker; changes apply live.
   // "Add" in the color modes: the picker at the row's Add (color-mode-ui).
   _openCustomPicker() {
-    this.shadowRoot
-      ?.querySelector("yeelight-color-mode")
-      ?.openAddPicker(this, this._customDraft, (rgb) => this._applyColor(rgb));
+    this._colors.openPicker(this._customDraft, (rgb) => this._applyColor(rgb));
   }
 
   static styles = unsafeCSS(CLOCK_CARD_CSS);

@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 module.exports = async (t) => {
-  const { browser, page, errors } = t;
+  const { page, errors } = t;
   const favouriteResults = await page.evaluate(async () => {
     native.style.display = "";
     clock.style.width = "";
@@ -58,8 +58,7 @@ module.exports = async (t) => {
         if (JSON.stringify(customCommand.data.color) !== "[12,34,56]")
           throw Error("Custom RGB lost");
         model.save([saved[2]]);
-        if (card === clock) card._customDraft = [90, 80, 70];
-        else card._customColorDraft = [90, 80, 70];
+        card._customDraft = [90, 80, 70];
         model.update();
         view._manage = true;
         view.requestUpdate();

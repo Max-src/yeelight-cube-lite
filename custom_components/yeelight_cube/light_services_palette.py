@@ -51,26 +51,13 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             # Copy as tuples (like every other color setter): sharing the
-            # stored list would let later color edits change the saved palette.
-            target_entity._text_colors = [tuple(c) for c in palette["colors"]]
-            if target_entity._text_colors:
-                target_entity._rgb_color = target_entity._text_colors[0]
-            # Published at once: the previews that draw the palette (effects
-            # and clock in the Palette color mode) follow it without waiting
-            # for the lamp, which may take a while (queued commands, a music
-            # mode starting) or refuse.
-            if target_entity.hass is not None:
-                target_entity.async_write_ha_state()
-            # (Panel Color Sequence included: the display render colors it.)
-            await target_entity.async_apply_display_mode(update_type='pixel_art')
-            # Push the updated state so consumers watching the `text_colors`
-            # attribute (e.g. the gradient card's live preview) refresh
-            # immediately.  Without this the new colors are only exposed on the
-            # next unrelated state write (e.g. an angle change), which is why the
-            # preview appeared stale until the user moved the angle wheel.
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
-            _LOGGER.debug("[palette-backend] Applied palette idx %s to %s", idx, target_entity._ip)
+            # stored list would let later color edits change the saved
+            # palette. (Panel Color Sequence included: the display render
+            # colors it.)
+            await target_entity.async_set_text_colors(
+                [tuple(c) for c in palette["colors"]], update_type="pixel_art"
+            )
+            _LOGGER.debug("[palette-backend] Applied palette idx %s to %s", idx, target_entity.ip)
 
         run_on_lamps("LOAD_PALETTE", targets, _apply_one)
 

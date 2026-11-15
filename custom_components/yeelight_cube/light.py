@@ -1,91 +1,64 @@
+"""The Yeelight Cube light entity: YeelightCubeLight and its platform setup.
+
+Owns YeelightCubeLight, the light entity composed of the light_*.py mixins
+(the MODULE MAP below says which concern each holds), with what is the
+entity's core: its construction (__init__, calling every mixin's
+_init_*_state), the state write that keeps its controls and power estimate
+in step (async_write_ha_state), its device info and profile, its background
+tasks, the pixel art it shows, and the light platform's setup
+(async_setup_entry), with the lamps the services find (_ENTITY_REGISTRY).
+"""
 import logging
 import asyncio
-import base64
-import functools
 import time
-from collections import deque
-from datetime import timedelta
 import voluptuous as vol # type: ignore
-from homeassistant.components.light import LightEntity, ColorMode # type: ignore
+from homeassistant.components.light import LightEntity # type: ignore
 from homeassistant.helpers.restore_state import RestoreEntity # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore
-from homeassistant.helpers.event import async_track_time_change, async_track_time_interval # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
+from .device_profile import CUBE_LITE_PROFILE, model_key
 from .const import (
-    DEFAULT_DEVICE_ORIENTATION,
-    DEVICE_ORIENTATIONS,
-    DEVICE_ORIENTATION_TO_FLIP,
-    LAMP_MODES,
-    MODE_CLOCK,
-    MODE_NATIVE_EFFECT,
+    CONF_MODEL,
+    CONF_MODEL_PROBE_MISSES,
+    MODEL_PROBE_STARTS,
     CONF_DEVICE_ID,
     CONF_IP,
     LAN_PORT,
-    clock_style_colors,
-    DEFAULT_MATRIX_DISPLAY_MODE,
-    ANIMATION_LAYOUTS,
-    DEFAULT_ANIMATION_LAYOUT,
-    DEFAULT_MUSIC_FLOW_EFFECT,
-    DEFAULT_NATIVE_CLOCK_CONTENT,
-    DEFAULT_NATIVE_CLOCK_STYLE,
-    DEFAULT_NATIVE_EFFECT,
-    DEFAULT_NATIVE_EFFECT_DIRECTION,
     DOMAIN,
-    ALL_NATIVE_EFFECTS,
-    NATIVE_CLOCK_EFFECT_ID,
-    NATIVE_CLOCK_STYLES,
-    clock_segment_modes,
-    clock_style_direct,
-    DEFAULT_NATIVE_EFFECT_INTENSITY,
-    DEFAULT_NATIVE_EFFECT_SPEED,
-    effect_family,
-    NATIVE_EFFECTS,
-    BUTTON_CLOCK_PREFIX,
-    canonical_button_effect_name,
-    ORIENTATION_FLIPPED,
-    ORIENTATION_NORMAL,
-    DEFAULT_POWER_ON_STATE,
-    POWER_ON_STATES,
 )
-from .lamp_power import BASE_W, NO_LIMIT_W, estimated_power
-from .cube_matrix import (
-    CubeConnectionError,
-    CubeMatrix,
-    is_quota_error,
-)
+from .lamp_client import LampClient
 from .entity import cube_device_info
-from .layout import Layout, Module, FONT_MAPS
 from .pixel_art_storage import expand_pixels
-
-from .color_utils import hex_to_rgb, rgb_to_hex
-from .light_color import ColorPipelineMixin, hardware_brightness_for
-from .issues import lamp_problems, report_problems
-from .light_native import NativeModesMixin, effect_direction_sent
+from .light_color import ColorPipelineMixin
+from .light_native import NativeModesMixin
 from .light_studio import StudioStreamMixin
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
 from .light_matter import MatterMixin
+from .light_matrix import MatrixMixin
 from .light_mount_profile import MountProfileMixin
-from .mount_profile import SOURCE_UNKNOWN
 from .light_brightness import BrightnessMixin
-from .light_display import ACTIVATION_TIMING, DisplayMixin
+from .light_display import DisplayMixin
+from .light_state import LightStateMixin
+from .light_actions import ActionsMixin
+from .light_attributes import AttributesMixin
+from .light_lifecycle import LifecycleMixin
+from .light_onoff import OnOffMixin
+from .light_power import PowerEstimateMixin
+from .light_settings import SettingsMixin
 
 _LOGGER = logging.getLogger(__name__)
+# A setup read (async_setup_entry) this slow (s) is warned about, naming it.
+SETUP_STEP_SLOW = 10.0
 
 # No limit per platform: every command to the lamp already waits for the
 # previous one (the device lock, light_connection._execute_hardware_op).
 PARALLEL_UPDATES = 0
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
-
-# Estimated power in the lamp's own modes (clock, native effects, Music Flow): the
-# simulated frame is sampled every LAMP_POWER_INTERVAL seconds and the
-# sensor shows the average of the last LAMP_POWER_SAMPLES (30 s).
-LAMP_POWER_INTERVAL = 5
-LAMP_POWER_SAMPLES = 6
 
 # NOTE: Per-entity and global pixel art throttle REMOVED.
 # The gradient card sends identical update_leds commands rapidly without
@@ -102,28 +75,6 @@ LAMP_POWER_SAMPLES = 6
 # that id (two lamps' names swapped). Rules: docs/ENTITY_IDS.md.
 _ENTITY_REGISTRY = {}
 
-
-@functools.lru_cache(maxsize=16)
-def _native_effect_catalog(playing: str | None, animations: bool = False) -> list:
-    """The native effects the cards list (11 KB): built once per
-    combination instead of on every state write. Shared, never modified.
-    Every effect is listed; ``extended`` only marks those the Yeelight app
-    does not offer (the cards' badge; its music modes are offered). ``animations``: whether the animations
-    to upload (LAMP_ANIMATION_EFFECTS) are offered, while a server delivers
-    the Yeelight commands. A hidden effect (the stored GIF) is not listed. One
-    that plays stays listed (``playing``)."""
-    return [
-        {"name": name, "speed": bool(spec.get("speed")),
-         "intensity": bool(spec.get("intensity")),
-         "directions": list(spec.get("directions", ())),
-         "extended": bool(spec.get("extended")),
-         "family": effect_family(spec),
-         **({"animation": spec["animation"]} if spec.get("animation") else {}),
-         "preview": True}
-        for name, spec in ALL_NATIVE_EFFECTS.items()
-        if name == playing
-        or not (spec.get("hidden") or (spec.get("animation") and not animations))
-    ]
 
 
 def _entity_id_or_list(value):
@@ -160,11 +111,30 @@ def cleanup_module_state(ip: str) -> None:
 # (state initialised in __init__ here), so behaviour is identical to one class.
 #
 #   light.py (this file) — core entity:
-#     __init__, HA lifecycle (async_added_to_hass / async_will_remove_from_hass
-#     / async_update), public properties + control setters (orientation,
-#     alignment, font…), extra_state_attributes, ensure_fx_ready,
-#     turn_on/off, physical-button presets and linked-entity sync.
+#     __init__, the state write (async_write_ha_state), device info and
+#     profile, background tasks, the pixel art shown, linked-entity sync, and
+#     the platform setup (async_setup_entry).
 #
+#   light_attributes.py (AttributesMixin)    — the entity's properties and
+#                        extra_state_attributes (what the cards read), the
+#                        settings saved apart for a restart.
+#   light_lifecycle.py  (LifecycleMixin)      — HA lifecycle: added
+#                        (timers, restore, first display), hourly update,
+#                        the minute Repairs check, removal.
+#   light_onoff.py      (OnOffMixin)          — turn_on/off, direct mode
+#                        (ensure_fx_ready), the forced refresh.
+#   light_power.py      (PowerEstimateMixin)  — the estimated power and
+#                        energy the sensors show.
+#   light_settings.py   (SettingsMixin)       — font, orientation and device
+#                        orientation, alignment, animation layout, power-on
+#                        state, physical-button presets.
+#   light_state.py      (LightStateMixin)     — what the light shows and
+#                        what the lamp is in (their only writer: named
+#                        transitions), and the controls listening to it.
+#   light_actions.py    (ActionsMixin)        — the public API the controls
+#                        (select.py, ...) and actions (light_services_*) use;
+#                        by kind of action in light_actions_display.py,
+#                        light_actions_native.py and light_actions_diagnostics.py.
 #   light_display.py    (DisplayMixin)        — the display queue
 #                        (async_apply_display_mode and its central rules), the
 #                        frame sender (apply()) and the text scroll timer.
@@ -198,6 +168,13 @@ def cleanup_module_state(ip: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class YeelightCubeLight(
+    AttributesMixin,
+    LifecycleMixin,
+    OnOffMixin,
+    PowerEstimateMixin,
+    SettingsMixin,
+    LightStateMixin,
+    ActionsMixin,
     DisplayMixin,
     BrightnessMixin,
     ColorPipelineMixin,
@@ -208,6 +185,7 @@ class YeelightCubeLight(
     StateRestoreMixin,
     RotationMixin,
     MatterMixin,
+    MatrixMixin,
     MountProfileMixin,
     LightEntity,
     RestoreEntity,
@@ -238,24 +216,18 @@ class YeelightCubeLight(
     })
 
     @property
-    def font(self):
-        return self._font
-
-    async def set_font(self, font: str):
-        if font not in FONT_MAPS:
-            _LOGGER.error("Invalid font: %s. Available: %s", font, list(FONT_MAPS.keys()))
-            return
-        self._font = font
-        await self.async_apply_display_mode(update_type='text_change')
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-    @property
     def device_info(self):
         return cube_device_info(self)
 
-    def __init__(self, cube_matrix: CubeMatrix, ip: str, config_entry: ConfigEntry):
+    @property
+    def device_profile(self):
+        """The lamp model's geometry and commands (device_profile): a Cube
+        Matrix streams what a Cube Lite draws itself."""
+        return getattr(self._lamp_client, "profile", None) or CUBE_LITE_PROFILE
+
+    def __init__(self, lamp_client: LampClient, ip: str, config_entry: ConfigEntry):
         # _palettes and _pixel_arts are now @property methods accessing global storage
-        self._cube_matrix = cube_matrix
+        self._lamp_client = lamp_client
         self._ip = ip
         self._config_entry = config_entry  # Always set during initialization
 
@@ -271,7 +243,7 @@ class YeelightCubeLight(
         # The lamp's name, its device's (entity.cube_device_info): the light
         # is the device's main entity, so it has no name of its own and Home
         # Assistant shows the device's; the other entities add theirs to it.
-        self._lamp_name = f"{cube_matrix.device_name} {short_id}"
+        self._lamp_name = f"{lamp_client.device_name} {short_id}"
         self._attr_has_entity_name = True
         self._attr_name = None
 
@@ -280,159 +252,34 @@ class YeelightCubeLight(
         # the stored IP is updated by rediscovery / zeroconf.
         self._attr_unique_id = f'yeelight_cube_{config_entry.entry_id}'
         self._is_on = True
-        self._layout = Layout("vertical", "bottom", [Module("1x1") for _ in range(100)])
-        self._custom_text = "HELLO"
         self._brightness = 255  # Store brightness as 0-255 internally
-        self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
-        self._mode = DEFAULT_MATRIX_DISPLAY_MODE
-        self._matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
-        # Custom Draw mode: pixel data and whether it is the active content.
-        self._custom_pixels = None
-        self._custom_draw_active = False
-        self._full_panel = False  # Whether to apply gradients to whole panel instead of just text
-        self._angle = 0.0
-        self._background_color = (0, 0, 0)
-        self._alignment = "center"  # Default alignment is center
-        self._font = "basic"  # Font key for FONT_MAPS (use "basic" as default)
-        self._orientation = ORIENTATION_NORMAL  # "normal" or "flipped"
-        self._device_orientation = DEFAULT_DEVICE_ORIENTATION  # right/down/left/up
-        self._rgb_color = (255, 0, 0)  # Default red color for Home Assistant color picker
-        self._native_clock_style = DEFAULT_NATIVE_CLOCK_STYLE
-        self._native_clock_show_date = False
-        # 3-way clock content: "time" | "time_date" | "date".  Source of truth
-        # for data byte 0.  _native_clock_show_date is kept in sync (== the
-        # "time_date" alternate mode) for backward compatibility.
-        self._native_clock_content = DEFAULT_NATIVE_CLOCK_CONTENT
-        self._native_clock_12_hour = False
-        self._native_clock_colon_blink = True
-        self._native_clock_timezone_offset = None
-        self._native_clock_color = None  # ARGB int override, None = use style color
-        self._native_clock_color_mode = "normal"  # palette preset (CLOCK_COLOR_MODES key)
-        self._native_effect = DEFAULT_NATIVE_EFFECT
-        self._native_effect_speed = DEFAULT_NATIVE_EFFECT_SPEED
-        # Shared by all effects like the speed; sent only to those that read it.
-        self._native_effect_intensity = DEFAULT_NATIVE_EFFECT_INTENSITY
-        self._native_effect_color_mode = "normal"
-        self._native_effect_color = None
-        self._native_effect_direction = DEFAULT_NATIVE_EFFECT_DIRECTION
-        self._music_flow_enabled = False
-        self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
-        # The GIF the lamp stores, when this integration put it there
-        # (light_native._store_animation): the animation, for which mount, and
-        # whether an upload was interrupted since (the next one goes twice).
-        self._stored_gif = {"animation": None, "upside_down": False, "interrupted": False}
-        # How the animations are laid out in that GIF (const.ANIMATION_LAYOUTS).
-        self._animation_layout = DEFAULT_ANIMATION_LAYOUT
-        self._animation_layout_select_entity = None
-        self._music_flow_restore_power = None
-        self._power_on_state = DEFAULT_POWER_ON_STATE
-        self._button_effects = []
         
         # Each mixin's own state (light_*.py, _init_*_state). __init__ reads
         # no instance attribute, so their order changes nothing.
-        self._init_scroll_state()
+        self._init_light_state()
+        self._init_native_actions_state()
+        self._init_diagnostic_actions_state()
+        self._init_display_state()
+        self._init_render_state()
+        self._init_native_state()
+        self._init_mount_profile_state()
         self._init_connection_state()
         self._init_rotation_state()
         self._init_matter_state()
+        self._init_matrix_state()
         self._init_brightness_state()
         self._init_color_state()
         self._init_saved_state()
         self._init_studio_state()
+        self._init_power_state()
 
-        # FX mode tracking to avoid redundant mode changes
-        self._fx_mode_is_direct = False  # Track if we're already in direct/music mode
-        self._last_fx_mode_time = 0.0    # When activate_fx_mode last succeeded
-        # True when the lamp is physically in a built-in mode (clock,
-        # native animation, or start_cf color flow). When True, ensure_fx_ready()
-        # must use a longer settle + graceful FIN to avoid the lamp resetting to
-        # the ribbon (default loading state) during the mode transition.
-        self._in_native_fw_mode = False
-        # True while the panel is frozen on its current frame (freeze_display).
-        # Cleared by the next display re-apply. The camera preview reads this to
-        # hold the background animation on the frozen frame.
-        self._display_frozen = False
-        # Wall-clock instant the freeze began; the camera freezes the clock's
-        # background phase at exactly this moment, not at the next render.
-        self._display_frozen_at = None
-
-        # Apply timing (for queue processor stats, not cooldown-gating)
-        self._last_apply_time = 0
-        
         # Track background tasks (fire-and-forget brightness commands)
         self._background_tasks = set()
         
-        # Reference to text input entity for bidirectional updates
-        self._text_input_entity = None
-        
-        # Reference to pixel art select entity for bidirectional updates
-        self._pixel_art_select_entity = None
-        
-        # Reference to display mode select entity for bidirectional updates
-        self._mode_select_entity = None
+        # The Power cycle sensor (binary_sensor.py) and what it shows:
+        # the Repairs issue a power cycle fixes, set by _async_check_problems.
+        self.power_cycle_reason = None
 
-        # Reference to top-level Matrix/Clock selector
-        self._content_mode_select_entity = None
-
-        # Reference to native clock style select entity
-        self._clock_style_select_entity = None
-
-        # References to native clock option switches
-        self._clock_show_date_switch_entity = None
-        self._clock_12_hour_switch_entity = None
-        self._clock_colon_blink_switch_entity = None
-        self._clock_content_select_entity = None
-        
-        # Reference to alignment select entity for bidirectional updates
-        self._alignment_select_entity = None
-        
-        # Reference to font select entity for bidirectional updates
-        self._font_select_entity = None
-        
-        # Reference to gradient angle number entity for bidirectional updates
-        self._angle_number_entity = None
-        
-        # Dict of preview adjustment number entities keyed by spec key (e.g. "hue_shift")
-        self._preview_number_entities = {}
-        
-        # Track the name of the currently active pixel art (for dropdown preselection)
-        self._active_pixel_art_name = None
-        
-        # The frame with its color effects, before the lamp-only stages
-        # (low-brightness correction, per-channel accuracy): snapshotted in
-        # apply(), published as matrix_colors and re-sent by the brightness
-        # fast path.
-        self._base_matrix_colors = None
-        
-        # Power limit in W (NO_LIMIT_W = off): frames sent to the lamp are
-        # dimmed so its estimated draw stays under it, for weak or shared
-        # power supplies (lamp_power.py).
-        self._power_limit = NO_LIMIT_W
-        # Estimated draw of the last frame sent (None until one is sent).
-        self._last_frame_power = None
-        self._power_sensor = None
-        # Estimated energy (kWh): told every power change (_publish_power).
-        self._energy_sensor = None
-        self._published_power = None
-        # The lamp's own modes (clock, native effect, Music Flow): estimates of the
-        # simulated preview frame, sampled every LAMP_POWER_INTERVAL and
-        # averaged; cleared when what the lamp draws changes.
-        self._lamp_power_samples = deque(maxlen=LAMP_POWER_SAMPLES)
-        self._lamp_power_pending = False
-        self._lamp_power_key = None
-        self._lamp_power_unsub = None
-
-
-        # Entity references for the built-in mode controls.
-        self._native_effect_select_entity = None
-        self._native_effect_direction_select_entity = None
-        self._native_effect_speed_entity = None
-        self._native_effect_intensity_entity = None
-        self._music_flow_effect_select_entity = None
-        self._power_on_state_select_entity = None
-        self._device_orientation_select_entity = None
-        self._scroll_enabled_switch_entity = None
-        self._scroll_speed_entity = None
-        
         # Camera entity references -- set by camera.py async_setup_entry.
         # Used for direct push notifications (bypass state-change-event delay).
         self._camera_entities: list = []
@@ -444,10 +291,14 @@ class YeelightCubeLight(
         self._published_available = None
         # The connection in the published state (its "connection" attribute).
         self._published_transport = None
+        # When Home Assistant added the light (async_added_to_hass), and the
+        # Repairs issues it reported last (_async_check_problems).
+        self._added_at = None
+        self._reported_problems = None
 
     @callback
     def async_write_ha_state(self) -> None:
-        self._published_transport = self._cube_matrix.transport
+        self._published_transport = self._lamp_client.transport
         super().async_write_ha_state()
         available = self.available
         if available != self._published_available:
@@ -462,105 +313,6 @@ class YeelightCubeLight(
             self._sample_lamp_power()  # what the lamp draws changed
         self._publish_power()
 
-    @property
-    def estimated_power(self) -> float | None:
-        """Estimated draw in W (lamp_power.py): 0 while the lamp is not
-        reachable (most often unplugged); the electronics alone while off;
-        while the lamp draws the matrix itself (clock, native effect, Music
-        Flow), whose frames Home Assistant cannot see, the simulated
-        preview's average (unknown until it has samples)."""
-        if not self.available:
-            return 0.0
-        if not self._is_on:
-            return BASE_W
-        if self.lamp_draws_matrix:
-            samples = self._lamp_power_samples
-            return round(sum(samples) / len(samples), 1) if samples else None
-        if self._last_frame_power is None:
-            return None
-        return round(self._last_frame_power, 1)
-
-    @property
-    def power_estimate_source(self) -> str:
-        """What the Estimated power sensor is based on right now."""
-        if not self.available:
-            return "unreachable"
-        if not self._is_on:
-            return "off"
-        if self.lamp_draws_matrix:
-            return "simulated preview"
-        return "frames sent"
-
-    def _lamp_power_state(self) -> tuple:
-        """What the lamp draws: a change starts a new average."""
-        return (
-            self._mode, self._music_flow_enabled, self._music_flow_effect,
-            self._native_effect, self._native_effect_color_mode,
-            str(self._native_effect_color), self._native_effect_speed,
-            self._native_effect_intensity,
-            self._native_clock_style, self._native_clock_color_mode,
-            self._native_clock_color, self._brightness, self._display_frozen,
-        )
-
-    @callback
-    def _sample_lamp_power(self, _now=None) -> None:
-        """While the lamp draws the matrix itself, estimate the draw of the
-        simulated frame behind its camera preview (lamp_power.py), averaged
-        over the last samples. Runs every LAMP_POWER_INTERVAL, and at
-        once when what the lamp draws changes."""
-        if not (self.available and self._is_on and self.lamp_draws_matrix):
-            self._lamp_power_samples.clear()
-            self._lamp_power_key = None
-            return
-        state = self._lamp_power_state()
-        if state != self._lamp_power_key:
-            self._lamp_power_samples.clear()
-            self._lamp_power_key = state
-        camera = next(
-            (cam for cam in self._camera_entities if getattr(cam, "hass", None)), None
-        )
-        if camera is None or self._lamp_power_pending:
-            return
-        # Not what the camera displays: the lamp's own LED drive for every
-        # named effect, an illustration for Music Flow
-        # (camera.simulated_lamp_frame). In an executor: this runs every
-        # few seconds and a renderer may replay what it missed.
-        self._lamp_power_pending = True
-        self.hass.async_add_executor_job(camera.simulated_lamp_frame).add_done_callback(
-            lambda job: self._lamp_power_sampled(state, job)
-        )
-
-    @callback
-    def _lamp_power_sampled(self, state: tuple, job) -> None:
-        """A sampled frame (_sample_lamp_power) joins the average, unless
-        what the lamp draws changed meanwhile: then sample again."""
-        self._lamp_power_pending = False
-        if not (self.available and self._is_on and self.lamp_draws_matrix):
-            return
-        if state != self._lamp_power_state():
-            self._sample_lamp_power()
-            return
-        frame = None if job.cancelled() or job.exception() else job.result()
-        if not frame:
-            return
-        # The built-in modes' brightness (_set_native_mode_brightness).
-        hardware = hardware_brightness_for(self._brightness)
-        self._lamp_power_samples.append(estimated_power(frame, hardware))
-        self._publish_power()
-
-    @callback
-    def _publish_power(self) -> None:
-        """Write the Estimated power sensor when its value changed, and
-        let the Estimated energy sensor count the energy until then."""
-        power = self.estimated_power
-        if power != self._published_power:
-            self._published_power = power
-            sensor = self._power_sensor
-            if sensor is not None and sensor.hass is not None:
-                sensor.async_write_ha_state()
-            if self._energy_sensor is not None:
-                self._energy_sensor.power_changed(power)
-
     def _notify_camera_preview(self) -> None:
         """Tell every camera entity the lamp shows a new frame: it drops its
         image and bumps its access token, and renders the new one only when a
@@ -568,10 +320,9 @@ class YeelightCubeLight(
         for cam in self._camera_entities:
             try:
                 cam.async_refresh_preview()
-            except Exception as exc:
-                _LOGGER.debug(
-                    "[%s] Camera preview notification failed: %s",
-                    self._ip, exc
+            except Exception:  # noqa: BLE001 -- a camera's failure never stops the lamp's frames
+                _LOGGER.warning(
+                    "[%s] Camera preview notification failed", self._ip, exc_info=True,
                 )
 
     def _create_tracked_task(self, coro, *, name=None):
@@ -585,8 +336,6 @@ class YeelightCubeLight(
         task.add_done_callback(self._background_tasks.discard)
         return task
 
-    
-
     async def show_pixel_art(self, name: str | None, pixels: list, bypass_lock: bool = False) -> None:
         """Show a pixel art (saved, stored grouped, or built-in, flat) as the
         lamp's drawing, named ``name`` (None: a drawing that is not one of
@@ -594,9 +343,7 @@ class YeelightCubeLight(
         apply_pixel_art and apply_custom_pixels actions and the Pixel Art
         select."""
         self._custom_pixels = expand_pixels(pixels)
-        self._mode = "Custom Draw"
-        self._matrix_mode = "Custom Draw"
-        self._custom_draw_active = True
+        self._enter_mode("Custom Draw", matrix_mode="Custom Draw", custom_draw=True)
         self._active_pixel_art_name = name
         if not self._custom_text:
             self._custom_text = "HELLO"
@@ -604,191 +351,20 @@ class YeelightCubeLight(
         self._scroll_offset = 0
         self._scroll_direction = 1
         self.stop_scroll_timer()
-        self._is_scrolling = False
+        self._set_scrolling(False)
         # Written now: a lamp that is off keeps the drawing for when it is
         # turned on, without drawing (so without writing its state).
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         await self.async_apply_display_mode(update_type="pixel_art", bypass_lock=bypass_lock)
-        for entity in (
-            self._pixel_art_select_entity,
-            self._mode_select_entity,
-            self._content_mode_select_entity,
-        ):
-            if entity:
-                entity.async_update_from_light()
+        self._notify("pixel_art", "display_mode", "content_mode")
     
     def _sync_rgb_color(self):
         """Synchronize _rgb_color with the first color in _text_colors"""
         if self._text_colors and len(self._text_colors) > 0:
             self._rgb_color = self._text_colors[0]
             _LOGGER.debug("[SYNC] Synchronized _rgb_color to %s from text_colors", self._rgb_color)
-    
 
-
-    # Removed duplicate/empty __init__ definition
-    @property
-    def orientation(self):
-        return self._orientation
-
-    async def set_orientation(self, orientation: str):
-        if orientation not in (ORIENTATION_NORMAL, ORIENTATION_FLIPPED):
-            _LOGGER.error("Invalid orientation value: %s", orientation)
-            return
-        self._turn_published_picture(orientation)
-        self._orientation = orientation
-        # Keep the 4-way device orientation consistent (normal->right,
-        # flipped->left) so the Device Orientation select reflects legacy calls.
-        self._device_orientation = "left" if orientation == ORIENTATION_FLIPPED else "right"
-        if self._device_orientation_select_entity:
-            self._device_orientation_select_entity.async_update_from_light()
-        self._notify_camera_preview()
-        await self.async_apply_display_mode(update_type='text_change')
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-
-    def _turn_published_picture(self, flip: str) -> None:
-        """Publish the picture the integration draws (matrix_colors) as the
-        redraw for the ``flip`` about to be set will draw it: a half turn,
-        the reverse of the frame (light_render._flip_position). The state is
-        written before that redraw (the lamp's rotation report over Matter):
-        the new orientation with the old picture showed it a moment in the
-        wrong place on the cards and the camera."""
-        if flip == self._orientation or self.lamp_draws_matrix:
-            return
-        if self._base_matrix_colors:
-            self._base_matrix_colors = self._base_matrix_colors[::-1]
-
-    @property
-    def device_orientation(self):
-        return self._device_orientation
-
-    async def set_device_orientation(self, orientation: str):
-        """Set the 4-way physical device orientation (right/down/left/up).
-
-        There is no single lamp command for this, so we translate it to the
-        mechanisms that actually work and apply immediately for the current mode:
-          - matrix / text / pixel art: normal vs flipped (180 deg) pixel flip
-          - native effects: the effect's own `direction` field (if supported)
-            is turned so the direction chosen stays what the viewer sees, and
-            compensated for the lamp's saved mount profile (light_native)
-          - the clock, over Matter: the lamp's own direction setting, which
-            the lamp applies when the clock starts
-            (light_matter._sync_lamp_rotation); without Matter the clock
-            stays as it is
-        The 90 deg visual rotation for up/down is handled by the preview card.
-        """
-        if orientation not in DEVICE_ORIENTATIONS:
-            _LOGGER.error("Invalid device orientation value: %s", orientation)
-            return
-        self._turn_published_picture(DEVICE_ORIENTATION_TO_FLIP[orientation])
-        self._device_orientation = orientation
-        # Drive the matrix/text/pixel flip (normal vs 180 deg).
-        self._orientation = DEVICE_ORIENTATION_TO_FLIP[orientation]
-        # The profile the lamp is about to run, published with it: previews
-        # never show the new orientation on the old profile.
-        self._expect_lamp_rotation(orientation)
-        self._notify_camera_preview()
-        # Everything but the clock follows at once (a native effect is
-        # compensated for the profile the lamp runs now). The clock stays as
-        # it is until the lamp's own direction is set (_follow_lamp_rotation):
-        # re-activating it briefly drops it.
-        if self._mode != MODE_CLOCK:
-            await self.async_apply_display_mode(update_type='text_change')
-        if self._device_orientation_select_entity:
-            self._device_orientation_select_entity.async_update_from_light()
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-        # Over Matter, the lamp's own direction setting turns its own content
-        # (clock, native effects) for the mount. Written in the background, so
-        # the choice never waits for the lamp or a server that is not there
-        # (a write may take its whole timeout).
-        self._create_tracked_task(
-            self._follow_lamp_rotation(orientation),
-            name=f"yeelight_cube_lamp_rotation_{self._ip}",
-        )
-
-    async def _follow_lamp_rotation(self, orientation: str) -> None:
-        """Set the lamp's own direction for ``orientation``
-        (light_matter._sync_lamp_rotation), one write at a time; once set, the
-        clock or effect it shows starts again so the lamp applies it. A later
-        choice wins: an earlier one that ends after it changes nothing."""
-        lock = self.__dict__.setdefault("_rotation_write_lock", asyncio.Lock())
-        async with lock:
-            if orientation != self._device_orientation:
-                return  # another choice came since (it set its own profile)
-            if not await self._sync_lamp_rotation(orientation):
-                self._mount_profile_pending = None  # not written: the old one stays
-                if self.hass is not None:
-                    self.async_schedule_update_ha_state()
-                return
-        self._cube_matrix.forget_running_effect()
-        if orientation == self._device_orientation and self._mode in (MODE_CLOCK, MODE_NATIVE_EFFECT):
-            await self.async_apply_display_mode(update_type='text_change')
-        self._notify_camera_preview()
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-
-    @property
-    def alignment(self):
-        return self._alignment
-
-    async def set_alignment(self, alignment: str):
-        if alignment not in ("left", "center", "right"):
-            _LOGGER.error("Invalid alignment value: %s", alignment)
-            return
-        self._alignment = alignment
-        await self.async_apply_display_mode(update_type='text_change')
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-
-    @property
-    def text_colors(self):
-        return self._text_colors
-
-
-    @property
-    def supported_color_modes(self):
-        if self.lamp_draws_matrix:
-            return {ColorMode.BRIGHTNESS}
-        return {ColorMode.RGB}
-
-    @property
-    def color_mode(self):
-        # Current active color mode
-        if self.lamp_draws_matrix:
-            return ColorMode.BRIGHTNESS
-        return ColorMode.RGB
-
-    @property
-    def brightness(self):
-        # Home Assistant expects 1-255 for lights that are ON
-        # We return None when OFF (standard HA behavior)
-        # When ON, return stored brightness, ensuring it's at least 1
-        if not self._is_on:
-            return None
-        # Ensure brightness is at least 1 (minimum valid brightness for ON lights)
-        return max(1, self._brightness)
-
-    @property
-    def rgb_color(self):
-        # Home Assistant expects RGB tuple for color picker
-        # Always return the first text color to stay in sync with the actual lamp state
-        if self._text_colors and len(self._text_colors) > 0:
-            return self._text_colors[0]
-        return self._rgb_color  # Fallback to stored rgb_color if no text colors
-
-
-    @property
-    def custom_text(self):
-        return self._custom_text
-
-    @property
-    def content_mode(self):
-        if self._music_flow_enabled:
-            return "Music Flow"
-        return self._mode if self._mode in LAMP_MODES else "Matrix"
-    
     def _should_auto_turn_on(self) -> bool:
         """Check if lamp should auto-turn-on when receiving commands while off."""
         if not self._config_entry:
@@ -797,811 +373,7 @@ class YeelightCubeLight(
         # Get from options, default to True
         return self._config_entry.options.get("auto_turn_on", True)
 
-    # The name is the device's (_lamp_name) and the unique id is set in __init__.
-
-    @property
-    def is_on(self):
-        return self._is_on
-
-    @property
-    def available(self):
-        return not self._cube_matrix.is_unreachable
-
-    @property
-    def extra_state_attributes(self):
-        attrs = {
-            # Internal component identifier - DO NOT MODIFY
-            "_yeelight_cube_component": "yeelight-cube-component-v1.0",
-            # Entity identification - useful for service calls and automations
-            "light_entity_id": self.entity_id if hasattr(self, 'entity_id') else "not_yet_initialized",
-            "ip_address": self._ip,
-            # Display configuration
-            "mode": self._mode,
-            "content_mode": self.content_mode,
-            "matrix_mode": self._matrix_mode,
-            "custom_draw_active": self._custom_draw_active,
-            # True while the panel is frozen (freeze_display); JS previews hold
-            # the background animation on the frozen frame while the clock
-            # digits keep updating.
-            "display_frozen": bool(self._display_frozen),
-            # Shared favourites per kind, e.g. {"clock": [{"name", "color_mode",
-            # "color"}, ...]} (set_favourites). Rotation plays them in order.
-            "favourites": {
-                kind: [dict(item) for item in items]
-                for kind, items in self._favourites.items()
-            },
-            # Shared rotation interval per kind (seconds), once set.
-            "rotation_intervals": dict(self._rotation_intervals),
-            # Server-side effect/clock rotation status (start/stop_effect_rotation).
-            "effect_rotation": {
-                "active": bool(self._rotation_active),
-                "kind": self._rotation_kind,
-                "interval": self._rotation_interval,
-                "items": list(self._rotation_items),
-                "index": self._rotation_index,
-                "error": self._rotation_error,
-                "waiting_for_reconnect": self._rotation_waiting_for_reconnect,
-                "retry_attempt": self._rotation_retry_attempt,
-                "retry_at": self._rotation_retry_at,
-            },
-            # {"service", "message", "at"} of the last change this lamp failed
-            # to apply, until one succeeds (light_services_common
-            # note_command_result); the cards name it.
-            "last_command_error": self._last_command_error,
-            "text_colors": self._text_colors,
-            "custom_text": self._custom_text,
-            "clock_style": NATIVE_CLOCK_STYLES.get(
-                self._native_clock_style,
-                NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
-            )["name"],
-            "clock_style_id": self._native_clock_style,
-            "clock_show_date": self._native_clock_show_date,
-            "clock_content": self._native_clock_content,
-            "clock_12_hour": self._native_clock_12_hour,
-            "clock_colon_blink": self._native_clock_colon_blink,
-            "clock_color": self._native_clock_color,
-            "clock_color_mode": self._native_clock_color_mode,
-            "native_effect": self._native_effect,
-            "native_effect_speed": self._native_effect_speed,
-            "native_effect_intensity": self._native_effect_intensity,
-            "native_effect_color_mode": self._native_effect_color_mode,
-            "native_effect_color": self._native_effect_color,
-            "native_effect_direction": self._native_effect_direction,
-            "effect_direction_own": True,
-            "native_effect_catalog": _native_effect_catalog(
-                # An animation, or a hidden effect, still listed while it plays.
-                self._native_effect
-                if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
-                or ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("hidden")
-                else None,
-                self.animations_available,
-            ),
-            "stored_gif": self._stored_gif,
-            "animation_layout": self._animation_layout,
-            "music_flow_enabled": self._music_flow_enabled,
-            "music_flow_effect": self._music_flow_effect,
-            "music_flow_restore_power": self._music_flow_restore_power,
-            "power_on_state": self._power_on_state,
-            # How commands reach the lamp: "udp" (its UDP session) or "tcp".
-            "connection": self._cube_matrix.transport,
-            "button_effects": list(self._button_effects),
-            "background_color": self._background_color,
-            "alignment": self._alignment,
-            "angle": self._angle,
-            "font": self._font,
-            "orientation": self._orientation,
-            "device_orientation": self._device_orientation,
-            # The lamp's Matter node and what it reports (light_matter.py);
-            # None without one.
-            "matter": self._matter_summary(),
-            # The lamp shows a button's or another app's content (Matter,
-            # light_matter._accept_external_display): kept across a restart.
-            "external_display": self._external_display,
-            # The lamp's saved mount profile (light_mount_profile.py): 0-3 or
-            # None, and its source ("matter", "user", "unknown").
-            "mount_profile": self._mount_profile_summary(),
-            "rgb_color": self._rgb_color,
-            "full_panel": self._full_panel,
-            # Color effects (used by lamp preview card)
-            "preview_hue_shift": self._preview_hue_shift,
-            "preview_temperature": self._preview_temperature,
-            "preview_saturation": self._preview_saturation,
-            "preview_vibrance": self._preview_vibrance,
-            "preview_contrast": self._preview_contrast,
-            "preview_glow": self._preview_glow,
-            "preview_grayscale": self._preview_grayscale,
-            "preview_invert": self._preview_invert,
-            "preview_tint_hue": self._preview_tint_hue,
-            "preview_tint_strength": self._preview_tint_strength,
-            "color_accuracy_enabled": self._color_accuracy_enabled,
-            # Calibration values (for debug calibration card)
-            "calib_gamma_r": self._calib_gamma_r,
-            "calib_gamma_g": self._calib_gamma_g,
-            "calib_gamma_b": self._calib_gamma_b,
-            "calib_hw_threshold": self._calib_hw_threshold,
-            "calib_hw_full": self._calib_hw_full,
-            "calib_channel_balance": self._calib_channel_balance,
-            "calib_gain_r": self._calib_gain_r,
-            "calib_gain_g": self._calib_gain_g,
-            "calib_gain_b": self._calib_gain_b,
-            "last_hardware_brightness": self._last_hardware_brightness,
-            "scroll_speed": self._scroll_speed,
-            "scroll_enabled": self._scroll_enabled,
-            "power_limit": self._power_limit,
-        }
-        attrs["matrix_colors"] = self._published_matrix_colors()
-        return attrs
-
-    def _published_matrix_colors(self) -> list:
-        """What the lamp shows right now, as 100 RGB tuples (matrix_colors).
-
-        Not simply the last frame the plugin drew: _base_matrix_colors is only
-        refreshed when the plugin draws, so it still holds old content (e.g.
-        the last pixel art) while the lamp is off or draws the
-        matrix. The colors are not scaled by the brightness: the lamp dims in
-        hardware, and the cards scale them by the published brightness
-        themselves (set_brightness() writes the state first, so they preview
-        a brightness drag at once, before the lamp round trip).
-        _base_matrix_colors has the color effects but not the lamp-only
-        stages (low-brightness correction, per-channel accuracy).
-        """
-        try:
-            count = len(self._layout.device_layout)
-            if not self._is_on:
-                # Off: the matrix is dark, whatever content is kept for turn-on.
-                return [(0, 0, 0)] * count
-            if self.lamp_draws_matrix:
-                # Frames the lamp draws itself cannot be read back: no pixels.
-                # Cards and the preview camera render these modes themselves.
-                return []
-            base_colors = self._base_matrix_colors
-            if base_colors and len(base_colors) == count:
-                return list(base_colors)
-            # Fallback: read directly from module data
-            return self._layout_colors()
-        except Exception:  # noqa: BLE001 -- attributes must always build
-            return []
-
-    @property
-    def lamp_draws_matrix(self) -> bool:
-        """Whether the lamp draws the matrix itself (clock, native effect,
-        music flow) rather than the plugin, so its frames cannot be read back."""
-        return bool(self._music_flow_enabled) or self._mode in LAMP_MODES
-
-    @property
-    def _has_color_effects(self) -> bool:
-        """Whether any color adjustment (hue, saturation, tint, ...) is active."""
-        return (
-            self._preview_hue_shift != 0 or self._preview_saturation != 100 or
-            self._preview_temperature != 0 or self._preview_contrast != 100 or
-            self._preview_vibrance != 100 or self._preview_glow != 0 or
-            self._preview_grayscale != 0 or self._preview_invert != 0 or
-            self._preview_tint_strength != 0
-        )
-
-    def _layout_colors(self) -> list:
-        """The layout's current pixel colors, one RGB tuple per module
-        (black where a module holds no data). Every render sets each 1x1
-        module to exactly one color. Raises ValueError or TypeError on a
-        malformed color."""
-        return [
-            hex_to_rgb(module.data[0]) if getattr(module, "data", None) else (0, 0, 0)
-            for module in self._layout.device_layout
-        ]
-
-    def _write_layout_colors(self, frame: list) -> None:
-        """Store a processed frame (one RGB per module) back in the layout."""
-        for module, rgb in zip(self._layout.device_layout, frame):
-            module.data = [rgb_to_hex(rgb)]
-
-
-    async def async_added_to_hass(self):
-        _LOGGER.debug("[INIT] async_added_to_hass called for %s", self._lamp_name)
-        await super().async_added_to_hass()
-        # The clock's UTC offset changes on the hour (daylight saving time):
-        # async_update checks it then, a few seconds past, instead of a poll
-        # every 30 s.
-        self.async_on_remove(async_track_time_change(
-            self.hass, self._async_hourly_update, minute=0, second=5
-        ))
-        # Repairs for problems a user can fix (issues.py), every minute.
-        self._added_at = time.monotonic()
-        self._reported_problems = None
-        self.async_on_remove(async_track_time_interval(
-            self.hass, self._async_check_problems, timedelta(minutes=1)
-        ))
-        self._cube_matrix.on_transport_change = self._async_publish_transport
-        self.async_on_remove(lambda: setattr(self._cube_matrix, "on_transport_change", None))
-
-        # Start periodic health check to detect devices coming back online
-        self._health_check_task = self._create_tracked_task(
-            self._periodic_health_check(), name=f"yeelight_cube_health_check_{self._ip}"
-        )
-        # Estimated power in the lamp's own modes: a cheap periodic sample of the
-        # simulated preview frame (one 100-pixel estimate per interval).
-        self._lamp_power_unsub = async_track_time_interval(
-            self.hass, self._sample_lamp_power,
-            timedelta(seconds=LAMP_POWER_INTERVAL),
-        )
-        
-        _LOGGER.debug("[INIT] Initial state - custom_text: '%s', mode: '%s', is_on: %s, brightness: %s", self._custom_text, self._mode, self._is_on, self._brightness)
-        old_state = await self.async_get_last_state()
-        self._drop_extended_effects_option()
-        _LOGGER.debug("[RESTORE] old_state exists: %s", old_state is not None)
-        if old_state:
-            self._restore_state(old_state)
-            # A button's or another app's content when Home Assistant stopped:
-            # the lamp keeps it, not redrawn below.
-            self._external_display = bool(old_state.attributes.get("external_display"))
-        self._restore_music_flow_runtime_state()
-        self._restore_favourites()
-        self._restore_rotation_settings()
-        self._restore_drawing()
-        # Palettes and pixel arts are shared: __init__.py loads them into
-        # hass.data[DOMAIN] (the palette and pixel art sensors publish them).
-        self.async_schedule_update_ha_state()
-        # Push freshly restored values to every linked helper entity. On a
-        # reload (e.g. a DHCP IP change) a helper may have been added before
-        # this restore ran; without this its control shows the default.
-        self._refresh_linked_entities()
-        # The lamp's Matter node, when it has one (light_matter.py): after the
-        # restore, so the lamp's reports apply to the restored state.
-        self._start_matter_link()
-        
-        _LOGGER.debug("[INIT] After state restoration - custom_text: '%s', mode: '%s', is_on: %s", self._custom_text, self._mode, self._is_on)
-        _LOGGER.debug("[INIT] Calling initial async_apply_display_mode to display HELLO...")
-        
-        # Apply initial display mode to show HELLO
-        # Use 'turn_on' type so this isn't blocked by the retry limit after HA restart
-        if self._is_on and self._music_flow_enabled:
-            _LOGGER.debug(
-                "[INIT] Music flow was active before restart; preserving renderer"
-            )
-        elif self._external_display:
-            _LOGGER.debug("[INIT] The lamp shows another app's content: not redrawn")
-        elif self._is_on:
-            await self.async_apply_display_mode(update_type='turn_on')
-        else:
-            _LOGGER.debug("[INIT] Light is off, not applying display mode")
-        if self._rotation_restore:
-            self._create_tracked_task(
-                self._async_resume_saved_rotation(),
-                name=f"yeelight_cube_rotation_resume_{self._ip}",
-            )
-
-    async def async_will_remove_from_hass(self):
-        """Clean up when entity is removed"""
-        self.stop_scroll_timer()
-        self.stop_studio_stream()
-        if self._lamp_power_unsub is not None:
-            self._lamp_power_unsub()
-            self._lamp_power_unsub = None
-
-        # Stop any server-side rotation loop owned by this entity. Its saved
-        # state is kept: a restart or reload resumes it.
-        self.stop_effect_rotation(persist=False)
-        
-        # Cancel display retry task
-        if self._retry_display_task and not self._retry_display_task.done():
-            self._retry_display_task.cancel()
-        
-        # Cancel health check task
-        if self._health_check_task and not self._health_check_task.done():
-            self._health_check_task.cancel()
-        
-        # Cancel calibration-lock auto-release timer
-        if self._calibration_lock_unsub is not None:
-            self._calibration_lock_unsub.cancel()
-            self._calibration_lock_unsub = None
-        
-        # Cancel all background tasks (fire-and-forget brightness commands)
-        if self._background_tasks:
-            _LOGGER.debug("[CLEANUP] Cancelling %s background tasks", len(self._background_tasks))
-            for task in self._background_tasks:
-                if not task.done():
-                    task.cancel()
-            # Wait for cancellation with timeout
-            try:
-                await asyncio.wait(self._background_tasks, timeout=1.0)
-            except asyncio.TimeoutError:
-                pass
-            self._background_tasks.clear()
-
-        # Every socket to the lamp, the UDP session's too.
-        self._cube_matrix.close()
-        _LOGGER.debug("[CLEANUP] Stopped scroll timer and background tasks on entity removal")
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        # Renamed in place (Home Assistant 2026.11+): the lamp keeps running
-        # as it is (display, rotation, timers); the services find it by its
-        # live entity id (light_services_common._lamp_for), so nothing is
-        # re-keyed here.
-        super().async_entity_id_changed(old_entity_id)
-
     # Entity-facing service handlers are registered once from component setup.
-
-    async def ensure_fx_ready(self):
-        """Ensure FX mode is active: activate_fx_mode in the lamp's UDP session
-        (where the frames then go too: direct mode applies to the session it
-        was activated in), else on one fresh TCP connection.
-
-        Steps:
-          1. Close any existing persistent TCP socket (clean slate)
-          2. Optional 300ms settle when leaving a built-in mode
-          3. Send activate_fx_mode (UDP session, else a fresh TCP connection, RST-closed)
-          4. Sleep 150ms -- the lamp's settle time before opening the persistent socket
-          5. Update state flags
-
-        The lamp's hardware brightness is left as it is (and as known):
-        apply() sends set_bright before its frames only when it differs (or
-        is unknown). A set_bright after frames in direct mode can make the
-        lamp show an older picture again (see cube_matrix.FRAME_SETTLE_DELAY),
-        so activating direct mode again never forces one. Over TCP, apply()
-        sends it on the persistent socket, with the frames: an extra RST
-        connection made the lamp exit direct mode before update_leds
-        arrived ("illegal request" errors).
-
-        Why no TCP probe:
-        A probe RST before activate_fx_mode was a third rapid RST connection
-        that could confuse the Cube. Dead devices are handled by the
-        APPLY_HARD_TIMEOUT / circuit-breaker mechanism instead.
-        """
-        cm = self._cube_matrix
-
-        _LOGGER.debug(
-            "[ENSURE_FX] [%s] Activating FX mode via raw TCP "
-            "[%s]",
-            self._ip, cm.summary
-        )
-
-        # Step 1: Kill persistent socket
-        cm.close_fast_socket()
-
-        # Step 2 (optional): When leaving a built-in mode (clock, native
-        # animation, color flow), give the lamp time to settle
-        # before we open a new connection.  This shortens the Ribbon flicker.
-        #
-        # activate_fx_mode is always RST-closed (abortive_close=True, the
-        # default).  A graceful FIN here caused the lamp to silently ignore
-        # the mode change, leaving the lamp stuck on the ribbon indefinitely.
-        coming_from_native = self._in_native_fw_mode
-        if coming_from_native:
-            _LOGGER.debug(
-                "[ENSURE_FX] [%s] Coming from native mode -- settling before "
-                "activate_fx_mode",
-                self._ip,
-            )
-            await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["native_exit_settle"])
-
-        # Step 3: activate_fx_mode on a SINGLE fresh TCP (RST close)
-        await cm.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
-
-        # Step 4: Let the lamp fully enter direct mode before the first
-        # frame (ACTIVATION_TIMING, by connection: 50ms was too tight over TCP,
-        # where the lamp left direct mode before update_leds arrived).
-        await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["direct_mode_settle"])
-
-        # Step 5: Update state (the hardware brightness is unchanged).
-        self._fx_mode_is_direct = True
-        self._in_native_fw_mode = False
-        self._last_fx_mode_time = time.time()
-        # Direct mode is active again on the transport in use: a reconnection
-        # noticed before this (e.g. UDP falling back to TCP) is settled, and
-        # must not make the next frame report direct mode as lost.
-        cm.consume_reconnected_flag()
-
-        _LOGGER.debug(
-            "[ENSURE_FX] [%s] [OK] FX activated", self._ip
-        )
-
-    async def _force_refresh_impl(self):
-        """Force refresh implementation - runs inside _execute_hardware_op lock.
-        
-        Reconnects the active renderer and re-renders its current display.
-        
-        It re-renders through _apply_display_mode_internal() rather than
-        re-sending self._layout: apply() writes the lamp-only stages (color
-        effects, low-brightness correction) into the layout, so they would
-        be applied twice. Since ensure_fx_ready() already set
-        _fx_mode_is_direct=True, apply() skips a second activation.
-        """
-        if not self._is_on or self._music_flow_enabled:
-            return
-        if self._mode in LAMP_MODES:
-            self._cube_matrix.close_fast_socket()
-        else:
-            # Its brightness is confirmed too (sent right after direct mode,
-            # before any frame): something else may have changed it.
-            self._last_hardware_brightness = None
-            await self.ensure_fx_ready()
-        
-        # Re-render through the full display pipeline (see the docstring).
-        await self._apply_display_mode_internal()
-        _LOGGER.info(
-            "[FORCE REFRESH] [%s] Complete - "
-            "mode=%s, brightness=%s%%, "
-            "display re-rendered",
-            self._ip, self._mode, self._last_hardware_brightness
-        )
-
-    async def async_force_refresh(self):
-        """Force refresh via _execute_hardware_op (properly serialized with device lock)."""
-        if not self._is_on:
-            return
-        if self._music_flow_enabled:
-            await self.async_set_music_flow(True)
-            return
-        _LOGGER.info(
-            "[FORCE REFRESH] [%s] Starting -- "
-            "closing persistent socket and using raw TCP",
-            self._ip
-        )
-        await self._execute_hardware_op(
-            lambda: self._force_refresh_impl(),
-            "force_refresh"
-        )
-
-    async def async_turn_on(self, **kwargs):
-        """Turn on the light."""
-        _LOGGER.debug("[TURN_ON] async_turn_on called with kwargs: %s", kwargs)
-        
-        # Calibration lock: ignore automation turn_on (incl. light.turn_on with
-        # brightness/color/text) while the wizard owns the lamp.
-        if self._calibration_lock:
-            _LOGGER.debug(
-                "[CALIB_LOCK] [%s] turn_on ignored -- calibration lock active", self._ip
-            )
-            return
-
-        # Remember whether the lamp was already on: a brightness-only turn_on on
-        # an already-running native effect must not re-activate it (that restarts
-        # the animation from frame zero), it should only push the new brightness.
-        was_on = self._is_on
-
-        if any(key in kwargs for key in ("rgb_color", "text_colors")) and (
-            self._rotation_active
-            or self._rotation_resume_pending
-        ):
-            self.stop_effect_rotation()
-
-        # Brightness remains adjustable while Music Flow owns the display.
-        # Explicit color content must first release the lamp's own renderer so
-        # the requested RGB/text colors are not silently ignored.
-        if self._music_flow_enabled and any(
-            key in kwargs for key in ("rgb_color", "text_colors")
-        ):
-            await self.async_set_music_flow(False, restore_display=False)
-        
-        # Update HA state IMMEDIATELY for responsive UI
-        self._is_on = True
-        if "brightness" in kwargs:
-            self._brightness = max(1, min(255, kwargs["brightness"]))
-        if "rgb_color" in kwargs:
-            self._rgb_color = tuple(kwargs["rgb_color"])
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-        
-        # A brightness change on a lamp that is on (a slider drag): only the
-        # newest waiting one runs, like set_brightness's. One that turns the
-        # lamp on, or changes anything else, always runs.
-        brightness_only = was_on and set(kwargs) == {"brightness"}
-        await self._execute_hardware_op(
-            lambda: self._internal_turn_on(_was_on=was_on, **kwargs),
-            "turn_on",
-            coalesce="brightness" if brightness_only else None,
-        )
-    
-    async def _internal_turn_on(self, **kwargs):
-        """Internal turn_on implementation -- runs under the global lock."""
-        was_on = kwargs.pop("_was_on", False)
-        _LOGGER.debug("[TURN_ON] Executing - is_on: %s, custom_text: '%s', mode: '%s'", self._is_on, self._custom_text, self._mode)
-
-        if self._music_flow_enabled:
-            if "brightness" in kwargs:
-                self._brightness = max(1, min(255, kwargs["brightness"]))
-                await self._set_native_mode_brightness()
-            self._is_on = True
-            if self.hass is not None:
-                self.async_schedule_update_ha_state()
-            return
-
-        if self._mode == MODE_CLOCK:
-            self._is_on = True
-            if "brightness" in kwargs:
-                self._brightness = max(1, min(255, kwargs["brightness"]))
-            # Brightness-only change on the already-running clock: just push the
-            # brightness so the clock is not torn down and rebuilt.
-            if was_on and set(kwargs) <= {"brightness"}:
-                await self._set_native_mode_brightness()
-            else:
-                await self._activate_native_clock()
-            if self.hass is not None:
-                self.async_schedule_update_ha_state()
-            return
-        if self._mode == MODE_NATIVE_EFFECT:
-            self._is_on = True
-            if "brightness" in kwargs:
-                self._brightness = max(1, min(255, kwargs["brightness"]))
-            # Brightness-only change on an already-running effect: push the new
-            # brightness only. Re-activating here would restart the animation
-            # from the first frame (mirrors _internal_set_brightness).
-            if was_on and set(kwargs) <= {"brightness"}:
-                await self._set_native_mode_brightness()
-            else:
-                await self._activate_native_effect()
-            if self.hass is not None:
-                self.async_schedule_update_ha_state()
-            return
-        
-        # Direct mode first (apply() then sends the brightness, if it differs,
-        # before the frames).
-        if not self._fx_mode_is_direct:
-            _LOGGER.debug("[TURN_ON] Activating FX mode via raw TCP")
-            await self.ensure_fx_ready()
-        
-        self._is_on = True
-        
-        # Handle colors from kwargs
-        if "text_colors" in kwargs:
-            _LOGGER.debug("[TURN_ON] Setting text_colors from kwargs: %s", kwargs['text_colors'])
-            self._text_colors = [tuple(c) for c in kwargs["text_colors"]]
-            self._sync_rgb_color()
-        
-        if "rgb_color" in kwargs:
-            rgb_color = kwargs["rgb_color"]
-            _LOGGER.debug("[TURN_ON] RGB color selected: %s", rgb_color)
-            self._text_colors = [tuple(rgb_color)]
-            self._sync_rgb_color()
-        
-        _LOGGER.debug("[TURN_ON] Current state - text_colors: %s, background: %s", self._text_colors, self._background_color)
-        
-        try:
-            if "brightness" in kwargs:
-                _LOGGER.debug("[TURN_ON] Setting brightness to %s", kwargs["brightness"])
-                self._brightness = kwargs["brightness"]
-            self._brightness = max(1, min(255, self._brightness))
-            # The full display in one pass: direct mode if needed, the
-            # brightness if it changed (before any frame), then the frame --
-            # also when only the brightness is new (the lamp was showing black).
-            await self._apply_display_mode_internal()
-        except Exception as e:
-            if is_quota_error(e):
-                _LOGGER.debug("Rate limit exceeded during turn_on")
-            elif isinstance(e, TimeoutError):
-                _LOGGER.warning("Timeout during turn_on - device may be unreachable")
-            else:
-                _LOGGER.error("Unexpected error during turn_on: %s", e)
-        
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-        _LOGGER.debug("[TURN_ON] Turn on complete")
-
-    async def async_turn_off(self, **kwargs):
-        """Turn off the light."""
-        _LOGGER.debug("[TURN_OFF] async_turn_off called")
-        
-        # Calibration lock: ignore automation turn_off while the wizard runs.
-        if self._calibration_lock:
-            _LOGGER.debug(
-                "[CALIB_LOCK] [%s] turn_off ignored -- calibration lock active", self._ip
-            )
-            return
-        
-        # Update HA state IMMEDIATELY for responsive UI
-        self._is_on = False
-        self.stop_effect_rotation()
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-        
-        await self._execute_hardware_op(
-            lambda: self._internal_turn_off(**kwargs),
-            "turn_off"
-        )
-    
-    async def _internal_turn_off(self, **kwargs):
-        """Internal turn_off implementation that executes in the queue."""
-        _LOGGER.debug("[TURN_OFF] Executing turn_off")
-        was_music_flow_enabled = self._music_flow_enabled
-        # Buttons: Wake Lamp When Off turned off: "off" is a black picture on
-        # a powered lamp, as for a drawing, so a remote button's press still
-        # reaches the integration (a powered-down lamp's click only powers
-        # it on).
-        keep_powered = getattr(self, "remote_keeps_lamp_powered", False)
-        if (was_music_flow_enabled or self._mode in LAMP_MODES) and not keep_powered:
-            self._cube_matrix.close_fast_socket()
-            if note_power := getattr(self, "_expect_lamp_power", None):
-                note_power(False)
-            await self._cube_matrix.send_raw_command("set_power", ["off"])
-            # Powered off: its brightness is set again on the way back.
-            self._last_hardware_brightness = None
-        else:
-            if was_music_flow_enabled:
-                await self._send_music_off()
-            await self.erase_all()
-            await self.apply(off_frame=True)
-        self._is_on = False
-        self._music_flow_enabled = False
-        self._music_flow_restore_power = None
-        if was_music_flow_enabled:
-            await self._persist_music_flow_runtime_state()
-            self._refresh_music_flow_entities()
-        self._notify_camera_preview()
-        # NOTE: Do NOT reset _fx_mode_is_direct here!
-        # The FX socket is still alive after sending blank pixel data.
-        # On turn_on we just reuse the existing socket -- no activate_fx_mode
-        # needed.  If the socket dies while off (Cube idle timeout), the
-        # natural error-detection in send_command_fast / apply() will detect
-        # it and re-activate FX mode automatically.
-        # Previously this was set to False, which forced EVERY turn_on to
-        # close the socket, wait 300ms, and open a new one for
-        # activate_fx_mode -- a cycle that timed out ~50% of the time.
-        # In direct mode "off" is a black picture: the lamp's hardware
-        # brightness is unchanged, so it is not sent again when it comes back
-        # on (a set_bright after frames can bring an older picture back).
-        self._last_apply_time = 0  # Reset cooldown timer to ensure turn_on will work immediately
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-        _LOGGER.debug("[TURN_OFF] Turn off complete")
-
-    async def _async_hourly_update(self, _now) -> None:
-        await self.async_update()
-
-    @callback
-    def _async_publish_transport(self) -> None:
-        """Write the state when its "connection" attribute is out of date:
-        commands switched between UDP and TCP without a state change (UDP
-        failed or answers again: CubeMatrix.on_transport_change; the TCP
-        fallback or force_tcp ran out: the minute check)."""
-        if self.hass is not None and self._cube_matrix.transport != self._published_transport:
-            self.async_write_ha_state()
-
-    @callback
-    def _async_check_problems(self, _now=None) -> None:
-        """Show or clear the lamp's Repairs (issues.py), and publish a
-        connection that changed with time (_async_publish_transport)."""
-        self._async_publish_transport()
-        self._refresh_matter_link()
-        problems = lamp_problems(
-            self._cube_matrix.connection_state(), self.available,
-            time.monotonic() - self._added_at,
-            lan_control_off=self.matter_lan_control_off,
-            orientation_unknown=self.mount_profile[1] == SOURCE_UNKNOWN,
-        )
-        self._reported_problems = report_problems(
-            self.hass, self, problems, self._reported_problems
-        )
-
-    async def async_update(self, *args, **kwargs):
-        """Refresh the clock's UTC offset (daylight saving time): once when
-        the light is added, then on the hour (_async_hourly_update)."""
-        # Opening a standard LAN-control connection can stop the Cube's
-        # microphone renderer. Preserve Music Flow until a user command exits it.
-        if self._music_flow_enabled:
-            return
-
-        if self._mode == MODE_CLOCK and self._is_on:
-            timezone_hours = self._native_clock_timezone_hours()
-            if self._native_clock_timezone_offset is None:
-                # First poll after startup / integration reload: the lamp is
-                # already showing the clock, and _native_clock_timezone_offset
-                # is not restored from state (starts as None).  Re-activating
-                # here would tear down and rebuild the clock "by itself" -- and
-                # if it races an in-flight manual send it can drop the panel to
-                # the ribbon.  Just record the baseline silently; a real
-                # timezone change (e.g. DST) will re-activate on a later poll.
-                self._native_clock_timezone_offset = timezone_hours
-            elif timezone_hours != self._native_clock_timezone_offset:
-                _LOGGER.info(
-                    "[CLOCK] [%s] Refreshing clock UTC offset from %s to %+d",
-                    self._ip,
-                    self._native_clock_timezone_offset,
-                    timezone_hours,
-                )
-                await self.async_apply_display_mode(update_type="display_update")
-
-        # The lamp's state is never read back: Cube Lite answers no get_prop,
-        # over TCP or UDP, for any property. The component's own state is the
-        # only source of truth.
-
-    async def async_set_animation_layout(self, layout: str) -> None:
-        """Lay the animations out upright or as the Yeelight app sends its
-        GIFs (const.ANIMATION_LAYOUTS). An animation playing is uploaded
-        again in the new layout."""
-        if layout not in ANIMATION_LAYOUTS:
-            raise ValueError(f"Unsupported animation layout: {layout}")
-        if layout == self._animation_layout:
-            return
-        self._animation_layout = layout
-        if self.hass is not None:
-            self.async_write_ha_state()
-        if (
-            self._mode == MODE_NATIVE_EFFECT
-            and ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
-        ):
-            await self.async_apply_display_mode(update_type="color_change")
-            if self.hass is not None:
-                self.async_write_ha_state()
-
-    async def async_set_power_on_state(self, option: str) -> None:
-        """Set the Cube Lite's power recovery behavior."""
-        if option not in POWER_ON_STATES:
-            raise ValueError(f"Unsupported power-on state: {option}")
-        self._cube_matrix.close_fast_socket()
-        try:
-            result = await self._cube_matrix.send_command_with_recovery(
-                "set_ps", ["cfg_init_power", POWER_ON_STATES[option]]
-            )
-            if result is None:
-                raise CubeConnectionError(
-                    "Power-on behavior command was skipped during connection cooldown"
-                )
-        finally:
-            self._cube_matrix.close_command_socket()
-        self._power_on_state = option
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    def _effect_persist_item(self, name: str) -> dict:
-        """Build one official-app compatible physical-button effect entry."""
-        name = canonical_button_effect_name(name)
-        if name.startswith(BUTTON_CLOCK_PREFIX):
-            style_name = name.removeprefix(BUTTON_CLOCK_PREFIX)
-            for style_id, style in NATIVE_CLOCK_STYLES.items():
-                if style["name"] == style_name:
-                    config = clock_segment_modes(style["mixer"], clock_style_direct(style))
-                    # The style's default color (clock_style_default_color),
-                    # or every colour its background draws.
-                    colors = clock_style_colors(style)
-                    if colors:
-                        config["color"] = colors
-                    config["data"] = base64.b64encode(
-                        self._native_clock_data_bytes()
-                    ).decode("ascii")
-                    return {
-                        "effect_id": NATIVE_CLOCK_EFFECT_ID,
-                        "custom_id": style_id,
-                        "effect_params": [config],
-                    }
-        spec = NATIVE_EFFECTS.get(name)
-        if spec:
-            config = {"mode": spec["mode"], "onoff": 1}
-            if spec.get("speed"):
-                config["rate"] = self._native_effect_speed
-            config["direction"] = effect_direction_sent(self, spec)
-            return {
-                "effect_id": spec["effect_id"],
-                "custom_id": 0,
-                "effect_params": [config],
-            }
-        raise ValueError(f"Unknown native effect: {name}")
-
-    async def async_set_button_effects(self, effect_names: list[str]) -> None:
-        """Write up to eight ordered presets used by the physical button:
-        over Matter when a server delivers Yeelight's commands (the lamp
-        refuses this write over LAN), else over LAN (light_matter)."""
-        if not 1 <= len(effect_names) <= 8:
-            raise ValueError("The physical button list must contain 1 to 8 effects")
-        effect_names = [canonical_button_effect_name(name) for name in effect_names]
-        items = [self._effect_persist_item(name) for name in effect_names]
-        write_over_matter = getattr(self, "_write_button_playlist", None)
-        if write_over_matter is None or not await write_over_matter(items):
-            self._cube_matrix.close_fast_socket()
-            try:
-                for index, item in enumerate(items):
-                    result = await self._cube_matrix.send_command_with_recovery(
-                        "update_persist_effect_list", [index, item],
-                    )
-                    if result is None:
-                        raise CubeConnectionError(
-                            f"Physical-button preset slot {index + 1} was skipped "
-                            "during connection cooldown"
-                        )
-            finally:
-                self._cube_matrix.close_command_socket()
-        self._button_effects = list(effect_names)
-        if self.hass is not None:
-            self.async_write_ha_state()
 
     def _refresh_linked_entities(self):
         """Push the current state out to the lamp's controls (every
@@ -1633,22 +405,62 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         _LOGGER.warning(
             "[SETUP] [!] DUPLICATE CONFIG ENTRIES for IP %s! "
             "Entry IDs: %s. "
-            "This causes two CubeMatrix instances fighting each other -- "
+            "This causes two LampClient instances fighting each other -- "
             "remove the duplicate in Settings -> Integrations.",
             ip, [e.entry_id for e in same_ip_entries]
         )
     
     # TCP reachability has already been verified in __init__.py's
     # async_setup_entry (which is where ConfigEntryNotReady is effective).
-    _LOGGER.debug("[SETUP] Creating CubeMatrix for %s:%s", ip, port)
-    cube_matrix = CubeMatrix(ip, port)
+    _LOGGER.debug("[SETUP] Creating LampClient for %s:%s", ip, port)
+    lamp_client = LampClient(ip, port)
     
+    async def timed(step: str, func, *args):
+        """A blocking setup read (an executor), warned about when slow: Home
+        Assistant gives up on a platform after 60 s (2026-11-14: a Cube
+        Matrix whose LAN was stuck never finished its setup)."""
+        started = time.monotonic()
+        try:
+            return await hass.async_add_executor_job(func, *args)
+        finally:
+            took = time.monotonic() - started
+            if took >= SETUP_STEP_SLOW:
+                _LOGGER.warning("[SETUP] [%s] %s took %.1f s", ip, step, took)
+
     # Fetch capabilities in executor to avoid blocking the event loop
     _LOGGER.debug("[SETUP] Fetching capabilities for %s in executor", ip)
-    await hass.async_add_executor_job(cube_matrix.fetch_capabilities)
-    _LOGGER.debug("[SETUP] Capabilities fetched for %s, creating light entity", ip)
+    await timed("Reading its capabilities", lamp_client.fetch_capabilities)
+    # The model (device_profile): SSDP's, else the one the entry was added
+    # with (SSDP can be unavailable, e.g. in a container without multicast);
+    # an entry made before models were told apart learns it here: from SSDP,
+    # else from the lamp itself (probe_model: a Cube Matrix answers get_prop).
+    stored_model = entry.data.get(CONF_MODEL)
+    if model_key(lamp_client.device_model) != model_key(stored_model):
+        if not lamp_client.capabilities.get("model") and model_key(stored_model) is not None:
+            await timed("Reading its layout", lamp_client.set_model, stored_model)
+        elif lamp_client.capabilities.get("model"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_MODEL: lamp_client.capabilities["model"]}
+            )
+        else:
+            model = await timed("Asking its model", lamp_client.probe_model)
+            # No answer is stored as a Cube Lite only after MODEL_PROBE_STARTS
+            # starts (a Cube Matrix can answer late; a Cube Lite never answers,
+            # and is not asked at every start forever).
+            misses = 0 if model else int(entry.data.get(CONF_MODEL_PROBE_MISSES, 0)) + 1
+            if not model and misses >= MODEL_PROBE_STARTS:
+                model = "CubeLite"
+            data = {key: value for key, value in entry.data.items() if key != CONF_MODEL_PROBE_MISSES}
+            if model:
+                hass.config_entries.async_update_entry(entry, data={**data, CONF_MODEL: model})
+            else:
+                hass.config_entries.async_update_entry(entry, data={**data, CONF_MODEL_PROBE_MISSES: misses})
+    _LOGGER.debug(
+        "[SETUP] %s is a %s (%s modules), creating light entity",
+        ip, lamp_client.profile.name, lamp_client.profile.modules,
+    )
     
-    light_entity = YeelightCubeLight(cube_matrix, ip, entry)
+    light_entity = YeelightCubeLight(lamp_client, ip, entry)
     
     # Register the lamp for the services (by IP: see _ENTITY_REGISTRY).
     _ENTITY_REGISTRY[ip] = light_entity

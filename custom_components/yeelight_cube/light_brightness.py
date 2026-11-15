@@ -9,7 +9,10 @@ frame (its color correction depends on that brightness). Reads/writes state via
 import logging
 import time
 
-from .cube_matrix import (
+from .matter_commands import MatterCommandsUnavailable
+
+from .lamp_protocol import (
+    LAMP_ERRORS,
     CubeConnectionError,
     encode_rgb_frame,
     is_connection_error,
@@ -25,9 +28,6 @@ class BrightnessMixin:
 
     def _init_brightness_state(self):
         """What the brightness path last sent, and its retry. Called by YeelightCubeLight.__init__."""
-        # Hardware brightness tracking to avoid redundant brightness commands
-        self._last_hardware_brightness = None  # Track last hardware brightness sent to lamp
-
         # Track last successful brightness change (timestamp, user_brightness)
         # Used to prevent retry queue from overwriting newer brightness values
         self._last_successful_brightness = None  # (timestamp, user_brightness_0_255)
@@ -118,7 +118,7 @@ class BrightnessMixin:
                     # so it is re-sent with them (fast path, no full render).
                     if not await self._send_hardware_brightness(level):
                         return  # queued: the retry sends it all again
-                    self._last_hardware_brightness = level
+                    self._note_hardware_brightness(level)
                     await self._apply_brightness_only()
                     # Guards the retry queue against applying an older value.
                     self._last_successful_brightness = (time.time(), self._brightness)
@@ -134,9 +134,9 @@ class BrightnessMixin:
                 else:
                     _LOGGER.debug("[BRIGHTNESS #%s] No changes needed, brightness already at target", call_id)
 
-            except Exception as e:
-                # Most errors are already handled gracefully in cube_matrix.send_command_with_recovery
-                # Only truly unexpected errors reach here
+            except (*LAMP_ERRORS, MatterCommandsUnavailable) as e:
+                # Most errors are already handled gracefully in LampClient.send_command_with_recovery
+                # Only the lamp's refusals and lost connections reach here
                 if is_quota_error(e):
                     _LOGGER.warning("[BRIGHTNESS #%s] Rate limit exceeded - backing off", call_id)
                 elif isinstance(e, TimeoutError):
@@ -159,7 +159,18 @@ class BrightnessMixin:
         _direct_mode_trusted() is the safety net if the Cube silently leaves
         direct mode after an idle period.
         """
-        if not self._cube_matrix.is_connected():
+        over_matter = getattr(self, "matrix_brightness_over_matter", None)
+        if over_matter is not None and over_matter():
+            # A Cube Matrix with Matter: there (light_matrix), not its LAN.
+            try:
+                await self.matrix_send_brightness(hardware_brightness)
+            except Exception as e:  # noqa: BLE001 -- queued like a LAN failure
+                _LOGGER.debug("[BRIGHTNESS] Cube Matrix brightness failed: %s", e)
+                self._pending_brightness = (self._brightness, time.time())
+                self._start_brightness_retry_task()
+                return False
+            return True
+        if not self._lamp_client.is_connected():
             _LOGGER.debug(
                 "[BRIGHTNESS] Connection down -- queued brightness %s for retry",
                 self._brightness,
@@ -168,8 +179,8 @@ class BrightnessMixin:
             self._start_brightness_retry_task()
             return False
         try:
-            await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-        except Exception as e:
+            await self._lamp_client.send_command_fast("set_bright", [hardware_brightness])
+        except LAMP_ERRORS as e:
             if is_connection_error(e) or is_quota_error(e):
                 self._pending_brightness = (self._brightness, time.time())
                 self._start_brightness_retry_task()
@@ -191,9 +202,9 @@ class BrightnessMixin:
         path when there is no snapshot or direct mode needs activating.
         """
         try:
-            if not self._cube_matrix.is_connected():
+            if not self._lamp_client.is_connected():
                 _LOGGER.log(
-                    self._cube_matrix.outage_log_level(),
+                    self._lamp_client.outage_log_level(),
                     "[BRIGHTNESS_FAST] [%s] SKIP -- cooldown active", self._ip,
                 )
                 raise CubeConnectionError("Cooldown active -- device not yet reachable")
@@ -226,7 +237,7 @@ class BrightnessMixin:
             # mode again at once if the connection changed under it. Sent
             # even when it is the frame already shown: the set_bright just
             # before can make the lamp show an older picture again
-            # (cube_matrix.FRAME_SETTLE_DELAY), and this frame puts it back.
+            # (lamp_client_udp.FRAME_SETTLE_DELAY), and this frame puts it back.
             await self._draw_direct(encode_rgb_frame(self._lamp_frame(frame)))
 
             if self.hass is not None:
@@ -237,7 +248,7 @@ class BrightnessMixin:
             
         except Exception as e:
             if is_connection_error(e):
-                self._fx_mode_is_direct = False
+                self._direct_mode_lost()
                 self._last_connection_error = str(e)
                 _LOGGER.debug("[BRIGHTNESS_FAST] Connection issue: %s -- re-raising for retry", e)
             else:

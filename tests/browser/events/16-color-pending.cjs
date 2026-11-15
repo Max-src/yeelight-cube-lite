@@ -84,7 +84,7 @@ module.exports = async (t) => {
           const repicked = row().selected;
           if (tag.includes("clock")) card._applyColor([1, 2, 3]);
           else card._applyCustomColor([1, 2, 3]);
-          const dropped = (card._pendingColorMode ?? card._pendingColor).value;
+          const dropped = card._colors.pending.value;
           return { modes, pick, other, sent, whileSent, beforeEcho, after, repicked, dropped };
         } finally {
           hass = saved;

@@ -78,8 +78,10 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     };
   }
 
-  get hass() {
-    return this._hass;
+  // The palette sensor, found on the first hass (setConfig may run before
+  // it is available), and again if renamed (card-base set hass).
+  _hassReceived(hass) {
+    this._autoResolveSensor("palette_sensor", "palettes", hass, this);
   }
 
   /**
@@ -89,11 +91,8 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
    * properties: it re-renders only when what it shows changed, never for
    * unrelated entities.
    */
-  set hass(hass) {
-    this._hass = hass;
-    // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
-    this._autoResolveSensor("palette_sensor", "palettes", hass, this);
-    if (!hass || !this._hassChanged(hass)) return;
+  _hassUpdated(hass) {
+    if (!hass) return;
     this._store.update(hass, this.config);
     this.requestUpdate();
   }

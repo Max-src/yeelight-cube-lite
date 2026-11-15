@@ -41,7 +41,7 @@ export const NOTICE = Object.freeze({
 });
 
 /** What a lamp is doing, for the header: its mode while on, else its state. */
-export function lampStatusText(stateObj) {
+function lampStatusText(stateObj) {
   if (stateObj?.state === "on") return stateObj.attributes?.content_mode || "on";
   return stateObj?.state || "unavailable";
 }

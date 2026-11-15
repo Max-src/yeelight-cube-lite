@@ -9,5 +9,6 @@ export const CARD_NAMES = [
   "palette",
   "color-list-editor",
   "clock",
-  "native-effects"
+  "native-effects",
+  "matrix-modules"
 ];

@@ -33,6 +33,14 @@ direction, the lamp's orientation, LAN Control and the remote buttons'
 playlist. The Palette color mode's streamed effects and clocks need no Matter:
 they go over the LAN (UDP), like drawings.
 
+**Cube Matrix** (the original Yeelight Cube, product 16787457): its node is
+linked the same way (`matter_link.MATRIX_REPORTED`: on/off, level, rotation,
+the requested effect and the one actually running), and the same channel
+sends its own effects (`setPresetsEffect`), clock and drawings (`setEffect`
+40 and 36, then `setData`), built by `matrix_effects.py` and sent by
+`light_matrix.py`. Without the channel, or while the lamp's demo loop runs,
+everything is streamed over the LAN instead (docs/CUBE_MATRIX.md).
+
 **Rule for every feature built on it:** it must work, or stay out of the way,
 when no server delivers. Users without Matter, and users of the official
 server today, get `MatterCommandsUnavailable`:

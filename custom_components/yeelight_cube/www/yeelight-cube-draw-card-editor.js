@@ -103,7 +103,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
 
   static get properties() {
     return {
-      hass: { type: Object },
       _config: { type: Object },
       _open: { state: true },
     };
@@ -314,12 +313,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
       this._config.hidden_tools = [...hiddenTools(this._config)];
     if (!Array.isArray(this._config.hidden_actions) && hiddenActions(this._config).length)
       this._config.hidden_actions = [...hiddenActions(this._config)];
-  }
-
-  set hass(hass) {
-    const oldHass = this._hass;
-    this._hass = hass;
-    this.requestUpdate("hass", oldHass);
   }
 
   render() {

@@ -37,6 +37,12 @@ export const colorModeSelectorStyles = `
   .unified-color-modes .color-add button:not(.btn-style-modern):not(.btn-style-gradient) { border:1px dashed var(--primary-color,#1976d2); }
   .unified-color-modes > .gc-selector { flex:1 1 180px; min-width:0; }
   .unified-color-modes .shared-action-button { flex:0 0 auto; width:auto; max-width:100%; }
+  /* The shared button group sizes its buttons to share one line (flex:1 1 0,
+     .shared-button-group .shared-action-button): here each keeps its own
+     width and the row wraps, so a name never breaks letter by letter. */
+  .unified-color-modes .shared-button-group .shared-action-button:not(.btn-style-icon) {
+    flex:0 0 auto; width:auto; max-width:100%;
+  }
   .unified-color-modes .shared-action-button.btn-style-icon { flex:0 0 44px; width:44px; height:44px; min-height:44px; padding:0; }
   .unified-color-modes .shared-action-button.btn-style-pill { min-height:44px; }
   .unified-color-modes .shared-button-group .shared-action-button.btn-fill { min-width:44px; min-height:44px; }

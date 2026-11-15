@@ -133,7 +133,7 @@ module.exports = async (t) => {
       clock._customDraft = draft;
       clock.requestUpdate();
       await clock.updateComplete;
-      native._customColorDraft = draft;
+      native._customDraft = draft;
       await native.updateComplete;
       for (const card of [clock, native]) {
         const actualWidth = card.shadowRoot

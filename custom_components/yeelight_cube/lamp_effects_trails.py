@@ -9,7 +9,6 @@ import math
 
 try:
     from .lamp_core import (
-        LENGTH,
         RENDER_MS,
         SIN8,
         U32,
@@ -29,6 +28,7 @@ try:
         place_strip,
         row_blur_grid,
         random_source,
+        settings_length,
         source_word,
     )
     from .lamp_effects_core import SLOTS as CORE_SLOTS
@@ -38,7 +38,6 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from lamp_core import (
-        LENGTH,
         RENDER_MS,
         SIN8,
         U32,
@@ -58,6 +57,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         place_strip,
         row_blur_grid,
         random_source,
+        settings_length,
         source_word,
     )
     from lamp_effects_core import SLOTS as CORE_SLOTS
@@ -66,20 +66,20 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
 # ── Slot 15: Aurora ─────────────────────────────────────────────────────
 def _aurora_spawn(state) -> dict:
     """Seven source reads: colour, ttl, alpha, width, centre, direction, speed."""
-    draw = state["draw"]
+    draw, length = state["draw"], state["length"]
     state["draw"] = draw + 7
-    index = (source_word(draw) & 255) * LENGTH >> 8
-    index = (index * 255 // (LENGTH - 1)) & 255
+    index = (source_word(draw) & 255) * length >> 8
+    index = (index * 255 // (length - 1)) & 255
     at = 3 * ((index * state["span"]) >> 8)
-    tenth = LENGTH // 10
-    width = (((source_word(draw + 3) & 65535) * (((LENGTH >> 2) - tenth) & 65535)) >> 16) + tenth
+    tenth = length // 10
+    width = (((source_word(draw + 3) & 65535) * (((length >> 2) - tenth) & 65535)) >> 16) + tenth
     width &= 65535
     return {
         "colour": state["table"][at:at + 3],
         "ttl": (((source_word(draw + 1) & 65535) * 1001) >> 16) + 500,
         "alpha": f32(f32(((source_word(draw + 2) & 65535) * 31 >> 16) + 70) / 100),
         "width": width or 1,
-        "centre": f32(LENGTH * f32(((source_word(draw + 4) & 65535) * 101 >> 16) / 100)),
+        "centre": f32(length * f32(((source_word(draw + 4) & 65535) * 101 >> 16) / 100)),
         "left": ((source_word(draw + 5) >> 15) & 1) ^ 1,
         "speed": f32(f32(f32(f32(((source_word(draw + 6) >> 12) & 15) + 15) / 100) * 4) / 255),
         "age": 0,
@@ -90,6 +90,7 @@ def aurora_init(settings) -> dict:
     colours = effect_colours(settings)
     return {
         "direction": settings["direction"],
+        "length": settings_length(settings),
         "table": colours["table"],
         "span": palette_span(len(colours["palette"])),
         "backlight": 1 + sum(1 for word in colours["words"][:3] if any(word)),
@@ -104,22 +105,22 @@ def aurora_step(state, settings, clock_ms, render) -> bytes:
     waves = state["waves"]
     if waves is None:
         waves = state["waves"] = [_aurora_spawn(state) for _ in range(state["count"])]
-    move = state["move"]
+    move, length = state["move"], state["length"]
     for index, wave in enumerate(waves):
         moved = f32(wave["speed"] * move)
         centre = wave["centre"] = f32(wave["centre"] + (-moved if wave["left"] else moved))
         wave["age"] = (wave["age"] + 1) & 65535
         reach = wave["width"]
         if wave["age"] > wave["ttl"] or (
-            f32(centre + reach) < 0 if wave["left"] else f32(centre - reach) > LENGTH
+            f32(centre + reach) < 0 if wave["left"] else f32(centre - reach) > length
         ):
             waves[index] = _aurora_spawn(state)
     # Adds never go negative: the channel's sum saturates whatever the order.
-    light = [state["backlight"]] * (3 * LENGTH)
+    light = [state["backlight"]] * (3 * length)
     for wave in waves:
         centre, reach, age, ttl = wave["centre"], wave["width"], wave["age"], wave["ttl"]
         first = max(0, math.ceil(f32(centre - reach)))
-        last = min(LENGTH - 1, math.floor(f32(centre + reach)))
+        last = min(length - 1, math.floor(f32(centre + reach)))
         if first > last:
             continue
         height = f32((age if f32(age / ttl) < 0.5 else f32(ttl - age)) / (ttl * 0.5))
@@ -136,13 +137,13 @@ def aurora_step(state, settings, clock_ms, render) -> bytes:
 
 # ── Slot 19: Heat fire ──────────────────────────────────────────────────
 def solar_flare_init(settings) -> dict:
-    rate = settings["rate"]
+    rate, length = settings["rate"], settings_length(settings)
     return {
         "direction": settings["direction"],
         "table": effect_colours(settings)["table"],
-        "cooling": ((100 + 5 * (rate // 3)) // LENGTH) & 255,
+        "cooling": ((100 + 5 * (rate // 3)) // length) & 255,
         "spark": 30 + 20 * rate // 255,
-        "heat": [0] * LENGTH,
+        "heat": [0] * length,
         "bucket": 0,
         "draw": 0,
     }
@@ -150,18 +151,19 @@ def solar_flare_init(settings) -> dict:
 
 def solar_flare_step(state, settings, clock_ms, render) -> bytes:
     heat, cooling, draw = state["heat"], state["cooling"], state["draw"]
-    for pixel in range(LENGTH):
+    length = len(heat)
+    for pixel in range(length):
         left = heat[pixel] - ((((source_word(draw) & 255) * cooling >> 8) + 2) & 255)
         heat[pixel] = left if left > 8 else 8
         draw += 1
     bucket = (clock_ms // 32) & U32
     if bucket != state["bucket"]:
         state["bucket"] = bucket
-        for pixel in range(LENGTH - 1, 1, -1):
+        for pixel in range(length - 1, 1, -1):
             heat[pixel] = (heat[pixel - 1] + 2 * heat[pixel - 2]) // 3
         draw += 1
         if random_source(draw - 1) <= state["spark"]:
-            pixel = (random_source(draw) * (LENGTH // 3)) >> 8
+            pixel = (random_source(draw) * (length // 3)) >> 8
             spark = heat[pixel] + 64 + ((random_source(draw + 1) * 134) >> 8)
             heat[pixel] = spark if spark < 255 else 255
             draw += 2
@@ -179,6 +181,7 @@ _STACK_SCALE = float.fromhex("0x1.85f06f6944674p-6")  # the lamp's 1/42
 
 
 def stack_init(settings) -> dict:
+    length = settings_length(settings)
     return {
         "direction": settings["direction"],
         "draw": 0,
@@ -190,20 +193,22 @@ def stack_init(settings) -> dict:
         "position": 0.0,
         "speed": 0.0,
         "colour": bytes(3),
-        "strip": bytearray(3 * LENGTH),
+        "length": length,
+        "strip": bytearray(3 * length),
         "panel": b"",
     }
 
 
 def _stack_clear(state) -> int:
     state["cursor"], state["pile"], state["phase"] = 0, 0, 0
-    state["strip"][:] = bytes(3 * LENGTH)
+    state["strip"][:] = bytes(3 * state["length"])
     return 250
 
 
 def _stack_run(state, rate: int) -> int:
     """One step: what it asks to wait, in ms."""
-    if state["pile"] >= LENGTH:
+    length = state["length"]
+    if state["pile"] >= length:
         return _stack_clear(state)
     if state["phase"] == 0:
         if rate:
@@ -211,9 +216,9 @@ def _stack_run(state, rate: int) -> int:
         else:
             pace = ((random_source(state["draw"]) * 58) >> 8) + 6
             state["draw"] += 1
-        state["speed"], state["position"] = f32(pace * _STACK_SCALE), f32(LENGTH)
+        state["speed"], state["position"] = f32(pace * _STACK_SCALE), f32(length)
         palette = state["palette"]
-        state["colour"] = palette[(state["cursor"] % LENGTH) % len(palette)]  # black is not skipped
+        state["colour"] = palette[(state["cursor"] % length) % len(palette)]  # black is not skipped
         state["cursor"] = (state["cursor"] + 1) & U32
         state["phase"] = 1
     if state["phase"] == 1:
@@ -225,14 +230,14 @@ def _stack_run(state, rate: int) -> int:
     if not state["position"] > pile:
         state["phase"] = 0
         state["pile"] += 1
-        return 1000 if state["pile"] >= LENGTH else 25
+        return 1000 if state["pile"] >= length else 25
     position = state["position"] = max(f32(state["position"] - state["speed"]), pile)
     first = int(position)
-    if first < LENGTH:
+    if first < length:
         strip = state["strip"]
-        end = min(LENGTH, math.ceil(f32(position + 1)))
+        end = min(length, math.ceil(f32(position + 1)))
         strip[3 * first:3 * end] = state["colour"] * (end - first)
-        strip[3 * end:] = bytes(3 * (LENGTH - end))
+        strip[3 * end:] = bytes(3 * (length - end))
     return 25
 
 
@@ -361,6 +366,7 @@ def plotter_init(settings) -> dict:
     return {
         "direction": settings["direction"],
         "cells": list(plotted.items()),  # by first phase
+        "length": width * height,
         "phases": -1,
         "panel": b"",
     }
@@ -370,7 +376,7 @@ def plotter_step(state, settings, clock_ms, render) -> bytes:
     phases = min(render // _PLOTTER_RENDERS, 255)
     if phases != state["phases"]:
         state["phases"] = phases
-        strip = bytearray(3 * LENGTH)
+        strip = bytearray(3 * state["length"])
         for cell, phase in state["cells"]:
             if phase > phases:
                 break
@@ -437,7 +443,7 @@ def _meteor_spawn(state, meteor, clock_ms) -> None:
     state["draw"] = draw + 4
     meteor["speed"] = f32(((random_source(draw) * 3) >> 8) + 1)
     meteor["start"] = f32(-50 - ((random_source(draw + 1) * 50) >> 8))
-    at = 3 * ((random_source(draw + 2) * 255 // (LENGTH - 1)) & 255)
+    at = 3 * ((random_source(draw + 2) * 255 // (state["width"] * state["height"] - 1)) & 255)
     meteor["colour"] = state["table"][at:at + 3]
     meteor["column"] = (state["width"] * random_source(draw + 3)) >> 8
     meteor["time"] = clock_ms
@@ -527,8 +533,8 @@ def blocks_init(settings) -> dict:
         "landing": ((rate ^ 255) + 16) >> 4,
         "falling": ((rate ^ 255) + 16) >> 5,
         "fade": ((intensity >> 1) | 128) & 255,
-        "kinds": [0] * LENGTH,  # 0 empty, 1 falling, 2 settled
-        "due": [0] * LENGTH,
+        "kinds": [0] * (width * height),  # 0 empty, 1 falling, 2 settled
+        "due": [0] * (width * height),
         "draw": 1,
         "work": new_grid(width, height),
     }
@@ -566,9 +572,9 @@ def blocks_step(state, settings, clock_ms, render) -> bytes:
         if kind:
             work[3 * here:3 * here + 3] = primary
             painted += 1
-    if painted >= LENGTH:
-        state["kinds"] = [0] * LENGTH
-        state["due"] = [0] * LENGTH
+    if painted >= len(kinds):
+        state["kinds"] = [0] * len(kinds)
+        state["due"] = [0] * len(kinds)
     return place_strip(work, state["direction"])
 
 
@@ -577,26 +583,27 @@ def blocks_step(state, settings, clock_ms, render) -> bytes:
 # render. Only the strip carries over, and its fade is slowest at rate 0 (amount
 # 210), where a dot's 251 takes 68 renders to go, so 67 rebuild any frame.
 _DOT_TRAIL_WARMUP = 67
-_DOT_TRAIL_LEVEL = (LENGTH - 1) * 255 // LENGTH  # the last of the N writes wins
 
 
 def dot_trail_init(settings) -> dict:
-    rate = settings["rate"]
+    rate, length = settings["rate"], settings_length(settings)
+    level = (length - 1) * 255 // length  # the last of the N writes wins
     return {
         "direction": settings["direction"],
         "period": 20 + int(-10 * rate / 255),
         "amount": (rate * 30 // 255 + 210) & 255,
-        "colour": bytes((channel * _DOT_TRAIL_LEVEL) >> 8 for channel in effect_colours(settings)["primary"]),
-        "strip": bytearray(3 * LENGTH),
+        "colour": bytes((channel * level) >> 8 for channel in effect_colours(settings)["primary"]),
+        "length": length,
+        "strip": bytearray(3 * length),
     }
 
 
 def dot_trail_step(state, settings, clock_ms, render) -> bytes:
     strip = state["strip"]
-    fade_towards(strip, state["amount"])
+    fade_towards(strip, state["amount"], 0, state["length"])
     turn, rest = divmod(render, state["period"])
     if turn & 1 and not rest:
-        at = 3 * ((turn - 1) % LENGTH)
+        at = 3 * ((turn - 1) % state["length"])
         strip[at:at + 3] = state["colour"]
     return place_strip(strip, state["direction"])
 

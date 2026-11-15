@@ -27,7 +27,7 @@ import {
   studioRuns,
 } from "./lamp-studio.js";
 
-// const.py STORED_GIF_EFFECT: the lamp's stored GIF.
+// effect_catalog.py STORED_GIF_EFFECT: the lamp's stored GIF.
 export const STORED_GIF_EFFECT = "Stored GIF";
 
 export {
@@ -135,7 +135,10 @@ export function effectSupportsFreeze(name) {
 // `speed`: the one the phase was computed with, and the rate the lamp gets
 // (DEFAULT_PREVIEW_SPEED when omitted). `orientation`: how the lamp is mounted,
 // which the direction sent is turned for. `intensity`: the one chosen (null:
-// the effect's own).
+// the effect's own). `columns`: the columns the lamp shows, which its effects
+// are drawn on (a Cube Matrix's matrix_columns; null: all 20, a Cube Lite).
+// The cards read all of these from one preview context
+// (native-effect-card-utils.js nativeEffectLampFrame).
 export function renderNativeEffect(
   effect,
   phase,
@@ -149,13 +152,14 @@ export function renderNativeEffect(
   stored = null,
   layout = null,
   adjustments = null,
+  columns = null,
 ) {
   const rate = speed ?? DEFAULT_PREVIEW_SPEED;
   const seconds = phase / (0.25 + rate / 55);
   // Palette beyond what the lamp takes: drawn by Home Assistant in the whole
   // palette and streamed; what the lamp shows of it (lamp-studio.js).
   if (studioRuns(effect, colorMode, palette))
-    return studioPreviewFrame(effect, seconds, direction, rate, orientation, intensity, palette);
+    return studioPreviewFrame(effect, seconds, direction, rate, orientation, intensity, palette, columns);
   // An animation, or the stored GIF when it is one of them (`stored`, the
   // stored_gif attribute or its animation): its frames as sent, laid out
   // (`layout`, the animation_layout attribute), timed (the speed) and
@@ -185,14 +189,10 @@ export function renderNativeEffect(
     );
   if (!isLampRendered(effect)) return renderGradient(phase, direction);
   return lampEffectFrame(
-    lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity, palette),
+    lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity, palette, columns),
     seconds,
   );
 }
-
-// Kept for its callers: the lamp's renderers place every direction as the
-// lamp does, nothing is left to correct.
-export const renderNativeEffectOriented = renderNativeEffect;
 
 // A moving gradient for slot 71: its picture cannot be read from the lamp.
 function renderGradient(phase, direction) {

@@ -16,7 +16,7 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from .command_errors import note_command_result
 from .pixel_art_storage import PIXEL_ART_ORIENTATIONS
 from .errors import invalid
-from .cube_matrix import is_connection_error
+from .lamp_protocol import is_connection_error
 from .name_utils import normalize_display_name
 from .light import _ENTITY_REGISTRY
 from .light_rotation import MAX_FAVOURITE_NAME, MAX_FAVOURITES
@@ -237,7 +237,7 @@ def make_lamp_runner(hass: HomeAssistant):
             except Exception as err:  # noqa: BLE001 -- one lamp never stops the others
                 name = getattr(lamp, "entity_id", None) or getattr(lamp, "_ip", lamp)
                 if is_connection_error(err):
-                    cube = getattr(lamp, "_cube_matrix", None)
+                    cube = getattr(lamp, "_lamp_client", None)
                     level = (
                         cube.outage_log_level()
                         if hasattr(cube, "outage_log_level")

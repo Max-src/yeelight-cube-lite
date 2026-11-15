@@ -5,7 +5,6 @@
  */
 
 import {
-  LENGTH,
   RENDER_MS,
   SIN8,
   beat,
@@ -24,23 +23,24 @@ import {
   placeStrip,
   rowBlurGrid,
   randomSource,
+  settingsLength,
   sourceWord,
 } from "./lamp-core.js";
 import { SLOTS as CORE_SLOTS } from "./lamp-effects-core.js";
 
-const newPanel = () => new Uint8Array(3 * LENGTH);
+const newPanel = (length) => new Uint8Array(3 * length);
 
 // ── Slot 15: Aurora ───────────────────────────────────────────────────
 /** Seven source reads: colour, ttl, alpha, width, centre, direction, speed. */
 function auroraSpawn(state) {
-  const draw = state.draw;
+  const { draw, length } = state;
   state.draw = draw + 7;
-  let index = ((sourceWord(draw) & 255) * LENGTH) >> 8;
-  index = Math.floor((index * 255) / (LENGTH - 1)) & 255;
+  let index = ((sourceWord(draw) & 255) * length) >> 8;
+  index = Math.floor((index * 255) / (length - 1)) & 255;
   const at = 3 * ((index * state.span) >> 8);
-  const tenth = Math.floor(LENGTH / 10);
+  const tenth = Math.floor(length / 10);
   const reach =
-    (((sourceWord(draw + 3) & 65535) * (((LENGTH >> 2) - tenth) & 65535)) >>> 16) + tenth;
+    (((sourceWord(draw + 3) & 65535) * (((length >> 2) - tenth) & 65535)) >>> 16) + tenth;
   return {
     red: state.table[at],
     green: state.table[at + 1],
@@ -48,7 +48,7 @@ function auroraSpawn(state) {
     ttl: (((sourceWord(draw + 1) & 65535) * 1001) >>> 16) + 500,
     alpha: f32(f32((((sourceWord(draw + 2) & 65535) * 31) >>> 16) + 70) / 100),
     width: reach & 65535 || 1,
-    centre: f32(LENGTH * f32((((sourceWord(draw + 4) & 65535) * 101) >>> 16) / 100)),
+    centre: f32(length * f32((((sourceWord(draw + 4) & 65535) * 101) >>> 16) / 100)),
     left: ((sourceWord(draw + 5) >>> 15) & 1) ^ 1,
     speed: f32(f32(f32(f32(((sourceWord(draw + 6) >>> 12) & 15) + 15) / 100) * 4) / 255),
     age: 0,
@@ -57,8 +57,10 @@ function auroraSpawn(state) {
 
 function auroraInit(settings) {
   const colours = effectColours(settings);
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
+    length,
     table: colours.table,
     span: paletteSpan(colours.palette.length),
     backlight: 1 + colours.words.slice(0, 3).filter((word) => word.some(Boolean)).length,
@@ -66,16 +68,16 @@ function auroraInit(settings) {
     move: f32(Math.floor((settings.rate * 205) / 255) + 50),
     draw: 0,
     waves: null,
-    light: new Int32Array(3 * LENGTH),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: newPanel(),
+    light: new Int32Array(3 * length),
+    strip: new Uint8Array(3 * length),
+    panel: newPanel(length),
   };
 }
 
 function auroraStep(state) {
   if (!state.waves)
     state.waves = Array.from({ length: state.count }, () => auroraSpawn(state));
-  const { waves, move, light, strip } = state;
+  const { waves, move, light, strip, length } = state;
   for (let index = 0; index < waves.length; index += 1) {
     const wave = waves[index];
     const moved = f32(wave.speed * move);
@@ -83,7 +85,7 @@ function auroraStep(state) {
     wave.age = (wave.age + 1) & 65535;
     if (
       wave.age > wave.ttl ||
-      (wave.left ? f32(wave.centre + wave.width) < 0 : f32(wave.centre - wave.width) > LENGTH)
+      (wave.left ? f32(wave.centre + wave.width) < 0 : f32(wave.centre - wave.width) > length)
     )
       waves[index] = auroraSpawn(state);
   }
@@ -92,7 +94,7 @@ function auroraStep(state) {
   for (const wave of waves) {
     const { centre, width, age, ttl, alpha, red, green, blue } = wave;
     const first = Math.max(0, Math.ceil(f32(centre - width)));
-    const last = Math.min(LENGTH - 1, Math.floor(f32(centre + width)));
+    const last = Math.min(length - 1, Math.floor(f32(centre + width)));
     if (first > last) continue;
     const height = f32((f32(age / ttl) < 0.5 ? age : f32(ttl - age)) / (ttl * 0.5));
     for (let pixel = first; pixel <= last; pixel += 1) {
@@ -103,30 +105,32 @@ function auroraStep(state) {
       light[at + 2] += Math.trunc(f32(blue * factor));
     }
   }
-  for (let at = 0; at < 3 * LENGTH; at += 1) strip[at] = Math.min(255, light[at]);
+  for (let at = 0; at < 3 * length; at += 1) strip[at] = Math.min(255, light[at]);
   return placeStrip(strip, state.direction, state.panel);
 }
 
 // ── Slot 19: Heat fire ────────────────────────────────────────────────
 function solarFlareInit(settings) {
   const { rate } = settings;
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     table: effectColours(settings).table,
-    cooling: Math.floor((100 + 5 * Math.floor(rate / 3)) / LENGTH) & 255,
+    cooling: Math.floor((100 + 5 * Math.floor(rate / 3)) / length) & 255,
     spark: 30 + Math.floor((20 * rate) / 255),
-    heat: new Int32Array(LENGTH),
+    heat: new Int32Array(length),
     bucket: 0,
     draw: 0,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: newPanel(),
+    strip: new Uint8Array(3 * length),
+    panel: newPanel(length),
   };
 }
 
 function solarFlareStep(state, settings, clockMs) {
   const { heat, cooling, table, strip } = state;
+  const length = heat.length;
   let { draw } = state;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  for (let pixel = 0; pixel < length; pixel += 1) {
     const left = heat[pixel] - ((((sourceWord(draw) & 255) * cooling >> 8) + 2) & 255);
     heat[pixel] = left > 8 ? left : 8;
     draw += 1;
@@ -134,17 +138,17 @@ function solarFlareStep(state, settings, clockMs) {
   const bucket = Math.floor(clockMs / 32) >>> 0;
   if (bucket !== state.bucket) {
     state.bucket = bucket;
-    for (let pixel = LENGTH - 1; pixel > 1; pixel -= 1)
+    for (let pixel = length - 1; pixel > 1; pixel -= 1)
       heat[pixel] = Math.floor((heat[pixel - 1] + 2 * heat[pixel - 2]) / 3);
     draw += 1;
     if (randomSource(draw - 1) <= state.spark) {
-      const pixel = (randomSource(draw) * Math.floor(LENGTH / 3)) >> 8;
+      const pixel = (randomSource(draw) * Math.floor(length / 3)) >> 8;
       heat[pixel] = Math.min(255, heat[pixel] + 64 + ((randomSource(draw + 1) * 134) >> 8));
       draw += 2;
     }
   }
   state.draw = draw;
-  for (let pixel = 0; pixel < LENGTH; pixel += 1) {
+  for (let pixel = 0; pixel < length; pixel += 1) {
     const at = 3 * heat[pixel];
     strip[3 * pixel] = table[at];
     strip[3 * pixel + 1] = table[at + 1];
@@ -164,6 +168,7 @@ const STACK_SCALE = (() => {
 })();
 
 function stackInit(settings) {
+  const length = settingsLength(settings);
   return {
     direction: settings.direction,
     draw: 0,
@@ -175,8 +180,9 @@ function stackInit(settings) {
     position: 0,
     speed: 0,
     colour: [0, 0, 0],
-    strip: new Uint8Array(3 * LENGTH),
-    panel: newPanel(),
+    length,
+    strip: new Uint8Array(3 * length),
+    panel: newPanel(length),
   };
 }
 
@@ -190,7 +196,8 @@ function stackClear(state) {
 
 /** One step: what it asks to wait, in ms. */
 function stackRun(state, rate) {
-  if (state.pile >= LENGTH) return stackClear(state);
+  const { length } = state;
+  if (state.pile >= length) return stackClear(state);
   if (state.phase === 0) {
     let pace = (rate >> 2) + 1;
     if (!rate) {
@@ -198,9 +205,9 @@ function stackRun(state, rate) {
       state.draw += 1;
     }
     state.speed = f32(pace * STACK_SCALE);
-    state.position = f32(LENGTH);
+    state.position = f32(length);
     const { palette, cursor } = state;
-    state.colour = palette[(cursor % LENGTH) % palette.length]; // black is not skipped
+    state.colour = palette[(cursor % length) % palette.length]; // black is not skipped
     state.cursor = (cursor + 1) >>> 0;
     state.phase = 1;
   }
@@ -213,13 +220,13 @@ function stackRun(state, rate) {
   if (!(state.position > pile)) {
     state.phase = 0;
     state.pile = pile + 1;
-    return state.pile >= LENGTH ? 1000 : 25;
+    return state.pile >= length ? 1000 : 25;
   }
   state.position = Math.max(f32(state.position - state.speed), pile);
   const first = Math.trunc(state.position);
-  if (first < LENGTH) {
+  if (first < length) {
     const [red, green, blue] = state.colour;
-    const end = Math.min(LENGTH, Math.ceil(f32(state.position + 1)));
+    const end = Math.min(length, Math.ceil(f32(state.position + 1)));
     for (let pixel = first; pixel < end; pixel += 1) {
       strip[3 * pixel] = red;
       strip[3 * pixel + 1] = green;
@@ -253,8 +260,8 @@ function waterfallInit(settings) {
     half: primary.map((channel) => channel >> 1),
     period: Math.max(1, Math.floor((((256 - settings.rate) >> 1) + 39) / 40)),
     work: newGrid(width, height),
-    held: new Int32Array(LENGTH),
-    panel: newPanel(),
+    held: new Int32Array(width * height),
+    panel: newPanel(width * height),
   };
 }
 
@@ -323,7 +330,7 @@ function pinballInit(settings) {
     across: Int32Array.from({ length: 8 }, (_, dot) => bpm88((rate >> 3) + 8 - dot)),
     down: Int32Array.from({ length: 8 }, (_, dot) => bpm88((intensity >> 3) + dot - 8)),
     work: newGrid(width, height),
-    panel: newPanel(),
+    panel: newPanel(width * height),
   };
 }
 
@@ -369,8 +376,8 @@ function plotterInit(settings) {
     direction: settings.direction,
     cells: [...plotted], // by first phase
     phases: -1,
-    strip: new Uint8Array(3 * LENGTH),
-    panel: newPanel(),
+    strip: new Uint8Array(3 * width * height),
+    panel: newPanel(width * height),
   };
 }
 
@@ -423,7 +430,7 @@ function hackingInit(settings) {
       Array.from({ length: height + 5 }, (_, y) => hackingCells(bitmap, y, width, height)),
     ),
     work: newGrid(width, height),
-    panel: newPanel(),
+    panel: newPanel(width * height),
   };
 }
 
@@ -455,7 +462,7 @@ function meteorSpawn(state, meteor, clockMs) {
   state.draw = draw + 4;
   meteor.speed = f32(((randomSource(draw) * 3) >> 8) + 1);
   meteor.start = f32(-50 - ((randomSource(draw + 1) * 50) >> 8));
-  const at = 3 * (Math.floor((randomSource(draw + 2) * 255) / (LENGTH - 1)) & 255);
+  const at = 3 * (Math.floor((randomSource(draw + 2) * 255) / (state.width * state.height - 1)) & 255);
   meteor.red = table[at];
   meteor.green = table[at + 1];
   meteor.blue = table[at + 2];
@@ -475,7 +482,7 @@ function meteorInit(settings) {
     draw: 0,
     meteors: null,
     work: newGrid(width, height),
-    panel: newPanel(),
+    panel: newPanel(width * height),
   };
 }
 
@@ -557,11 +564,11 @@ function blocksInit(settings) {
     landing: ((rate ^ 255) + 16) >> 4,
     falling: ((rate ^ 255) + 16) >> 5,
     fade: ((intensity >> 1) | 128) & 255,
-    kinds: new Uint8Array(LENGTH), // 0 empty, 1 falling, 2 settled
-    due: new Int32Array(LENGTH),
+    kinds: new Uint8Array(width * height), // 0 empty, 1 falling, 2 settled
+    due: new Int32Array(width * height),
     draw: 1,
     work: newGrid(width, height),
-    panel: newPanel(),
+    panel: newPanel(width * height),
   };
 }
 
@@ -597,7 +604,8 @@ function blocksStep(state, settings, clockMs, render) {
   fadeGrid(work, state.fade, width, height);
   const [red, green, blue] = state.primary;
   let painted = 0;
-  for (let here = 0; here < LENGTH; here += 1) {
+  const length = kinds.length;
+  for (let here = 0; here < length; here += 1) {
     if (kinds[here]) {
       work[3 * here] = red;
       work[3 * here + 1] = green;
@@ -605,7 +613,7 @@ function blocksStep(state, settings, clockMs, render) {
       painted += 1;
     }
   }
-  if (painted >= LENGTH) {
+  if (painted >= length) {
     kinds.fill(0);
     due.fill(0);
   }
@@ -615,26 +623,28 @@ function blocksStep(state, settings, clockMs, render) {
 // ── Slot 62: Dot trail ────────────────────────────────────────────────
 // lamp_effects_trails.py _DOT_TRAIL_WARMUP.
 const DOT_TRAIL_WARMUP = 67;
-const DOT_TRAIL_LEVEL = Math.floor(((LENGTH - 1) * 255) / LENGTH); // the last of the N writes wins
 
 function dotTrailInit(settings) {
   const { rate } = settings;
+  const length = settingsLength(settings);
+  const level = Math.floor(((length - 1) * 255) / length); // the last of the N writes wins
   return {
     direction: settings.direction,
     period: 20 + Math.trunc((-10 * rate) / 255),
     amount: (Math.floor((rate * 30) / 255) + 210) & 255,
-    colour: effectColours(settings).primary.map((channel) => (channel * DOT_TRAIL_LEVEL) >> 8),
-    strip: new Uint8Array(3 * LENGTH),
-    panel: newPanel(),
+    colour: effectColours(settings).primary.map((channel) => (channel * level) >> 8),
+    length,
+    strip: new Uint8Array(3 * length),
+    panel: newPanel(length),
   };
 }
 
 function dotTrailStep(state, settings, clockMs, render) {
-  const { strip, period, colour } = state;
-  fadeTowards(strip, state.amount);
+  const { strip, period, colour, length } = state;
+  fadeTowards(strip, state.amount, 0, length);
   const turn = Math.floor(render / period);
   if (turn & 1 && render % period === 0) {
-    const at = 3 * ((turn - 1) % LENGTH);
+    const at = 3 * ((turn - 1) % length);
     strip[at] = colour[0];
     strip[at + 1] = colour[1];
     strip[at + 2] = colour[2];

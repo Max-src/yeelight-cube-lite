@@ -161,8 +161,8 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
       ${this._section(
         "colors",
         "Color Modes & Controls",
-        html`${this._toggle("Show Color Modes", "show_color_modes", false)}
-        ${config.show_color_modes
+        html`${this._toggle("Show Color Modes", "show_color_modes")}
+        ${config.show_color_modes !== false
           ? renderSettingsBox(
               "Color Mode Style",
               html`${renderColorModeSettings(config, change)}
@@ -173,7 +173,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
               ${renderVisibleColorModes(this, NATIVE_COLOR_MODES)}`,
             )
           : ""}
-        ${config.show_color_modes
+        ${config.show_color_modes !== false
           ? renderSettingsBox(
               "Control buttons",
               renderActionButtonSettings(config, change),

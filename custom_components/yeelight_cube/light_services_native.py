@@ -5,7 +5,6 @@ Registered by :func:`light_services.async_setup_light_services`.
 """
 import asyncio
 import logging
-import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -16,12 +15,13 @@ from .native_effect_preview import (
     effect_supports_color_override,
 )
 from .color_utils import rgb_to_argb
+from .lamp_renderers import LAMP_MUSIC_EFFECTS
 from .const import (
-    MODE_CLOCK,
-    MODE_NATIVE_EFFECT,
+    DOMAIN,
+)
+from .effect_catalog import (
     ALL_NATIVE_EFFECTS,
     NATIVE_COLOR_MODES,
-    DOMAIN,
     INTENSITY_RANGE,
     SPEED_RANGE,
     NATIVE_CLOCK_CONTENT_OPTIONS,
@@ -39,8 +39,8 @@ from .light_rotation import (
     MAX_ROTATION_INTERVAL,
     MIN_ROTATION_INTERVAL,
 )
-from .command_errors import note_command_result
-from .errors import failed, invalid
+from .errors import failed, invalid, invalid_input
+from .input_error import InputError
 from .light_services_common import (
     FAVOURITE_LIST_SCHEMA,
     _resolve_entities,
@@ -48,7 +48,7 @@ from .light_services_common import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-# The intensity shared by every effect and clock background (const.INTENSITY_RANGE).
+# The intensity shared by every effect and clock background (effect_catalog.INTENSITY_RANGE).
 _INTENSITY_SCHEMA = vol.All(
     vol.Coerce(int), vol.Range(min=INTENSITY_RANGE[0], max=INTENSITY_RANGE[1])
 )
@@ -99,7 +99,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                     group=group if len(group) > 1 else None,
                 )
             except Exception as exc:  # noqa: BLE001 — isolate per-lamp failures
-                if getattr(target, "_rotation_active", False):
+                if target.rotation_active:
                     target.stop_effect_rotation()
                 _LOGGER.warning(
                     "[START_EFFECT_ROTATION] Failed to start %s: %s",
@@ -183,6 +183,26 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         }),
     )
 
+    async def handle_set_matrix_modules(service_call):
+        """A Cube Matrix's module list (light_matrix.async_set_matrix_modules),
+        on each lamp in turn: its errors reach the caller."""
+        modules = list(service_call.data["modules"])
+        for lamp in _resolve_entities(service_call, "SET_MATRIX_MODULES"):
+            try:
+                await lamp.async_set_matrix_modules(modules)
+            except InputError as err:
+                raise invalid_input(err) from err
+
+    hass.services.async_register(
+        DOMAIN, "set_matrix_modules", handle_set_matrix_modules,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Required("modules"): vol.All(
+                cv.ensure_list, [vol.In(("matrix", "spot", "panel"))], vol.Length(min=1, max=6),
+            ),
+        }),
+    )
+
     hass.services.async_register(
         DOMAIN, "stop_effect_rotation", handle_stop_effect_rotation,
         schema=vol.Schema({vol.Required("entity_id"): _entity_id_or_list}),
@@ -211,13 +231,17 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             raise invalid("color_invalid")
         activate = service_call.data.get("activate", True)
         for target in targets:
-            name = effect if effect is not None else target._native_effect
+            name = effect if effect is not None else target.native_effect
             spec = ALL_NATIVE_EFFECTS.get(name)
             if spec is None:
                 raise invalid("unknown_effect", effect=name)
             # Uploaded to the lamp first, over Matter (light_native._store_animation).
             if activate and spec.get("animation") and not getattr(target, "animations_available", False):
                 raise invalid("animation_needs_matter")
+            # A lamp without a microphone (Cube Matrix) has nothing to hear.
+            profile = getattr(target, "device_profile", None)
+            if profile is not None and not profile.microphone and name in LAMP_MUSIC_EFFECTS:
+                raise invalid("needs_microphone", effect=name)
             if speed is not None and not spec.get("speed"):
                 raise invalid("no_speed", effect=name)
             if intensity is not None and not spec.get("intensity"):
@@ -233,124 +257,17 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 or (color_mode != "normal" and not effect_offers_color_mode(name, color_mode))
             ):
                 raise invalid("color_mode_unsupported", effect=name, color_mode=color_mode)
-            if not target._is_on and not target._should_auto_turn_on():
+            if not target.can_take_commands():
                 raise invalid("lamp_off")
 
         def update_one(target):
-            """Record the requested settings and publish them immediately.
-
-            Returns what is needed to undo them if the lamp rejects the change:
-            the previous values and this call's generation.
-            """
-            # The rollback target is what the lamp last accepted. While an
-            # earlier call is still unconfirmed (in flight, or skipped because
-            # this one replaced it) its values never reached the lamp, so this
-            # call inherits that call's baseline instead of snapshotting them.
-            snapshot = getattr(target, "_native_effect_baseline", None) or {
-                attr: getattr(target, attr, None)
-                for attr in (
-                    "_native_effect",
-                    "_native_effect_speed",
-                    "_native_effect_intensity",
-                    "_native_effect_direction",
-                    "_native_effect_color_mode",
-                    "_native_effect_color",
-                    "_mode",
-                    "_custom_draw_active",
-                )
-            }
-            target._native_effect_baseline = snapshot
-            generation = getattr(target, "_native_effect_generation", 0) + 1
-            target._native_effect_generation = generation
-            if effect is not None:
-                target._native_effect = effect
-            if speed is not None:
-                target._native_effect_speed = speed
-            if intensity is not None:
-                target._native_effect_intensity = intensity
-            if direction is not None:
-                target._native_effect_direction = direction
-            if color_mode is not None:
-                target._native_effect_color_mode = color_mode
-            if has_color:
-                target._native_effect_color = None if clear_color else list(color)
-                if color_mode is None:
-                    target._native_effect_color_mode = "normal"
-            if activate:
-                target._mode = MODE_NATIVE_EFFECT
-                target._custom_draw_active = False
-            target._refresh_linked_entities()
-            target.async_write_ha_state()
-            applied = {attr: getattr(target, attr, None) for attr in snapshot}
-            return snapshot, applied, generation
-
-        async def apply_one(target, snapshot, applied, generation):
-            """Send the effect to the lamp (runs after the service returned)."""
-            if target._mode != MODE_NATIVE_EFFECT:
-                # Nothing to send (e.g. a speed change while the clock runs):
-                # the settings stand as published.
-                if getattr(target, "_native_effect_generation", generation) == generation:
-                    target._native_effect_baseline = None
-                return
-            # A newer set_native_effect call already replaced these settings and
-            # will apply the latest ones itself: skip this redundant update.
-            if getattr(target, "_native_effect_generation", generation) != generation:
-                return
-            started = time.time()
-            try:
-                # The hardware wrapper reports failures by returning False
-                # (timeouts, offline lamp, circuit breaker) rather than raising.
-                ok = await target.async_apply_display_mode(update_type="color_change")
-            except Exception as err:  # noqa: BLE001 -- background task, nobody awaits it
-                _LOGGER.exception(
-                    "[SET_NATIVE_EFFECT] Failed to apply %s on %s",
-                    target._native_effect,
-                    getattr(target, "entity_id", target),
-                )
-                note_command_result(target, "SET_NATIVE_EFFECT", err)  # for the cards
-                ok = False
-            # Refused (the lamp answered with an error, or applying it failed:
-            # named in last_command_error since this call started) or not
-            # reached. Not reached, the settings stand, like every other
-            # service's: the lamp shows them once it is back (its whole
-            # requested state is redrawn on reconnecting).
-            failed = getattr(target, "_last_command_error", None)
-            refused = ok is False and bool(failed) and failed.get("at", 0) >= started
-            if refused:
-                _LOGGER.warning(
-                    "[SET_NATIVE_EFFECT] Lamp did not accept %s on %s",
-                    target._native_effect,
-                    getattr(target, "entity_id", target),
-                )
-            elif ok is False:
-                _LOGGER.debug(
-                    "[SET_NATIVE_EFFECT] %s kept for %s, not reached (shown once it is back)",
-                    target._native_effect,
-                    getattr(target, "entity_id", target),
-                )
-            latest = (
-                getattr(target, "_native_effect_generation", generation) == generation
+            """Record the requested settings and publish them immediately
+            (light_actions_native.request_native_effect)."""
+            return target.request_native_effect(
+                effect=effect, speed=speed, intensity=intensity, direction=direction,
+                color_mode=color_mode, has_color=has_color,
+                color=None if clear_color else color, activate=activate,
             )
-            if refused and latest:
-                # The lamp did not take the change: publish what it last
-                # accepted (an older call may have succeeded since this one
-                # started). Only fields still holding this call's values are
-                # restored, so a newer change from another path (rotation,
-                # set_mode, the select entities) is never overwritten.
-                baseline = getattr(target, "_native_effect_baseline", None) or snapshot
-                for attr, value in baseline.items():
-                    if getattr(target, attr, None) == applied[attr]:
-                        setattr(target, attr, value)
-                target._refresh_linked_entities()
-            if latest:
-                target._native_effect_baseline = None
-            elif ok is not False and getattr(target, "_native_effect_baseline", None):
-                # The lamp now shows this call's values: the baseline for the
-                # newer call that is still pending. If that call already
-                # finished (it cleared the baseline), the lamp shows its values
-                # instead and there is nothing to record.
-                target._native_effect_baseline = applied
-            target.async_write_ha_state()
 
         # Like set_clock_style: validation errors are raised above, then the
         # new settings are published at once and the lamp is updated in the
@@ -362,7 +279,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         run_on_lamps(
             "SET_NATIVE_EFFECT",
             targets,
-            lambda target: apply_one(target, *undo[id(target)]),
+            lambda target: target.async_send_native_effect(*undo[id(target)]),
         )
 
     hass.services.async_register(
@@ -442,32 +359,12 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 raise invalid("color_invalid")
 
         async def _apply_one(target):
-            if style_id is not None:
-                target._native_clock_style = style_id
-            if has_color:
-                target._native_clock_color = None if clear_color else clock_color
-            if content is not None:
-                target._native_clock_content = content
-                target._native_clock_show_date = content == "time_date"
-            if twelve_hour is not None:
-                target._native_clock_12_hour = bool(twelve_hour)
-            if colon_blink is not None:
-                target._native_clock_colon_blink = bool(colon_blink)
-            if color_mode is not None:
-                target._native_clock_color_mode = color_mode
-            if speed is not None:
-                target._native_effect_speed = max(1, min(255, int(speed)))
-            # Shared with the effects; the background takes it if it reads it.
-            if intensity is not None:
-                target._native_effect_intensity = intensity
-            if activate:
-                target._mode = MODE_CLOCK
-                target._custom_draw_active = False
-            if target._mode == MODE_CLOCK:
-                # Drawn now, or when an off lamp is turned on.
-                await target.async_apply_display_mode(update_type="color_change")
-            target._refresh_linked_entities()
-            target.async_write_ha_state()
+            await target.async_set_clock_settings(
+                style_id=style_id, has_color=has_color,
+                clock_color=None if clear_color else clock_color, content=content,
+                twelve_hour=twelve_hour, colon_blink=colon_blink, color_mode=color_mode,
+                speed=speed, intensity=intensity, activate=activate,
+            )
 
         run_on_lamps("SET_CLOCK_STYLE", targets, _apply_one)
 
@@ -506,7 +403,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             raise invalid("button_effects_remote_on")
         results = await asyncio.gather(
             *(
-                target._execute_hardware_op(
+                target.async_run_exclusive(
                     lambda target=target: target.async_set_button_effects(
                         effect_names
                     ),

@@ -8,8 +8,7 @@ module.exports = async (t) => {
   // The live lamp-preview card's own clock/native loops hold the background
   // animation while frozen and resume seamlessly (mirrors the frozen lamp).
   const lampResult = await page.evaluate(async () => {
-    const module =
-      await import("/custom_components/yeelight_cube/www/yeelight-cube-lamp-preview-card.js");
+    await import("/custom_components/yeelight_cube/www/yeelight-cube-lamp-preview-card.js");
     const proto = customElements.get(
       "yeelight-cube-lamp-preview-card",
     ).prototype;

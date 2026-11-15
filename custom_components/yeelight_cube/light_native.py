@@ -16,9 +16,11 @@ from .lamp_studio import studio_palette
 from .matter_commands import EFFECTS_CLUSTER, MatterCommandsUnavailable
 from .color_utils import rgb_to_argb
 from .light_color import hardware_brightness_for
-from .cube_matrix import CubeConnectionError, encode_rgb_frame
+from .lamp_protocol import CubeConnectionError, encode_rgb_frame
+from .lamp_protocol import LAMP_ERRORS
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from .light_display import ACTIVATION_TIMING
-from .mount_profile import compensate_direction
+from .mount_profile import HIGH_PAIR, LOW_PAIR, compensate_direction, one_axis_direction
 
 from homeassistant.util import dt as dt_util  # type: ignore
 
@@ -26,12 +28,21 @@ from .errors import failed
 from .storage import async_save_data
 from .color_adjustments import ADJUSTMENT_DEFAULTS, active_adjustments
 from .const import (
+    DEFAULT_POWER_ON_STATE,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
+    DEVICE_ORIENTATION_TO_FLIP,
+    DOMAIN,
+    ORIENTATION_FLIPPED,
+)
+from .effect_catalog import (
+    DEFAULT_NATIVE_CLOCK_CONTENT,
+    DEFAULT_NATIVE_EFFECT_DIRECTION,
+    DEFAULT_MUSIC_FLOW_EFFECT,
     ALL_NATIVE_EFFECTS,
     CLOCK_COLOR_MODES,
     CLOCK_MIXER_COMMAND_IDS,
-    CLOCK_MIXER_EFFECTS,
+    clock_style_effect,
     LAMP_MUSIC_SLOTS,
     clock_segment_modes,
     clock_style_direct,
@@ -41,9 +52,6 @@ from .const import (
     DEFAULT_NATIVE_EFFECT,
     DEFAULT_NATIVE_EFFECT_INTENSITY,
     DEFAULT_NATIVE_EFFECT_SPEED,
-    DEVICE_ORIENTATION_TO_FLIP,
-    DOMAIN,
-    ORIENTATION_FLIPPED,
     MUSIC_FLOW_DEFAULT_PALETTE,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_APPLY,
@@ -66,6 +74,7 @@ from .const import (
     lamp_intensity,
     lamp_rate,
     resolve_clock_mixer_direction,
+    streamed_slot,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,11 +100,19 @@ def effect_direction_sent(light, spec: dict) -> int:
     if not directions:
         return lamp_direction(light, UNDIRECTED_EFFECT_DIRECTION)
     direction = light._native_effect_direction
-    return lamp_direction(light, effect_direction_value(
-        spec,
-        direction if direction in directions else directions[0],
-        light._device_orientation,
-    ))
+    return label_direction(light, spec, direction if direction in directions else directions[0])
+
+
+def label_direction(light, spec: dict, label: str) -> int:
+    """The lamp direction for a direction label of an effect, on this lamp."""
+    if spec.get("one_axis"):
+        # Along the lamp's long side whatever its rotation: the value is
+        # chosen for the profile the lamp runs, not turned and compensated.
+        return one_axis_direction(
+            label, light._device_orientation, light.effect_profile, "Up",
+            LOW_PAIR if spec.get("one_axis_low_pair") else HIGH_PAIR,
+        )
+    return lamp_direction(light, effect_direction_value(spec, label, light._device_orientation))
 
 
 def animation_look(light) -> dict:
@@ -167,6 +184,14 @@ def runs_lamp_music(params: list) -> bool:
     return bool({config.get("mode"), config.get("mixer")} & LAMP_MUSIC_SLOTS)
 
 
+def names_streamed_slot(params: list) -> bool:
+    """Whether set_fx_effect ``params`` would run the slot of one of the
+    integration's own effects (effect_catalog.STREAMED_EFFECTS), the effect or the
+    mixer under a clock: no lamp has it, so it is never sent."""
+    config = params[3] if len(params) > 3 and isinstance(params[3], dict) else {}
+    return streamed_slot(config.get("mode")) or streamed_slot(config.get("mixer"))
+
+
 def live_effect_changes(running: list | None, params: list) -> dict | None:
     """The update_fx_effect settings (LIVE_EFFECT_KEYS) that turn the running
     effect (``running``, its set_fx_effect params) into ``params``. None when
@@ -202,7 +227,7 @@ def shown_effect_spec(light) -> dict | None:
         style = NATIVE_CLOCK_STYLES.get(
             light._native_clock_style, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE]
         )
-        name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
+        name = clock_style_effect(style)
         return ALL_NATIVE_EFFECTS[name] if name else None
     return None
 
@@ -225,10 +250,7 @@ def shown_effect_reads(light, setting: str) -> bool:
 def write_effect_setting_entities(light) -> None:
     """Publish the shared effect settings' entities (speed, intensity): their
     value or availability follows the effect and the mode."""
-    for slot in ("_native_effect_speed_entity", "_native_effect_intensity_entity"):
-        entity = getattr(light, slot, None)
-        if entity is not None and getattr(entity, "hass", None) is not None:
-            entity.async_write_ha_state()
+    light._notify("native_effect_speed", "native_effect_intensity")
 
 
 def intensity_config(light, spec: dict) -> dict:
@@ -244,6 +266,39 @@ def intensity_config(light, spec: dict) -> dict:
 class NativeModesMixin:
     """Activate and configure the built-in Clock and native animations."""
 
+    def _init_native_state(self) -> None:
+        """The clock's, the native effects' and Music Flow's settings, and
+        what the lamp stores. Called by YeelightCubeLight.__init__."""
+        self._native_clock_style = DEFAULT_NATIVE_CLOCK_STYLE
+        self._native_clock_show_date = False
+        # 3-way clock content: "time" | "time_date" | "date".  Source of truth
+        # for data byte 0.  _native_clock_show_date is kept in sync (== the
+        # "time_date" alternate mode) for backward compatibility.
+        self._native_clock_content = DEFAULT_NATIVE_CLOCK_CONTENT
+        self._native_clock_12_hour = False
+        self._native_clock_colon_blink = True
+        self._native_clock_timezone_offset = None
+        self._native_clock_color = None  # ARGB int override, None = use style color
+        self._native_clock_color_mode = "normal"  # palette preset (CLOCK_COLOR_MODES key)
+        self._native_effect = DEFAULT_NATIVE_EFFECT
+        self._native_effect_speed = DEFAULT_NATIVE_EFFECT_SPEED
+        # Shared by all effects like the speed; sent only to those that read it.
+        self._native_effect_intensity = DEFAULT_NATIVE_EFFECT_INTENSITY
+        self._native_effect_color_mode = "normal"
+        self._native_effect_color = None
+        self._native_effect_direction = DEFAULT_NATIVE_EFFECT_DIRECTION
+        self._music_flow_enabled = False
+        self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
+        # The GIF the lamp stores, when this integration put it there
+        # (light_native._store_animation): the animation, for which mount, and
+        # whether an upload was interrupted since (the next one goes twice).
+        self._stored_gif = {"animation": None, "upside_down": False, "interrupted": False}
+        # How the animations are laid out in that GIF (effect_catalog.ANIMATION_LAYOUTS).
+        self._animation_layout = DEFAULT_ANIMATION_LAYOUT
+        self._music_flow_restore_power = None
+        self._power_on_state = DEFAULT_POWER_ON_STATE
+        self._button_effects = []
+
     async def _leave_direct_mode(self) -> None:
         """Prepare to hand the panel to the lamp (clock, native effect,
         Music Flow): blank the direct-mode frame and close the drawing socket.
@@ -257,16 +312,16 @@ class NativeModesMixin:
         there is not acknowledged.
         """
         if self._fx_mode_is_direct:
-            blank = encode_rgb_frame([(0, 0, 0)] * len(self._layout.device_layout))
-            repeat = ACTIVATION_TIMING[self._cube_matrix.transport]["blank_repeat"]
+            blank = encode_rgb_frame(self.device_profile.to_wire([(0, 0, 0)] * len(self._layout.device_layout)))
+            repeat = ACTIVATION_TIMING[self._lamp_client.transport]["blank_repeat"]
             try:
-                await self._cube_matrix.draw_matrices_fast(blank)
+                await self._lamp_client.draw_matrices_fast(blank)
                 if repeat is not None:
                     await asyncio.sleep(repeat)
-                    await self._cube_matrix.draw_matrices_fast(blank)
-            except Exception as err:  # noqa: BLE001 -- best effort, the switch goes on
+                    await self._lamp_client.draw_matrices_fast(blank)
+            except LAMP_ERRORS as err:  # best effort, the switch goes on
                 _LOGGER.debug("[%s] Could not blank the direct-mode frame: %s", self._ip, err)
-        self._cube_matrix.close_fast_socket()
+        self._lamp_client.close_fast_socket()
 
     def _native_brightness_due(self) -> bool:
         """Whether the lamp's brightness differs from the one set (or is not
@@ -281,9 +336,22 @@ class NativeModesMixin:
         if not self._native_brightness_due():
             return False
         level = hardware_brightness_for(self._brightness)
-        await self._cube_matrix.send_raw_command("set_bright", [level])
-        self._last_hardware_brightness = level
+        # A Cube Matrix streaming over Matter: over TCP, as its music
+        # connection would make the lamp drop the frames (light_matrix).
+        over_matter = getattr(self, "matrix_streams_over_matter", None)
+        udp = not (over_matter is not None and over_matter() and self.studio_streaming())
+        if send_matrix := (getattr(self, "matrix_send_brightness", None) if getattr(self, "is_cube_matrix", False) else None):
+            await send_matrix(level, udp=udp)
+        else:
+            await self._lamp_client.send_raw_command("set_bright", [level], udp=udp)
+        self._note_hardware_brightness(level)
         return True
+
+    @staticmethod
+    def _native_clock_utc_offset_seconds() -> int:
+        """The current local UTC offset, in seconds."""
+        offset = dt_util.now().utcoffset()
+        return int(offset.total_seconds()) if offset else 0
 
     @staticmethod
     def _native_clock_timezone_hours() -> int:
@@ -324,10 +392,8 @@ class NativeModesMixin:
         self._native_clock_show_date = content == "time_date"
         if self._is_on and self._mode == MODE_CLOCK:
             await self.async_apply_display_mode(update_type="color_change")
-        if self._clock_content_select_entity:
-            self._clock_content_select_entity.async_update_from_light()
-        if self._clock_show_date_switch_entity:
-            self._clock_show_date_switch_entity.async_update_from_light()
+        self._notify("clock_content")
+        self._notify("clock_show_date")
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -347,6 +413,9 @@ class NativeModesMixin:
         always in full (no live update: it left the clock dark); in the
         palette color mode over a background the lamp cannot show in the
         whole palette, streamed (light_studio)."""
+        # A Cube Matrix: its own clock over Matter, else streamed (light_matrix).
+        if getattr(self, "is_cube_matrix", False) and await self._activate_matrix_content():
+            return
         studio = getattr(self, "studio_selected", None)  # light_studio
         if studio is not None and studio():
             await self._start_studio_stream()
@@ -376,7 +445,7 @@ class NativeModesMixin:
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
         # The clock hands its intensity over to the background, like its rate.
-        effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
+        effect_name = clock_style_effect(style)
         if effect_name is not None:
             effect_config.update(intensity_config(self, ALL_NATIVE_EFFECTS[effect_name]))
         # The clock's color, and for a background that draws its own colours
@@ -397,7 +466,7 @@ class NativeModesMixin:
         if clock_color_mode == PALETTE_COLOR_MODE:
             # The lamp's palette as the clock's colors (clock_palette_words);
             # without one, or on a background that takes none, as normal.
-            words = clock_palette_words(effect_name, getattr(self, "_text_colors", None))
+            words = clock_palette_words(effect_name, self._text_colors)
             if words:
                 clock_colors = [0x01000000 | word for word in words]
             clock_color_mode = "normal"
@@ -448,6 +517,9 @@ class NativeModesMixin:
         when only its speed or direction changed: _send_native); a music
         effect in the palette color mode as its microphone music mode; one
         the lamp cannot show in the whole palette, streamed (light_studio)."""
+        # A Cube Matrix: its own effect over Matter, else streamed (light_matrix).
+        if getattr(self, "is_cube_matrix", False) and await self._activate_matrix_content():
+            return
         studio = getattr(self, "studio_selected", None)  # light_studio
         if studio is not None and studio():
             await self._start_studio_stream()
@@ -472,7 +544,7 @@ class NativeModesMixin:
         stops the upload without its end marker (which would store the part
         sent). The lamp then stores the next upload corrupted, so the next one
         is sent twice: the second goes to its other, clean GIF area."""
-        layout = getattr(self, "_animation_layout", DEFAULT_ANIMATION_LAYOUT)
+        layout = self._animation_layout
         # The mount turns only an upright layout: the app's is the picture as is.
         upside_down = layout != ANIMATION_LAYOUT_APP and (
             DEVICE_ORIENTATION_TO_FLIP.get(self._device_orientation) == ORIENTATION_FLIPPED
@@ -494,10 +566,16 @@ class NativeModesMixin:
         channel = self.matter_commands
         if channel is None or not await channel.async_available():
             raise failed("animation_needs_matter")
-        packets = gif_packets(lamp_gif(
-            key, self._device_orientation, layout, look["speed"], look["adjustments"],
-            look["palette"],
-        ))
+        def build() -> list:
+            return gif_packets(lamp_gif(
+                key, self._device_orientation, layout, look["speed"], look["adjustments"],
+                look["palette"],
+            ))
+
+        # Drawn in an executor: fitting its colors takes a second or more on
+        # a slow host, and the event loop must keep every other lamp's stream
+        # going meanwhile (a pause mid-stream can hang a Cube Lite).
+        packets = await self.hass.async_add_executor_job(build) if self.hass is not None else build()
         copies = 2 if stored.get("interrupted") else 1
         # Until the end marker is acknowledged, the lamp's GIF is unknown.
         self._stored_gif = {
@@ -556,7 +634,7 @@ class NativeModesMixin:
         ):
             expect()
         try:
-            result = await self._cube_matrix.send_command_with_recovery(
+            result = await self._lamp_client.send_command_with_recovery(
                 "set_ps",
                 ["mic_music_mode", _build_music_flow_payload(True, flow, self._text_colors)],
             )
@@ -567,9 +645,9 @@ class NativeModesMixin:
             if direction is not None:
                 await self._send_music_direction(direction)
         finally:
-            self._cube_matrix.close_command_socket()
+            self._lamp_client.close_command_socket()
         # No set_fx_effect runs: the next effect is set in full.
-        self._cube_matrix.forget_running_effect()
+        self._lamp_client.forget_running_effect()
         self._native_renderer_shown()
 
     async def _music_direction_due(self) -> int | None:
@@ -621,6 +699,13 @@ class NativeModesMixin:
         set_bright resets a socket just before it; it takes the brightness
         once the clock runs). Each brightness has its pause (0.1 s) between
         it and set_fx_effect, and the clock its pause before it."""
+        if names_streamed_slot(params):
+            # Streamed (light_studio): reaching here is a bug, and the lamp
+            # would run whatever that slot number does.
+            raise ValueError(
+                f"{params[3].get('mode')}/{params[3].get('mixer')} is an effect of the "
+                "integration's own: streamed, never sent to the lamp"
+            )
         # A music effect (or a clock over one) listens only once the fx-mode
         # flag is clear; clearing it replaces what ran, so it is then set in
         # full.
@@ -640,10 +725,10 @@ class NativeModesMixin:
         # fails here instead of leaving HA believing it changed.
         if note_power := getattr(self, "_expect_lamp_power", None):
             note_power(True)
-        await self._cube_matrix.send_raw_command(
+        await self._lamp_client.send_raw_command(
             "set_fx_effect", params, abortive_close=not clock, check_reply=True
         )
-        self._cube_matrix.note_running_effect(params)
+        self._lamp_client.note_running_effect(params)
         if clock and self._native_brightness_due():
             self._hardware_operation_phase = "clock:brightness"
             await asyncio.sleep(0.1)
@@ -651,9 +736,9 @@ class NativeModesMixin:
         self._native_renderer_shown()
 
     async def _clear_fx_mode_flag(self) -> bool:
-        """cube_matrix.clear_fx_mode_flag; the saved effect the lamp then
+        """LampClient.clear_fx_mode_flag; the saved effect the lamp then
         puts back, and reports, is not someone else's (_note_fx_restore)."""
-        if not await self._cube_matrix.clear_fx_mode_flag():
+        if not await self._lamp_client.clear_fx_mode_flag():
             return False
         if note_restore := getattr(self, "_note_fx_restore", None):
             note_restore()
@@ -666,7 +751,7 @@ class NativeModesMixin:
     def _shows_lamp_music(self) -> bool:
         """Whether the lamp shows a music effect, or a clock over one, of
         this integration (it reports the microphone on)."""
-        if not self._is_on or getattr(self, "_external_display", False):
+        if not self._is_on or self._external_display:
             return False
         # Streamed (light_studio): the lamp's microphone is not used.
         studio = getattr(self, "studio_selected", None)
@@ -681,20 +766,20 @@ class NativeModesMixin:
     async def _update_running_effect(self, params: list) -> bool:
         """Change the running effect live (live_effect_changes); False when
         that does not apply or the lamp refused it (then it is set in full)."""
-        changes = live_effect_changes(self._cube_matrix.running_effect, params)
+        changes = live_effect_changes(self._lamp_client.running_effect, params)
         if changes is None or not self._is_on or not self._in_native_fw_mode:
             return False
         try:
-            await self._cube_matrix.send_raw_command(
+            await self._lamp_client.send_raw_command(
                 "update_fx_effect", [changes], check_reply=True
             )
-        except Exception as err:  # noqa: BLE001 -- a full activation follows
+        except LAMP_ERRORS as err:  # a full activation follows
             _LOGGER.debug(
                 "[NATIVE] [%s] Live update %s refused (%s): activating in full",
                 self._ip, changes, err,
             )
             return False
-        self._cube_matrix.note_running_effect(params)
+        self._lamp_client.note_running_effect(params)
         _LOGGER.debug("[NATIVE] [%s] Running effect updated live: %s", self._ip, changes)
         self._native_renderer_shown()
         return True
@@ -705,8 +790,7 @@ class NativeModesMixin:
         if claim := getattr(self, "_claim_display", None):
             claim()
         self._is_on = True
-        self._fx_mode_is_direct = False
-        self._in_native_fw_mode = True
+        self._entered_builtin_mode()
         self._last_fx_mode_time = 0.0
         self._notify_camera_preview()
         if self.hass is not None:
@@ -736,7 +820,7 @@ class NativeModesMixin:
         palette_id = CLOCK_COLOR_MODES.get(color_mode)
         if not effect_supports_color_mode(self._native_effect, color_mode):
             palette_id = None
-        # Every colour the effect draws (const._EXTENDED_EFFECT_COLORS):
+        # Every colour the effect draws (effect_catalog._EXTENDED_EFFECT_COLORS):
         # one left out is black, and no color key at all white.
         colors = [int(word) for word in spec.get("colors", ())]
         if spec.get("color") is not None:
@@ -748,14 +832,14 @@ class NativeModesMixin:
             effect_config["color"] = [rgb_to_argb(color), *colors[1:]]
         if color_mode == PALETTE_COLOR_MODE and effect_supports_color_mode(self._native_effect, color_mode):
             # The palette's colors (without a palette, the effect's own).
-            words = palette_words(self._native_effect, getattr(self, "_text_colors", None))
+            words = palette_words(self._native_effect, self._text_colors)
             if words:
                 effect_config["color"] = [0x01000000 | word for word in words]
 
         return [
             spec["effect_id"] if palette_id is None else palette_id,
             # An animation: the Yeelight app's tile it stands for, which the
-            # app then shows as playing (const.LAMP_ANIMATION_EFFECTS); the
+            # app then shows as playing (effect_catalog.LAMP_ANIMATION_EFFECTS); the
             # stored GIF: the tile of the animation it holds, when known.
             spec.get("app_tile") or stored_gif_tile(self),
             NATIVE_EFFECT_APPLY,
@@ -799,7 +883,7 @@ class NativeModesMixin:
                     note_music(enabled)
                 if enabled and (note_power := getattr(self, "_expect_lamp_power", None)):
                     note_power(True)
-                result = await self._cube_matrix.send_command_with_recovery(
+                result = await self._lamp_client.send_command_with_recovery(
                     "set_ps",
                     ["mic_music_mode", payload],
                 )
@@ -808,7 +892,7 @@ class NativeModesMixin:
                         "Music flow command was skipped during connection cooldown"
                     )
             finally:
-                self._cube_matrix.close_command_socket()
+                self._lamp_client.close_command_socket()
 
             self._music_flow_enabled = enabled
             try:
@@ -816,27 +900,26 @@ class NativeModesMixin:
                     if not was_music_flow_enabled:
                         self._music_flow_restore_power = previous_power
                     self._is_on = True
-                    self._fx_mode_is_direct = False
-                    self._in_native_fw_mode = True
+                    self._entered_builtin_mode()
                     self._last_fx_mode_time = 0.0
-                    self._is_scrolling = False
+                    self._set_scrolling(False)
                     self.stop_scroll_timer()
                 elif not was_music_flow_enabled:
                     self._is_on = previous_power
                     self._music_flow_restore_power = None
-                    self._in_native_fw_mode = False
+                    self._left_builtin_mode()
                 elif restore_display:
                     restore_power = self._music_flow_restore_power
                     # The device has already accepted mic_music_mode=off. Clear
                     # the marker even if restoring the prior display fails.
                     self._music_flow_restore_power = None
-                    self._in_native_fw_mode = False
+                    self._left_builtin_mode()
                     await asyncio.sleep(0.1)
                     if restore_power is False:
-                        self._cube_matrix.close_fast_socket()
+                        self._lamp_client.close_fast_socket()
                         if note_power := getattr(self, "_expect_lamp_power", None):
                             note_power(False)
-                        await self._cube_matrix.send_raw_command(
+                        await self._lamp_client.send_raw_command(
                             "set_power",
                             ["off"],
                         )
@@ -846,7 +929,7 @@ class NativeModesMixin:
                         await self._apply_display_mode_internal()
                 else:
                     self._music_flow_restore_power = None
-                    self._in_native_fw_mode = False
+                    self._left_builtin_mode()
             finally:
                 # Keep HA and restart recovery aligned with the command that
                 # the device already accepted if the follow-up redraw fails.
@@ -871,11 +954,11 @@ class NativeModesMixin:
         if note_music := getattr(self, "_expect_lamp_music", None):
             note_music(False)
         try:
-            await self._cube_matrix.send_command_with_recovery(
+            await self._lamp_client.send_command_with_recovery(
                 "set_ps", ["mic_music_mode", _build_music_flow_payload(False, self._music_flow_effect)],
             )
         finally:
-            self._cube_matrix.close_command_socket()
+            self._lamp_client.close_command_socket()
 
     async def async_set_music_flow_effect(self, option: str) -> None:
         """Select a device-microphone music flow effect."""
@@ -897,12 +980,7 @@ class NativeModesMixin:
 
     def _refresh_music_flow_entities(self) -> None:
         """Synchronize the content-mode and effect controls with light state."""
-        for ref in (
-            self._content_mode_select_entity,
-            self._music_flow_effect_select_entity,
-        ):
-            if ref is not None and getattr(ref, "hass", None) is not None:
-                ref.async_update_from_light()
+        self._notify("content_mode", "music_flow_effect")
 
     def _music_flow_runtime_storage_key(self) -> str:
         """Return a stable per-device key for runtime state."""
@@ -936,8 +1014,7 @@ class NativeModesMixin:
         )
         self._music_flow_enabled = True
         self._is_on = True
-        self._fx_mode_is_direct = False
-        self._in_native_fw_mode = True
+        self._entered_builtin_mode()
         _LOGGER.debug(
             "[MUSIC FLOW] [%s] Restored active runtime state from storage",
             self._ip,
@@ -966,7 +1043,7 @@ class NativeModesMixin:
             runtime_states.pop(key, None)
         try:
             await async_save_data(self.hass)
-        except Exception as err:
+        except (OSError, HomeAssistantError) as err:
             _LOGGER.warning(
                 "[MUSIC FLOW] [%s] Could not persist runtime state: %s",
                 self._ip,

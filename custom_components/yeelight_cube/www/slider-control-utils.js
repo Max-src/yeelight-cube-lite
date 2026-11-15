@@ -34,7 +34,6 @@ import {
   INTENSITY_RAW,
   SPEED_RAW,
   TOKEN_PATTERN,
-  formatSliderValue,
   resolveWheelStyle,
   sanitizeSliderGc,
 } from "./slider-values.js";
@@ -880,7 +879,7 @@ export function withSliderOptions(config, K = sliderKeys("slider")) {
 // `familyIcons` replaces the icons for an effect family (effect-families.js):
 // a music effect's intensity is how strongly it follows the sound.
 // A new lamp slider is one more row here, plus its draft in lamp-sliders.js.
-export const LAMP_SLIDER_KINDS = Object.freeze({
+const LAMP_SLIDER_KINDS = Object.freeze({
   brightness: { color: "#ffb74d", icons: ["🌙", "☀️"], raw: BRIGHTNESS_RAW },
   speed: { color: "#5aa9ff", icons: ["🐢", "⚡"], raw: SPEED_RAW },
   intensity: {

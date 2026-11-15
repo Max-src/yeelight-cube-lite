@@ -12,22 +12,21 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .errors import invalid
+from .light_matrix import MatrixSettingUnavailable
 from .const import (
-    LAMP_MODES,
-    MODE_CLOCK,
-    MODE_NATIVE_EFFECT,
-    ALL_NATIVE_EFFECTS,
     CONF_IP,
     CONTENT_MODES,
-    DEFAULT_MATRIX_DISPLAY_MODE,
+    DOMAIN,
+    MATRIX_DISPLAY_MODES,
+    DEFAULT_POWER_ON_STATE,
+    POWER_ON_STATES,
+)
+from .effect_catalog import (
+    ALL_NATIVE_EFFECTS,
     DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
-    DEFAULT_NATIVE_CLOCK_STYLE,
-    DEFAULT_NATIVE_EFFECT,
-    DOMAIN,
     canonical_clock_style_name,
     canonical_effect_name,
-    MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_LABELS,
     NATIVE_CLOCK_CONTENT_OPTIONS,
@@ -35,14 +34,12 @@ from .const import (
     NATIVE_EFFECT_DIRECTIONS,
     ANIMATION_LAYOUTS,
     DEFAULT_ANIMATION_LAYOUT,
-    DEFAULT_POWER_ON_STATE,
-    POWER_ON_STATES,
 )
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
 from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_art_map
 from .layout import FONT_MAPS
-from .light_native import write_effect_setting_entities
+from .lamp_renderers import LAMP_MUSIC_EFFECTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,17 +49,17 @@ PARALLEL_UPDATES = 0
 
 
 class CubeSelect(CubeControlEntity, SelectEntity):
-    """A dropdown of one lamp. The light keeps it in ``_slot`` and pushes
-    every change made elsewhere through async_update_from_light, so it never
+    """A dropdown of one lamp. It listens to the light's ``_topic`` (light_state):
+    every change made elsewhere comes through async_update_from_light, so it never
     polls. Named by its translation key, after the lamp's name."""
 
     _attr_should_poll = False
-    _slot = None
+    _topic = None
 
     def __init__(self, light_entity, config_entry: ConfigEntry, unique_suffix: str, translation_key: str | None = None):
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_{unique_suffix}"
+        self._attr_unique_id = f"{light_entity.unique_id}_{unique_suffix}"
         if translation_key:
             self._attr_translation_key = translation_key
 
@@ -80,8 +77,8 @@ class CubeSelect(CubeControlEntity, SelectEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        if self._slot:
-            self._register_on_light(self._slot)
+        if self._topic:
+            self._listen_to_light(self._topic)
         self.async_update_from_light()
 
     @callback
@@ -102,46 +99,50 @@ class SettingSelect:
     labels: dict
     default: str
     setter: str | None
-    slot: str
+    topic: str
     translation_key: str | None = None
     category: EntityCategory | None = None
 
+
+# Settings only a Cube Lite has (device_profile): its microphone's Music
+# Flow and its power-on behaviour (set_ps), the layout of its stored GIF.
+CUBE_LITE_ONLY_SELECTS = frozenset({"music_flow_effect", "power_on_state", "animation_layout"})
 
 SETTING_SELECTS = (
     SettingSelect(
         "clock_content_select", "_native_clock_content",
         {key: NATIVE_CLOCK_CONTENT_LABELS[key] for key in NATIVE_CLOCK_CONTENT_OPTIONS},
         DEFAULT_NATIVE_CLOCK_CONTENT, "async_set_native_clock_content",
-        "_clock_content_select_entity", translation_key="clock_content",
+        "clock_content", translation_key="clock_content",
     ),
     SettingSelect(
         "music_flow_effect", "_music_flow_effect",
         {effect: effect for effect in MUSIC_FLOW_EFFECTS},
         DEFAULT_MUSIC_FLOW_EFFECT, "async_set_music_flow_effect",
-        "_music_flow_effect_select_entity", translation_key="music_flow_effect",
+        "music_flow_effect", translation_key="music_flow_effect",
     ),
     SettingSelect(
         "power_on_state", "_power_on_state",
         {state: state for state in POWER_ON_STATES}, DEFAULT_POWER_ON_STATE,
-        "async_set_power_on_state", "_power_on_state_select_entity",
+        "async_set_power_on_state", "power_on_state",
         translation_key="power_on_state", category=EntityCategory.CONFIG,
     ),
     SettingSelect(
         "alignment_select", "_alignment",
         {"left": "left", "center": "center", "right": "right"}, "center",
-        "set_alignment", "_alignment_select_entity", translation_key="text_alignment",
+        "set_alignment", "alignment", translation_key="text_alignment",
     ),
     SettingSelect(
         "font_select", "_font",
         {key: key.capitalize() for key in FONT_MAPS}, "basic",
-        "set_font", "_font_select_entity", translation_key="font",
+        "set_font", "font", translation_key="font",
     ),
     # How the four animations are laid out in the GIF the lamp stores:
-    # upright, or as the Yeelight app sends its own (const.ANIMATION_LAYOUTS).
+    # upright, or as the Yeelight app sends its own (effect_catalog.ANIMATION_LAYOUTS).
     SettingSelect(
         "animation_layout", "_animation_layout", dict(ANIMATION_LAYOUTS),
         DEFAULT_ANIMATION_LAYOUT, "async_set_animation_layout",
-        "_animation_layout_select_entity", translation_key="animation_layout",
+        "animation_layout", translation_key="animation_layout",
         category=EntityCategory.CONFIG,
     ),
     # The 4-way physical mount (the official app's picker and the lamp
@@ -149,7 +150,7 @@ SETTING_SELECTS = (
     SettingSelect(
         "device_orientation_select", "_device_orientation",
         {"right": "Right", "down": "Down", "left": "Left", "up": "Up"}, "right",
-        "set_device_orientation", "_device_orientation_select_entity",
+        "set_device_orientation", "device_orientation",
         translation_key="device_orientation",
     ),
 )
@@ -161,7 +162,7 @@ class CubeSettingSelect(CubeSelect):
     def __init__(self, light_entity, config_entry: ConfigEntry, spec: SettingSelect):
         super().__init__(light_entity, config_entry, spec.unique_suffix, spec.translation_key)
         self._spec = spec
-        self._slot = spec.slot
+        self._topic = spec.topic
         self._attr_options = list(spec.labels.values())
         self._values = {label: value for value, label in spec.labels.items()}
         if spec.category:
@@ -170,7 +171,7 @@ class CubeSettingSelect(CubeSelect):
     @property
     def current_option(self) -> str:
         spec = self._spec
-        value = getattr(self._light_entity, spec.attr, spec.default)
+        value = self._light_entity.setting(spec.attr, spec.default)
         return spec.labels.get(value, spec.labels[spec.default])
 
     async def async_select_option(self, option: str) -> None:
@@ -180,8 +181,36 @@ class CubeSettingSelect(CubeSelect):
         if self._spec.setter:
             await getattr(self._light_entity, self._spec.setter)(value)
         else:
-            setattr(self._light_entity, self._spec.attr, value)
+            self._light_entity.set_setting(self._spec.attr, value)
         self._write_states()
+
+
+class MatrixSettingSelect(CubeSettingSelect):
+    """A Cube Matrix setting over Matter: refused with a translated error
+    when its Matter link is not there."""
+
+    async def async_select_option(self, option: str) -> None:
+        try:
+            await super().async_select_option(option)
+        except MatrixSettingUnavailable as err:
+            raise invalid(str(err)) from err
+
+
+# A Cube Matrix's own settings (light_matrix): its power-on behaviour
+# (Matter StartUpOnOff) and the animation of a drawing it shows.
+MATRIX_SELECTS = (
+    SettingSelect(
+        "matrix_power_on", "_matrix_power_on", {"on": "Always on", "off": "Always off"}, "on",
+        "async_set_matrix_power_on", "matrix_power_on",
+        translation_key="power_on_state", category=EntityCategory.CONFIG,
+    ),
+    SettingSelect(
+        "drawing_animation", "_matrix_drawing_mixer",
+        {0: "Static", 2: "Scroll", 3: "Breathe", 4: "Flash", 5: "Reveal"}, 0,
+        "async_set_matrix_drawing_animation", "matrix_drawing_animation",
+        translation_key="drawing_animation",
+    ),
+)
 
 
 async def async_setup_entry(
@@ -199,7 +228,12 @@ async def async_setup_entry(
         return False
 
     # The matrix transition effect of an earlier version (transitions removed).
-    remove_retired_entities(hass, "select", [f"{light_entity._attr_unique_id}_transition_select"])
+    remove_retired_entities(hass, "select", [f"{light_entity.unique_id}_transition_select"])
+    if not light_entity.device_profile.native_effects:
+        # A Cube Matrix entry made before models were told apart had them.
+        remove_retired_entities(hass, "select", [
+            f"{light_entity.unique_id}_{suffix}" for suffix in sorted(CUBE_LITE_ONLY_SELECTS)
+        ])
     async_add_entities([
         YeelightCubePaletteSelect(light_entity, ip, entry, hass),
         YeelightCubePixelArtSelect(light_entity, ip, entry, hass),
@@ -208,7 +242,15 @@ async def async_setup_entry(
         YeelightCubeClockStyleSelect(light_entity, entry),
         YeelightCubeNativeEffectSelect(light_entity, entry),
         YeelightCubeNativeEffectDirectionSelect(light_entity, entry),
-        *(CubeSettingSelect(light_entity, entry, spec) for spec in SETTING_SELECTS),
+        *(
+            CubeSettingSelect(light_entity, entry, spec) for spec in SETTING_SELECTS
+            if light_entity.device_profile.native_effects
+            or spec.unique_suffix not in CUBE_LITE_ONLY_SELECTS
+        ),
+        *(
+            MatrixSettingSelect(light_entity, entry, spec) for spec in MATRIX_SELECTS
+            if light_entity.is_cube_matrix
+        ),
     ])
 
     return True
@@ -280,29 +322,9 @@ class YeelightCubePaletteSelect(CubeSelect):
             _LOGGER.error("[PALETTE SELECT] Invalid palette format")
             return
 
-        # Set the palette colors as the active color list for gradients/text modes
-        self._light_entity._text_colors = palette["colors"]
+        # The palette's colors for the text modes (the drawing is left).
+        await self._light_entity.async_apply_palette_colors(palette["colors"])
         _LOGGER.debug("[PALETTE SELECT] Applied %s colors to light entity", len(palette['colors']))
-
-        # Update rgb_color to stay in sync with Home Assistant color picker
-        if self._light_entity._text_colors:
-            self._light_entity._rgb_color = self._light_entity._text_colors[0]
-
-        # Palette applies to text modes — disable pixel art mode
-        self._light_entity._custom_pixels = None
-        self._light_entity._custom_draw_active = False
-        self._light_entity._active_pixel_art_name = None
-
-        # Notify pixel art select entity (deselect)
-        if self._light_entity._pixel_art_select_entity:
-            self._light_entity._pixel_art_select_entity.async_update_from_light()
-
-        # Route every palette change through the display state machine. This
-        # lets Music Flow exit cleanly before Panel Color Sequence activates
-        # direct matrix mode and keeps the switch/device state synchronized.
-        await self._light_entity.async_apply_display_mode(
-            update_type="color_change"
-        )
 
         # Update the current selection
         self._attr_current_option = option
@@ -351,7 +373,7 @@ class YeelightCubePaletteSelect(CubeSelect):
 class YeelightCubePixelArtSelect(CubeSelect):
     """Select entity for choosing a saved pixel art to display on the Yeelight Cube Lite."""
 
-    _slot = "_pixel_art_select_entity"
+    _topic = "pixel_art"
 
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
         """Initialize the pixel art selector entity."""
@@ -394,11 +416,9 @@ class YeelightCubePixelArtSelect(CubeSelect):
         If the light is displaying a named pixel art that's in our options, select it.
         Otherwise, clear the selection.
         """
-        name = getattr(self._light_entity, '_active_pixel_art_name', None)
-        is_active = (
-            getattr(self._light_entity, "_mode", None) == "Custom Draw"
-            and getattr(self._light_entity, "_custom_draw_active", False)
-        )
+        light = self._light_entity
+        name = light.active_pixel_art_name
+        is_active = light.mode == "Custom Draw" and light.custom_draw_active
         if is_active and name and name in self._attr_options:
             self._attr_current_option = name
         else:
@@ -451,7 +471,7 @@ class YeelightCubeContentModeSelect(CubeSelect):
     """Select the active content source: matrix or clock."""
 
     _attr_translation_key = "content_mode"
-    _slot = "_content_mode_select_entity"
+    _topic = "content_mode"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         super().__init__(light_entity, config_entry, "content_mode_select")
@@ -459,86 +479,19 @@ class YeelightCubeContentModeSelect(CubeSelect):
 
     @property
     def current_option(self) -> str | None:
-        if getattr(self._light_entity, "_music_flow_enabled", False):
-            return "Music Flow"
-        mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
-        return mode if mode in LAMP_MODES else "Matrix"
+        return self._light_entity.content_mode
 
     async def async_select_option(self, option: str) -> None:
         if option not in CONTENT_MODES:
             _LOGGER.error("[CONTENT MODE] Invalid mode: %s", option)
             return
-        current_mode = getattr(
-            self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE
-        )
-        if current_mode in MATRIX_DISPLAY_MODES:
-            self._light_entity._matrix_mode = current_mode
-
-        if option == "Music Flow":
-            # Music Flow is the device's built-in microphone renderer, not a
-            # matrix mode. Turning it on suppresses matrix content until another
-            # content mode is selected (which exits it via async_apply_display_mode).
-            # It is sent to the lamp directly, outside the display queue's
-            # off-lamp rule: refused like the native-effect action.
-            if (
-                not self._light_entity._is_on
-                and not self._light_entity._should_auto_turn_on()
-            ):
-                raise invalid("lamp_off")
-            await self._light_entity.async_set_music_flow(True)
-            self.async_update_from_light()
-            if self._light_entity._music_flow_effect_select_entity:
-                self._light_entity._music_flow_effect_select_entity.async_update_from_light()
-            if self._light_entity.hass is not None:
-                self._light_entity.async_write_ha_state()
-            return
-
-        if option == "Matrix":
-            matrix_mode = getattr(
-                self._light_entity,
-                "_matrix_mode",
-                DEFAULT_MATRIX_DISPLAY_MODE,
-            )
-            if matrix_mode not in MATRIX_DISPLAY_MODES:
-                matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
-                self._light_entity._matrix_mode = matrix_mode
-            if matrix_mode == "Custom Draw" and not self._light_entity._custom_pixels:
-                matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
-                self._light_entity._matrix_mode = matrix_mode
-            self._light_entity._mode = matrix_mode
-            self._light_entity._custom_draw_active = (
-                matrix_mode == "Custom Draw"
-                and bool(self._light_entity._custom_pixels)
-            )
-        else:
-            self._light_entity._mode = option
-            self._light_entity._custom_draw_active = False
-
-        await self._light_entity.async_apply_display_mode(
-            update_type="color_change"
-        )
-        self.async_update_from_light()
-        if self._light_entity._mode_select_entity:
-            self._light_entity._mode_select_entity.async_update_from_light()
-        if self._light_entity._pixel_art_select_entity:
-            self._light_entity._pixel_art_select_entity.async_update_from_light()
-        # Speed and intensity follow the mode (what the lamp shows reads them or not).
-        write_effect_setting_entities(self._light_entity)
-        # Keep native-effect helper entities in sync so their UI reflects the
-        # current selection when switching into Native Effect content mode.
-        if option == MODE_NATIVE_EFFECT:
-            if self._light_entity._native_effect_select_entity:
-                self._light_entity._native_effect_select_entity.async_write_ha_state()
-            if self._light_entity._native_effect_direction_select_entity:
-                self._light_entity._native_effect_direction_select_entity.async_update_from_light()
-        if self._light_entity.hass is not None:
-            self._light_entity.async_write_ha_state()
+        await self._light_entity.async_select_content_mode(option)
 
 
 class YeelightCubeDisplayModeSelect(CubeSelect):
     """Select the render mode used by Matrix content."""
 
-    _slot = "_mode_select_entity"
+    _topic = "display_mode"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the display mode selector entity."""
@@ -550,48 +503,24 @@ class YeelightCubeDisplayModeSelect(CubeSelect):
     @property
     def current_option(self) -> str | None:
         """Return the current or last-used Matrix render mode."""
-        mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
-        if mode in MATRIX_DISPLAY_MODES:
-            return mode
-        return getattr(
-            self._light_entity, "_matrix_mode", DEFAULT_MATRIX_DISPLAY_MODE
-        )
+        light = self._light_entity
+        return light.mode if light.mode in MATRIX_DISPLAY_MODES else light.matrix_mode
 
     async def async_select_option(self, option: str) -> None:
         """Handle display mode selection — apply the chosen mode to the lamp."""
-        _LOGGER.debug("[MODE SELECT] User selected: '%s' for %s", option, self._light_entity._ip)
+        _LOGGER.debug("[MODE SELECT] User selected: '%s' for %s", option, self._light_entity.ip)
 
         if option not in MATRIX_DISPLAY_MODES:
             _LOGGER.error("[MODE SELECT] Invalid mode: '%s'", option)
             return
-
-        self._light_entity._matrix_mode = option
-        self._light_entity._mode = option
-        if option == "Custom Draw":
-            self._light_entity._custom_draw_active = bool(
-                self._light_entity._custom_pixels
-            )
-        else:
-            self._light_entity._custom_draw_active = False
-            self._light_entity._custom_pixels = None
-            # Switching to a text mode clears pixel art selection
-            self._light_entity._active_pixel_art_name = None
-            if self._light_entity._pixel_art_select_entity:
-                self._light_entity._pixel_art_select_entity.async_update_from_light()
-
-        await self._light_entity.async_apply_display_mode(update_type='color_change')
-
+        await self._light_entity.async_select_display_mode(option)
         self._write_states()
-        if self._light_entity._content_mode_select_entity:
-            self._light_entity._content_mode_select_entity.async_update_from_light()
 
     @callback
     def async_update_from_light(self):
         """Called by external code to sync the dropdown with the light entity's
         mode (and remember the last Matrix render mode)."""
-        mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
-        if mode in MATRIX_DISPLAY_MODES:
-            self._light_entity._matrix_mode = mode
+        self._light_entity.remember_matrix_mode()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -611,7 +540,7 @@ class YeelightCubeClockStyleSelect(CubeSelect):
     """Select a built-in clock face."""
 
     _attr_translation_key = "clock_style"
-    _slot = "_clock_style_select_entity"
+    _topic = "clock_style"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         super().__init__(light_entity, config_entry, "clock_style_select")
@@ -623,20 +552,14 @@ class YeelightCubeClockStyleSelect(CubeSelect):
             NATIVE_CLOCK_STYLES,
             key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"],
         )
-        current = getattr(
-            self._light_entity,
-            "_native_clock_style",
-            DEFAULT_NATIVE_CLOCK_STYLE,
-        )
+        current = self._light_entity.native_clock_style
         if current not in style_ids:
             style_ids.append(current)
         return [_clock_style_label(style_id) for style_id in style_ids]
 
     @property
     def current_option(self) -> str | None:
-        return _clock_style_label(
-            getattr(self._light_entity, "_native_clock_style", DEFAULT_NATIVE_CLOCK_STYLE)
-        )
+        return _clock_style_label(self._light_entity.native_clock_style)
 
     def _valid_option_or_raise(self, option: str) -> None:
         # Home Assistant checks the option against the list before
@@ -653,15 +576,7 @@ class YeelightCubeClockStyleSelect(CubeSelect):
             _LOGGER.error("[CLOCK STYLE] Unknown option: '%s'", option)
             return
 
-        self._light_entity._native_clock_style = style_id
-        # Speed and intensity follow the style's background.
-        write_effect_setting_entities(self._light_entity)
-
-        if self._light_entity._mode == MODE_CLOCK:
-            await self._light_entity.async_apply_display_mode(
-                update_type="color_change"
-            )
-
+        await self._light_entity.async_select_clock_style(style_id)
         self._write_states()
 
 
@@ -669,7 +584,7 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
     """Select one of the built-in Cube Lite animations."""
 
     _attr_translation_key = "native_effect"
-    _slot = "_native_effect_select_entity"
+    _topic = "native_effect"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         super().__init__(light_entity, config_entry, "native_effect")
@@ -681,19 +596,24 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
         # stored GIF (hidden: the animations are chosen instead). The current
         # effect is always kept so HA never warns about an out-of-list value.
         animations = getattr(self._light_entity, "animations_available", False)
+        # A lamp without a microphone (Cube Matrix) is not offered the
+        # effects that listen to one.
+        hearing = getattr(self._light_entity, "device_profile", None)
+        hearing = hearing is None or hearing.microphone
         names = sorted(
             (name for name, spec in ALL_NATIVE_EFFECTS.items()
-             if not spec.get("hidden") and (animations or not spec.get("animation"))),
+             if not spec.get("hidden") and (animations or not spec.get("animation"))
+             and (hearing or name not in LAMP_MUSIC_EFFECTS)),
             key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"],
         )
-        current = getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
+        current = self._light_entity.native_effect
         if current not in names:
             names.append(current)
         return names
 
     @property
     def current_option(self) -> str:
-        return getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
+        return self._light_entity.native_effect
 
     def _valid_option_or_raise(self, option: str) -> None:
         # Home Assistant checks the option against the list before
@@ -715,14 +635,7 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
             self._light_entity, "animations_available", False
         ):
             raise invalid("animation_needs_matter")
-        self._light_entity._native_effect = option
-        if self._light_entity._native_effect_direction_select_entity:
-            self._light_entity._native_effect_direction_select_entity.async_update_from_light()
-        write_effect_setting_entities(self._light_entity)
-        if self._light_entity._mode == MODE_NATIVE_EFFECT and self._light_entity._is_on:
-            await self._light_entity.async_apply_display_mode(
-                update_type="color_change"
-            )
+        await self._light_entity.async_select_native_effect(option)
         self._write_states()
 
 
@@ -731,7 +644,7 @@ class YeelightCubeNativeEffectDirectionSelect(CubeSelect):
 
     _attr_translation_key = "native_effect_direction"
     _attr_entity_category = EntityCategory.CONFIG
-    _slot = "_native_effect_direction_select_entity"
+    _topic = "native_effect_direction"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         super().__init__(light_entity, config_entry, "native_effect_direction")
@@ -739,35 +652,26 @@ class YeelightCubeNativeEffectDirectionSelect(CubeSelect):
 
     @property
     def available(self) -> bool:
-        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
+        spec = ALL_NATIVE_EFFECTS[self._light_entity.native_effect]
         return self._light_entity.available and bool(spec.get("directions"))
 
     @property
     def current_option(self) -> str:
-        directions = ALL_NATIVE_EFFECTS[self._light_entity._native_effect].get(
+        directions = ALL_NATIVE_EFFECTS[self._light_entity.native_effect].get(
             "directions", NATIVE_EFFECT_DIRECTIONS
         )
-        current = self._light_entity._native_effect_direction
+        current = self._light_entity.native_effect_direction
         return current if current in directions else directions[0]
 
     async def async_select_option(self, option: str) -> None:
         if option not in NATIVE_EFFECT_DIRECTIONS:
             raise ValueError(f"Unknown native effect direction: {option}")
-        self._light_entity._native_effect_direction = option
-        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
-        if (
-            spec.get("directions")
-            and self._light_entity._mode == MODE_NATIVE_EFFECT
-            and self._light_entity._is_on
-        ):
-            await self._light_entity.async_apply_display_mode(
-                update_type="color_change"
-            )
+        await self._light_entity.async_select_native_effect_direction(option)
         self._write_states()
 
     @callback
     def async_update_from_light(self):
-        directions = ALL_NATIVE_EFFECTS[self._light_entity._native_effect].get(
+        directions = ALL_NATIVE_EFFECTS[self._light_entity.native_effect].get(
             "directions", NATIVE_EFFECT_DIRECTIONS
         )
         self._attr_options = list(directions)

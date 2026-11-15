@@ -54,7 +54,7 @@ import { tabBar } from "./tab-bar.js";
 import { renderCarousel } from "./carousel-utils.js";
 import "./preview-hover.js";
 
-export const SECTION_LAYOUTS = Object.freeze([
+const SECTION_LAYOUTS = Object.freeze([
   "side",
   "carousel",
   "tabs",

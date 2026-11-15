@@ -17,7 +17,7 @@
 //   • matrixSurface        — one canvas over a preview's grid, for the tiles of a
 //                            gallery that change 25 times a second.
 
-import { matrixView } from "./matrix-view.js";
+import { fromDisplayOrder, matrixView } from "./matrix-view.js";
 
 // Every refresh of a 60 Hz display, over twice the lamp's 25 renders a second;
 // faster displays are not followed.
@@ -263,6 +263,19 @@ class MatrixSurface {
   paint(frame, scale = 1, hideBlack = null, shadow = "") {
     this.last = { frame, scale, hideBlack, shadow };
     const { grid, holder } = this;
+    // A Cube Matrix's modules (matrix-modules.js moduleGrid): its cells are
+    // placed one by one (a spot one light over its area), few enough to
+    // paint themselves.
+    if (grid.dataset.modules === "true") {
+      // The same grid laid out again for the modules: no canvas over it.
+      if (holder.isConnected) {
+        holder.remove();
+        grid.classList.remove("matrix-surface", "matrix-surface-holes");
+        this.holes = undefined;
+      }
+      this.paintCells();
+      return;
+    }
     if (!holder.isConnected) {
       grid.append(holder);
       grid.classList.add("matrix-surface");
@@ -318,3 +331,21 @@ class MatrixSurface {
 }
 
 const BLACK = [0, 0, 0];
+
+// The cells of a grid placed as a Cube Matrix's modules, by top-first pixel.
+MatrixSurface.prototype.paintCells = function paintCells() {
+  const { frame, scale, hideBlack, shadow } = this.last;
+  const listed = [...this.grid.children].filter((child) => child.tagName !== "SPAN");
+  const cells = this.grid.dataset.vertical === "true" ? fromDisplayOrder(listed, true) : listed;
+  for (let index = 0; index < cells.length; index += 1) {
+    const cell = cells[index];
+    if (!cell) continue;
+    const pixel = frame[index] || BLACK;
+    const [red, green, blue] = scale === 1
+      ? pixel
+      : pixel.map((channel) => Math.min(255, Math.round(channel * scale)));
+    const hidden = hideBlack !== null && red <= hideBlack && green <= hideBlack && blue <= hideBlack;
+    paintCellBackground(cell, hidden ? "transparent" : `rgb(${red},${green},${blue})`);
+    paintCellBoxShadow(cell, hidden || !shadow ? "" : shadow);
+  }
+};

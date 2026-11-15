@@ -1,6 +1,8 @@
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { fromDisplayOrder, toDisplayOrder } from "./matrix-view.js";
 import { frameLength, matrixFrame } from "./matrix-frame.js";
+import { placeStyle, withSpotColours } from "./matrix-modules.js";
+import { contextGrid } from "./preview-context.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
 
 /**
@@ -62,7 +64,11 @@ export function matrixPixelShadow(options) {
  *   forceAspectRatio), padding (default pixelGap x 2), radius (the frame's
  *   corners, default 4), matrixBoxShadow,
  *   proportionalSpacing (lengths follow the width), cols (landscape
- *   columns of a cropped frame, default 20); `vertical` shows the frame turned for a lamp standing on its
+ *   columns of a cropped frame, default 20), context (the lamp's preview
+ *   context, preview-context.js previewContext: a Cube Matrix's previews
+ *   show its modules only, matrix-modules.js moduleGrid; its `frame` says
+ *   whether colorData is a picture before the mount's turn);
+ *   `vertical` shows the frame turned for a lamp standing on its
  *   end (matrix-view.js) with the landscape pixel size, as tall as the
  *   landscape preview is wide, or as tall as it is with `fitHeight` (fixed
  *   height layouts).
@@ -80,13 +86,25 @@ export function matrixPreviewLayout(colorData, options = {}) {
     vertical = false,
     fitHeight = false,
   } = options;
+  // A Cube Matrix's modules (matrix-modules.js): the columns they cover at
+  // the same pixel size (a narrower frame, centred), each spot one light.
+  const { context } = options;
+  const modules = context ? contextGrid(context, vertical) : null;
+  if (context) colorData = withSpotColours(colorData, context.lamp, context.frame);
+  const fullWidth = options.forceAspectRatio ? "100%" : previewSize;
+  const width =
+    modules && !vertical
+      ? typeof fullWidth === "number"
+        ? (fullWidth * modules.columns) / 20
+        : `calc(${fullWidth} * ${modules.columns} / 20)`
+      : fullWidth;
   // The shared frame (matrix-frame.js): previewSize px wide, or 100% with
   // forceAspectRatio; the height follows (square cells, aspect-ratio 1/1).
   const frame = matrixFrame({
-    width: options.forceAspectRatio ? "100%" : previewSize,
+    width,
     vertical,
     fitHeight,
-    cols: options.cols,
+    cols: modules ? modules.cols : options.cols,
     gap: pixelGap,
     padding,
     radius,
@@ -96,9 +114,11 @@ export function matrixPreviewLayout(colorData, options = {}) {
   });
   const cellRadius =
     pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
-  const centred = frame.view.vertical ? "margin-inline:auto;" : "";
+  const centred = frame.view.vertical || modules ? "margin-inline:auto;" : "";
   return {
     cells: toDisplayOrder(colorData || [], vertical),
+    // Each cell's place on a Cube Matrix's grid (undefined: the whole frame).
+    places: modules ? toDisplayOrder(modules.place, vertical) : [],
     cellOptions: options,
     proportionalSpacing,
     vertical: frame.view.vertical,
@@ -107,6 +127,14 @@ export function matrixPreviewLayout(colorData, options = {}) {
       frame.gridStyle +
       `--yc-px-radius:${cellRadius};${proportionalSpacing ? "" : centred}`,
   };
+}
+
+/** A preview cell's inline style: its color and shadow (matrixCellLook) and
+ * its place on a Cube Matrix's grid (placeStyle). The markup of
+ * renderMatrixPreview and of the gallery's matrixTemplate. */
+export function matrixCellStyle(layout, index) {
+  const look = matrixCellLook(layout.cells[index], layout.cellOptions);
+  return `background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}${placeStyle(layout.places[index])}`;
 }
 
 /**
@@ -130,11 +158,8 @@ export function matrixPreviewCells(grid) {
  */
 export function renderMatrixPreview(colorData, options = {}) {
   const layout = matrixPreviewLayout(colorData, options);
-  const grid = `<div class="gallery-matrix-preview"${layout.vertical ? ' data-vertical="true"' : ""} style="${layout.gridStyle}">${layout.cells
-    .map((color) => {
-      const look = matrixCellLook(color, layout.cellOptions);
-      return `<div style="background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}"></div>`;
-    })
+  const grid = `<div class="gallery-matrix-preview"${layout.vertical ? ' data-vertical="true"' : ""}${layout.places.length ? ' data-modules="true"' : ""} style="${layout.gridStyle}">${layout.cells
+    .map((_, index) => `<div style="${matrixCellStyle(layout, index)}"></div>`)
     .join("")}</div>`;
   return layout.proportionalSpacing
     ? `<div style="${layout.wrapperStyle}">${grid}</div>`
@@ -230,17 +255,28 @@ export const matrixPreviewStyles = `
     border-radius: 50%;
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
   }
-  /* In a chip, after its name. */
-  .mode-chip-family {
-    display: inline-flex;
-    margin-left: 2px;
-    line-height: 0;
-  }
-  .mode-chip-family .yc-item-icon {
-    width: 18px;
-    height: 18px;
-    --mdc-icon-size: 12px;
-  }
+  /* In a chip, after its name. */
+
+  .mode-chip-family {
+
+    display: inline-flex;
+
+    margin-left: 2px;
+
+    line-height: 0;
+
+  }
+
+  .mode-chip-family .yc-item-icon {
+
+    width: 18px;
+
+    height: 18px;
+
+    --mdc-icon-size: 12px;
+
+  }
+
   /* The carousel's title centred, its icons at the end of its line. */
   .yc-carousel-title-row {
     display: grid;
@@ -252,15 +288,24 @@ export const matrixPreviewStyles = `
   .yc-carousel-title-row > .yc-item-icons {
     justify-self: end;
   }
-  /* At the bottom right of a preview tile, below its picture. */
-  .gallery-item-footer {
-    display: flex;
-    flex: none;
-    justify-content: flex-end;
-    align-self: stretch;
-    width: 100%;
-    margin-top: 4px;
-    line-height: 0;
+  /* At the bottom right of a preview tile, below its picture. */
+
+  .gallery-item-footer {
+
+    display: flex;
+
+    flex: none;
+
+    justify-content: flex-end;
+
+    align-self: stretch;
+
+    width: 100%;
+
+    margin-top: 4px;
+
+    line-height: 0;
+
   }
 `;
 

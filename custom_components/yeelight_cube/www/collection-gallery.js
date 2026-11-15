@@ -893,7 +893,7 @@ class YcCollectionGallery extends LitElement {
 }
 
 /** The gallery_* matrix appearance shared by every preview layout. */
-export function browserPreviewAppearance(config) {
+function browserPreviewAppearance(config) {
   const background = config.gallery_background_color || "black";
   const spacing = config.gallery_spacing_mode || "normal";
   return {
@@ -917,3 +917,36 @@ export function browserPreviewAppearance(config) {
 }
 
 defineOnce("yc-collection-gallery", YcCollectionGallery);
+
+/**
+ * The gallery of a card with favourites, a rotation and animated previews
+ * (the Clock and Native Effects cards), declared the same way for both: its
+ * mode controls (`card._controls`) pick, search and star the items, the
+ * card's sort orders them and `onUpdated` repaints the previews it
+ * rendered. `revealKey`, `onRename` and `onDelete`: the Clock's custom
+ * styles (optional).
+ */
+export function modeGallery(
+  card,
+  { items, active, filter, searchLabel, actionLabel, revealKey, onRename, onDelete, onUpdated },
+) {
+  return html`<yc-collection-gallery
+    .config=${card.config}
+    .items=${items}
+    .active=${active}
+    .model=${card._controls}
+    .filter=${filter}
+    .sort=${card._sort.gallery()}
+    .revealKey=${revealKey}
+    searchLabel=${searchLabel}
+    actionLabel=${actionLabel}
+    .onSelect=${(name) => card._controls.choose(name)}
+    .onQuery=${(query) => {
+      card._searchQuery = query;
+      card._controls?.notify();
+    }}
+    .onRename=${onRename}
+    .onDelete=${onDelete}
+    @gallery-updated=${onUpdated}
+  ></yc-collection-gallery>`;
+}

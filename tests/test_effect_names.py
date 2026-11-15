@@ -11,6 +11,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from tests.fakes import light_state
 from tests.test_native_features import (
     CONSTANTS,
     LIGHT_SOURCE,
@@ -119,7 +120,10 @@ class EffectNameTableTests(unittest.TestCase):
         # The animations to upload play as the stored GIF (slot 71): no slot's.
         self.assertEqual(
             LAMP_NAMES,
-            {spec["mode"]: name for name, spec in ALL.items() if not spec.get("animation")},
+            # (The Cube Matrix's own versions share their slot: effect_catalog.MATRIX_VERSION_EFFECTS.)
+            {spec["mode"]: name for name, spec in ALL.items()
+             if not spec.get("animation") and not spec.get("matrix_version_of")
+             and not spec.get("streamed")},
         )
         self.assertEqual(
             set(CONSTANTS["LAMP_ANIMATION_EFFECTS"]),
@@ -178,6 +182,11 @@ class EffectNameTableTests(unittest.TestCase):
         for mode, (_, name) in twins.items():
             expected[style_id] = (name, mode)
             style_id += 1
+        # Then one over each of the Cube Matrix's own versions.
+        # Then the integration's own effects.
+        for name, spec in {**CONSTANTS["MATRIX_VERSION_EFFECTS"], **CONSTANTS["STREAMED_EFFECTS"]}.items():
+            expected[style_id] = (name, spec["mode"])
+            style_id += 1
         self.assertEqual(expected, {
             i: (s["name"], s["mixer"]) for i, s in STYLES.items() if i > 15
         })
@@ -213,7 +222,7 @@ class EffectNameTableTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node is required for the cards' tables")
 class CardTableTests(unittest.TestCase):
-    """www/effect-names.js and the cards' name tables: the same as const.py."""
+    """www/effect-names.js and the cards' name tables: the same as effect_catalog.py."""
 
     @classmethod
     def setUpClass(cls):
@@ -228,7 +237,7 @@ class CardTableTests(unittest.TestCase):
             "process.stdout.write(JSON.stringify({"
             " aliases: n.NATIVE_EFFECT_ALIASES, styleAliases: n.CLOCK_STYLE_ALIASES,"
             " numbered: n.FORMERLY_NUMBERED_EFFECT_NAMES,"
-            " effects: Object.fromEntries(Object.entries(f.LAMP_EFFECTS).map(([k, v]) => [v.mode, k])),"
+            " effects: Object.fromEntries(Object.entries(f.LAMP_EFFECTS).filter(([, v]) => !v.matrixVersionOf).map(([k, v]) => [v.mode, k])),"
             " styles: c.CLOCK_STYLES.map((s) => [s.id, s.name, s.mixer]),"
             " mixers: c.CLOCK_MIXER_EFFECTS,"
             " families: fam.EFFECT_FAMILY_NAMES,"
@@ -245,7 +254,7 @@ class CardTableTests(unittest.TestCase):
         )
 
     def test_both_cards_list_effects_in_the_lamps_order(self):
-        # The lamp's catalogue (light._native_effect_catalog) is the effect
+        # The lamp's catalogue (light_attributes._native_effect_catalog) is the effect
         # card's order; without a lamp, the card's own list is the same.
         catalogue = [name for name, spec in ALL.items() if spec["mode"] != 71]
         self.assertEqual(catalogue, self.js["offline"])
@@ -266,7 +275,11 @@ class CardTableTests(unittest.TestCase):
 
     def test_the_cards_use_todays_names(self):
         self.assertEqual(
-            {str(slot): name for slot, name in LAMP_NAMES.items() if slot != 71},
+            {
+                **{str(slot): name for slot, name in LAMP_NAMES.items() if slot != 71},
+                # The integration's own effects, past the lamp's slots.
+                **{str(spec["mode"]): name for name, spec in CONSTANTS["STREAMED_EFFECTS"].items()},
+            },
             self.js["effects"],
         )
         for style_id, name, mixer in self.js["styles"]:
@@ -291,8 +304,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     """Every former name, through each action that takes one."""
 
     async def test_set_native_effect_takes_a_former_name(self):
-        target = SimpleNamespace(
-            _native_effect="Ribbon", _native_effect_speed=128, _native_effect_direction="Right",
+        target = light_state(
+            _native_effect="Ribbon", _native_effect_speed=128, _native_effect_direction="Right", is_cube_matrix=False,
             _is_on=True, _mode="Clock",
             _custom_draw_active=False, _native_effect_speed_entity=None,
             _should_auto_turn_on=lambda: False, async_apply_display_mode=AsyncMock(),
@@ -320,7 +333,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(name, target._native_effect)
 
     async def test_set_clock_style_takes_a_former_name_and_a_number_is_an_id(self):
-        light = SimpleNamespace(
+        light = light_state(
             _is_on=True, _mode="Clock",
             _native_clock_style=6, _refresh_linked_entities=Mock(),
             async_write_ha_state=Mock(), async_apply_display_mode=AsyncMock(),
@@ -355,15 +368,15 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             source,
         )
         methods = _load_standalone_functions(
-            LIGHT_SOURCE, {"_effect_persist_item", "async_set_button_effects", "effect_direction_sent", "lamp_direction"},
+            LIGHT_SOURCE, {"_effect_persist_item", "async_set_button_effects", "effect_direction_sent", "lamp_direction", "label_direction"},
             {**CONSTANTS, "base64": __import__("base64"), "CubeConnectionError": RuntimeError},
         )
         sent = []
-        light = SimpleNamespace(
-            _native_effect_speed=128, _native_effect_direction="Right",
+        light = light_state(
+            _native_effect_speed=128, _native_effect_direction="Right", is_cube_matrix=False,
             _device_orientation="right", effect_profile=None, hass=None,
             _native_clock_data_bytes=lambda: b"\x01\x00\x00\x01",
-            _cube_matrix=SimpleNamespace(
+            _lamp_client=SimpleNamespace(
                 close_fast_socket=Mock(), close_command_socket=Mock(),
                 send_command_with_recovery=AsyncMock(side_effect=lambda *args: sent.append(args) or ["ok"]),
             ),
@@ -378,7 +391,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([3, 42, 40, 40], [args[1][1]["effect_id"] for args in sent])
         self.assertEqual(13, sent[2][1][1]["custom_id"])
         # A clock over a background that draws its colour words carries them
-        # all (const.clock_style_colors): white without them.
+        # all (effect_catalog.clock_style_colors): white without them.
         bands = methods["_effect_persist_item"](light, "Clock: Rotating colour bands")
         self.assertEqual(
             list(CONSTANTS["_EXTENDED_EFFECT_COLORS"][8]), bands["effect_params"][0]["color"]
@@ -481,7 +494,7 @@ class MagicClockSavedBy14Tests(unittest.TestCase):
         ):
             # What the attribute table restored: the names in today's.
             today = restore["_button_effect_names"](saved)
-            lamp = SimpleNamespace(_native_effect_direction="Up", _button_effects=today)
+            lamp = light_state(_native_effect_direction="Up", _button_effects=today)
             namespace["run"](lamp, attributes)
             self.assertEqual(expected or today, lamp._button_effects, attributes)
 

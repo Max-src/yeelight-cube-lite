@@ -1,4 +1,4 @@
-"""The intensity shared by the effects (const.py LAMP_INTENSITY_SLOTS): which
+"""The intensity shared by the effects (effect_catalog.py LAMP_INTENSITY_SLOTS): which
 effects take it, the limits it is sent within, and that the list stays what
 the renderers draw. Sending it: tests/test_live_effect.py."""
 import unittest

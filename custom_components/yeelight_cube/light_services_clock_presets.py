@@ -9,7 +9,8 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .clock_presets import delete_clock_preset, save_clock_preset
-from .const import CLOCK_STYLE_ALIASES, DOMAIN, NATIVE_CLOCK_STYLES
+from .const import DOMAIN
+from .effect_catalog import CLOCK_STYLE_ALIASES, NATIVE_CLOCK_STYLES
 from .errors import failed, invalid_input
 from .input_error import InputError
 from .storage import async_save_data

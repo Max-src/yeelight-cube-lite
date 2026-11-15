@@ -8,8 +8,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from datetime import datetime
 from tests.test_native_features import _load_standalone_functions, ROOT, CONSTANTS, NATIVE_PREVIEW, import_pure_module
+from fakes import light_state, slow
 
 LAMP = runpy.run_path(str(ROOT / "lamp_renderers.py"))
+CLOCK_DIGIT_TARGETS = runpy.run_path(str(ROOT / "lamp_core.py"))["clock_digit_targets"]
 MODULE = vars(import_pure_module("clock_presets"))
 save = MODULE["save_clock_preset"]
 delete = MODULE["delete_clock_preset"]
@@ -19,7 +21,7 @@ class ClockPreviewTests(unittest.TestCase):
     def setUp(self):
         self.font = {char: [0, 1, 20, 41, 60, 81] for char in "0123456789"}
         self.font.update({":": [20, 60], ".": [0]})
-        self.clock = SimpleNamespace(
+        self.clock = light_state(
             _native_clock_style=6, _device_orientation="right", _native_effect_speed=50,
         )
         self.timer = SimpleNamespace(monotonic=lambda: 0.75)
@@ -27,7 +29,7 @@ class ClockPreviewTests(unittest.TestCase):
             **CONSTANTS, **NATIVE_PREVIEW, **LAMP,
             "dt_util": SimpleNamespace(now=lambda: datetime(2026, 9, 17, 21, 53)),
             "_time": self.timer, "COLS": 20, "ROWS": 5,
-            "clock_digit_targets": runpy.run_path(str(ROOT / "lamp_core.py"))["clock_digit_targets"],
+            "clock_digit_targets": CLOCK_DIGIT_TARGETS,
             "FONT_MAPS": {"native": self.font},
             "char_advance": lambda font, char, glyph: 2 if char in ":." else 4,
         }
@@ -43,7 +45,7 @@ class ClockPreviewTests(unittest.TestCase):
         )})
         methods = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
-            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed", "_chosen_intensity"}, namespace,
+            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed", "_chosen_intensity", "_columns", "_state"}, namespace,
         )
         self.render = methods["_get_clock_preview"]
         self.camera = SimpleNamespace(
@@ -54,15 +56,16 @@ class ClockPreviewTests(unittest.TestCase):
             _clock_preview_started_at=0.0,
             _preview_lock=threading.Lock(),
         )
-        self.camera._clock_background_seconds = lambda: methods["_clock_background_seconds"](self.camera)
-        self.camera._preview_speed = lambda: methods["_preview_speed"](self.camera)
+        for name in ("_clock_background_seconds", "_preview_speed", "_columns", "_state"):
+            setattr(self.camera, name, lambda state=None, method=methods[name]: method(self.camera, state))
 
+    @slow
     def test_all_clock_backgrounds_are_the_lamps_whatever_the_native_direction(self):
         mask = self.render(self.camera)
         for elapsed in (0, 0.75, 2.5):
             self.timer.monotonic = lambda: elapsed
             for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
-                effect = CONSTANTS["CLOCK_MIXER_EFFECTS"].get(style["mixer"])
+                effect = CONSTANTS["clock_style_effect"](style)
                 if effect is None:
                     continue
                 self.clock._native_clock_style = style_id
@@ -81,8 +84,7 @@ class ClockPreviewTests(unittest.TestCase):
                     background = LAMP["lamp_effect_frame"](settings, elapsed)
                     # The digits where the lamp draws them for this style.
                     flags = LAMP["clock_digit_flags"](style["mixer"], CONSTANTS["clock_style_direct"](style))
-                    targets = runpy.run_path(str(ROOT / "lamp_core.py"))["clock_digit_targets"]
-                    shown = {t for index, pixel in enumerate(mask) if any(pixel) for t in targets(index, flags)}
+                    shown = {t for index, pixel in enumerate(mask) if any(pixel) for t in CLOCK_DIGIT_TARGETS(index, flags)}
                     expected = [background[index] if index in shown else (0, 0, 0) for index in range(100)]
                     for direction in (None, "Up", "Down", "Left", "Right"):
                         self.clock._native_effect_direction = direction
@@ -113,7 +115,7 @@ class ClockPreviewTests(unittest.TestCase):
         self.clock._display_frozen = True
         self.timer.time = lambda: 100.0
         for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
-            if CONSTANTS["CLOCK_MIXER_EFFECTS"].get(style["mixer"]) in ("Particle glows", "Mirrored comets", "Sunrise and sunset"):
+            if CONSTANTS["clock_style_effect"](style) in ("Particle glows", "Mirrored comets", "Sunrise and sunset"):
                 self.clock._native_clock_style = style_id
                 self.camera._frozen_background_seconds = None
                 self.assertGreater(sum(map(any, self.render(self.camera))), 5, style["name"])

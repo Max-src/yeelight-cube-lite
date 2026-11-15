@@ -52,7 +52,7 @@ import threading
 import time
 
 try:
-    from .const import (
+    from .effect_catalog import (
         ALL_NATIVE_EFFECTS,
         CLOCK_COLOR_MODES,
         CLOCK_DIRECT_BACKGROUNDS,
@@ -62,6 +62,7 @@ try:
         MUSIC_PALETTE_SIZE,
         PALETTE_COLOR_MODE,
         PALETTE_MUSIC_FLOWS,
+        STREAMED_EFFECT_PALETTE_LIMIT,
         UNDIRECTED_EFFECT_DIRECTION,
         NATIVE_CLOCK_EFFECT_ID,
         effect_direction_value,
@@ -74,15 +75,19 @@ try:
     from . import lamp_effects_sparks
     from . import lamp_effects_trails
     from . import lamp_effects_music
+    from . import lamp_effects_streamed
     from .lamp_core import (
         COLS,
         DIRECTION_TABLE,
         HANDOVER_FLAGS,
         LENGTH,
-        REFERENCE_PROFILE,
         RENDER_SECONDS,
         ROWS,
         U32 as _U32,
+        colours_raw,
+        replays_in_full,
+        segment_length_for,
+        settings_length,
         clock_at,
         f32 as _f32,
         f32_bits as _f32_bits,
@@ -100,12 +105,13 @@ try:
         trunc_u16 as _trunc_u16,
     )
     from .lamp_effects_core import magic_cells
+    from .mount_profile import HIGH_PAIR, LOW_PAIR, REFERENCE_PROFILE, one_axis_direction
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
     import sys
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from const import (
+    from effect_catalog import (
         ALL_NATIVE_EFFECTS,
         CLOCK_COLOR_MODES,
         CLOCK_DIRECT_BACKGROUNDS,
@@ -115,27 +121,33 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         MUSIC_PALETTE_SIZE,
         PALETTE_COLOR_MODE,
         PALETTE_MUSIC_FLOWS,
+        STREAMED_EFFECT_PALETTE_LIMIT,
         UNDIRECTED_EFFECT_DIRECTION,
         NATIVE_CLOCK_EFFECT_ID,
         effect_direction_value,
         lamp_intensity,
         lamp_rate,
     )
+    from mount_profile import HIGH_PAIR, LOW_PAIR, REFERENCE_PROFILE, one_axis_direction
     import lamp_effects_core
     import lamp_effects_waves
     import lamp_effects_noise
     import lamp_effects_sparks
     import lamp_effects_trails
     import lamp_effects_music
+    import lamp_effects_streamed
     from lamp_core import (
         COLS,
         DIRECTION_TABLE,
         HANDOVER_FLAGS,
         LENGTH,
-        REFERENCE_PROFILE,
         RENDER_SECONDS,
         ROWS,
         U32 as _U32,
+        colours_raw,
+        replays_in_full,
+        segment_length_for,
+        settings_length,
         clock_at,
         f32 as _f32,
         f32_bits as _f32_bits,
@@ -166,10 +178,26 @@ def register_slot(slot: dict) -> None:
     REGISTRY[slot["mode"]] = slot
 
 
+# The Cube Matrix's renderers of slots it draws its own way, by (mode,
+# variant): a command's settings carry the ``variant`` (lamp_settings, from
+# the effect's spec, effect_catalog.MATRIX_VERSION_EFFECTS).
+VARIANTS: dict[tuple, dict] = {}
+
+
 def register_family(module) -> None:
     """Every slot of a lamp_effects_<family> module."""
     for slot in module.SLOTS:
         register_slot(slot)
+    for slot in getattr(module, "VARIANT_SLOTS", ()):
+        VARIANTS[(slot["mode"], slot["variant"])] = slot
+
+
+def slot_for(settings) -> dict:
+    """The renderer a command's settings run: the slot's, or its variant's."""
+    variant = settings.get("variant")
+    if variant is not None and (settings["mode"], variant) in VARIANTS:
+        return VARIANTS[(settings["mode"], variant)]
+    return REGISTRY[settings["mode"]]
 
 
 # ── Timeline ────────────────────────────────────────────────────────────
@@ -254,9 +282,14 @@ class Timeline:
 
     def _cursor_for(self, target: int) -> _Cursor:
         warmup = self.slot["warmup"]
+        live = self.slot.get("live", False)
         # A fresh cursor starts a warmup behind: one that can't reach as far
-        # would be given up before it arrives, again and again.
-        reach = _REPLAY_LIMIT if warmup is None else max(_CURSOR_REACH, warmup + 1)
+        # would be given up before it arrives, again and again. A live
+        # simulation (the slot's "live", Lava Lamp) goes on from a cursor
+        # close behind, else starts afresh where it is asked: replaying its
+        # history would show it fast-forwarding (a new intensity, a preview
+        # opened late), and any run of it is as good as another.
+        reach = _CURSOR_REACH if live else _REPLAY_LIMIT if warmup is None else max(_CURSOR_REACH, warmup + 1)
         best = None
         for cursor in self.cursors:
             if (
@@ -267,7 +300,9 @@ class Timeline:
                 best = cursor
         if best is not None:
             return best
-        if warmup is None:
+        if live:
+            start = target
+        elif warmup is None:
             start = max(0, target - _REPLAY_LIMIT) if target > _REPLAY_LIMIT else 0
         else:
             start = max(0, target - warmup)
@@ -280,7 +315,7 @@ class Timeline:
     def _advance(self, cursor: _Cursor, target: int, exact: bool) -> bytes:
         step, settings = self.slot["step"], self.settings
         rate = settings["rate"]
-        stop = None if exact else time.perf_counter() + _REPLAY_SECONDS
+        stop = None if exact or replays_in_full() else time.perf_counter() + _REPLAY_SECONDS
         if self.slot["warmup"] == 0:  # a pure function of the render: no way there
             cursor.render = target - 1
         while cursor.render < target:
@@ -309,14 +344,19 @@ def has_renderer(mode: int) -> bool:
 def timeline_for(settings) -> Timeline:
     """The run of ``settings``, the most recently used last."""
     key = (
+        colours_raw(),
         settings["mode"], settings["selector"], settings["intensity"], settings["rate"],
         settings["direction"], tuple(settings["primary"]), bool(settings["coloured"]),
         tuple(map(tuple, settings.get("colours", ()))), bool(settings.get("handover")),
+        settings.get("variant"),
+        # A simulation's run (Lava Lamp): a new one for each seed.
+        settings.get("seed"),
+        settings_length(settings),
     )
     with _EFFECT_TIMELINES_LOCK:
         timeline = _EFFECT_TIMELINES.pop(key, None)
         if timeline is None:
-            timeline = Timeline(REGISTRY[settings["mode"]], settings)
+            timeline = Timeline(slot_for(settings), settings)
         _EFFECT_TIMELINES[key] = timeline
         if len(_EFFECT_TIMELINES) > _TIMELINE_LIMIT_EFFECTS:
             del _EFFECT_TIMELINES[next(iter(_EFFECT_TIMELINES))]
@@ -337,7 +377,7 @@ def exact_frames(settings, first: int, count: int):
     """``count`` lamp frames from render ``first``, the run as the lamp's: a
     replay from the slot's warmup (from render 0 when it has none), with no
     timeline, no ring and no time limit."""
-    slot = REGISTRY[settings["mode"]]
+    slot = slot_for(settings)
     step = slot["step"]
     settings = {**settings, "primary": tuple(settings["primary"])}
     start = 0 if slot["warmup"] is None else max(0, first - slot["warmup"])
@@ -573,11 +613,11 @@ def _shot_source(shot: int):
     return lambda _site: source_word(next(reads))
 
 
-def _fireworks_shot_length(shot: int, rate: int) -> int:
+def _fireworks_shot_length(shot: int, rate: int, n: int = LENGTH) -> int:
     """Renders from shot ``shot``'s new flare to the next one: its rise
     (the renders the flare climbs, and the one that sees it stop), the
-    burst and burn (_FIREWORKS_BURN), and the pause it reads."""
-    n = LENGTH
+    burst and burn (_FIREWORKS_BURN), and the pause it reads, on a segment
+    of ``n`` pixels."""
     grav = _fireworks_gravity(n, rate)
     peak_byte = source_word(shot * _SHOT_READS) & 0xFF
     peak = ((((n - 1) * (((peak_byte * 0x87) >> 8) + 100)) & _U32) >> 8) & 0xFFFF
@@ -600,8 +640,8 @@ def _fireworks_shot_length(shot: int, rate: int) -> int:
 class _FireworksShot:
     """A shot's renders so far, and what it takes to go on."""
 
-    def __init__(self, shot: int) -> None:
-        self.state = FireworksState()
+    def __init__(self, shot: int, length: int = LENGTH) -> None:
+        self.state = FireworksState(length)
         self.read = _shot_source(shot)
         self.draws = []
 
@@ -611,15 +651,16 @@ class _FireworksTimeline:
     last shots' renders. Previews of one rate each have their own clock (a
     camera, a card), so each shot is computed once and read at any render."""
 
-    def __init__(self, rate: int) -> None:
+    def __init__(self, rate: int, length: int = LENGTH) -> None:
         self.rate = rate
+        self.length = length
         self.starts = [0]
         self.shots: dict[int, _FireworksShot] = {}
 
     def shot_at(self, render: int) -> tuple[int, int]:
         while self.starts[-1] <= render:
             shot = len(self.starts) - 1
-            self.starts.append(self.starts[-1] + _fireworks_shot_length(shot, self.rate))
+            self.starts.append(self.starts[-1] + _fireworks_shot_length(shot, self.rate, self.length))
         low, high = 0, len(self.starts) - 1
         while high - low > 1:
             middle = (low + high) // 2
@@ -632,20 +673,20 @@ class _FireworksTimeline:
     def draws_at(self, render: int) -> list:
         shot, offset = self.shot_at(render)
         # The most recently used last: the oldest goes first.
-        record = self.shots.pop(shot, None) or _FireworksShot(shot)
+        record = self.shots.pop(shot, None) or _FireworksShot(shot, self.length)
         self.shots[shot] = record
         if len(self.shots) > _SHOT_LIMIT:
             self.shots.pop(next(iter(self.shots)))
         while len(record.draws) <= offset:
             record.draws.append(fireworks_step(
-                record.state, LENGTH, self.rate, FIREWORKS_INTENSITY,
+                record.state, self.length, self.rate, FIREWORKS_INTENSITY,
                 FIREWORKS_SELECTOR, 0, record.read,
             ))
         return record.draws[offset]
 
 
 _SHOT_LIMIT = 6
-_TIMELINES: dict[int, _FireworksTimeline] = {}
+_TIMELINES: dict[tuple, _FireworksTimeline] = {}
 _TIMELINE_LIMIT = 8
 
 
@@ -654,19 +695,21 @@ _FIREWORKS_LOCK = threading.Lock()
 
 
 def render_fireworks(seconds: float, rate: int, direction: int,
-                     profile: int = REFERENCE_PROFILE) -> list:
+                     profile: int = REFERENCE_PROFILE, length: int = LENGTH) -> list:
     """The 20 x 5 frame (lamp order) Fireworks shows ``seconds`` after it
-    was applied, at ``rate`` (0-255) and the lamp's ``direction`` (0-3)."""
+    was applied, at ``rate`` (0-255) and the lamp's ``direction`` (0-3), on
+    a segment of ``length`` pixels (its first columns)."""
     rate = max(0, min(255, int(rate)))
     render = max(0, int(seconds / RENDER_SECONDS))
     with _FIREWORKS_LOCK:
-        timeline = _TIMELINES.get(rate)
+        key = (rate, length)
+        timeline = _TIMELINES.get(key)
         if timeline is None:
             if len(_TIMELINES) >= _TIMELINE_LIMIT:
                 _TIMELINES.pop(next(iter(_TIMELINES)))
-            timeline = _TIMELINES[rate] = _FireworksTimeline(rate)
+            timeline = _TIMELINES[key] = _FireworksTimeline(rate, length)
         draws = timeline.draws_at(render)
-    return strip_frame(draws, direction, profile)
+    return strip_frame(draws, direction, profile, length)
 
 
 # ── What a command installs ─────────────────────────────────────────────
@@ -718,8 +761,13 @@ _COLOR_OVERRIDE_EFFECTS = frozenset({
     "Heat fire", "Mirrored comets", "Palette sparks", "Waterfall", "Fire",
     "Tide (slot 35)", "Bouncing Ball", "Tide", "Particle glows", "Palette stripes",
     "Kaleidoscope", "Meteor", "Building Blocks",
+    # The Cube Matrix's own versions (effect_catalog.MATRIX_VERSION_EFFECTS), as the
+    # effects they come from.
+    "Northern Lights", "Dark palette pulses",
+    # The integration's own effects (effect_catalog.STREAMED_EFFECTS).
+    "Knight Rider", "Lava Lamp", "Falling Blocks",
     # They draw their colour words: the picked one replaces the first
-    # (const._EXTENDED_EFFECT_COLORS).
+    # (effect_catalog._EXTENDED_EFFECT_COLORS).
     "Two-colour alternation", "Rotating colour bands", "Scrolling bands",
     "Rising wisps", "Random scatter",
     # The slots named by number until 1.4.0: what their renderers draw
@@ -735,10 +783,12 @@ _COLOR_OVERRIDE_EFFECTS = frozenset({
 # hardware; Starry Sky, Waterfall and Aurora only once their default color is
 # not sent (light_native).
 _COLOR_MODE_BW_EFFECTS = frozenset({
+    "Knight Rider", "Lava Lamp", "Falling Blocks",  # the integration's own (lamp_effects_streamed.preset_colours)
     "Rainbow", "Waves", "Spectrum", "Ribbon", "Moving palette", "Starry Sky",
     "Triangular palette pulses", "Sine wave", "Aurora", "Sunrise and sunset",
     "Heat fire", "Mirrored comets", "Waterfall", "Fire", "Tide (slot 35)",
     "Bouncing Ball", "Tide", "Particle glows", "Palette stripes", "Kaleidoscope",
+    "Northern Lights",
     # The slots named by number until 1.4.0, per their renderers; the five
     # that draw their colour words go white, as without them.
     "Two-colour alternation", "Rotating colour bands", "Scrolling bands",
@@ -752,6 +802,7 @@ _COLOR_MODE_BW_EFFECTS = frozenset({
 # Particle path is intentionally absent: on the lamp it ignores these
 # palette modes.
 _COLOR_PALETTE_EFFECTS = frozenset({
+    "Knight Rider", "Lava Lamp", "Falling Blocks",  # the integration's own (lamp_effects_streamed.preset_colours)
     "Rainbow", "Spectrum", "Ribbon", "Moving palette", "Triangular palette pulses",
     "Mirrored comets", "Tide (slot 35)", "Tide", "Palette stripes", "Kaleidoscope",
     # The slots named by number until 1.4.0, per their renderers.
@@ -779,7 +830,7 @@ def effect_supports_color_mode(effect: str, mode: str) -> bool:
 # ── The palette color mode ───────────────────────────────────────────────
 # An effect takes as many colors as it draws: one (the first, which the lamp
 # spreads into its own ramp), or each colour word of the effects that draw
-# several (const._EXTENDED_EFFECT_COLORS), the palette repeated when it is
+# several (effect_catalog._EXTENDED_EFFECT_COLORS), the palette repeated when it is
 # shorter, since a word left out is black. The music effects of
 # PALETTE_MUSIC_FLOWS take the whole palette (music_palette).
 def palette_words(effect: str, palette) -> list[int]:
@@ -788,7 +839,11 @@ def palette_words(effect: str, palette) -> list[int]:
     colours = [tuple(colour) for colour in palette or ()]
     if not colours:
         return []
-    count = len(ALL_NATIVE_EFFECTS[effect].get("colors", ())) or 1
+    spec = ALL_NATIVE_EFFECTS[effect]
+    if spec.get("streamed"):
+        # The integration's own renderer takes the palette itself.
+        return [_colour_word(colour) for colour in colours[:STREAMED_EFFECT_PALETTE_LIMIT]]
+    count = len(spec.get("colors", ())) or 1
     return [_colour_word(colours[index % len(colours)]) for index in range(count)]
 
 
@@ -826,7 +881,7 @@ def palette_fits(effect: str, palette) -> bool:
     colours = [colour for colour in palette or () if isinstance(colour, (list, tuple))]
     if not colours:
         return True
-    if effect in PALETTE_MUSIC_FLOWS:
+    if effect in PALETTE_MUSIC_FLOWS or ALL_NATIVE_EFFECTS[effect].get("streamed"):
         return True
     if not effect_supports_color_mode(effect, PALETTE_COLOR_MODE):
         return False
@@ -848,10 +903,12 @@ def _colour_word(color) -> int:
 
 def _command_settings(
     mode: int, command_id: int, direction: int, rate: int, word, more=(), intensity=None,
+    columns=None,
 ) -> dict:
     """The fields a renderer reads, from what a command sends: ``word``, the
     first colour word sent (None: no color key), ``more`` the others,
-    ``intensity`` the one sent (None: the preset row's)."""
+    ``intensity`` the one sent (None: the preset row's), ``columns`` the
+    columns the lamp shows (None: all 20)."""
     selector, row_intensity, *_ = PRESET_ROWS[command_id]
     intensity = row_intensity if intensity is None else intensity
     coloured = word is not None
@@ -866,6 +923,11 @@ def _command_settings(
     }
     if coloured and more:
         settings["colours"] = [_rgb(word), *(_rgb(other) for other in more)]
+    # A lamp showing fewer columns (a Cube Matrix with fewer blocks): the
+    # segment its effects are drawn on.
+    length = segment_length_for(columns)
+    if length != LENGTH:
+        settings["length"] = length
     return settings
 
 
@@ -883,7 +945,7 @@ def _sent_intensity(spec: dict, intensity) -> int | None:
 
 def lamp_settings(
     effect: str, direction: str, speed: int, color_override=None, color_mode=None,
-    orientation=None, intensity=None, palette=None,
+    orientation=None, intensity=None, palette=None, columns=None,
 ) -> dict:
     """What the lamp runs for a native effect (light_native._native_effect_params):
     the settings its renderer takes, from the same choices. ``color_override`` is
@@ -893,7 +955,9 @@ def lamp_settings(
     ``palette``: the lamp's palette ([r, g, b] each), for the palette color
     mode; without one that mode sends what the normal one does. (An effect
     the palette color mode streams is drawn by lamp_studio from the normal
-    mode's settings.)"""
+    mode's settings.) ``columns``: the columns the lamp shows, which its
+    effects are drawn on (a Cube Matrix's device_profile.columns; None: all
+    20, a Cube Lite)."""
     spec = ALL_NATIVE_EFFECTS[effect]
     preset = (
         CLOCK_COLOR_MODES.get(color_mode)
@@ -904,7 +968,13 @@ def lamp_settings(
     directions = spec.get("directions")
     if directions:
         label = direction if direction in directions else directions[0]
-        value = effect_direction_value(spec, label, orientation)
+        value = (
+            one_axis_direction(
+                label, orientation, REFERENCE_PROFILE, "Up",
+                LOW_PAIR if spec.get("one_axis_low_pair") else HIGH_PAIR,
+            ) if spec.get("one_axis")
+            else effect_direction_value(spec, label, orientation)
+        )
     else:
         value = UNDIRECTED_EFFECT_DIRECTION
     rate = (
@@ -925,8 +995,10 @@ def lamp_settings(
         words = palette_words(effect, palette) or words
     settings = _command_settings(
         spec["mode"], command_id, value, rate, words[0] if words else None, words[1:],
-        _sent_intensity(spec, intensity),
+        _sent_intensity(spec, intensity), columns,
     )
+    if spec.get("variant"):
+        settings["variant"] = spec["variant"]
     if palette_music_flow(effect, color_mode, palette):
         # The music mode: the whole palette, at the effect's own speed and
         # intensity (the music mode takes none).
@@ -940,7 +1012,9 @@ def lamp_effect_frame(settings, seconds: float) -> list:
     drive, lamp order. A preview starts at Timeline.first_shown; Fireworks has
     its own timeline, and its flare from the first render."""
     if settings["mode"] == FIREWORKS_MODE:
-        return render_fireworks(seconds, settings["rate"], settings["direction"])
+        return render_fireworks(
+            seconds, settings["rate"], settings["direction"], length=settings_length(settings),
+        )
     timeline = timeline_for(settings)
     render = timeline.first_shown() + int(seconds / RENDER_SECONDS)
     return frame_pixels(timeline.frame_at(render))
@@ -948,23 +1022,26 @@ def lamp_effect_frame(settings, seconds: float) -> list:
 
 def lamp_clock_settings(
     effect: str, speed: int, color_override=None, color_mode=None, intensity=None,
-    palette=None, direct: bool | None = None,
+    palette=None, direct: bool | None = None, columns=None,
 ) -> dict:
     """What the lamp runs behind the clock when ``effect`` is its mixer: mode 40
     hands over to it under the clock overlay (light_native._native_clock_params
     for the command, the renderers here for what it does). The color and
     the palette reach every mixer (CLOCK_MIXER_EFFECTS there). A slot that draws its colour
     words (1, 8, 28, 33, 72) is sent all of them, the color first, none under
-    B&W, and no palette, which would only drop them (const.clock_style_colors).
+    B&W, and no palette, which would only drop them (effect_catalog.clock_style_colors).
     A mixer with no speed reads no rate, so its timeline stays the effect's;
     the same for the intensity. In the palette color mode a background that
     takes it is sent the palette's colours (clock_palette_words, ``palette``);
     without them it runs as in the normal mode. A background mode 40 hands
     over to is marked ``handover``: it starts past its first render, on the
     hand-over's flags. ``direct``: the style runs it as itself under the
-    clock overlay (const.clock_style_direct); by default
-    CLOCK_DIRECT_BACKGROUNDS do."""
-    settings = _clock_settings(effect, speed, color_override, color_mode, intensity, palette)
+    clock overlay (effect_catalog.clock_style_direct); by default
+    CLOCK_DIRECT_BACKGROUNDS do. ``columns``: the columns the lamp shows
+    (lamp_settings)."""
+    settings = _clock_settings(effect, speed, color_override, color_mode, intensity, palette, columns)
+    if ALL_NATIVE_EFFECTS[effect].get("variant"):
+        settings["variant"] = ALL_NATIVE_EFFECTS[effect]["variant"]
     if direct is None:
         direct = settings["mode"] in CLOCK_DIRECT_BACKGROUNDS
     if not direct:
@@ -979,7 +1056,7 @@ def clock_digit_flags(mixer: int, direct: bool) -> int:
     return HANDOVER_FLAGS | (CLOCK_SETUP_FLAGS.get(mixer, 0) if direct else 0)
 
 
-def _clock_settings(effect, speed, color_override, color_mode, intensity, palette) -> dict:
+def _clock_settings(effect, speed, color_override, color_mode, intensity, palette, columns=None) -> dict:
     spec = ALL_NATIVE_EFFECTS[effect]
     mode = spec["mode"]
     if color_mode == PALETTE_COLOR_MODE:
@@ -990,7 +1067,7 @@ def _clock_settings(effect, speed, color_override, color_mode, intensity, palett
             rate = lamp_rate(mode, speed) if spec.get("speed") else PRESET_ROWS[command_id][2]
             return _command_settings(
                 mode, command_id, CLOCK_BACKGROUND_DIRECTION, rate, sent[0], sent[1:],
-                _sent_intensity(spec, intensity),
+                _sent_intensity(spec, intensity), columns,
             )
     words = [int(word) & 0xFFFFFF for word in spec.get("colors", ())]
     if words:
@@ -1014,7 +1091,7 @@ def _clock_settings(effect, speed, color_override, color_mode, intensity, palett
     more = words[1:] if not active and word is not None else ()
     return _command_settings(
         mode, command_id, CLOCK_BACKGROUND_DIRECTION, rate, word, more,
-        _sent_intensity(spec, intensity),
+        _sent_intensity(spec, intensity), columns,
     )
 
 
@@ -1025,6 +1102,7 @@ register_family(lamp_effects_noise)
 register_family(lamp_effects_sparks)
 register_family(lamp_effects_trails)
 register_family(lamp_effects_music)
+register_family(lamp_effects_streamed)
 
 # The effects these renderers draw: their frames are LED drive (see above).
 LAMP_RENDERED_EFFECTS = frozenset(

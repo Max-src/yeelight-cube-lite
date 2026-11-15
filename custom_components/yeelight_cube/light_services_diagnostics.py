@@ -14,18 +14,16 @@ from homeassistant.core import HomeAssistant, SupportsResponse  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .const import (
-    MODE_CLOCK,
-    MODE_NATIVE_EFFECT,
     DOMAIN,
+)
+from .effect_catalog import (
     NATIVE_CLOCK_APPLY,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECTS,
-    effect_direction_value,
 )
 from .fx_guard import command_refusal, running_after
 from .light import _entity_id_or_list
-from .light_native import lamp_direction
 from .light_services_common import (
     _resolve_entity,
     _resolve_entities,
@@ -60,7 +58,7 @@ def _fx_params(data, target) -> list:
     # _activate_native_clock -- otherwise the clock renders blank.
     if mode == NATIVE_CLOCK_EFFECT_ID and "data" not in config:
         config["data"] = base64.b64encode(
-            target._native_clock_data_bytes()
+            target.native_clock_data_bytes()
         ).decode("ascii")
     color = data.get("color")
     if color is not None:
@@ -97,72 +95,6 @@ def _fx_effect_parts(params):
     return effect_mode, effect_style, effect_config
 
 
-def _apply_clock_data(target, encoded) -> None:
-    """The clock options of a built-in clock data payload (base64 of
-    [content, tz_offset, 12h, colon_steady]; the colon byte is inverted:
-    0 blinks, 1 is steady)."""
-    try:
-        data = base64.b64decode(encoded)
-    except Exception as err:  # noqa: BLE001 -- best-effort reflection
-        _LOGGER.debug("[SEND_FX] Could not decode clock data bytes: %s", err)
-        return
-    if len(data) >= 1:
-        target._native_clock_content = {
-            1: "time", 2: "time_date", 3: "date",
-        }.get(data[0], target._native_clock_content)
-        target._native_clock_show_date = data[0] == 2
-    if len(data) >= 3:
-        target._native_clock_12_hour = data[2] == 1
-    if len(data) >= 4:
-        target._native_clock_colon_blink = data[3] == 0
-
-
-def _reflect_fx_effect(target, is_clock, style, config, native_effect_name) -> None:
-    """The lamp's state for a raw lamp command, as selecting the same
-    clock style (style, color, options) or native effect (speed, direction)
-    from the device page would set it: the cards and the camera
-    preview then show what the lamp shows."""
-    config = config if isinstance(config, dict) else None
-    if is_clock:
-        target._mode = MODE_CLOCK
-        if style in NATIVE_CLOCK_STYLES:
-            target._native_clock_style = style
-        if config is None:
-            return
-        if "color" in config:
-            color = config["color"]
-            target._native_clock_color = (
-                int(color[0]) if isinstance(color, list) and color else int(color)
-            )
-        else:
-            target._native_clock_color = None
-        if "data" in config:
-            _apply_clock_data(target, config["data"])
-    elif native_effect_name is not None:
-        target._mode = MODE_NATIVE_EFFECT
-        target._native_effect = native_effect_name
-        if config is None:
-            return
-        if "rate" in config:
-            try:
-                target._native_effect_speed = max(1, min(255, int(config["rate"])))
-            except (TypeError, ValueError):
-                pass
-        if "intensity" in config:
-            try:
-                target._native_effect_intensity = max(1, min(255, int(config["intensity"])))
-            except (TypeError, ValueError):
-                pass
-        if "direction" in config:
-            spec = NATIVE_EFFECTS[native_effect_name]
-            for name in spec.get("directions", ()):
-                if config["direction"] == lamp_direction(target, effect_direction_value(
-                    spec, name, target._device_orientation
-                )):
-                    target._native_effect_direction = name
-                    break
-
-
 def async_register_diagnostics_services(hass: HomeAssistant) -> None:
     """Register the diagnostics actions."""
     _admin_only = make_admin_only(hass)
@@ -188,9 +120,9 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         params = _fx_params(service_call.data, target)
         effect_mode, effect_style, effect_config = _fx_effect_parts(params)
         # The guard's own record of raw effects: one never reaches
-        # _cube_matrix.running_effect, whose live updates need the lamp's
+        # _lamp_client.running_effect, whose live updates need the lamp's
         # answer, which a raw send does not read.
-        running = getattr(target, "_raw_fx_effect", None)
+        running = target.raw_fx_effect
         if refusal := command_refusal(method, params, running, target.effect_profile):
             _LOGGER.warning("[RAW-SEND] refused: %s", refusal)
             return {"ok": False, "error": refusal, "method": method, "params": params}
@@ -220,7 +152,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         try:
             async def _do_send():
                 if close_socket:
-                    await target._leave_direct_mode()
+                    await target.async_leave_direct_mode()
                 # The lamp's clock (mode 40) is order-sensitive: sending
                 # set_bright BEFORE set_fx_effect can CANCEL the clock
                 # activation (see _activate_native_clock). So for clock we send
@@ -231,29 +163,29 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 is_clock = is_clock_command
                 if is_fx and is_clock:
                     await asyncio.sleep(0.1)
-                    await target._cube_matrix.send_raw_command(
+                    await target.lamp_client.send_raw_command(
                         method, params, abortive_close=False
                     )
                     await asyncio.sleep(0.1)
-                    await target._set_native_mode_brightness()
+                    await target.async_send_native_mode_brightness()
                     return
                 if is_fx:
-                    await target._set_native_mode_brightness()
+                    await target.async_send_native_mode_brightness()
                     await asyncio.sleep(0.1)
                 # Color flow (start_cf) renders only while the panel is powered
                 # on, and runs entirely on the lamp afterwards. Power on first so
                 # the flow is visible even if the panel was off/idle.
                 if method == "start_cf":
-                    await target._cube_matrix.send_raw_command("set_power", ["on"])
+                    await target.lamp_client.send_raw_command("set_power", ["on"])
                     await asyncio.sleep(0.1)
-                await target._cube_matrix.send_raw_command(method, params)
+                await target.lamp_client.send_raw_command(method, params)
 
             # Run under the device hardware lock so the send is serialized with
             # the persistent socket / background loop (prevents the command from
             # being clobbered mid-flight).
-            sent = await target._execute_hardware_op(_do_send, "raw_send")
+            sent = await target.async_run_exclusive(_do_send, "raw_send")
             if method in ("set_fx_effect", "update_fx_effect"):
-                target._raw_fx_effect = (
+                target.raw_fx_effect = (
                     None if sent is False else running_after(method, params, running)
                 )
             _LOGGER.info(
@@ -263,39 +195,29 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             # Keep entity bookkeeping consistent with a native activation so the
             # camera preview and later refreshes behave correctly.
             if is_fx:
-                target._is_on = True
-                target._fx_mode_is_direct = False
-                target._in_native_fw_mode = True   # Lamp in a built-in mode (raw send)
-                # A raw command may have set its brightness: sent again with
-                # direct mode, before any frame.
-                target._last_hardware_brightness = None
-                target._last_fx_mode_time = 0.0
-                notify = getattr(target, "_notify_camera_preview", None)
-                if notify:
-                    notify()
+                # The lamp is on, in a built-in mode; a raw command may have
+                # set its brightness: sent again with direct mode, before any
+                # frame.
+                target.note_raw_builtin_command()
+                target.notify_camera_preview()
                 # Always reflect the current lamp command in the entity
                 # state so the lamp-preview card matches exactly what selecting
                 # the same clock style / effect from the device settings page
                 # would show (also when persist is unchecked).
-                _reflect_fx_effect(
-                    target, is_clock_command, effect_style, effect_config,
-                    native_effect_name,
+                target.reflect_lamp_command(
+                    is_clock_command, effect_style, effect_config, native_effect_name,
                 )
                 if target.hass is not None:
                     if (
                         is_clock_command
                         or native_effect_name is not None
                     ):
-                        target._refresh_linked_entities()
+                        target.refresh_controls()
                     target.async_write_ha_state()
             elif method == "start_cf":
                 # Color flow leaves the panel on but not in direct FX mode.
                 # It is live-only (not persistable through the state model).
-                target._is_on = True
-                target._fx_mode_is_direct = False
-                target._in_native_fw_mode = True   # Lamp in color-flow mode (raw send)
-                target._last_hardware_brightness = None
-                target._last_fx_mode_time = 0.0
+                target.note_raw_builtin_command()
 
             persisted = False
             # Persist for the native clock effect (known style ID) OR a native
@@ -304,11 +226,10 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             # persisted through the state model and are left as live-only.
             persist_clock = is_clock_command and effect_style in NATIVE_CLOCK_STYLES
             if persist and (persist_clock or native_effect_name is not None):
-                _reflect_fx_effect(
-                    target, persist_clock, effect_style, effect_config,
-                    native_effect_name,
+                target.reflect_lamp_command(
+                    persist_clock, effect_style, effect_config, native_effect_name,
                 )
-                target._is_on = True
+                target.note_lamp_on()
                 if persist_clock:
                     # Record the current UTC offset so the hourly
                     # ``async_update`` timezone check does not fire
@@ -316,12 +237,10 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     # hardware lock and visibly resets the panel).
                     # ``_activate_native_clock`` sets this on the normal path;
                     # the raw FX path must do the same.
-                    target._native_clock_timezone_offset = (
-                        target._native_clock_timezone_hours()
-                    )
+                    target.note_clock_timezone()
                 if target.hass is not None:
                     target.async_schedule_update_ha_state()
-                    target._refresh_linked_entities()
+                    target.refresh_controls()
                 persisted = True
                 _LOGGER.info(
                     "[RAW-SEND] persisted %s on %s",
@@ -352,14 +271,14 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         if params is None:
             params = []
         target = _resolve_entity(service_call, "QUERY_RAW")
-        running = getattr(target, "_raw_fx_effect", None)
+        running = target.raw_fx_effect
         if refusal := command_refusal(method, params, running, target.effect_profile):
             _LOGGER.warning("[FX-QUERY] refused: %s", refusal)
             return {"ok": False, "error": refusal, "method": method, "params": params}
         try:
-            reply = await target._cube_matrix.query_raw_command(method, params)
+            reply = await target.lamp_client.query_raw_command(method, params)
             if method in ("set_fx_effect", "update_fx_effect"):
-                target._raw_fx_effect = running_after(method, params, running)
+                target.raw_fx_effect = running_after(method, params, running)
             _LOGGER.info(
                 "[FX-QUERY] %s -> %s params=%s reply=%r",
                 target.entity_id,
@@ -395,7 +314,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         target = _resolve_entity(service_call, "GET_CAPABILITIES")
         try:
             caps = await hass.async_add_executor_job(
-                target._cube_matrix.device.get_capabilities
+                target.lamp_client.device.get_capabilities
             )
             _LOGGER.info(
                 "[FX-CAPS] %s -> %r", target.entity_id, caps
@@ -503,7 +422,16 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 "error": f"member not allowed: {member!r}",
                 "allowed": list(_BULB_INFO_MEMBERS + _BULB_ACTION_MEMBERS),
             }
-        bulb = target._cube_matrix.device
+        bulb = target.lamp_client.device
+        # The library goes straight to the lamp: a Cube Matrix's refusals
+        # (DeviceProfile.refusal) are checked here.
+        sent = (
+            (str(args[0]), args[1] if len(args) > 1 else [])
+            if member == "send_command" and args
+            else (member, list(args))
+        )
+        if is_action and (refusal := target.lamp_client.profile.refusal(*sent)):
+            return {"ok": False, "member": member, "error": refusal}
         if is_action:
             args, kwargs = _coerce_bulb_call(member, args, kwargs)
         # Write actions and the read members that open the control socket use the
@@ -518,8 +446,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 value = attr
             if uses_control_socket:
                 try:
-                    target._cube_matrix.close_command_socket()
-                except Exception as err:  # noqa: BLE001
+                    target.lamp_client.close_command_socket()
+                except OSError as err:
                     _LOGGER.debug("[BULB_CALL] Closing the command socket failed: %s", err)
             return value
 
@@ -560,8 +488,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         """
         target = _resolve_entity(service_call, "SET_DEFAULT")
         try:
-            target._cube_matrix.close_fast_socket()
-            await target._cube_matrix.send_raw_command("set_default", [])
+            target.lamp_client.close_fast_socket()
+            await target.lamp_client.send_raw_command("set_default", [])
             _LOGGER.info("[SET-DEFAULT] %s saved current state as default", target.entity_id)
             return {"ok": True}
         except Exception as e:  # noqa: BLE001 -- debug tool
@@ -574,10 +502,10 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         seconds = service_call.data["minutes"] * 60
         targets = _resolve_entities(service_call, "FORCE_TCP")
         for target in targets:
-            target._cube_matrix.force_tcp(seconds)
+            target.lamp_client.force_tcp(seconds)
             target.async_write_ha_state()  # its connection attribute
-            _LOGGER.info("[FORCE-TCP] %s over %s for %ss", target.entity_id, target._cube_matrix.transport, seconds)
-        return {target.entity_id: target._cube_matrix.transport for target in targets}
+            _LOGGER.info("[FORCE-TCP] %s over %s for %ss", target.entity_id, target.lamp_client.transport, seconds)
+        return {target.entity_id: target.lamp_client.transport for target in targets}
 
     hass.services.async_register(
         DOMAIN,
@@ -668,26 +596,25 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         target_entity = _resolve_entity(service_call, "TEST_DISPLAY")
         
         _LOGGER.debug("[TEST] handle_test_display called")
-        _LOGGER.debug("[TEST] Testing entity: %s", target_entity._lamp_name)
-        _LOGGER.debug("[TEST] Current state - text: '%s', mode: '%s', is_on: %s", target_entity._custom_text, target_entity._mode, target_entity._is_on)
-        _LOGGER.debug("[TEST] Text colors: %s", target_entity._text_colors)
-        _LOGGER.debug("[TEST] Background color: %s", target_entity._background_color)
-        _LOGGER.debug("[TEST] Brightness: %s", target_entity._brightness)
-        _LOGGER.debug("[TEST] Alignment: %s", target_entity._alignment)
-        _LOGGER.debug("[TEST] Font: %s", target_entity._font)
-        _LOGGER.debug("[TEST] Connection status - has_error: %s, last_error: %s", getattr(target_entity, '_connection_error', False), getattr(target_entity, '_last_connection_error', 'None'))
+        _LOGGER.debug("[TEST] Testing entity: %s", target_entity.lamp_name)
+        _LOGGER.debug("[TEST] Current state - text: '%s', mode: '%s', is_on: %s", target_entity.custom_text, target_entity.mode, target_entity.is_on)
+        _LOGGER.debug("[TEST] Text colors: %s", target_entity.text_colors)
+        _LOGGER.debug("[TEST] Brightness: %s", target_entity.brightness)
+        _LOGGER.debug("[TEST] Alignment: %s", target_entity.alignment)
+        _LOGGER.debug("[TEST] Font: %s", target_entity.font)
+        _LOGGER.debug("[TEST] Connection status - last_error: %s", target_entity.connection_diagnostics()["last_connection_error"])
         
         # Force the light to be on and apply display mode.
         # Reset _fx_mode_is_direct so apply() calls ensure_fx_ready()
         # to re-establish FX mode via raw TCP.
-        target_entity._is_on = True
-        target_entity._fx_mode_is_direct = False
+        target_entity.note_lamp_on()
+        target_entity.forget_direct_mode()
         _LOGGER.debug("[TEST] About to call async_apply_display_mode...")
         await target_entity.async_apply_display_mode(update_type='color_change')
         _LOGGER.debug("[TEST] Display mode applied")
         
         # Report final connection status
-        _LOGGER.debug("[TEST] After apply - last connection error: %s", getattr(target_entity, '_last_connection_error', None))
+        _LOGGER.debug("[TEST] After apply - last connection error: %s", target_entity.connection_diagnostics()["last_connection_error"])
 
     hass.services.async_register(
         DOMAIN,
@@ -707,19 +634,16 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         enabled = bool(service_call.data.get("enabled", False))
 
         async def _apply_one(target_entity):
-            target_entity._color_accuracy_enabled = enabled
+            target_entity.set_setting("_color_accuracy_enabled", enabled)
             _LOGGER.debug(
                 "[COLOR_ACCURACY] [%s] "
                 "Color accuracy %s",
-                target_entity._ip, 'enabled' if enabled else 'disabled'
+                target_entity.ip, 'enabled' if enabled else 'disabled'
             )
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
             # Re-render the display with correction applied/removed
-            target_entity._create_tracked_task(
-                target_entity.async_apply_display_mode(),
-                name=f"yeelight_cube_apply_color_accuracy_{target_entity._ip}"
-            )
+            target_entity.redraw_in_background("yeelight_cube_apply_color_accuracy")
 
         run_on_lamps("SET_COLOR_ACCURACY", targets, _apply_one)
 
@@ -762,15 +686,12 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     changed.append(f"{key}: {old_val} -> {new_val}")
             if changed:
                 _LOGGER.info(
-                    "[CALIBRATION] [%s] Updated: %s", target_entity._ip, ', '.join(changed)
+                    "[CALIBRATION] [%s] Updated: %s", target_entity.ip, ', '.join(changed)
                 )
                 if target_entity.hass is not None:
                     target_entity.async_schedule_update_ha_state()
                 # Re-render so new calibration takes effect immediately
-                target_entity._create_tracked_task(
-                    target_entity.async_apply_display_mode(),
-                    name=f"yeelight_cube_apply_calibration_{target_entity._ip}"
-                )
+                target_entity.redraw_in_background("yeelight_cube_apply_calibration")
 
         run_on_lamps("SET_COLOR_CALIBRATION", targets, _apply_one)
 
@@ -801,7 +722,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         enabled = bool(service_call.data.get("enabled", False))
 
         async def _apply_one(target_entity):
-            target_entity._set_calibration_lock(enabled)
+            target_entity.set_calibration_lock(enabled)
 
         run_on_lamps("SET_CALIBRATION_LOCK", targets, _apply_one)
 

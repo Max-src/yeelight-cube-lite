@@ -56,8 +56,11 @@ from __future__ import annotations
 import threading
 
 try:
-    from .const import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE
-    from .lamp_core import COLS, LENGTH, RENDER_SECONDS, ROWS, convert_colour, palette_span, palette_table
+    from .effect_catalog import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE
+    from .lamp_core import (
+        COLS, LENGTH, RENDER_SECONDS, ROWS, colours_raw, convert_colour, palette_span, palette_table,
+        segment_length_for,
+    )
     from .lamp_renderers import (
         FIREWORKS_MODE,
         LAMP_MUSIC_EFFECTS,
@@ -74,8 +77,11 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import sys
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from const import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE
-    from lamp_core import COLS, LENGTH, RENDER_SECONDS, ROWS, convert_colour, palette_span, palette_table
+    from effect_catalog import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE
+    from lamp_core import (
+        COLS, LENGTH, RENDER_SECONDS, ROWS, colours_raw, convert_colour, palette_span, palette_table,
+        segment_length_for,
+    )
     from lamp_renderers import (
         FIREWORKS_MODE,
         LAMP_MUSIC_EFFECTS,
@@ -117,14 +123,16 @@ STUDIO_LOOKS: dict[str, tuple] = {
     "Dual scan": ('wheel', 4),
     "Rotating colour bands": ('hue', 170, 0, 92, 100, 114, 158),
     "Triangular palette pulses": ('hue', 134, 47, 153, 161, 169, 201),
+    "Dark palette pulses": ('wheel', 6),
     "Fireworks": ('wheel', 46),
     "Sine wave": ('level', 87, 105, 119, 133, 148),
     "Palette trails": ('hue', 0, 0, 8, 26, 51, 66),
-    "Aurora": ('level', 2, 6, 17, 25, 45),
+    "Aurora": ('level', 2, 9, 18, 23, 37),
+    "Northern Lights": ('hue', 68, 6, 33, 49, 58, 68),
     "Drop and bounce": ('hue', 0, 0, 9, 24, 51, 71),
     "Spectrum": ('wheel', 0),
     "Sunrise and sunset": ('level', 70, 154, 218, 247, 253),
-    "Heat fire": ('level', 15, 15, 15, 21, 120),
+    "Heat fire": ('level', 15, 15, 15, 23, 94),
     "Stacking blocks": ('object', 16),
     "Mirrored comets": ('wheel', 51),
     "Aqua-lime trails": ('hue', 65, 0, 8, 16, 24, 64),
@@ -133,7 +141,7 @@ STUDIO_LOOKS: dict[str, tuple] = {
     "Palette cross-fade": ('hue', 0, 0, 69, 86, 132, 172),
     "Waterfall": ('level', 19, 41, 53, 67, 86),
     "Rising wisps": ('level', 5, 17, 28, 39, 58),
-    "Fire": ('level', 8, 36, 59, 74, 94),
+    "Fire": ('level', 6, 50, 106, 153, 175),
     "Tide (slot 35)": ('wheel', 56),
     "Bouncing Ball": ('hue', 128, 5, 34, 58, 118, 128),
     "Sine plotter": ('object', 16),
@@ -146,7 +154,8 @@ STUDIO_LOOKS: dict[str, tuple] = {
     "Solid red": ('first',),
     "Rainbow noise": ('hue', 70, 7, 36, 66, 86, 117),
     "Flower Sea": ('level', 183, 194, 208, 221, 233),
-    "Violet interference": ('level', 100, 133, 156, 162, 176),
+    "Rose Sea": ('level', 34, 78, 126, 177, 226),
+    "Violet interference": ('level', 110, 133, 156, 160, 169),
     "Night-amber waves": ('hue', 171, 0, 8, 29, 108, 116),
     "Navy-white noise": ('level', 186, 199, 208, 215, 229),
     "Night-sky waves": ('hue', 162, 8, 16, 24, 119, 143),
@@ -174,10 +183,16 @@ STUDIO_LOOKS: dict[str, tuple] = {
 
 
 def effect_supports_studio(effect: str) -> bool:
-    """Whether ``effect`` can be streamed in a palette: an effect the lamp
-    renderers draw that does not listen to the microphone (an animation is
-    recolored into its GIF instead, lamp_animations)."""
-    return effect in LAMP_RENDERED_EFFECTS and effect not in LAMP_MUSIC_EFFECTS
+    """Whether ``effect`` can be streamed recolored in a palette: an effect
+    the lamp renderers draw that does not listen to the microphone (an
+    animation is recolored into its GIF instead, lamp_animations), but one
+    of the integration's own (effect_catalog.STREAMED_EFFECTS), which takes the
+    palette itself."""
+    return (
+        effect in LAMP_RENDERED_EFFECTS
+        and effect not in LAMP_MUSIC_EFFECTS
+        and not ALL_NATIVE_EFFECTS[effect].get("streamed")
+    )
 
 
 def studio_recolors(effect: str) -> bool:
@@ -258,9 +273,15 @@ class _Source:
 
     __slots__ = ("key", "frame")
 
-    def __init__(self, effect, direction, speed, orientation, intensity, from_start=False):
-        settings = lamp_settings(effect, direction, speed, None, None, orientation, intensity)
-        self.key = ("effect", effect, direction, speed, orientation, intensity, from_start)
+    def __init__(self, effect, direction, speed, orientation, intensity, from_start=False, columns=None):
+        settings = lamp_settings(
+            effect, direction, speed, None, None, orientation, intensity, columns=columns,
+        )
+        # The segment drawn on (a Cube Matrix's columns) keeps runs apart.
+        self.key = (
+            "effect", effect, direction, speed, orientation, intensity, from_start, colours_raw(),
+            segment_length_for(columns),
+        )
         if from_start and settings["mode"] != FIREWORKS_MODE:
             self.frame = lambda render: renderer_frame(settings, render)
         else:
@@ -539,13 +560,14 @@ def studio_look(effect: str) -> tuple:
 
 def studio_frame_at(
     effect: str, render: int, direction: str, speed: int, orientation=None,
-    intensity=None, palette=None, from_start: bool = False,
+    intensity=None, palette=None, from_start: bool = False, columns=None,
 ) -> list[tuple[int, int, int]]:
     """What the stream sends at ``render`` of ``effect``: its own frame (its own
     colors, the user's direction, speed, mount and intensity) in the
     palette's colors. Lamp order, the colors sent. ``from_start``: render 0
-    is the effect's very first (the stream), else its first shown (_Source)."""
-    source = _Source(effect, direction, speed, orientation, intensity, from_start)
+    is the effect's very first (the stream), else its first shown (_Source).
+    On the ``columns`` the lamp shows (None: all 20)."""
+    source = _Source(effect, direction, speed, orientation, intensity, from_start, columns)
     look = studio_look(effect)
     followed = None
     stepper = _stepper(look)
@@ -557,11 +579,12 @@ def studio_frame_at(
 
 def studio_frame(
     effect: str, seconds: float, direction: str, speed: int, orientation=None,
-    intensity=None, palette=None,
+    intensity=None, palette=None, columns=None,
 ) -> list[tuple[int, int, int]]:
     """studio_frame_at for the render shown ``seconds`` in."""
     return studio_frame_at(
         effect, studio_render(seconds), direction, speed, orientation, intensity, palette,
+        False, columns,
     )
 
 
@@ -585,13 +608,26 @@ def studio_animation_frames(frames, look, palette) -> tuple:
 class _ClockSource:
     """A clock background's own frames by render: the effect as the lamp
     runs it behind its clock (lamp_clock_settings; ``direct``: the style's
-    form), its colors as in the normal mode."""
+    form), its colors as in the normal mode, or ``colours``: the clock's
+    (its color, color mode and palette, as lamp_clock_settings takes them).
+    ``seed``: a simulation's run (Lava Lamp's), None for the first."""
 
     __slots__ = ("key", "frame")
 
-    def __init__(self, effect, speed, intensity, direct, from_start=False):
-        settings = lamp_clock_settings(effect, speed, None, None, intensity, None, direct)
-        self.key = ("clock", effect, speed, intensity, direct, from_start)
+    def __init__(
+        self, effect, speed, intensity, direct, from_start=False, colours=None, seed=None, columns=None,
+    ):
+        colour, colour_mode, palette = colours or (None, None, None)
+        settings = lamp_clock_settings(
+            effect, speed, colour, colour_mode, intensity, palette, direct, columns,
+        )
+        if seed is not None:
+            settings["seed"] = seed
+        self.key = (
+            "clock", effect, speed, intensity, direct, from_start,
+            tuple(colour) if colour is not None else None, colour_mode,
+            tuple(map(tuple, palette or ())), seed, colours_raw(), segment_length_for(columns),
+        )
         if from_start and settings["mode"] != FIREWORKS_MODE:
             self.frame = lambda render: renderer_frame(settings, render)
         else:
@@ -600,12 +636,18 @@ class _ClockSource:
 
 def studio_clock_background_at(
     effect: str, render: int, speed: int, intensity=None, palette=None, direct=None,
-    from_start: bool = False,
+    from_start: bool = False, colours=None, seed=None, columns=None,
 ) -> list[tuple[int, int, int]]:
     """A clock's background ``effect`` at ``render``, in the palette's colors
     (its look, as studio_frame_at): lamp order, the colors sent. The clock
-    shows it through its digits (camera / light_studio mask it)."""
-    source = _ClockSource(effect, speed, intensity, direct, from_start)
+    shows it through its digits (camera / light_studio mask it). Without a
+    palette, its own colors (a background a Cube Lite can't run itself,
+    effect_catalog.LITE_STREAMED_EFFECTS), or ``colours`` (_ClockSource: one of the
+    integration's own effects takes the clock's). On the ``columns`` the lamp
+    shows (None: all 20)."""
+    source = _ClockSource(effect, speed, intensity, direct, from_start, colours, seed, columns)
+    if not studio_palette(palette):
+        return list(source.frame(render))
     look = studio_look(effect)
     followed = None
     stepper = _stepper(look)

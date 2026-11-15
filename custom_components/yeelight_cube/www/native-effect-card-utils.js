@@ -1,18 +1,11 @@
 import { renderNativeEffect } from "./native-effect-preview.js";
-import { adjustmentsOf } from "./color-adjustments.js";
-import {
-  LAMP_EFFECTS,
-  chosenIntensity,
-  chosenSpeed,
-  effectDisplayFrame,
-} from "./lamp-renderers.js";
+import { LAMP_EFFECTS, effectDisplayFrame } from "./lamp-renderers.js";
+import { withSpotColours } from "./matrix-modules.js";
+import { previewContext } from "./preview-context.js";
 import { effectFamilyOfName } from "./effect-families.js";
 import { FORMERLY_NUMBERED_EFFECT_NAMES, effectSlotRank } from "./effect-names.js";
 import { VISIBILITY_KEYS, visibleItems } from "./visible-items.js";
-import {
-  deviceOrientation,
-  viewerFrame,
-} from "./matrix-view.js";
+import { viewerFrame } from "./matrix-view.js";
 export {
   nextRotationMode as nextRotationEffect,
   rotationIntervalMs,
@@ -60,7 +53,7 @@ export function nativeEffectItems(attrs = {}, config = {}) {
 }
 
 const previewDirections = ["Up", "Down", "Left", "Right"];
-// The Yeelight app's music modes (const.py APP_MUSIC_SLOTS): official.
+// The Yeelight app's music modes (effect_catalog.py APP_MUSIC_SLOTS): official.
 const APP_MUSIC_EFFECTS = new Set([
   "Music Spectrum",
   "Music Gather",
@@ -134,7 +127,7 @@ export const nativePreviewCatalogue = [
   ].map((name) => ({
     name,
     family: effectFamilyOfName(name),
-    // const.py _EXTENDED_EFFECT_NO_SPEED / _NO_DIRECTION: what the lamp ignores.
+    // effect_catalog.py _EXTENDED_EFFECT_NO_SPEED / _NO_DIRECTION: what the lamp ignores.
     speed: ![
       "Palette sparks",
       "Rainbow noise",
@@ -161,12 +154,26 @@ export const nativePreviewCatalogue = [
         family: effectFamilyOfName(name),
         speed: !!spec.speed,
         intensity: !!spec.intensity,
-        // The Yeelight app's music modes are official (const.py APP_MUSIC_SLOTS).
+        // The Yeelight app's music modes are official (effect_catalog.py APP_MUSIC_SLOTS).
         extended: !APP_MUSIC_EFFECTS.has(name),
         preview: true,
         directions: spec.directions ? [...spec.directions] : [],
       };
     }),
+  // effect_catalog.py MATRIX_VERSION_EFFECTS: the Cube Matrix's own versions, and
+  // STREAMED_EFFECTS: the integration's own effects.
+  ...["Northern Lights", "Rose Sea", "Dark palette pulses", "Knight Rider", "Lava Lamp", "Falling Blocks"].map((name) => {
+    const spec = LAMP_EFFECTS[name];
+    return {
+      name,
+      family: effectFamilyOfName(name),
+      speed: !!spec.speed,
+      intensity: !!spec.intensity,
+      extended: true,
+      preview: true,
+      directions: [...spec.directions],
+    };
+  }),
 ].sort(
   (first, second) =>
     effectSlotRank(LAMP_EFFECTS[first.name].mode) -
@@ -196,31 +203,48 @@ function viewedFrame(frame, orientation) {
   return views.get(orientation);
 }
 
-export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
-  const speed = chosenSpeed(attrs);
-  // As the viewer sees the lamp (matrix-view.js): top row first, turned for
-  // an upside-down mount like every preview. The lamp's own direction
-  // setting does not turn it: the integration compensates the direction it
-  // sends for it (light_native.lamp_direction).
-  return viewedFrame(
-    effectDisplayFrame(
+/**
+ * `effect` (a catalogue item: {name, directions}) `elapsed` seconds in, as
+ * the lamp shows it: lamp order (row 0 the bottom), screen colors
+ * (effectDisplayFrame). `context`: the lamp's preview context
+ * (preview-context.js), whose settings it runs with: its speed (0-255, as
+ * the lamp's), direction, color and color mode, mount, intensity, palette,
+ * stored GIF and animation settings, on the columns it shows.
+ */
+export function nativeEffectLampFrame(effect, context, elapsed = 0) {
+  const { speed } = context;
+  return effectDisplayFrame(
+    effect.name,
+    renderNativeEffect(
       effect.name,
-      renderNativeEffect(
-        effect.name,
-        elapsed * (0.25 + speed / 55),
-        nativeEffectDirection(effect, attrs),
-        attrs.native_effect_color || null,
-        attrs.native_effect_color_mode || "normal",
-        speed,
-        deviceOrientation(attrs),
-        chosenIntensity(attrs),
-        attrs.text_colors,
-        attrs.stored_gif,
-        attrs.animation_layout,
-        adjustmentsOf(attrs),
-      ),
+      elapsed * (0.25 + speed / 55),
+      nativeEffectDirection(effect, context.attrs),
+      context.color,
+      context.colorMode,
+      speed,
+      context.orientation,
+      context.intensity,
+      context.palette,
+      context.stored,
+      context.layout,
+      context.adjustments,
+      context.columns,
     ),
-    deviceOrientation(attrs),
+  );
+}
+
+/** nativeEffectLampFrame for the lamp of `attrs` as the viewer sees it
+ * (matrix-view.js): top row first, turned for an upside-down mount like every
+ * preview. The lamp's own direction setting does not turn it: the
+ * integration compensates the direction it sends for it
+ * (light_native.lamp_direction). A Cube Matrix's spots shown as the lamp
+ * lights them (matrix-modules.js). */
+export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
+  const context = previewContext(attrs);
+  return withSpotColours(
+    viewedFrame(nativeEffectLampFrame(effect, context, elapsed), context.orientation),
+    context.lamp,
+    "viewer",
   );
 }
 

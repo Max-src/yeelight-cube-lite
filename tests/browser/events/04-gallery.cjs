@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 module.exports = async (t) => {
-  const { page, waitForCall, reset } = t;
+  const { page, waitForCall } = t;
   // --- Chip swatches: a meaningful swatch for every kind of item ------------
   const chips = async (tag, config, paintedBy) => {
     await page.evaluate(

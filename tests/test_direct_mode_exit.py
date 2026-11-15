@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from tests.test_activation_timing import _table as activation_timing
+from tests.fakes import light_state, module
 from tests.test_native_features import (
     CONSTANTS, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS, NATIVE_PREVIEW, ROOT,
     _load_standalone_functions,
@@ -31,6 +32,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
                 "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
                 "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
                 "ACTIVATION_TIMING": activation_timing(),
+                "LAMP_ERRORS": module("lamp_protocol").LAMP_ERRORS,
             },
         )
         record = lambda name: (lambda *args, **kwargs: self.calls.append((name, args)))
@@ -41,10 +43,11 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
         async def raw(command, params, **kwargs):
             self.calls.append((command, params))
 
-        self.light = SimpleNamespace(
+        self.light = light_state(
             _ip="test", _fx_mode_is_direct=True,
+            device_profile=SimpleNamespace(to_wire=lambda frame: frame, streams_effects=False),
             _layout=SimpleNamespace(device_layout=[None] * 100),
-            _cube_matrix=SimpleNamespace(
+            _lamp_client=SimpleNamespace(
                 draw_matrices_fast=draw, close_fast_socket=record("close"),
                 send_raw_command=raw, running_effect=None, note_running_effect=Mock(),
                 transport="tcp",
@@ -67,7 +70,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
     async def test_over_udp_the_black_frame_is_sent_twice(self):
         # A frame is not acknowledged over UDP: a dropped black frame left
         # the drawing in the lamp (it flashed back when the drawing returned).
-        self.light._cube_matrix.transport = "udp"
+        self.light._lamp_client.transport = "udp"
         await self.light._activate_native_effect()
         names = [name for name, _ in self.calls]
         self.assertEqual(["update_leds", "update_leds", "close", "set_fx_effect"], names)
@@ -82,7 +85,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
         async def broken(data):
             raise OSError("socket closed")
 
-        self.light._cube_matrix.draw_matrices_fast = broken
+        self.light._lamp_client.draw_matrices_fast = broken
         await self.light._activate_native_effect()
         self.assertEqual(["close", "set_fx_effect"], [name for name, _ in self.calls])
 

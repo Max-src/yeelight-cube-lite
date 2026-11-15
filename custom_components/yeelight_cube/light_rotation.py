@@ -17,17 +17,19 @@ from .storage import async_schedule_save
 
 from .color_utils import argb_to_rgb, rgb_to_argb
 from .const import (
+    DOMAIN,
+    MODE_CLOCK,
+    MODE_NATIVE_EFFECT,
+    ROTATION_KIND_MODES,
+)
+from .effect_catalog import (
     ALL_NATIVE_EFFECTS,
     canonical_clock_style_name,
     canonical_effect_name,
     NATIVE_COLOR_MODES,
-    DOMAIN,
-    MODE_CLOCK,
-    MODE_NATIVE_EFFECT,
     NATIVE_CLOCK_STYLES,
-    ROTATION_KIND_MODES,
 )
-from .cube_matrix import CubeConnectionError
+from .lamp_protocol import CubeConnectionError
 from .light_connection import CIRCUIT_BREAKER_WINDOW
 
 _LOGGER = logging.getLogger(__name__)
@@ -102,7 +104,7 @@ def _hold_rotation_for_resume(light) -> bool:
     light._rotation_resume_pending = True
     light._rotation_waiting_for_reconnect = True
     light._rotation_retry_at = (
-        None if light._cube_matrix.is_unreachable
+        None if light._lamp_client.is_unreachable
         else time.time() + ROTATION_RESUME_BACKOFF[min(failures, len(ROTATION_RESUME_BACKOFF) - 1)]
     )
     light._rotation_resume_failures = failures + 1
@@ -623,7 +625,7 @@ class RotationMixin:
                     # start's first failure is reported to the starter.
                     if (
                         not ok
-                        and (started.done() or getattr(self, "_rotation_resume_failures", 0))
+                        and (started.done() or self._rotation_resume_failures)
                         and not self._rotation_resume_pending
                     ):
                         _hold_rotation_for_resume(self)
@@ -784,9 +786,8 @@ class RotationMixin:
             await self.async_set_music_flow(False, restore_display=False)
         # Applying a new clock/effect clears any frozen frame, exactly like the
         # full _apply_display_mode_internal path does.
-        self._display_frozen = False
-        self._display_frozen_at = None
-        self._is_scrolling = False
+        self._set_display_frozen(False, at=None)
+        self._set_scrolling(False)
         self.stop_scroll_timer()
         return True
 
@@ -803,8 +804,7 @@ class RotationMixin:
             _LOGGER.debug("[ROTATION] [%s] Animation %s skipped", self._ip, name)
             return True
         self._native_effect = name
-        self._mode = MODE_NATIVE_EFFECT
-        self._custom_draw_active = False
+        self._enter_mode(MODE_NATIVE_EFFECT, custom_draw=False)
         # Reapply the color mode recorded with the favourite. The lamp
         # represents a free custom color as mode "normal" plus an RGB override.
         self._native_effect_color_mode = (
@@ -879,8 +879,7 @@ class RotationMixin:
                 self._native_clock_color_mode = (
                     color_mode if color_mode in NATIVE_COLOR_MODES else "normal"
                 )
-        self._mode = MODE_CLOCK
-        self._custom_draw_active = False
+        self._enter_mode(MODE_CLOCK, custom_draw=False)
         if not await self._start_rotation_apply():
             return False
         if not await self._execute_hardware_op(

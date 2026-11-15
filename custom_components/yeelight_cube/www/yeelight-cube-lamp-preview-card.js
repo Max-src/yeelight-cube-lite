@@ -234,13 +234,13 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._refresh();
   }
 
-  set hass(hass) {
-    const prevHass = this._hass;
-    this._hass = hass;
-    // Nothing the card shows changed (card-base _hassChanged) and no update
-    // waits (a slider drag): nothing to do.
-    const changed = this._hassChanged(hass);
-    if (prevHass && !this._renderIncomplete && !changed) return;
+  // An update waits (a slider drag) whatever the push changed (card-base
+  // set hass); otherwise only a push changing what the card shows counts.
+  _hassPending() {
+    return !!this._renderIncomplete;
+  }
+
+  _hassUpdated(hass) {
     if (
       this._orientationSettled &&
       this._orientationPending ===

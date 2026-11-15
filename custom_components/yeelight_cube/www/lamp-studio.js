@@ -17,9 +17,10 @@
  * drive like every effect; an animation's preview shows its recolored GIF.
  */
 
-import { COLS, LENGTH, RENDER_SECONDS, ROWS, convertColour, paletteSpan, paletteTable } from "./lamp-core.js";
+import { COLS, LENGTH, RENDER_SECONDS, ROWS, convertColour, paletteSpan, paletteTable, segmentLengthFor } from "./lamp-core.js";
 import {
   FIREWORKS_MODE,
+  LAMP_EFFECTS,
   LAMP_MUSIC_EFFECTS,
   PALETTE_COLOR_MODE,
   effectSupportsColorMode,
@@ -49,14 +50,16 @@ export const STUDIO_LOOKS = Object.freeze({
   "Dual scan": ["wheel", 4],
   "Rotating colour bands": ["hue", 170, 0, 92, 100, 114, 158],
   "Triangular palette pulses": ["hue", 134, 47, 153, 161, 169, 201],
+  "Dark palette pulses": ["wheel", 6],
   "Fireworks": ["wheel", 46],
   "Sine wave": ["level", 87, 105, 119, 133, 148],
   "Palette trails": ["hue", 0, 0, 8, 26, 51, 66],
-  "Aurora": ["level", 2, 6, 17, 25, 45],
+  "Aurora": ["level", 2, 9, 18, 23, 37],
+  "Northern Lights": ["hue", 68, 6, 33, 49, 58, 68],
   "Drop and bounce": ["hue", 0, 0, 9, 24, 51, 71],
   "Spectrum": ["wheel", 0],
   "Sunrise and sunset": ["level", 70, 154, 218, 247, 253],
-  "Heat fire": ["level", 15, 15, 15, 21, 120],
+  "Heat fire": ["level", 15, 15, 15, 23, 94],
   "Stacking blocks": ["object", 16],
   "Mirrored comets": ["wheel", 51],
   "Aqua-lime trails": ["hue", 65, 0, 8, 16, 24, 64],
@@ -65,7 +68,7 @@ export const STUDIO_LOOKS = Object.freeze({
   "Palette cross-fade": ["hue", 0, 0, 69, 86, 132, 172],
   "Waterfall": ["level", 19, 41, 53, 67, 86],
   "Rising wisps": ["level", 5, 17, 28, 39, 58],
-  "Fire": ["level", 8, 36, 59, 74, 94],
+  "Fire": ["level", 6, 50, 106, 153, 175],
   "Tide (slot 35)": ["wheel", 56],
   "Bouncing Ball": ["hue", 128, 5, 34, 58, 118, 128],
   "Sine plotter": ["object", 16],
@@ -78,7 +81,8 @@ export const STUDIO_LOOKS = Object.freeze({
   "Solid red": ["first"],
   "Rainbow noise": ["hue", 70, 7, 36, 66, 86, 117],
   "Flower Sea": ["level", 183, 194, 208, 221, 233],
-  "Violet interference": ["level", 100, 133, 156, 162, 176],
+  "Rose Sea": ["level", 34, 78, 126, 177, 226],
+  "Violet interference": ["level", 110, 133, 156, 160, 169],
   "Night-amber waves": ["hue", 171, 0, 8, 29, 108, 116],
   "Navy-white noise": ["level", 186, 199, 208, 215, 229],
   "Night-sky waves": ["hue", 162, 8, 16, 24, 119, 143],
@@ -107,7 +111,7 @@ export const STUDIO_LOOKS = Object.freeze({
 /** Whether Studio streams `effect`: a lamp-drawn effect that does not listen
  * to the microphone (an animation is recolored into its GIF instead). */
 export const effectSupportsStudio = (effect) =>
-  isLampRendered(effect) && !LAMP_MUSIC_EFFECTS.has(effect);
+  isLampRendered(effect) && !LAMP_MUSIC_EFFECTS.has(effect) && !LAMP_EFFECTS[effect]?.streamed;
 
 /** The palette's [r, g, b] entries Studio uses (at most STUDIO_PALETTE_LIMIT). */
 export function studioPalette(palette) {
@@ -158,11 +162,13 @@ export const studioRender = (seconds) => Math.floor(seconds / RENDER_SECONDS + 1
 
 // ── What is recolored ────────────────────────────────────────────────
 // An effect's own frames by render: a preview from its first shown, the
-// lamp (`fromStart`) from its very first (lamp_studio.py _Source).
-function source(effect, direction, speed, orientation, intensity, fromStart = false) {
-  const settings = lampSettings(effect, direction, speed, null, null, orientation, intensity, null);
+// lamp (`fromStart`) from its very first (lamp_studio.py _Source), on the
+// `columns` the lamp shows (null: all 20).
+function source(effect, direction, speed, orientation, intensity, fromStart = false, columns = null) {
+  const settings = lampSettings(effect, direction, speed, null, null, orientation, intensity, null, columns);
   return {
-    key: `effect|${effect}|${direction}|${speed}|${orientation}|${intensity}|${fromStart}`,
+    // The segment drawn on (a Cube Matrix's columns) keeps runs apart.
+    key: `effect|${effect}|${direction}|${speed}|${orientation}|${intensity}|${fromStart}|${segmentLengthFor(columns)}`,
     frame:
       fromStart && settings.mode !== FIREWORKS_MODE
         ? (render) => lampFrame(settings, render)
@@ -394,11 +400,13 @@ export function recolour(frame, look, palette, followed = null) {
 /** The effect's look (the first color when unknown). */
 export const studioLook = (effect) => STUDIO_LOOKS[effect] ?? ["first"];
 
-/** What Studio sends at `render` of `effect` (lamp_studio.py studio_frame_at). */
+/** What Studio sends at `render` of `effect` (lamp_studio.py studio_frame_at),
+ * on the `columns` the lamp shows (null: all 20). */
 export function studioFrameAt(
   effect, render, direction, speed, orientation = null, intensity = null, palette = null, fromStart = false,
+  columns = null,
 ) {
-  const from = source(effect, direction, speed, orientation, intensity, fromStart);
+  const from = source(effect, direction, speed, orientation, intensity, fromStart, columns);
   const look = studioLook(effect);
   const follow = stepper(look);
   const followed = follow
@@ -408,8 +416,9 @@ export function studioFrameAt(
 }
 
 /** studioFrameAt for the render shown `seconds` in (lamp_studio.py studio_frame). */
-export const studioFrame = (effect, seconds, direction, speed, orientation = null, intensity = null, palette = null) =>
-  studioFrameAt(effect, studioRender(seconds), direction, speed, orientation, intensity, palette);
+export const studioFrame = (
+  effect, seconds, direction, speed, orientation = null, intensity = null, palette = null, columns = null,
+) => studioFrameAt(effect, studioRender(seconds), direction, speed, orientation, intensity, palette, false, columns);
 
 /** An animation's frames (a loop, top-first) in the palette's colors by
  * `look` (lamp_studio.py studio_animation_frames). */
@@ -429,13 +438,16 @@ export function studioAnimationFrames(frames, look, palette) {
 }
 
 /** A clock's background `effect` at `render` in the palette's colors
- * (lamp_studio.py studio_clock_background_at). */
-export function studioClockBackgroundAt(effect, render, speed, intensity = null, palette = null, direct = null) {
-  const settings = lampClockSettings(effect, speed, null, null, intensity, null, direct);
+ * (lamp_studio.py studio_clock_background_at), on the `columns` the lamp
+ * shows (null: all 20). */
+export function studioClockBackgroundAt(
+  effect, render, speed, intensity = null, palette = null, direct = null, columns = null,
+) {
+  const settings = lampClockSettings(effect, speed, null, null, intensity, null, direct, columns);
   const frame = (at) => lampEffectFrame(settings, (at + 0.5) * RENDER_SECONDS);
   const look = studioLook(effect);
   const follow = stepper(look);
-  const key = `clock|${effect}|${speed}|${intensity}|${direct}|false|${look.join(",")}`;
+  const key = `clock|${effect}|${speed}|${intensity}|${direct}|false|${look.join(",")}|${segmentLengthFor(columns)}`;
   const followed = follow ? followedOf(look, stateAt(key, render, frame, ...follow)) : null;
   return recolour(frame(render), look, palette, followed);
 }
@@ -449,14 +461,17 @@ export const studioDrive = (frame) => frame.map((pixel) => convertColour(pixel))
 const shown = new Map();
 const SHOWN_LIMIT = 256;
 
-/** The preview of a streamed Studio effect, one array per render: LED drive. */
-export function studioPreviewFrame(effect, seconds, direction, speed, orientation, intensity, palette) {
+/** The preview of a streamed Studio effect, one array per render: LED drive
+ * (on the `columns` the lamp shows, null: all 20). */
+export function studioPreviewFrame(effect, seconds, direction, speed, orientation, intensity, palette, columns = null) {
   const render = studioRender(seconds);
-  const key = `${effect}|${direction}|${speed}|${orientation}|${intensity}|${prepared(studioPalette(palette)).key}|${render}`;
+  const key = `${effect}|${direction}|${speed}|${orientation}|${intensity}|${prepared(studioPalette(palette)).key}|${render}|${segmentLengthFor(columns)}`;
   let frame = shown.get(key);
   if (!frame) {
     if (shown.size >= SHOWN_LIMIT) shown.clear();
-    frame = studioDrive(studioFrameAt(effect, render, direction, speed, orientation, intensity, palette));
+    frame = studioDrive(
+      studioFrameAt(effect, render, direction, speed, orientation, intensity, palette, false, columns),
+    );
     shown.set(key, frame);
   }
   return frame;

@@ -1,9 +1,11 @@
 import asyncio
+import sys
 import time
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
+from tests.fakes import light_state
 from tests.test_native_features import (
     ROOT, CONSTANTS, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS, NATIVE_PREVIEW,
     _load_standalone_functions, SERVICES_SOURCE,
@@ -16,7 +18,7 @@ NOTE_COMMAND_RESULT = _load_standalone_functions(
 
 class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
     async def test_direction_updates_every_target_and_propagates_errors(self):
-        targets = [SimpleNamespace(_is_on=True, set_device_orientation=AsyncMock()) for _ in range(2)]
+        targets = [light_state(_is_on=True, set_device_orientation=AsyncMock()) for _ in range(2)]
         handler = _load_standalone_functions(
             SERVICES_SOURCE,
             {"handle_set_device_orientation"},
@@ -39,20 +41,25 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             await handler(call)
 
     def setUp(self):
-        self.target = SimpleNamespace(
+        self.target = light_state(
             _native_effect="Ribbon", _native_effect_speed=50,
             _native_effect_direction="Right",
             _is_on=True, _mode="Clock",
             _custom_draw_active=True, _native_effect_speed_entity=None,
             _should_auto_turn_on=lambda: False,
             async_apply_display_mode=AsyncMock(), _refresh_linked_entities=Mock(),
-            async_write_ha_state=Mock(),
+            async_write_ha_state=Mock(), studio_streaming=lambda: False, _studio_task=None,
         )
         self.targets = [self.target]
         # Like set_clock_style, the lamp update is scheduled in the background;
         # capture it so tests can run it after the handler has returned.
         self.scheduled = []
         self.logger = Mock()
+        # The light logs what the lamp did with the change (light_actions).
+        actions = sys.modules[type(self.target).async_send_native_effect.__module__]
+        patcher = patch.object(actions, "_LOGGER", self.logger)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.raw_handle = _load_standalone_functions(
             SERVICES_SOURCE,
             {"handle_set_native_effect"},
@@ -130,12 +137,12 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
         })
         activate = fns["_activate_native_effect"]
-        target = SimpleNamespace(
+        target = light_state(
             _native_effect="Starry Sky", _native_effect_speed=50,
             _native_effect_direction="Right", _device_orientation="right",
             _native_effect_direction_select_entity=None,
             _native_effect_color_mode="bw", _native_effect_color=None, hass=None,
-            _cube_matrix=SimpleNamespace(
+            _lamp_client=SimpleNamespace(
                 close_fast_socket=Mock(), send_raw_command=AsyncMock(),
                 running_effect=None, note_running_effect=Mock(),
             ),
@@ -148,7 +155,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             target._native_effect = effect
             target._native_effect_color_mode = mode
             await activate(target)
-            command, payload = target._cube_matrix.send_raw_command.call_args.args
+            command, payload = target._lamp_client.send_raw_command.call_args.args
             spec = CONSTANTS["ALL_NATIVE_EFFECTS"][effect]
             supported = NATIVE_PREVIEW["effect_supports_color_mode"](effect, mode)
             self.assertEqual(command, "set_fx_effect")
@@ -162,10 +169,10 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         target._native_effect_color = [12, 34, 56]
         target._native_effect_color_mode = "normal"
         await activate(target)
-        self.assertEqual(target._cube_matrix.send_raw_command.call_args.args[1][3]["color"], [0x010C2238])
+        self.assertEqual(target._lamp_client.send_raw_command.call_args.args[1][3]["color"], [0x010C2238])
         target._native_effect_color_mode = "bw"
         await activate(target)
-        self.assertNotIn("color", target._cube_matrix.send_raw_command.call_args.args[1][3])
+        self.assertNotIn("color", target._lamp_client.send_raw_command.call_args.args[1][3])
 
     async def test_custom_color_validation_preflight_and_clear(self):
         self.target._native_clock_color = 123
@@ -178,7 +185,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
                 await self.handle(SimpleNamespace(data={"color": color}))
         unsupported = next(name for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
                            if not spec.get("extended") and not NATIVE_PREVIEW["effect_supports_color_override"](name))
-        second = SimpleNamespace(_native_effect=unsupported, _is_on=True)
+        second = light_state(_native_effect=unsupported, _is_on=True)
         self.targets.append(second)
         with self.assertRaisesRegex(ValueError, "custom colors"):
             await self.handle(SimpleNamespace(data={"color": [1, 2, 3]}))
@@ -221,6 +228,23 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_effect, "Ribbon")
         self.assertEqual(self.target._mode, "Clock")
         self.logger.warning.assert_called_once()
+
+    async def test_a_refusal_back_to_a_streamed_effect_streams_it_again(self):
+        # The change had stopped the stream and blanked the lamp: back to an
+        # effect the integration streams, the stream starts again (a black,
+        # silent lamp otherwise).
+        restarted = []
+        self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
+        self.target.studio_streaming = lambda: True
+        self.target._studio_task = None
+        self.target._ip = "192.0.2.1"
+        self.target._create_tracked_task = lambda coroutine, name=None: (restarted.append(name), coroutine.close())
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.assertEqual(len(restarted), 1)
+        # Not when nothing is streamed.
+        self.target.studio_streaming = lambda: False
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.assertEqual(len(restarted), 1)
 
     async def test_a_lamp_not_reached_keeps_the_effect_like_every_other_service(self):
         # Not reached (no refusal named): the effect stands, and the lamp shows
@@ -352,17 +376,18 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         def make_target(mode="Native Effect"):
             async def _exec(op, _name):
                 await op()
-            return SimpleNamespace(
+            return light_state(
                 _mode=mode,
                 _display_frozen=False,
                 _notify_camera_preview=Mock(),
                 async_write_ha_state=Mock(),
                 _native_clock_style=12,
                 _native_clock_data_bytes=lambda: bytes([1, 8, 0, 0]),
-                _cube_matrix=SimpleNamespace(
+                _lamp_client=SimpleNamespace(
                     close_fast_socket=Mock(), send_raw_command=AsyncMock()
                 ),
                 _execute_hardware_op=_exec,
+                studio_streaming=lambda: False, matrix_freezes=lambda: False,
             )
 
         native, clock = make_target("Native Effect"), make_target("Clock")
@@ -383,15 +408,15 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*scheduled)
         # Native effects use the renderer freeze-frame command and flag the
         # frozen state so the camera preview holds the background frame.
-        native._cube_matrix.close_fast_socket.assert_called_once()
-        native._cube_matrix.send_raw_command.assert_awaited_once_with(
+        native._lamp_client.close_fast_socket.assert_called_once()
+        native._lamp_client.send_raw_command.assert_awaited_once_with(
             "set_fx_effect", [64, 0, 4, {"mode": 64}]
         )
         for target in (native, clock):
             self.assertTrue(target._display_frozen)
             target._notify_camera_preview.assert_called_once()
         # The clock re-sends its current command with the freeze mixer (64).
-        clock._cube_matrix.send_raw_command.assert_awaited_once_with(
+        clock._lamp_client.send_raw_command.assert_awaited_once_with(
             "set_fx_effect",
             [40, 12, 2, {"mode": 40, "mixer": 64, "data": "AQgAAA=="}],
         )
@@ -412,32 +437,33 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
 
         preview = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
-            {"_get_native_effect_preview", "_chosen_intensity"},
+            {"_get_native_effect_preview", "_chosen_intensity", "_state"},
             {"_time": FakeTime,
              "DEFAULT_NATIVE_EFFECT_INTENSITY": CONSTANTS["DEFAULT_NATIVE_EFFECT_INTENSITY"],
              "DEFAULT_NATIVE_EFFECT": CONSTANTS["DEFAULT_NATIVE_EFFECT"],
              "DEFAULT_NATIVE_EFFECT_DIRECTION": CONSTANTS["DEFAULT_NATIVE_EFFECT_DIRECTION"],
              "DEFAULT_DEVICE_ORIENTATION": CONSTANTS["DEFAULT_DEVICE_ORIENTATION"],
-             "render_native_effect_oriented": NATIVE_PREVIEW["render_native_effect_oriented"]},
+             "render_native_effect": NATIVE_PREVIEW["render_native_effect"]},
         )["_get_native_effect_preview"]
         camera = SimpleNamespace(
-            _light_entity=SimpleNamespace(
+            _light_entity=light_state(
                 _native_effect="Rainbow", _native_effect_speed=50,
                 _native_effect_direction="Up", _native_effect_color_mode="normal",
                 _native_effect_color=None, _display_frozen=False,
             ),
             _native_preview_key=None, _native_preview_started_at=None,
             _frozen_background_seconds=None, _preview_lock=threading.Lock(),
-            _preview_speed=lambda: 50,
+            _preview_speed=lambda state=None: 50, _columns=lambda state=None: None,
         )
+        camera._state = lambda state=None: preview.__globals__["_state"](camera, state)
         phases = []
-        original = NATIVE_PREVIEW["render_native_effect_oriented"]
+        original = NATIVE_PREVIEW["render_native_effect"]
 
         def capture(effect, phase, *args, **kwargs):
             phases.append(phase)
             return original(effect, phase, *args, **kwargs)
 
-        preview.__globals__["render_native_effect_oriented"] = capture
+        preview.__globals__["render_native_effect"] = capture
         preview(camera)
         clock_ticks[0] += 5.0
         preview(camera)

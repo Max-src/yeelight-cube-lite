@@ -1,0 +1,17 @@
+# Lint (`ruff check`): mistakes found without running the code. Undefined
+# names (F821), unused imports and variables, names redefined, mutable
+# argument defaults, syntax errors, and a bare `except Exception` (BLE001):
+# narrow it to what can be raised, or mark the one a long-lived loop needs
+# with `# noqa: BLE001 -- <why>`. `npm run lint` (with eslint), run by
+# `npm run check`, CI and the git hook (scripts/git-hooks/pre-commit).
+target-version = "py313"
+extend-exclude = ["archive", "dev-cards", "node_modules", ".venv", "tests/_tmp"]
+
+[lint]
+select = ["F", "E9", "B006", "B008", "BLE001"]
+
+[lint.per-file-ignores]
+# Their imports are the API other modules and the tests read from them
+# (lamp_renderers.frame_index, native_effect_preview's effect checks).
+"custom_components/yeelight_cube/lamp_renderers.py" = ["F401"]
+"custom_components/yeelight_cube/native_effect_preview.py" = ["F401"]

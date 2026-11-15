@@ -9,7 +9,7 @@ or by a write of the Matter attribute FC02 rotationAngle; nothing reads or
 writes it over LAN, and a factory reset puts the lamp on 3 while Matter then
 reads 0 until it is saved again.
 
-Every direction here (const.py ``direction_remap`` and
+Every direction here (effect_catalog.py ``direction_remap`` and
 ``MOUNT_DIRECTION_VALUES``) was calibrated on a lamp at profile 2
 (REFERENCE_PROFILE). The lamp's actual profile is compensated at the very end,
 on the value sent: ``compensate_direction`` finds the direction that draws the
@@ -144,11 +144,57 @@ def resolve_profile(
     return stored, SOURCE_MATTER
 
 
+# Where a direction the viewer picks lies on the lamp itself, for a lamp
+# mounted ``orientation`` (its top toward that side): filmed 2026-11-11, both
+# models, Waterfall Up turned this way by each orientation's rotation.
+BODY_DIRECTIONS = {
+    "up": {"Up": "Up", "Down": "Down", "Left": "Left", "Right": "Right"},
+    "right": {"Up": "Left", "Down": "Right", "Left": "Down", "Right": "Up"},
+    "down": {"Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left"},
+    "left": {"Up": "Right", "Down": "Left", "Left": "Up", "Right": "Down"},
+}
+OPPOSITE = {"Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left"}
+# A direction across a one-axis effect's line runs as this one along it
+# (reading order: left and up are where it starts).
+ACROSS_LINE = {"Left": "Up", "Right": "Down", "Up": "Left", "Down": "Right"}
+
+
+# The drawn values an effect on one line runs on: (forward, back).
+HIGH_PAIR = (3, 2)
+LOW_PAIR = (0, 1)
+
+
+def one_axis_direction(label: str, orientation: str | None, rotation: int | None,
+                       forward: str, pair: tuple[int, int] = HIGH_PAIR) -> int:
+    """The direction value for an effect that runs along one line of the
+    lamp whatever its rotation (filmed 2026-11-11 and 12 on both models:
+    Moving palette, Sine wave, Hacking, the Cube Lite's Flicker sweep). The
+    lamp draws DIRECTION_TABLE[rotation] of the value; 0 and 3 there run
+    toward ``forward`` on the lamp (its Up), 1 and 2 the other way. Which
+    pair the effect is sent is the effect's (``pair``: LOW_PAIR lays the
+    strip across the lamp first, HIGH_PAIR along it; const.
+    ONE_AXIS_LOW_PAIR_SLOTS). So the value depends on the rotation, and a
+    direction across the line runs along it (ACROSS_LINE)."""
+    turn = BODY_DIRECTIONS.get(orientation or "right", BODY_DIRECTIONS["right"])
+    body = turn.get(label, forward)
+    if body not in (forward, OPPOSITE[forward]):
+        body = turn[ACROSS_LINE.get(label, "Up")]
+    drawn = pair[0] if body == forward else pair[1]
+    return DIRECTION_TABLE[effective_profile(rotation)].index(drawn)
+
+
 def effective_profile(profile: int | None) -> int:
     """The profile directions are compensated for. Unknown: the lamp's
     default, what a lamp runs until its orientation is saved."""
     valid = valid_profile(profile)
     return LAMP_DEFAULT_PROFILE if valid is None else valid
+
+
+# The Device Orientations a Cube Lite draws its clock a half turn round on
+# (its profiles 0 and 1): its digits then read upright on left as on right,
+# and from the top down on up as on down. A clock streamed to a Cube Matrix
+# follows the same (light_mount_profile.lamp_turns_clock).
+CLOCK_TURNED_ORIENTATIONS = frozenset({"left", "up"})
 
 
 def clock_turned(profile: int | None) -> bool:

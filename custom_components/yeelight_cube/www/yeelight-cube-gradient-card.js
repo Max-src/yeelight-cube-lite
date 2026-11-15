@@ -277,29 +277,28 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     };
   }
 
-  set hass(hass) {
-    if (this._hass?.connection !== hass?.connection) {
+  _hassReceived(hass, previous) {
+    if (previous?.connection !== hass?.connection) {
       this._unsubscribePreviewEvents?.();
       this._unsubscribePreviewEvents = null;
       this._previewEventListenerRegistered = false;
       this._previewContext = (this._previewContext || 0) + 1;
     }
-    this._hass = hass;
 
     // Re-establish preview event subscription if lost (connectedCallback may
     // fire before hass is available, so this is a belt-and-suspenders guard).
     if (!this._previewEventListenerRegistered && hass) {
       this._setupPreviewEventListener();
     }
+  }
 
-    // Nothing the card shows changed (_hassInputs) and no pending value
-    // waits for the lamp's echo: nothing to do.
-    if (
-      !this._hassChanged(hass) &&
-      this._pendingMode.value == null &&
-      this._pendingPanel.value == null
-    )
-      return;
+  // Nothing the card shows changed (_hassInputs) and no pending value waits
+  // for the lamp's echo: nothing to do (card-base set hass).
+  _hassPending() {
+    return this._pendingMode.value != null || this._pendingPanel.value != null;
+  }
+
+  _hassUpdated(hass) {
     if (!this.config) return;
     const entity = hass?.states?.[this._primaryEntity()];
     if (!entity) {

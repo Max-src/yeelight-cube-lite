@@ -20,6 +20,9 @@
             "native_effect_speed": {
                 "default": "mdi:speedometer"
             },
+            "drawing_animation_speed": {
+                "default": "mdi:speedometer-medium"
+            },
             "native_effect_intensity": {
                 "default": "mdi:tune-vertical"
             },
@@ -70,6 +73,9 @@
             "power_on_state": {
                 "default": "mdi:power-settings"
             },
+            "drawing_animation": {
+                "default": "mdi:animation-play"
+            },
             "text_alignment": {
                 "default": "mdi:format-align-center"
             },
@@ -102,6 +108,14 @@
             },
             "animation_layout": {
                 "default": "mdi:file-gif-box"
+            }
+        },
+        "binary_sensor": {
+            "needs_power_cycle": {
+                "default": "mdi:check-circle-outline",
+                "state": {
+                    "on": "mdi:restart-alert"
+                }
             }
         },
         "sensor": {
@@ -366,6 +380,9 @@
         },
         "force_tcp": {
             "service": "mdi:lan-connect"
+        },
+        "set_matrix_modules": {
+            "service": "mdi:view-grid-plus-outline"
         }
     }
 }

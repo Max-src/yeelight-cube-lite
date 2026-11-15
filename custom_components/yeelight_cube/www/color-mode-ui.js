@@ -152,3 +152,23 @@ class YeelightColorMode extends LitElement {
 }
 
 defineOnce("yeelight-color-mode", YeelightColorMode);
+
+/**
+ * A card's Color Modes row (its ColorModeController, color-mode-controller.js,
+ * as `card._colors`): `lamp`, the mode the lamp shows, or a pick it does not
+ * report yet, or what a rotation shows (the mode controller's displayed). A
+ * pick goes to the card's _applyColorMode.
+ */
+export function colorModeRow(card, { options, lamp, draft, saveKinds, previewAttrs, onSaved }) {
+  return html`<yeelight-color-mode
+    .config=${card.config}
+    .options=${options}
+    .selected=${card._controls.displayed("color", card._colors.selection(lamp))}
+    .draft=${draft || null}
+    .hass=${card._hass}
+    .saveKinds=${saveKinds}
+    .previewAttrs=${previewAttrs}
+    .onSelect=${(value) => card._applyColorMode(value)}
+    .onSaved=${onSaved}
+  ></yeelight-color-mode>`;
+}

@@ -90,6 +90,52 @@ class NodeMatchingTests(unittest.TestCase):
         self.assertEqual({0: "left", 1: "up", 2: "right", 3: "down"}, LINK.ROTATION_ORIENTATIONS)
 
 
+class PairedAgainTests(unittest.TestCase):
+    def test_the_newest_node_of_a_lamp_paired_again_is_linked(self):
+        # The old node stays listed (available) after a factory reset.
+        client = FakeClient([node(7, dict(CUBE_ATTRIBUTES)), node(9, dict(CUBE_ATTRIBUTES)),
+                             node(8, dict(CUBE_ATTRIBUTES))])
+        link = LINK.MatterLink(hass_with(client), lambda *report: None)
+        self.assertTrue(link.refresh(LAMP_IP, None))
+        self.assertEqual(9, link.node_id)
+        self.assertEqual([7, 8], link.stale_node_ids)
+
+    def test_stale_nodes_are_removed_once_asked(self):
+        old = node(7, dict(CUBE_ATTRIBUTES))
+        old.available = False  # the server noticed: listed offline
+        other = dict(CUBE_ATTRIBUTES)
+        other["0/51/0"] = [{"0": "WIFI_STA_DEF", "1": True, "4": "AAECAwQF", "5": ["wKgEiw=="]}]
+        client = FakeClient([old, node(5, other), node(9, dict(CUBE_ATTRIBUTES))])
+        removed = []
+
+        async def remove_node(node_id):
+            removed.append(node_id)
+            client.nodes = [n for n in client.nodes if n.node_id != node_id]
+
+        client.remove_node = remove_node
+        link = LINK.MatterLink(hass_with(client), lambda *report: None)
+        link.refresh(LAMP_IP, None)
+        # Node 5 has the lamp's old IP but another MAC: another lamp, kept.
+        self.assertEqual([7], link.stale_node_ids)
+        self.assertEqual([7], asyncio.run(link.remove_stale_nodes()))
+        self.assertEqual([7], removed)
+        self.assertEqual([], link.stale_node_ids)
+        link.refresh(LAMP_IP, None)
+        self.assertEqual([], link.stale_node_ids)
+
+    def test_a_failed_removal_is_tried_again(self):
+        client = FakeClient([node(7, dict(CUBE_ATTRIBUTES)), node(9, dict(CUBE_ATTRIBUTES))])
+
+        async def refuse(node_id):
+            raise RuntimeError("busy")
+
+        client.remove_node = refuse
+        link = LINK.MatterLink(hass_with(client), lambda *report: None)
+        link.refresh(LAMP_IP, None)
+        self.assertEqual([], asyncio.run(link.remove_stale_nodes()))
+        self.assertEqual([7], link.stale_node_ids)
+
+
 class MatterLinkTests(unittest.TestCase):
     def setUp(self):
         self.reports = []
@@ -166,13 +212,20 @@ def load_light_matter():
 
 MATTER = load_light_matter()
 MOUNT = import_pure_module("light_mount_profile")
+STATE = import_pure_module("light_state")
 
 
-class FakeLight(MATTER.MatterMixin, MOUNT.MountProfileMixin):
+class FakeLight(MATTER.MatterMixin, MOUNT.MountProfileMixin, STATE.LightStateMixin):
     """The light's state the mixin reads and writes."""
 
     def __init__(self):
+        self._init_light_state()
         self._init_matter_state()
+        self._init_mount_profile_state()
+        # What the other mixins start the light with, which these read.
+        self._lamp_client = None
+        self._retry_display_task = None
+        self._stored_gif = {"animation": None, "upside_down": False, "interrupted": False}
         self._config_entry = None
         self._ip = LAMP_IP
         self._is_on = True
@@ -399,21 +452,18 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual("settings_available", self.light.matter_link_state)
         # A state change reaches the sensor once it is added.
         written = []
-        self.light._matter_link_sensor = types.SimpleNamespace(hass=object(), async_write_ha_state=lambda: written.append(1))
+        self.light.add_listener("matter_link", lambda: written.append(1))
         self.light._matter_status_changed()
         self.assertEqual([1], written)
 
     def lamp_events(self):
         events = []
-        self.light._lamp_buttons_event = types.SimpleNamespace(
-            hass=object(), lamp_event=lambda kind, data: events.append((kind, data)),
-            async_write_ha_state=lambda: None,
-        )
+        self.light.add_listener("lamp_button_event", lambda kind, data: events.append((kind, data)))
         return events
 
     def test_what_the_lamp_changes_fires_lamp_buttons_events(self):
         events = self.lamp_events()
-        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.light._lamp_client = types.SimpleNamespace(forget_running_effect=lambda: None)
         self.report("effect", 34)  # the right button
         self.report("effect", 85)  # the left button
         self.report("mic_music_on", False)  # its long press
@@ -440,7 +490,7 @@ class FollowedReportTests(unittest.TestCase):
 
     def test_music_restoration_is_separate_opt_in_and_keeps_power_controls(self):
         events = self.lamp_events()
-        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.light._lamp_client = types.SimpleNamespace(forget_running_effect=lambda: None)
         self.light._config_entry = types.SimpleNamespace(options={"restore_after_music_changes": True})
         self.report("effect", 85)
         self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
@@ -479,12 +529,12 @@ class FollowedReportTests(unittest.TestCase):
         self.light._config_entry = entry
         self.light._matter = types.SimpleNamespace(linked=True, node_id=2, values={})
         self.light._matter_commands = Channel()
-        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.light._lamp_client = types.SimpleNamespace(forget_running_effect=lambda: None)
         return entry, sent
 
     def test_buttons_as_remote_makes_the_playlist_black_and_puts_it_back(self):
         entry, sent = self.remote_lamp([(39, 39), (42, 42)])
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
         writes = [payload for name, payload in sent if name == "updatePersistEffectList"]
         self.assertEqual([0, 1], [w["index"] for w in writes])
@@ -493,7 +543,7 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual(bytes((0xFF, 0, 0, 0)) * 100, black)
         self.assertTrue(self.light.remote_playlist_active)
         self.assertIn("redraw", self.light.calls)  # the lamp may have switched to a slot
-        self.light._sync_remote_playlist()  # already black: nothing more
+        self.light.sync_remote_playlist()  # already black: nothing more
         self.assertEqual(3, len(sent))
 
         # A press: the lamp shows a black slot and reports its custom id.
@@ -510,7 +560,7 @@ class FollowedReportTests(unittest.TestCase):
         # Turned off: the saved playlist is written back.
         sent.clear()
         entry.options = {**entry.options, "buttons_as_remote": False}
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual(
             [
                 {"index": 0, "effect": {"effectId": 39, "customId": 39, "effectParams": [{"onoff": 1, "mode": 39}]}},
@@ -522,7 +572,7 @@ class FollowedReportTests(unittest.TestCase):
 
     def test_external_effect_does_not_restore_or_rewrite_playlist(self):
         entry, sent = self.remote_lamp([(39, 39), (42, 42)])
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         sent.clear()
         self.light.calls.clear()
         self.light._remote_playlist_written_at = -100.0
@@ -585,11 +635,11 @@ class FollowedReportTests(unittest.TestCase):
     def test_without_matter_settings_the_playlist_is_left_alone(self):
         entry, sent = self.remote_lamp([(39, 39)])
         self.light._matter_commands.available = False
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual(([], False), (sent, self.light.remote_playlist_active))
         self.light._matter = types.SimpleNamespace(linked=False, node_id=None, values={})
         self.light._matter_commands.available = True
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual([], sent)
 
     def test_restored_clock_report_does_not_rewrite_black_playlist(self):
@@ -622,7 +672,7 @@ class FollowedReportTests(unittest.TestCase):
             return await command(cluster, name, payload)
 
         channel.async_command = interrupted
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertFalse(entry.options["remote_playlist_installed"])
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
         self.assertEqual("setup_pending", self.light.buttons_remote_status)
@@ -638,7 +688,7 @@ class FollowedReportTests(unittest.TestCase):
 
         channel.async_command = partially_written
         sent.clear()
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual(2, len(sent))
         self.assertTrue(entry.options["remote_playlist_installed"])
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
@@ -647,9 +697,8 @@ class FollowedReportTests(unittest.TestCase):
     def test_remote_status_and_pending_restoration_without_matter(self):
         entry, sent = self.remote_lamp([(39, 39)])
         published = []
-        self.light._buttons_as_remote_switch = types.SimpleNamespace(
-            hass=self.light.hass,
-            async_write_ha_state=lambda: published.append(self.light.buttons_remote_status),
+        self.light.add_listener(
+            "buttons_as_remote", lambda: published.append(self.light.buttons_remote_status),
         )
         self.assertEqual("setup_pending", self.light.buttons_remote_status)
         self.light._matter_commands.backend = None
@@ -659,19 +708,19 @@ class FollowedReportTests(unittest.TestCase):
         self.assertEqual("matter_unavailable", self.light.buttons_remote_status)
         entry.options["remote_saved_playlist"] = [[39, 39]]
         entry.options["buttons_as_remote"] = False
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual([], sent)
         self.assertEqual("restoration_pending", self.light.buttons_remote_status)
         self.light._matter.linked = True
         self.light._matter_commands.available = True
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual("disabled", self.light.buttons_remote_status)
         self.assertEqual("disabled", published[-1])
         self.assertNotIn("remote_saved_playlist", entry.options)
 
     def test_interrupted_restoration_then_reenable_reinstalls_black_slots(self):
         entry, sent = self.remote_lamp([(39, 39), (42, 42)])
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         command = self.light._matter_commands.async_command
 
         async def interrupted(cluster, name, payload=None):
@@ -681,13 +730,13 @@ class FollowedReportTests(unittest.TestCase):
 
         self.light._matter_commands.async_command = interrupted
         entry.options["buttons_as_remote"] = False
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual("restoration_pending", self.light.buttons_remote_status)
         self.assertFalse(entry.options["remote_playlist_installed"])
         self.light._matter_commands.async_command = command
         entry.options["buttons_as_remote"] = True
         sent.clear()
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual([36, 36], [p["effect"]["effectId"] for name, p in sent if name == "updatePersistEffectList"])
         self.assertEqual([[39, 39], [42, 42]], entry.options["remote_saved_playlist"])
 
@@ -695,14 +744,14 @@ class FollowedReportTests(unittest.TestCase):
         # Removed without turning the switch off: the lamp still holds black
         # slots, and the backup went with the old config entry.
         entry, sent = self.remote_lamp([(36, 1000), (36, 1001)])
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertNotIn("remote_saved_playlist", entry.options)
         self.assertEqual([], [p for name, p in sent if name == "updatePersistEffectList"])
         self.assertEqual("backup_missing", self.light.buttons_remote_status)
 
     def test_an_empty_playlist_is_reported_not_left_pending(self):
         entry, sent = self.remote_lamp([])
-        self.light._sync_remote_playlist()
+        self.light.sync_remote_playlist()
         self.assertEqual("no_playlist", self.light.buttons_remote_status)
         self.assertNotIn("remote_saved_playlist", entry.options)
 
@@ -768,7 +817,7 @@ class FollowedReportTests(unittest.TestCase):
 
     def test_left_press_is_restored_on_first_report_after_unrelated_command(self):
         self.light._config_entry = types.SimpleNamespace(options={"restore_after_music_changes": True})
-        self.light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        self.light._lamp_client = types.SimpleNamespace(forget_running_effect=lambda: None)
         self.light._note_lamp_command()  # clock/drawing just refreshed
         self.report("mic_music_on", True)
         self.assertEqual([("music_flow", False), "redraw"], self.light.calls)
@@ -1117,10 +1166,7 @@ class AppContentTests(unittest.IsolatedAsyncioTestCase):
             light._on_matter_report("effect", effect, False)
 
         self.events = []
-        light._lamp_buttons_event = types.SimpleNamespace(
-            hass=object(), lamp_event=lambda kind, data: self.events.append(kind),
-            async_write_ha_state=lambda: None,
-        )
+        light.add_listener("lamp_button_event", lambda kind, data: self.events.append(kind))
 
         async def execute(func, op_name, **kwargs):
             light._note_lamp_command()
@@ -1134,7 +1180,7 @@ class AppContentTests(unittest.IsolatedAsyncioTestCase):
             self.tasks.append(task)
             return task
 
-        light._cube_matrix = types.SimpleNamespace(
+        light._lamp_client = types.SimpleNamespace(
             forget_running_effect=lambda: None, note_running_effect=lambda params: None,
             send_raw_command=send_raw_command,
         )
@@ -1322,7 +1368,7 @@ class RemoteConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_presses_during_restore_are_coalesced_and_music_request_kept(self):
         light = FakeLight()
-        light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        light._lamp_client = types.SimpleNamespace(forget_running_effect=lambda: None)
         started, finish = asyncio.Event(), asyncio.Event()
         tasks = []
 
@@ -1354,7 +1400,7 @@ class RemoteConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pending_restore_uses_latest_power_state(self):
         light = FakeLight()
-        light._cube_matrix = types.SimpleNamespace(forget_running_effect=lambda: None)
+        light._lamp_client = types.SimpleNamespace(forget_running_effect=lambda: None)
 
         async def redraw(update_type=None):
             light.calls.append("redraw")
@@ -1386,12 +1432,12 @@ class RemoteConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 # The write's reports must not be mistaken for button presses.
                 light._on_matter_report("effect_sub", 1000, False)
                 entry.options["buttons_as_remote"] = False
-                light._sync_remote_playlist()
+                light.sync_remote_playlist()
             return await command(cluster, name, payload)
 
         light._matter_commands.async_command = toggle_during_write
-        light._sync_remote_playlist()
-        light._sync_remote_playlist()
+        light.sync_remote_playlist()
+        light.sync_remote_playlist()
         self.assertEqual(1, len(tasks))
         await tasks[0]
         await asyncio.gather(*tasks)

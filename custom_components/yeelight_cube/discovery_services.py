@@ -2,6 +2,7 @@
 import logging
 import voluptuous as vol # type: ignore
 from homeassistant.core import HomeAssistant, ServiceCall, callback # type: ignore
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.helpers.discovery_flow import async_create_flow # type: ignore
 from .const import DOMAIN
@@ -125,7 +126,7 @@ def async_setup_services(hass: HomeAssistant):
         # Try to remove from Yeelight integration discovered devices
         try:
             # Get all discovery flows
-            flows = hass.config_entries.flow.async_progress_by_domain("yeelight")
+            flows = hass.config_entries.flow.async_progress_by_handler("yeelight")
             
             # Find and abort flows for this IP
             for flow in flows:
@@ -134,7 +135,7 @@ def async_setup_services(hass: HomeAssistant):
                     # Check if this flow is for our IP
                     host = flow.get("context", {}).get("unique_id", "")
                     if ip_address in host or host == ip_address:
-                        await hass.config_entries.flow.async_abort(flow["flow_id"])
+                        hass.config_entries.flow.async_abort(flow["flow_id"])
                         _LOGGER.debug("Aborted Yeelight discovery flow for %s", ip_address)
             
             # Fire success event
@@ -143,7 +144,7 @@ def async_setup_services(hass: HomeAssistant):
                 "success": True
             })
             
-        except Exception as e:
+        except HomeAssistantError as e:
             _LOGGER.error("Failed to ignore Yeelight discovery for %s: %s", ip_address, e)
             hass.bus.async_fire(f"{DOMAIN}_yeelight_discovery_ignored", {
                 "ip_address": ip_address,
@@ -180,7 +181,7 @@ def async_setup_services(hass: HomeAssistant):
                 "success": True
             })
             
-        except Exception as e:
+        except HomeAssistantError as e:
             _LOGGER.error("Failed to create cube discovery flow: %s", e)
             hass.bus.async_fire(f"{DOMAIN}_cube_discovery_created", {
                 "ip_address": ip_address,
@@ -214,7 +215,7 @@ def async_setup_services(hass: HomeAssistant):
                 "success": True
             })
             
-        except Exception as e:
+        except HomeAssistantError as e:  # no such service (ServiceNotFound) or refused
             _LOGGER.error("Failed to ignore Yeelight device %s: %s", ip_address, e)
             hass.bus.async_fire(f"{DOMAIN}_yeelight_device_ignored", {
                 "ip_address": ip_address,

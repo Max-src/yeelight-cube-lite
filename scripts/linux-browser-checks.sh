@@ -68,19 +68,17 @@ if ! cmp -s package-lock.json node_modules/.package-lock.json 2>/dev/null; then
 fi
 npx playwright install chromium > /tmp/yc-playwright.log 2>&1 || { tail -5 /tmp/yc-playwright.log; exit 1; }
 
-status=0
-for suite in card-events-browser card-sync-browser card-ui-parity matrix-surface-browser; do
-  if BROWSER_CHANNEL=chromium node "tests/$suite.cjs" > "/tmp/yc-$suite.log" 2>&1; then
-    echo "PASS  $suite (Linux)"
-  else
-    status=1
-    echo "FAIL  $suite (Linux):"
-    if grep -q "error while loading shared libraries" "/tmp/yc-$suite.log"; then
-      echo "      the browser's system libraries are missing; run once:"
-      echo "      wsl -u root bash scripts/linux-browser-checks.sh --setup"
-    else
-      grep -E "AssertionError|Error:|FAIL" "/tmp/yc-$suite.log" | head -5 | sed 's/^/      /'
-    fi
-  fi
-done
-exit $status
+# The same list as CI and `npm run check` (scripts/browser-checks.mjs).
+log=/tmp/yc-browser-checks.log
+if BROWSER_CHANNEL=chromium node scripts/browser-checks.mjs > "$log" 2>&1; then
+  grep -E "^(PASS|FAIL|SKIP)  browser:" "$log" | sed 's/$/ (Linux)/'
+  exit 0
+fi
+grep -E "^(PASS|FAIL|SKIP)  browser:" "$log" | sed 's/$/ (Linux)/'
+if grep -q "error while loading shared libraries" "$log"; then
+  echo "      the browser's system libraries are missing; run once:"
+  echo "      wsl -u root bash scripts/linux-browser-checks.sh --setup"
+else
+  grep -E "AssertionError|Error:|FAIL" "$log" | head -8 | sed 's/^/      /'
+fi
+exit 1

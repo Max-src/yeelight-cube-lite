@@ -26,6 +26,7 @@ try:
         palette_span,
         pixel_map,
         place_strip,
+        settings_length,
         strip_blur,
         triangle16,
     )
@@ -47,6 +48,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         palette_span,
         pixel_map,
         place_strip,
+        settings_length,
         strip_blur,
         triangle16,
     )
@@ -57,11 +59,11 @@ def _colour_cells(table) -> list:
     return [table[at:at + 3] for at in range(0, 768, 3)]
 
 
-def _band_strip(palette) -> bytes:
+def _band_strip(palette, length: int) -> bytes:
     """Solid bands of the inline colors, unshifted."""
     count = len(palette)
-    width = LENGTH // count
-    return b"".join([bytes(palette[min(pixel // width, count - 1)]) for pixel in range(LENGTH)])
+    width = length // count
+    return b"".join([bytes(palette[min(pixel // width, count - 1)]) for pixel in range(length)])
 
 
 def _rotated(strip, shift: int) -> bytes:
@@ -80,6 +82,7 @@ def alternate_init(settings) -> dict:
         "colours": (colours["primary"], colours["secondary"]),
         "threshold": threshold,
         "turn": threshold // RENDER_MS + 1,
+        "length": settings_length(settings),
     }
 
 
@@ -92,32 +95,32 @@ def alternate_weight(elapsed: int, threshold: int) -> int:
 
 
 def alternate_step(state, settings, clock_ms, render) -> bytes:
-    turn = state["turn"]
+    turn, length = state["turn"], state["length"]
     swaps, since = divmod(render, turn)
     phase = (swaps + 1) & 1
     selected = state["colours"][phase]
     if settings["intensity"] < 128:
-        return bytes(selected) * LENGTH
+        return bytes(selected) * length
     # The time before this render's swap: the whole clock on the first.
     elapsed = (since or turn) * RENDER_MS if render else clock_ms
     weight = alternate_weight(elapsed, state["threshold"])
     opposite = state["colours"][phase ^ 1]
     if weight == 0:
-        return bytes(selected) * LENGTH
+        return bytes(selected) * length
     if weight == 255:
-        return bytes(opposite) * LENGTH
+        return bytes(opposite) * length
     rest = 255 - weight
-    return bytes([(far * weight + near * rest) >> 8 for far, near in zip(opposite, selected)]) * LENGTH
+    return bytes([(far * weight + near * rest) >> 8 for far, near in zip(opposite, selected)]) * length
 
 
 # ── Slot 2: Breathing ───────────────────────────────────────────────────
 def breath_init(settings) -> dict:
-    return {"primary": effect_colours(settings)["primary"]}
+    return {"primary": effect_colours(settings)["primary"], "length": settings_length(settings)}
 
 
 def breath_step(state, settings, clock_ms, render) -> bytes:
     gain = envelope_gain(clock_ms, settings["rate"])
-    return bytes([(channel * gain) >> 8 for channel in state["primary"]]) * LENGTH
+    return bytes([(channel * gain) >> 8 for channel in state["primary"]]) * state["length"]
 
 
 # ── Slot 3: Ribbon ──────────────────────────────────────────────────────
@@ -142,25 +145,26 @@ def streamer_wheel(phase: int, intensity: int) -> bytes:
 
 
 def streamer_init(settings) -> dict:
-    return {"table": effect_colours(settings)["table"]}
+    return {"table": effect_colours(settings)["table"], "length": settings_length(settings)}
 
 
 def streamer_step(state, settings, clock_ms, render) -> bytes:
     phase = _clock_phase(clock_ms, (settings["rate"] >> 2) + 2)
     if settings["intensity"] < 128:
-        return streamer_wheel(phase, settings["intensity"]) * LENGTH
+        return streamer_wheel(phase, settings["intensity"]) * state["length"]
     table = state["table"]
-    return table[3 * phase:3 * phase + 3] * LENGTH
+    return table[3 * phase:3 * phase + 3] * state["length"]
 
 
 # ── Slot 4: Moving palette ──────────────────────────────────────────────
 def flow_init(settings) -> dict:
     scale = 16 << (settings["intensity"] // 29)
+    length = settings_length(settings)
     return {
         "direction": settings["direction"],
         "cells": _colour_cells(effect_colours(settings)["table"]),
         # By logical pixel: the renderer draws them in reverse.
-        "offsets": [(LENGTH - 1 - pixel) * scale // LENGTH for pixel in range(LENGTH)],
+        "offsets": [(length - 1 - pixel) * scale // length for pixel in range(length)],
     }
 
 
@@ -177,29 +181,31 @@ def scan_init(settings) -> dict:
     colours = effect_colours(settings)
     cells = _colour_cells(colours["table"])
     span = palette_span(len(colours["palette"]))
+    length = settings_length(settings)
     return {
         "direction": settings["direction"],
         "gradient": b"".join(
-            [cells[((pixel * 255 // (LENGTH - 1)) * span) >> 8] for pixel in range(LENGTH)]
+            [cells[((pixel * 255 // (length - 1)) * span) >> 8] for pixel in range(length)]
         ),
         "period": (settings["rate"] ^ 255) * 150 + 250,
-        "size": ((settings["intensity"] * LENGTH) >> 9) + 1,
+        "size": ((settings["intensity"] * length) >> 9) + 1,
+        "length": length,
     }
 
 
 def scan_step(state, settings, clock_ms, render) -> bytes:
     period, size, gradient = state["period"], state["size"], state["gradient"]
     progress = (clock_ms % period) * 65535 // period
-    room = LENGTH - size
+    room = state["length"] - size
     offset = abs((((progress << 1) & 0x1FFFE) * room >> 16) - room)
-    strip = bytearray(3 * LENGTH)
+    strip = bytearray(3 * state["length"])
     for first in (room - offset, offset):
         strip[3 * first:3 * (first + size)] = gradient[3 * first:3 * (first + size)]
     return place_strip(strip, state["direction"])
 
 
 # ── Slot 8: Inline Bands ────────────────────────────────────────────────
-def inline_shift(render: int, rate: int) -> int:
+def inline_shift(render: int, rate: int, length: int = LENGTH) -> int:
     """The shift a render draws with. It steps after each render where clock /
     (290 - rate) changed: the first (the quotient starts at 0, the Apply's clock
     is a multiple past it), and never at rate 0, where the quotient stays 0."""
@@ -207,18 +213,19 @@ def inline_shift(render: int, rate: int) -> int:
         return 0
     bucket = 290 - rate
     steps = render - 1 if bucket <= RENDER_MS else (render - 1) * RENDER_MS // bucket
-    return (steps + 1) % LENGTH
+    return (steps + 1) % length
 
 
 def inline_init(settings) -> dict:
     return {
         "direction": settings["direction"],
-        "bands": _band_strip(effect_colours(settings)["palette"]),
+        "bands": _band_strip(effect_colours(settings)["palette"], settings_length(settings)),
+        "length": settings_length(settings),
     }
 
 
 def inline_step(state, settings, clock_ms, render) -> bytes:
-    shift = inline_shift(render, settings["rate"])
+    shift = inline_shift(render, settings["rate"], state["length"])
     return place_strip(_rotated(state["bands"], shift), state["direction"])
 
 
@@ -228,20 +235,21 @@ def inline_step(state, settings, clock_ms, render) -> bytes:
 def pulse_init(settings) -> dict:
     colours = effect_colours(settings)
     table = colours["table"]
-    cells = ((settings["intensity"] * (LENGTH >> 2)) >> 8) + 1
-    width = LENGTH // cells
-    margin = (LENGTH - cells * width) >> 1
+    length = settings_length(settings)
+    cells = ((settings["intensity"] * (length >> 2)) >> 8) + 1
+    width = length // cells
+    margin = (length - cells * width) >> 1
     span = palette_span(len(colours["palette"]))
     lit = []
     for pixel in range(margin, margin + cells * width):
-        index = 3 * (((pixel * 255 // (LENGTH - 1)) * span) >> 8)
+        index = 3 * (((pixel * 255 // (length - 1)) * span) >> 8)
         lit.append((3 * pixel, (pixel - margin) % width, table[index:index + 3]))
     return {
         "direction": settings["direction"],
         "levels": [triangle16(place * 65535 // width) for place in range(width)],
         "lit": lit,
         "secondary": colours["secondary"],
-        "blank": bytes(colours["secondary"]) * LENGTH,
+        "blank": bytes(colours["secondary"]) * length,
     }
 
 
@@ -272,14 +280,16 @@ def pulse_step(state, settings, clock_ms, render) -> bytes:
 def wave_init(settings) -> dict:
     primary = effect_colours(settings)["primary"]
     step = settings["intensity"] >> 4
+    length = settings_length(settings)
     return {
         "direction": settings["direction"],
         "cells": [
             bytes(primary) if value == 0 else bytes((c * (255 - value)) >> 8 for c in primary)
             for value in range(256)
         ],
-        "thetas": [(LENGTH - 1 - pixel) * step for pixel in range(LENGTH)],
+        "thetas": [(length - 1 - pixel) * step for pixel in range(length)],
         "advance": (settings["rate"] + 48) // 24,
+        "length": length,
     }
 
 
@@ -287,7 +297,7 @@ def wave_step(state, settings, clock_ms, render) -> bytes:
     phase = (render + 1) * state["advance"]
     cells = state["cells"]
     strip = bytearray(b"".join([cells[SIN8[(phase + theta) & 255]] for theta in state["thetas"]]))
-    strip_blur(strip, settings["intensity"])
+    strip_blur(strip, settings["intensity"], state["length"])
     return place_strip(strip, state["direction"])
 
 
@@ -297,7 +307,8 @@ def spectrum_init(settings) -> dict:
     colours = effect_colours(settings)
     cells = _colour_cells(colours["table"])
     span = palette_span(len(colours["palette"]))
-    strip = b"".join([cells[((pixel * 255 // LENGTH) * span) >> 8] for pixel in range(LENGTH)])
+    length = settings_length(settings)
+    strip = b"".join([cells[((pixel * 255 // length) * span) >> 8] for pixel in range(length)])
     return {"panel": place_strip(strip, settings["direction"])}
 
 
@@ -306,8 +317,24 @@ def spectrum_step(state, settings, clock_ms, render) -> bytes:
 
 
 # ── Slot 18: Pulse ──────────────────────────────────────────────────────
-# Drawn from both ends: the middle index, written last, covers both centre pixels.
-_SUNRISE_INDICES = (*range((LENGTH >> 1) - 1), LENGTH >> 1)
+# Drawn from both ends, index 0 to N / 2: a pixel shows the last index written
+# to it (on an even segment the middle index covers both centre pixels).
+_SUNRISE_LAYOUTS: dict[int, tuple] = {}
+
+
+def sunrise_layout(length: int) -> tuple:
+    """(indices drawn, each pixel's place among them) on a segment of ``length``."""
+    layout = _SUNRISE_LAYOUTS.get(length)
+    if layout is None:
+        half = length >> 1
+        sources = [
+            max(index for index in (pixel, length - 1 - pixel) if index <= half)
+            for pixel in range(length)
+        ]
+        indices = tuple(sorted(set(sources)))
+        place = {index: at for at, index in enumerate(indices)}
+        layout = _SUNRISE_LAYOUTS[length] = (indices, tuple(place[index] for index in sources))
+    return layout
 
 
 def pulse_spread(render: int, clock: int, rate: int) -> int:
@@ -326,24 +353,26 @@ def sunrise_init(settings) -> dict:
     return {
         "direction": settings["direction"],
         "cells": _colour_cells(effect_colours(settings)["table"]),
+        "length": settings_length(settings),
     }
 
 
 def sunrise_step(state, settings, clock_ms, render) -> bytes:
     spread = pulse_spread(render, clock_ms, settings["rate"])
-    intensity, cells = settings["intensity"], state["cells"]
+    intensity, cells, length = settings["intensity"], state["cells"], state["length"]
+    indices, places = sunrise_layout(length)
     half = []
-    for index in _SUNRISE_INDICES:
-        value = triangle16(index * spread // LENGTH)
+    for index in indices:
+        value = triangle16(index * spread // length)
         half.append(cells[min(240, (value >> 8) + ((value * intensity) >> 15))])
-    strip = b"".join(half) + b"".join(half[::-1])
+    strip = b"".join(map(half.__getitem__, places))
     return place_strip(strip, state["direction"])
 
 
 # ── Slot 28: Scrolling Bands ────────────────────────────────────────────
 # Rate 255 gives a period of 0 and what the lamp shows is undefined: left black.
-def scrolling_period(rate: int) -> int:
-    step = 12800 // LENGTH + 1
+def scrolling_period(rate: int, length: int = LENGTH) -> int:
+    step = 12800 // length + 1
     step -= step >> 4
     return step - rate * step // 255
 
@@ -351,17 +380,18 @@ def scrolling_period(rate: int) -> int:
 def scrolling_init(settings) -> dict:
     return {
         "direction": settings["direction"],
-        "bands": _band_strip(effect_colours(settings)["palette"]),
-        "period": scrolling_period(settings["rate"]),
+        "bands": _band_strip(effect_colours(settings)["palette"], settings_length(settings)),
+        "period": scrolling_period(settings["rate"], settings_length(settings)),
+        "length": settings_length(settings),
     }
 
 
 def scrolling_step(state, settings, clock_ms, render) -> bytes:
-    period = state["period"]
+    period, length = state["period"], state["length"]
     if not period:
-        return bytes(3 * LENGTH)
-    strip = bytearray(_rotated(state["bands"], clock_ms // period % LENGTH))
-    strip_blur(strip, settings["intensity"])
+        return bytes(3 * length)
+    strip = bytearray(_rotated(state["bands"], clock_ms // period % length))
+    strip_blur(strip, settings["intensity"], length)
     return place_strip(strip, state["direction"])
 
 
@@ -380,30 +410,31 @@ def fade_position(render: int, duration: int) -> tuple:
 def fade_init(settings) -> dict:
     palette = effect_colours(settings)["palette"]
     return {
-        "entries": [palette[pixel % len(palette)] for pixel in range(LENGTH)],
+        "entries": [palette[pixel % len(palette)] for pixel in range(settings_length(settings))],
         "duration": int(f32(f32(f32((255 - settings["rate"]) / 255) * 80) + 1)),
     }
 
 
 def fade_step(state, settings, clock_ms, render) -> bytes:
     entries, duration = state["entries"], state["duration"]
+    length = len(entries)
     entry, phase = fade_position(render, duration)
-    red, green, blue = entries[entry % LENGTH]
-    before = entries[(entry - 1) % LENGTH] if entry else (0, 0, 0)
+    red, green, blue = entries[entry % length]
+    before = entries[(entry - 1) % length] if entry else (0, 0, 0)
     alpha = int(f32(f32(phase * 255) / duration))
     if alpha == 255:
-        return bytes((red, green, blue)) * LENGTH
+        return bytes((red, green, blue)) * length
     rest = 255 - alpha
     return bytes((
         (red * alpha) >> 8,
         (before[1] * rest + green * alpha) >> 8,
         (before[2] * rest + blue * alpha) >> 8,
-    )) * LENGTH
+    )) * length
 
 
 # ── Slot 52: Raw Red ────────────────────────────────────────────────────
 def red_init(settings) -> dict:
-    return {"panel": bytes((255, 0, 0)) * LENGTH}
+    return {"panel": bytes((255, 0, 0)) * settings_length(settings)}
 
 
 # ── Slots 65, 66, 68, 69: Wipes ────────────────────────────────────────────────
@@ -427,20 +458,21 @@ def wipe_wheel(value: int) -> tuple:
 
 
 def wipe_init(settings) -> dict:
-    mode = settings["mode"]
+    mode, length = settings["mode"], settings_length(settings)
     if mode in (65, 66):
         picture = b"".join(
-            [bytes(wipe_wheel(pixel * 255 // (LENGTH - 1))) for pixel in range(LENGTH)]
+            [bytes(wipe_wheel(pixel * 255 // (length - 1))) for pixel in range(length)]
         )
     else:
-        picture = bytes((255, 255, 255)) * LENGTH
+        picture = bytes((255, 255, 255)) * length
     return {"direction": settings["direction"], "picture": picture, "growing": mode in (65, 68)}
 
 
 def wipe_step(state, settings, clock_ms, render) -> bytes:
-    done = min(render * RENDER_MS // _WIPE_FRAME_MS + 1, LENGTH)
-    kept = done if state["growing"] else LENGTH - done
-    strip = state["picture"][:3 * kept] + bytes(3 * (LENGTH - kept))
+    length = len(state["picture"]) // 3
+    done = min(render * RENDER_MS // _WIPE_FRAME_MS + 1, length)
+    kept = done if state["growing"] else length - done
+    strip = state["picture"][:3 * kept] + bytes(3 * (length - kept))
     return place_strip(strip, state["direction"])
 
 
@@ -454,7 +486,7 @@ def bands_init(settings) -> dict:
         width, height = effect_geometry(settings)
         colours = effect_colours(settings)
         table, span = colours["table"], palette_span(len(colours["palette"]))
-        scale, cell_map = f32(128 / intensity), pixel_map(direction)
+        scale, cell_map = f32(128 / intensity), pixel_map(direction, length=settings_length(settings))
         for row in range(height):
             level = (int(f32(scale * row)) * 255 // height) & 255
             at = 3 * ((span * level) >> 8)

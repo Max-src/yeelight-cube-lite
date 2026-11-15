@@ -4,7 +4,8 @@ shown on a lamp the same way (light.show_pixel_art)."""
 import asyncio
 import runpy
 import unittest
-from types import SimpleNamespace
+
+from tests.fakes import light_state
 from unittest.mock import AsyncMock, Mock
 
 from tests.test_native_features import LIGHT_SOURCE, ROOT, _load_standalone_functions
@@ -50,12 +51,14 @@ class ShowPixelArtTests(unittest.TestCase):
             LIGHT_SOURCE, {"show_pixel_art"}, {"expand_pixels": STORAGE["expand_pixels"]}
         )["show_pixel_art"]
         selects = [Mock(), Mock(), Mock()]
-        lamp = SimpleNamespace(**{
+        lamp = light_state(**{
             "hass": None, "_custom_text": "", "stop_scroll_timer": Mock(),
             "async_apply_display_mode": AsyncMock(), "async_schedule_update_ha_state": Mock(),
-            "_pixel_art_select_entity": selects[0], "_mode_select_entity": selects[1],
-            "_content_mode_select_entity": selects[2], **attrs,
+            **attrs,
         })
+        # The pixel art, display mode and content mode selects listen to it.
+        for topic, select in zip(("pixel_art", "display_mode", "content_mode"), selects):
+            lamp.add_listener(topic, select.async_update_from_light)
         return show, lamp, selects
 
     def test_a_saved_or_official_drawing_is_shown_the_same_way(self):

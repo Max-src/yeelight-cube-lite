@@ -53,9 +53,9 @@ rules:
     status: done
     comment: >-
       Listeners and timers are stopped with async_on_remove or
-      async_will_remove_from_hass; an entity registers on its light through
-      entity.CubeDeviceEntity._register_on_light, which unregisters it when it
-      is removed.
+      async_will_remove_from_hass; an entity listens to its light through
+      entity.CubeDeviceEntity._listen_to_light, which stops it when it is
+      removed.
   entity-unique-id:
     status: done
     comment: Every entity sets a unique id derived from its config entry.
@@ -114,7 +114,7 @@ rules:
     status: done
     comment: >-
       A warning when the lamp stops answering, then debug level until it
-      answers again (cube_matrix.outage_log_level).
+      answers again (LampClient.outage_log_level).
   parallel-updates: done
   reauthentication-flow:
     status: exempt

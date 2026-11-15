@@ -6,11 +6,11 @@ import json
 import shutil
 import subprocess
 import unittest
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from tests import test_live_effect as live
 from tests.test_matter_link import FakeLight
+from tests.fakes import light_state
 from tests.test_native_features import CONSTANTS, LAMP_RENDERERS, NATIVE_PREVIEW, ROOT
 
 palette_words = LAMP_RENDERERS["palette_words"]
@@ -126,7 +126,7 @@ class PaletteActivationTests(unittest.IsolatedAsyncioTestCase):
             self.sent.append((command, params))
             return "ok"
 
-        cube = self.lamp._cube_matrix
+        cube = self.lamp._lamp_client
         cube.send_command_with_recovery = send_with_recovery
         cube.close_command_socket = Mock()
         cube.forget_running_effect = Mock()
@@ -160,7 +160,7 @@ class PaletteActivationTests(unittest.IsolatedAsyncioTestCase):
         delay = CONSTANTS["PALETTE_MUSIC_DIRECTION_DELAY"]
         self.assertGreaterEqual(delay, 1.0)
         self.assertIn((delay, 1), self.waits)
-        self.lamp._cube_matrix.forget_running_effect.assert_called_once()
+        self.lamp._lamp_client.forget_running_effect.assert_called_once()
         self.assertTrue(self.lamp._in_native_fw_mode)
         # In its normal color mode it is a native effect as before.
         self.sent.clear()
@@ -259,7 +259,7 @@ class PaletteActivationTests(unittest.IsolatedAsyncioTestCase):
         if reads is None:
             from tests.test_control_entities import NATIVE_HELPERS
             reads = NATIVE_HELPERS["shown_effect_reads"]
-        light = SimpleNamespace(
+        light = light_state(
             _mode=CONSTANTS["MODE_NATIVE_EFFECT"], _native_effect="Music Spectrum",
             _native_effect_color_mode="palette", _text_colors=[RED],
         )
@@ -327,10 +327,6 @@ class PaletteMatterTests(unittest.TestCase):
         self.assertNotEqual(light._expected_effect(), CONSTANTS["MUSIC_FLOW_EFFECTS"]["Spectrum"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PaletteParityTests(unittest.TestCase):
     """The cards (JS) and the camera (Python) draw the same palette frames."""
 
@@ -387,3 +383,7 @@ class PaletteParityTests(unittest.TestCase):
             out["clock"],
         )
         self.assertEqual(LAMP_RENDERERS["clock_palette_words"](None, palette), out["plain"])
+
+
+if __name__ == "__main__":
+    unittest.main()

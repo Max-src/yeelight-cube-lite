@@ -16,7 +16,7 @@ import { hexToRgb, rgbToHex } from "./color-utils.js";
  *   fill       the whole area filled with the blend
  *   honeycomb, blinds, treemap (rectangles sized by the weights)
  */
-export const SWATCH_LAYOUT_GROUPS = Object.freeze({
+const SWATCH_LAYOUT_GROUPS = Object.freeze({
   swatches: ["row", "grid", "expand", "scroll", "fan", "wave", "spiral"],
   gradient: ["gradient"],
   stripes: ["stripes"],

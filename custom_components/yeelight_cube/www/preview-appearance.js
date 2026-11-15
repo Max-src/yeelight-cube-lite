@@ -1,6 +1,6 @@
 export const previewLength = (value) => `calc(100cqw * ${value} / 350)`;
 
-export const APPEARANCE_DEFAULTS = Object.freeze({
+const APPEARANCE_DEFAULTS = Object.freeze({
   background: "black",
   pixels: "rounded",
   spacing: "normal",

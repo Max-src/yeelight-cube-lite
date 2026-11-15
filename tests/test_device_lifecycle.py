@@ -3,6 +3,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import runpy
+from tests.fakes import make_light as build_light, module
+from tests.fakes import light_state
 from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, _load_standalone_functions, SERVICES_SOURCE
 
 
@@ -11,37 +14,44 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         methods = _load_standalone_functions(LIGHT_SOURCE, {"_drop_extended_effects_option"})
         entry = SimpleNamespace(options=dict(options))
         update = Mock(side_effect=lambda entry, **changes: vars(entry).update(changes))
-        light = SimpleNamespace(
+        light = light_state(
             _config_entry=entry,
             hass=SimpleNamespace(config_entries=SimpleNamespace(async_update_entry=update)),
         )
         light.drop_option = lambda: methods["_drop_extended_effects_option"](light)
         return light
 
-    def test_a_removed_entity_unregisters_from_its_light(self):
-        # entity.CubeDeviceEntity._register_on_light: the light pushes changes
-        # to the entity until it is removed (disabled, or its lamp unloaded),
-        # not after; a newer entity in the same slot is left alone.
-        register = _load_standalone_functions(
-            (ROOT / "entity.py").read_text(encoding="utf-8"), {"_register_on_light"}
-        )["_register_on_light"]
-        light = SimpleNamespace(_text_input_entity=None)
+    def test_a_removed_entity_stops_listening_to_its_light(self):
+        # entity.CubeDeviceEntity._listen_to_light: the light tells the
+        # entity its changes until it is removed (disabled, or its lamp
+        # unloaded), not after, and never while it is not in Home Assistant;
+        # a reload's new entity listens on its own.
+        entity_module = module("entity")
+        light = build_light()
 
         def entity():
-            removals = []
-            item = SimpleNamespace(_light_entity=light, async_on_remove=removals.append)
+            removals, told = [], []
+            item = entity_module.CubeDeviceEntity()
+            item._light_entity, item.hass = light, object()
+            item.async_on_remove = removals.append
+            item.async_update_from_light = lambda: told.append(1)
             item.remove = lambda: [callback() for callback in removals]
+            item.told = told
             return item
 
         first, second = entity(), entity()
-        register(first, "_text_input_entity")
-        self.assertIs(light._text_input_entity, first)
+        first._listen_to_light("text_input")
+        light._notify("text_input")
+        self.assertEqual([1], first.told)
         first.remove()
-        self.assertIsNone(light._text_input_entity)
-        register(first, "_text_input_entity")
-        register(second, "_text_input_entity")  # a reload's new entity
-        first.remove()
-        self.assertIs(light._text_input_entity, second)
+        second._listen_to_light("text_input")
+        light._notify("text_input")
+        self.assertEqual(([1], [1]), (first.told, second.told))
+        second.hass = None
+        light._notify("text_input")
+        self.assertEqual([1], second.told)
+        with self.assertRaises(ValueError):
+            light.add_listener("no_such_topic", print)
 
     def test_the_experimental_features_option_of_earlier_versions_is_dropped(self):
         # Every effect and clock style is offered now: the option goes, the
@@ -56,15 +66,14 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         # Its switch is no longer created, and is removed from the registry.
         switch = (ROOT / "switch.py").read_text(encoding="utf-8")
         self.assertNotIn("ExtendedEffectsSwitch", switch)
-        self.assertIn('f"{light_entity._attr_unique_id}_extended_effects"', switch)
+        self.assertIn('f"{light_entity.unique_id}_extended_effects"', switch)
 
     async def test_an_experimental_clock_style_needs_no_setting(self):
-        light = self.make_light({"auto_turn_on": True})
-        light._is_on = True
-        light._mode = "Clock"
-        light._refresh_linked_entities = Mock()
-        light.async_write_ha_state = Mock()
-        light.async_apply_display_mode = AsyncMock()
+        light = build_light(
+            _is_on=True, _mode="Clock", _refresh_linked_entities=Mock(),
+            async_write_ha_state=Mock(), async_apply_display_mode=AsyncMock(),
+        )
+        light._config_entry.options = {"auto_turn_on": True}
         pending = []
         handler = _load_standalone_functions(
             SERVICES_SOURCE,
@@ -111,6 +120,8 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             (ROOT / "config_flow.py").read_text(encoding="utf-8"),
             {"async_step_discovery"},
             {**CONSTANTS, **namespace, "_LOGGER": Mock(),
+             "model_key": runpy.run_path(ROOT / "device_profile.py")["model_key"],
+             "CUBEMATRIX": "cubematrix",
              "config_entries": SimpleNamespace(ConfigEntryState=SimpleNamespace(
                  SETUP_ERROR="error", SETUP_RETRY="retry"))},
         )

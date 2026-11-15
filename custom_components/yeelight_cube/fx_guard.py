@@ -13,7 +13,7 @@ from __future__ import annotations
 import base64
 import binascii
 
-from .const import LAMP_ANIMATION_SLOTS, NATIVE_CLOCK_EFFECT_ID, lamp_rate
+from .effect_catalog import LAMP_ANIMATION_SLOTS, NATIVE_CLOCK_EFFECT_ID, lamp_rate
 from .lamp_core import LENGTH, segment_geometry
 from .mount_profile import DIRECTION_TABLE, REFERENCE_PROFILE, valid_profile
 

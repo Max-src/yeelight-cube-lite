@@ -10,9 +10,10 @@ Adding a renderer:
   added once, at the end of lamp_renderers.py and of its .js mirror.
 - init(settings) returns everything the renderer keeps, plain data, starting
   as on a fresh Apply. What only depends on the settings goes there too.
-- step(state, settings, clock_ms, render) returns the render's panel, 300
-  bytes of LED drive in panel order (place_strip puts a logical strip there; JS
-  may return a buffer it reuses). clock_ms is the lamp's clock (clock_at); the
+- step(state, settings, clock_ms, render) returns the render's panel, 3 N
+  bytes of LED drive in panel order, N the segment's pixels (settings_length:
+  100, or 75, 50, 25 on a shorter segment; place_strip puts a logical strip
+  there; JS may return a buffer it reuses). clock_ms is the lamp's clock (clock_at); the
   time since the Apply is render * RENDER_MS.
 - warmup in the slot: 0 for a pure function of the clock or the render, the
   fewest renders that rebuild the same frame from a fresh state at any clock,

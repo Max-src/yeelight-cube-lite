@@ -1,5 +1,5 @@
 /**
- * The families the effect and clock style galleries filter by (const.py
+ * The families the effect and clock style galleries filter by (effect_catalog.py
  * EFFECT_FAMILIES): what an effect looks like. The lamp's catalog gives each
  * effect its family; the offline catalogue and the clock styles have them from
  * EFFECT_FAMILY_NAMES below.
@@ -19,15 +19,16 @@ export const EFFECT_FAMILIES = [
 export const EFFECT_FAMILY_NAMES = {
   waves: [
     "Two-colour alternation", "Breathing", "Ribbon", "Moving palette",
-    "Rotating colour bands", "Triangular palette pulses", "Sine wave",
+    "Rotating colour bands", "Triangular palette pulses", "Dark palette pulses", "Sine wave",
     "Sunrise and sunset", "Scrolling bands", "Palette cross-fade", "Rainbow",
     "Waves", "Violet interference", "Night-amber waves", "Night-sky waves",
     "Neon sine bands", "Daydream",
   ],
   glow: [
-    "Aurora", "Heat fire", "Rising wisps", "Fire", "Rainbow noise", "Flower Sea",
+    "Aurora", "Northern Lights", "Heat fire", "Rising wisps", "Fire", "Rainbow noise",
+    "Flower Sea", "Rose Sea",
     "Navy-white noise", "Magic", "Wonderland", "Kaleidoscope", "Palette",
-    "Halloween glow", "Moonlit clouds",
+    "Halloween glow", "Moonlit clouds", "Lava Lamp",
   ],
   sparkles: [
     "Starry Sky", "Particle path", "Fireworks", "Palette sparks", "Flicker sweep",
@@ -39,7 +40,7 @@ export const EFFECT_FAMILY_NAMES = {
     "Bouncing Ball", "Sine plotter", "Hacking", "Meteor", "Tide",
     "Building Blocks", "Dot with fading trail", "Rainbow fill-in (one-shot)",
     "Rainbow wipe-out (one-shot)", "White fill-in (one-shot)",
-    "White wipe-out (one-shot)",
+    "White wipe-out (one-shot)", "Knight Rider", "Falling Blocks",
   ],
   music: [
     "Music level glow", "Music bars from both ends", "Music bars from the centre",
@@ -159,7 +160,7 @@ export class FamilyFilter {
 
 // The orders a gallery can be sorted in on the card (card-config.js
 // sortGalleryItems).
-export const GALLERY_SORTS = [
+const GALLERY_SORTS = [
   { value: "manual", label: "Default", icon: "mdi:sort", title: "Default order" },
   { value: "name", label: "A → Z", icon: "mdi:sort-alphabetical-ascending", title: "A → Z" },
   { value: "family", label: "Family", icon: "mdi:shape-outline", title: "By family" },

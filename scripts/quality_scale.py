@@ -241,8 +241,8 @@ def check_has_entity_name(root):
 
 
 def check_entity_event_setup(root):
-    """An entity registers on its light through _register_on_light (entity.py),
-    which unregisters it when it is removed: never by assigning itself."""
+    """An entity listens to its light through _listen_to_light (entity.py),
+    which stops it when it is removed: never by assigning itself to it."""
     problems = []
     for platform in PLATFORMS:
         source = (root / f"{platform}.py").read_text(encoding="utf-8")

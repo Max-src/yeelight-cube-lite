@@ -35,7 +35,6 @@ import { normalizeCardOptions } from "./card-config.js";
 import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
 import { defineOnce } from "./card-registration.js";
-import { getTargetEntities } from "./service-call-utils.js";
 import {
   sharedRotationInterval,
   saveEditorRotationInterval,
@@ -79,13 +78,16 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
     this.requestUpdate();
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    if (hass && hass.states) this.requestUpdate();
-  }
-
-  get hass() {
-    return this._hass;
+  // What the editor shows from hass (editor_ui_utils set hass): the lamp
+  // picker, the shared clock presets (and the services saving them) and the
+  // lamps' shared rotation interval.
+  _hassInputs(hass) {
+    return [
+      ...super._hassInputs(hass),
+      clockPresetLibrary(hass),
+      hass.services,
+      sharedRotationInterval(hass, this._config || {}, "clock"),
+    ];
   }
 
   shouldUpdate() {
@@ -105,7 +107,6 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
       buttons_content_mode: "icon_text",
       ...this._config,
     });
-    const selectedEntities = getTargetEntities(config);
     // Several changes from one control (e.g. the interval rows and their
     // total) build on each other.
     let next = config;

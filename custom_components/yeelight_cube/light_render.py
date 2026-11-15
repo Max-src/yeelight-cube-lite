@@ -11,15 +11,16 @@ import random
 import traceback
 
 from .color_utils import rgb_to_hex
-from .cube_matrix import is_connection_error, is_quota_error
+from .lamp_protocol import is_connection_error, is_quota_error
 from .const import (
+    DEFAULT_DEVICE_ORIENTATION,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     ORIENTATION_NORMAL,
     PANEL_FULL_CHAR,
     TEXT_RENDER_MODES,
 )
-from .layout import FONT_MAPS, Module, TOTAL_COLUMNS, TOTAL_ROWS, char_advance
+from .layout import FONT_MAPS, Layout, Module, TOTAL_COLUMNS, TOTAL_ROWS, char_advance
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +30,26 @@ _MISSING_GLYPHS: set = set()
 
 class MatrixRenderMixin:
     """Render text / gradients / pixel-art into the 5x20 matrix."""
+
+    def _init_render_state(self) -> None:
+        """What the text and drawing modes render, and how the lamp is
+        mounted. Called by YeelightCubeLight.__init__."""
+        self._layout = Layout("vertical", "bottom", [Module("1x1") for _ in range(100)])
+        self._custom_text = "HELLO"
+        self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
+        # Custom Draw mode: the drawing's pixels (_custom_draw_active, in
+        # light_state: whether it is the content shown).
+        self._custom_pixels = None
+        self._full_panel = False  # Whether to apply gradients to whole panel instead of just text
+        self._angle = 0.0
+        self._background_color = (0, 0, 0)
+        self._alignment = "center"  # Default alignment is center
+        self._font = "basic"  # Font key for FONT_MAPS (use "basic" as default)
+        self._orientation = ORIENTATION_NORMAL  # "normal" or "flipped"
+        self._device_orientation = DEFAULT_DEVICE_ORIENTATION  # right/down/left/up
+        self._rgb_color = (255, 0, 0)  # Default red color for Home Assistant color picker
+        # The name of the pixel art shown (the Pixel Art select's choice).
+        self._active_pixel_art_name = None
 
 
     def calculate_text_offset(self, total_text_width: int, total_columns: int = TOTAL_COLUMNS) -> int:
@@ -59,11 +80,20 @@ class MatrixRenderMixin:
         """
         if self._orientation == ORIENTATION_NORMAL:
             return pos
-        # Flip both row and column (180 deg rotation)
+        # Flip both row and column (180 deg rotation), within the columns the
+        # lamp shows (a Cube Matrix with fewer than 4 blocks: device_profile
+        # columns); a column it does not show stays where it is.
         row, col = divmod(pos, total_columns)
+        shown = min(total_columns, self._shown_columns())
         flipped_row = total_rows - 1 - row
-        flipped_col = total_columns - 1 - col
+        flipped_col = shown - 1 - col if col < shown else col
         return flipped_row * total_columns + flipped_col
+
+    def _shown_columns(self) -> int:
+        """The frame's columns the lamp shows (device_profile.columns: 20 on
+        a Cube Lite, 5 a block on a Cube Matrix)."""
+        profile = getattr(self, "device_profile", None)
+        return getattr(profile, "columns", TOTAL_COLUMNS) or TOTAL_COLUMNS
 
     def _flip_positions(self, positions, total_columns=TOTAL_COLUMNS, total_rows=TOTAL_ROWS):
         return [self._flip_position(pos, total_columns, total_rows) for pos in positions]
@@ -71,16 +101,15 @@ class MatrixRenderMixin:
     async def _apply_display_mode_internal(self):
         """Internal method that actually applies the display mode - called by queue processor"""
         # Re-applying anything resumes the display after a freeze_display.
-        self._display_frozen = False
-        self._display_frozen_at = None
+        self._set_display_frozen(False, at=None)
         try:
             if self._mode == MODE_CLOCK:
-                self._is_scrolling = False
+                self._set_scrolling(False)
                 self.stop_scroll_timer()
                 await self._activate_native_clock()
                 return
             if self._mode == MODE_NATIVE_EFFECT:
-                self._is_scrolling = False
+                self._set_scrolling(False)
                 self.stop_scroll_timer()
                 await self._activate_native_effect()
                 return
@@ -132,7 +161,7 @@ class MatrixRenderMixin:
             if self._mode == "Panel Color Sequence":
                 # The colors fill the panel one module after another; any text
                 # or full-panel setting is kept for the text modes.
-                self._is_scrolling = False
+                self._set_scrolling(False)
                 self.stop_scroll_timer()
                 self._place_frame(self._panel_sequence_frame(self._text_colors))
                 await self.apply()
@@ -150,9 +179,9 @@ class MatrixRenderMixin:
                         "[DISPLAY] [%s] Normalising non-text mode '%s' -> 'Solid Color' for text render",
                         self._ip, self._mode,
                     )
-                    self._mode = "Solid Color"
+                    self._enter_mode("Solid Color")
                     if self._matrix_mode not in TEXT_RENDER_MODES:
-                        self._matrix_mode = "Solid Color"
+                        self._enter_mode(matrix_mode="Solid Color")
                 # --- Panel mode override -----------------------------------
                 # When full_panel is on, replace the actual text with a single
                 # virtual character (PANEL_FULL_CHAR) that covers every pixel
@@ -161,8 +190,10 @@ class MatrixRenderMixin:
                 # normal text rendering path -- no special branches needed.
                 if self._full_panel:
                     effective_text = PANEL_FULL_CHAR  # single char whose positions = all 100 pixels
-                    total_columns = TOTAL_COLUMNS
-                    total_text_width = TOTAL_COLUMNS  # fills the full width
+                    # The columns the lamp shows (a Cube Matrix with fewer
+                    # blocks: its gradients span those, not 20).
+                    total_columns = self._shown_columns()
+                    total_text_width = total_columns  # fills the shown width
                     current_offset = 0  # no alignment shift -- it already covers everything
                     _LOGGER.debug(
                         "[DISPLAY] [%s] Panel mode: rendering virtual full-panel character "
@@ -172,7 +203,8 @@ class MatrixRenderMixin:
                     )
                 else:
                     effective_text = self._custom_text
-                    total_columns = TOTAL_COLUMNS
+                    # Laid out and scrolled within the columns the lamp shows.
+                    total_columns = self._shown_columns()
                     total_text_width = sum(self._char_advance(letter) for letter in self._custom_text) - 1
                     current_offset = self.calculate_text_offset(total_text_width, total_columns)
                 _LOGGER.debug("[DISPLAY] Rendering text: '%s' with mode: '%s' and colors: %s", effective_text, self._mode, self._text_colors)
@@ -202,11 +234,11 @@ class MatrixRenderMixin:
                 # Start scroll timer if text is longer than display and scrolling is enabled
                 if self._max_scroll_offset > 0 and self._scroll_enabled:
                     _LOGGER.debug("[SCROLL] Starting scroll timer for long text (max_offset: %s)", self._max_scroll_offset)
-                    self._is_scrolling = True
+                    self._set_scrolling(True)
                     self.start_scroll_timer()
                 else:
                     # Stop scrolling if text fits or scrolling is disabled
-                    self._is_scrolling = False
+                    self._set_scrolling(False)
                     self.stop_scroll_timer()
             else:
                 # No text, no panel mode, no pixel art, no special mode.
@@ -275,6 +307,10 @@ class MatrixRenderMixin:
         (_apply_display_mode_internal) and the gallery previews
         (preview_gradient_modes) both draw from it."""
         frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
+        # The columns the lamp shows (device_profile.columns: 15 on a Cube
+        # Matrix with 3 blocks): the gradients span them, and nothing is
+        # drawn past them.
+        columns = min(TOTAL_COLUMNS, self._shown_columns())
         if not colors:
             colors = (
                 [(255, 0, 0), (0, 0, 255)]
@@ -287,10 +323,10 @@ class MatrixRenderMixin:
             return tuple(min(255, max(0, value)) for value in color)
 
         def shown(pos, letter_offset):
-            # On the panel, and inside the visible 20 columns of the text.
+            # On the panel, and inside the columns the lamp shows.
             return (
                 0 <= pos + letter_offset < len(frame)
-                and 0 <= pos % TOTAL_COLUMNS + letter_offset < TOTAL_COLUMNS
+                and 0 <= pos % TOTAL_COLUMNS + letter_offset < columns
             )
 
         # Each letter: its glyph and the column it starts at.
@@ -314,7 +350,7 @@ class MatrixRenderMixin:
             return frame
 
         if mode in ("Angle Gradient", "Radial Gradient"):
-            center_col = (TOTAL_COLUMNS - 1) / 2
+            center_col = (columns - 1) / 2
             center_row = (TOTAL_ROWS - 1) / 2
             if mode == "Angle Gradient":
                 dx = math.cos(math.radians(angle))
@@ -358,7 +394,7 @@ class MatrixRenderMixin:
                     # A one-column letter: a 3-column, full-height box.
                     min_row, max_row = 0, TOTAL_ROWS - 1
                     min_col = max(0, cols[0] - 1)
-                    max_col = min(TOTAL_COLUMNS - 1, cols[0] + 1)
+                    max_col = min(columns - 1, cols[0] + 1)
                 else:
                     min_row, max_row = min(rows), max(rows)
                     min_col, max_col = min(cols), max(cols)

@@ -9,6 +9,8 @@ import runpy
 import sys
 import types
 import unittest
+
+from tests.fakes import light_state
 from unittest.mock import AsyncMock, Mock
 
 from tests.test_native_features import (
@@ -64,7 +66,7 @@ NATIVE_HELPERS = _load_standalone_functions(
     LIGHT_SOURCE,
     {"write_effect_setting_entities", "shown_effect_reads", "shown_effect_spec", "palette_music"},
     {name: CONSTANTS[name] for name in (
-        "ALL_NATIVE_EFFECTS", "CLOCK_MIXER_EFFECTS", "DEFAULT_NATIVE_CLOCK_STYLE",
+        "ALL_NATIVE_EFFECTS", "CLOCK_MIXER_EFFECTS", "clock_style_effect", "DEFAULT_NATIVE_CLOCK_STYLE",
         "DEFAULT_NATIVE_EFFECT", "NATIVE_CLOCK_STYLES",
     )},
 )
@@ -100,7 +102,7 @@ def shown_names(entities, platform):
 
 
 def make_light(**state):
-    light = types.SimpleNamespace(
+    light = light_state(
         _attr_unique_id="cube1", _lamp_name="Cube", _ip="10.0.0.1", hass=None,
         _native_effect="Rainbow", _native_effect_direction="Right",
         _native_clock_style=6, _mode="Solid Color",
@@ -169,12 +171,13 @@ class ControlEntityTests(unittest.TestCase):
         # Flow (sent to the lamp directly) checks here, and refuses.
         number_source = (ROOT / "number.py").read_text(encoding="utf-8")
         self.assertNotIn("_should_auto_turn_on", number_source)
-        self.assertEqual(SELECT_SOURCE.count("_should_auto_turn_on"), 1)
+        self.assertNotIn("_should_auto_turn_on", SELECT_SOURCE)
         light = make_light(_is_on=False, _should_auto_turn_on=lambda: False, _music_flow_enabled=False)
         light.async_set_music_flow = AsyncMock()
         content = SELECT["YeelightCubeContentModeSelect"](light, None)
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(Exception) as refused:
             asyncio.run(content.async_select_option("Music Flow"))
+        self.assertEqual("ServiceValidationError", type(refused.exception).__name__)
         light.async_set_music_flow.assert_not_awaited()
 
 
@@ -212,7 +215,8 @@ class ControlEntityTests(unittest.TestCase):
         light = make_light(
             _scroll_speed=0.2, _is_scrolling=True,
             start_scroll_timer=Mock(), _preview_contrast=100,
-            async_apply_display_mode=AsyncMock(),
+            async_apply_display_mode=AsyncMock(), lamp_draws_matrix=False,
+            _music_flow_enabled=False,
         )
         light.hass = types.SimpleNamespace()  # added to Home Assistant
         # The light's tracked task (cancelled with the lamp).
@@ -232,6 +236,16 @@ class ControlEntityTests(unittest.TestCase):
         self.assertEqual(light._preview_contrast, 0)
         light.async_apply_display_mode.assert_awaited_once_with()
         self.assertEqual(light.async_write_ha_state.call_count, 2)  # scroll, contrast
+
+        # The lamp runs its own effect: no adjustment applies, so nothing is
+        # sent again (it would restart the effect at every step).
+        light.lamp_draws_matrix, light._mode = True, NUMBER["MODE_NATIVE_EFFECT"]
+        asyncio.run(contrast_change())
+        light.async_apply_display_mode.assert_awaited_once_with()
+        # An animation takes them: its GIF is drawn again.
+        light._native_effect = next(iter(NUMBER["LAMP_ANIMATION_EFFECTS"]))
+        asyncio.run(contrast_change())
+        self.assertEqual(light.async_apply_display_mode.await_count, 2)
 
 
 if __name__ == "__main__":

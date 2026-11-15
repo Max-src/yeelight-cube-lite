@@ -2,6 +2,7 @@ import re
 import unittest
 
 from tests.test_native_features import ROOT, TranslatedError, _load_standalone_functions
+from tests.fakes import light_state
 
 
 COMMON = _load_standalone_functions(
@@ -53,18 +54,13 @@ class CollectionMoveTests(unittest.TestCase):
                 self.assertRegex(source, re.compile(r"if not _move_item\("))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 async def published_before_drawn(test, apply, colors):
     """``apply`` (a service's run for one lamp) writes the lamp's state
     with ``colors`` before the lamp is drawn, which may take a while or
     fail: the previews drawing the palette follow at once."""
-    from types import SimpleNamespace
 
     seen = []
-    lamp = SimpleNamespace(entity_id="light.a", hass=object(), _text_colors=None)
+    lamp = light_state(entity_id="light.a", hass=object(), _text_colors=None)
     lamp.async_write_ha_state = lambda: seen.append(("state", list(lamp._text_colors)))
     lamp.async_schedule_update_ha_state = lambda: None
 
@@ -161,3 +157,7 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
             [("SET_TEXT_COLORS", ["light.a"])],
             [(label, [lamp.entity_id for lamp in lamps]) for label, lamps in self.runs],
         )
+
+
+if __name__ == "__main__":
+    unittest.main()

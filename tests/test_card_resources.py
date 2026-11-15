@@ -98,7 +98,7 @@ class CardResourceTests(unittest.IsolatedAsyncioTestCase):
             INIT_SOURCE, {"_read_card_names"},
             {"os": os, "re": re, "__file__": str(ROOT / "__init__.py")},
         )["_read_card_names"]()
-        self.assertEqual(7, len(names))
+        self.assertEqual(8, len(names))
         for name in names:
             self.assertTrue((ROOT / "www" / f"yeelight-cube-{name}-card.js").is_file(), name)
 

@@ -33,7 +33,7 @@ const SLIDER_CARDS = new Set(["clock", "native", "lamp-preview"]);
 // (effect-names.js), and an editor saves today's.
 const NAMED_ITEMS = Object.freeze({ clock: "clock", native: "native" });
 
-export const OPTION_ALIASES = Object.freeze({
+const OPTION_ALIASES = Object.freeze({
   clock: {
     // The Clock's speed slider had its own speed_* appearance options; the
     // shared slider_* ones now drive all its sliders.
@@ -116,7 +116,7 @@ export const OPTION_ALIASES = Object.freeze({
  * normalizeCardOptions; the older key is dropped afterwards
  * (RETIRED_OPTIONS).
  */
-export const OPTION_MIGRATIONS = Object.freeze({
+const OPTION_MIGRATIONS = Object.freeze({
   // The visible styles applied only with custom_visible_styles on.
   clock: (config) =>
     config.custom_visible_styles !== true &&
@@ -398,7 +398,7 @@ function gradientPreviewSize(value) {
 }
 
 /** Options a card no longer uses: dropped from its config. */
-export const RETIRED_OPTIONS = Object.freeze({
+const RETIRED_OPTIONS = Object.freeze({
   // Written by older Draw stubs/editors; nothing ever read it.
   draw: [
     // Became pixel_art_orientation (OPTION_MIGRATIONS).

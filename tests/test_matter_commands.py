@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from ha_stubs import import_pure_module  # noqa: E402
 
 COMMANDS = import_pure_module("matter_commands")
-from test_matter_link import CUBE_ATTRIBUTES, LAMP_IP, node  # noqa: E402
+from test_matter_link import LAMP_IP  # noqa: E402
 
 REFUSED = Exception('Cluster Id "320011269" unknown')
 
@@ -59,6 +59,18 @@ def run(coroutine):
 
 
 class MatterCommandsTests(unittest.TestCase):
+    def test_a_lamp_paired_again_is_checked_again(self):
+        # The old node's check timed out (its pairing was erased); the new
+        # node is checked as soon as the link moves to it.
+        server = FakeServer(knows_yeelight=True, error=TimeoutError())
+        link = link_to(server, node_id=7)
+        channel = commands(link)
+        self.assertFalse(run(channel.async_available()))
+        server.error = None
+        link.node_id = 8
+        self.assertTrue(run(channel.async_available()))
+        self.assertEqual(2, len(server.sent))  # one check per node
+
     def test_without_matter_nothing_is_available(self):
         channel = commands()
         self.assertFalse(run(channel.async_available()))

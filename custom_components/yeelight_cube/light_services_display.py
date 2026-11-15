@@ -5,9 +5,7 @@ the display state.
 Registered by :func:`light_services.async_setup_light_services`.
 """
 import asyncio
-import base64
 import logging
-import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -17,22 +15,15 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from .color_utils import hex_to_rgb
 from .const import (
     DEVICE_ORIENTATIONS,
-    LAMP_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     DOMAIN,
-    MATRIX_DISPLAY_MODES,
-    NATIVE_CLOCK_APPLY,
-    NATIVE_CLOCK_EFFECT_ID,
-    PANEL_FULL_CHAR,
-    TEXT_RENDER_MODES,
 )
 from .errors import failed, invalid, invalid_input
 from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
 from .input_error import InputError
-from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
+from .layout import FONT_MAPS
 from .light import _entity_id_or_list
-from .light_native import write_effect_setting_entities
 from .light_services_common import (
     COLOR_LIST_SCHEMA,
     _resolve_entity,
@@ -47,56 +38,14 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     """Register the display actions."""
     run_on_lamps = make_lamp_runner(hass)
 
-    def generate_preview_for_mode(light_entity, mode: str):
-        """The lamp's 100 colors in ``mode`` from its current text, colors,
-        angle and background: the lamp's own text-mode frame
-        (_text_mode_frame), without the orientation flip (the cards apply
-        it)."""
-        # The full panel: one virtual character covering every pixel, as on
-        # the lamp.
-        if light_entity._full_panel:
-            text, width, offset = PANEL_FULL_CHAR, TOTAL_COLUMNS, 0
-        else:
-            text = light_entity._custom_text or ""
-            width = sum(light_entity._char_advance(letter) for letter in text) - 1
-            offset = light_entity.calculate_text_offset(width, TOTAL_COLUMNS) if text else 0
-        if mode == "Panel Color Sequence":
-            # The whole panel, whatever the text (as on the lamp).
-            frame = light_entity._panel_sequence_frame(light_entity._text_colors)
-        elif text:
-            frame = light_entity._text_mode_frame(
-                mode, text, light_entity._text_colors, light_entity._angle, offset, width
-            )
-        else:
-            frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
-        background = light_entity._background_color
-        return [background if color is None else color for color in frame]
-
     async def handle_preview_gradient_modes(service_call):
         """Generate full 5x20 preview matrices for all gradient modes using entity's current state."""
 
         target_entity = _resolve_entity(service_call, "PREVIEW_GRADIENT_MODES")
         
-        # Generate previews for all modes using entity's actual state
-        modes = [
-            "Solid Color",
-            "Letter Gradient",
-            "Column Gradient",
-            "Row Gradient",
-            "Angle Gradient",
-            "Radial Gradient",
-            "Letter Angle Gradient",
-            "Letter Vertical Gradient",
-            "Text Color Sequence",
-            "Panel Color Sequence",
-        ]
-        
-        previews = {}
-        for mode in modes:
-            preview_colors = generate_preview_for_mode(target_entity, mode)
-            # Convert to list of lists for JSON serialization
-            previews[mode] = [list(color) for color in preview_colors]
-        
+        # Every text mode's preview from the lamp's actual state.
+        previews = target_entity.gradient_previews()
+
         # Fire event with preview data
         hass.bus.async_fire(
             f"{DOMAIN}_gradient_preview_response",
@@ -105,10 +54,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 "previews": previews,
                 "rows": 5,
                 "cols": 20,
-                "text": target_entity._custom_text,
-                "angle": target_entity._angle,
-                "brightness": target_entity._brightness,
-                "full_panel": target_entity._full_panel,
+                **target_entity.preview_details(),
             }
         )
         
@@ -195,7 +141,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         targets = _resolve_entities(service_call, "SET_DEVICE_ORIENTATION")
         for target in targets:
-            if not target._is_on and not target._should_auto_turn_on():
+            if not target.can_take_commands():
                 raise invalid("lamp_off")
         await asyncio.gather(*(target.set_device_orientation(orientation) for target in targets))
 
@@ -214,8 +160,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         target_entity = _resolve_entity(service_call, "SET_FONT")
 
         await target_entity.set_font(font)
-        if target_entity._font_select_entity:
-            target_entity._font_select_entity.async_update_from_light()
 
     hass.services.async_register(
         DOMAIN,
@@ -232,9 +176,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         target_entity = _resolve_entity(service_call, "SET_ALIGNMENT")
 
         await target_entity.set_alignment(alignment)
-        # Notify alignment select entity of the change
-        if target_entity._alignment_select_entity:
-            target_entity._alignment_select_entity.async_update_from_light()
 
     hass.services.async_register(
         DOMAIN,
@@ -257,44 +198,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_CUSTOM_TEXT")
 
         async def _apply_one(target_entity):
-            _LOGGER.debug("[SET_TEXT] Setting custom text to: '%s' for entity %s", text, target_entity.entity_id)
-            target_entity._custom_text = text
-            target_entity._custom_pixels = None
-            target_entity._custom_draw_active = False
-            target_entity._active_pixel_art_name = None
-            if target_entity._text_waits_for_matrix():
-                # The lamp shows its built-in clock / native effect: the text
-                # is kept for when it shows text again (call save_state first
-                # to show it over the clock, restore_state to come back).
-                if target_entity._text_input_entity and getattr(target_entity._text_input_entity, 'hass', None) is not None:
-                    target_entity._text_input_entity.async_update_from_light()
-                if target_entity.hass is not None:
-                    target_entity.async_schedule_update_ha_state()
-                _LOGGER.debug(
-                    "[SET_TEXT] %s shows %s: text kept for later",
-                    target_entity.entity_id, target_entity._mode,
-                )
-                return
-            # Leaving pixel-art (Custom Draw) for text: restore a valid text
-            # render mode so the mode-select entity and renderer stay consistent
-            # -- otherwise _mode lingers as "Custom Draw" and the text render
-            # would blank the panel (see TEXT_RENDER_MODES safety net).
-            if target_entity._mode not in TEXT_RENDER_MODES:
-                target_entity._mode = "Solid Color"
-                target_entity._matrix_mode = "Solid Color"
-                if target_entity._mode_select_entity:
-                    target_entity._mode_select_entity.async_update_from_light()
-            if target_entity._text_input_entity and hasattr(target_entity._text_input_entity, 'hass') and target_entity._text_input_entity.hass is not None:
-                target_entity._text_input_entity.async_update_from_light()
-            if target_entity._pixel_art_select_entity:
-                target_entity._pixel_art_select_entity.async_update_from_light()
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
-            target_entity._scroll_offset = 0
-            target_entity._scroll_direction = 1
-            target_entity.stop_scroll_timer()
-            await target_entity.async_apply_display_mode(update_type='text_change')
-            _LOGGER.debug("[SET_TEXT] Display mode applied successfully for entity %s", target_entity.entity_id)
+            await target_entity.async_show_custom_text(text)
 
         run_on_lamps("SET_CUSTOM_TEXT", targets, _apply_one)
 
@@ -315,15 +219,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_ANGLE")
 
         async def _apply_one(target_entity):
-            target_entity._angle = angle
-            # Push angle to HA state immediately so the frontend card's set hass()
-            # detects the change and can reload previews without waiting for the
-            # next polling cycle (~30s).  Must happen BEFORE the slow hardware
-            # command so the JS card sees the new angle right away.
-            target_entity.async_schedule_update_ha_state()
-            await target_entity.async_apply_display_mode(update_type='color_change')
-            if target_entity._angle_number_entity:
-                target_entity._angle_number_entity.async_update_from_light()
+            await target_entity.async_set_gradient_angle(angle)
 
         run_on_lamps("SET_ANGLE", targets, _apply_one)
 
@@ -360,15 +256,9 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             )
 
         async def _apply_one(target_entity):
-            target_entity._text_colors = converted_colors
-            if target_entity._text_colors:
-                target_entity._rgb_color = target_entity._text_colors[0]
             # Published at once, like load_palette's: the previews drawing
             # the palette follow without waiting for the lamp.
-            if target_entity.hass is not None:
-                target_entity.async_write_ha_state()
-            await target_entity.async_apply_display_mode(update_type='color_change')
-            target_entity.async_schedule_update_ha_state()
+            await target_entity.async_set_text_colors(converted_colors)
 
         # The colors are kept with the lamp's state (restored by Home
         # Assistant), not in the integration's storage.
@@ -418,15 +308,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             raise failed("image_failed", error=err) from err
 
         async def _apply_one(target_entity):
-            target_entity._custom_pixels = custom_pixels
-            target_entity._mode = "Custom Draw"
-            target_entity._matrix_mode = "Custom Draw"
-            target_entity._custom_draw_active = True
-            await target_entity.async_apply_display_mode(update_type='pixel_art')
-            if target_entity._mode_select_entity:
-                target_entity._mode_select_entity.async_update_from_light()
-            if target_entity._content_mode_select_entity:
-                target_entity._content_mode_select_entity.async_update_from_light()
+            await target_entity.async_show_drawing(custom_pixels)
 
         run_on_lamps("DISPLAY_IMAGE", targets, _apply_one)
 
@@ -451,33 +333,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_MODE")
 
         async def _apply_one(target_entity):
-            if full_panel is not None:
-                target_entity._full_panel = full_panel
-                _LOGGER.debug("[set_mode] Also setting full_panel to %s", full_panel)
-            if mode in MATRIX_DISPLAY_MODES:
-                target_entity._matrix_mode = mode
-                target_entity._mode = mode
-            if mode == "Custom Draw":
-                target_entity._custom_draw_active = True
-            elif mode in LAMP_MODES:
-                target_entity._mode = mode
-                target_entity._custom_draw_active = False
-            else:
-                target_entity._custom_draw_active = False
-                target_entity._custom_pixels = None
-            await target_entity.async_apply_display_mode(update_type='color_change')
-            if target_entity._mode_select_entity:
-                target_entity._mode_select_entity.async_update_from_light()
-            if target_entity._content_mode_select_entity:
-                target_entity._content_mode_select_entity.async_update_from_light()
-            # Speed and intensity follow the mode (what the lamp shows reads them or not).
-            write_effect_setting_entities(target_entity)
-            # Keep native-effect helper entities in sync.
-            if mode == MODE_NATIVE_EFFECT:
-                if target_entity._native_effect_select_entity:
-                    target_entity._native_effect_select_entity.async_write_ha_state()
-                if target_entity._native_effect_direction_select_entity:
-                    target_entity._native_effect_direction_select_entity.async_update_from_light()
+            await target_entity.async_set_display_mode(mode, full_panel)
 
         run_on_lamps("SET_MODE", targets, _apply_one)
 
@@ -516,13 +372,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_SOLID_COLOR")
 
         async def _apply_one(target_entity):
-            # Rendering reads colors from _text_colors, not _rgb_color — set
-            # both so the new color is actually visible on the lamp.
-            target_entity._text_colors = [rgb_color]
-            target_entity._rgb_color = rgb_color
-            await target_entity.async_apply_display_mode(update_type='color_change')
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
+            await target_entity.async_set_solid_color(rgb_color)
 
         run_on_lamps("SET_SOLID_COLOR", targets, _apply_one)
 
@@ -546,22 +396,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_FULL_PANEL")
 
         async def _apply_one(target_entity):
-            _LOGGER.debug(
-                "[PANEL] [%s] "
-                "Setting full_panel=%s (was %s)",
-                getattr(target_entity, '_ip', '?'), full_panel,
-                target_entity._full_panel
-            )
-            target_entity._full_panel = full_panel
-            # When enabling panel mode, deactivate custom draw so the display
-            # switches back to the text/gradient rendering path.  The pixel art
-            # branch in _apply_display_mode_internal would otherwise take
-            # priority and ignore full_panel entirely.
-            if full_panel:
-                target_entity._custom_draw_active = False
-                target_entity._custom_pixels = None
-            target_entity.async_schedule_update_ha_state()
-            await target_entity.async_apply_display_mode(update_type='color_change')
+            await target_entity.async_set_full_panel(full_panel)
 
         run_on_lamps("SET_FULL_PANEL", targets, _apply_one)
 
@@ -583,46 +418,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         data = service_call.data
 
         async def _apply_one(target_entity):
-            hue_shift = data.get("hue_shift", target_entity._preview_hue_shift)
-            temperature = data.get("temperature", target_entity._preview_temperature)
-            saturation = data.get("saturation", target_entity._preview_saturation)
-            vibrance = data.get("vibrance", target_entity._preview_vibrance)
-            contrast = data.get("contrast", target_entity._preview_contrast)
-            glow = data.get("glow", target_entity._preview_glow)
-            grayscale = data.get("grayscale", target_entity._preview_grayscale)
-            invert = data.get("invert", target_entity._preview_invert)
-            tint_hue = data.get("tint_hue", target_entity._preview_tint_hue)
-            tint_strength = data.get("tint_strength", target_entity._preview_tint_strength)
-            # Validate ranges
-            hue_shift = max(-180, min(180, int(hue_shift)))
-            temperature = max(-100, min(100, int(temperature)))
-            saturation = max(0, min(200, int(saturation)))
-            vibrance = max(0, min(200, int(vibrance)))
-            contrast = max(0, min(200, int(contrast)))
-            glow = max(0, min(100, int(glow)))
-            grayscale = max(0, min(100, int(grayscale)))
-            invert = max(0, min(100, int(invert)))
-            tint_hue = max(0, min(360, int(tint_hue)))
-            tint_strength = max(0, min(100, int(tint_strength)))
-            # Update entity values
-            target_entity._preview_hue_shift = hue_shift
-            target_entity._preview_temperature = temperature
-            target_entity._preview_saturation = saturation
-            target_entity._preview_vibrance = vibrance
-            target_entity._preview_contrast = contrast
-            target_entity._preview_glow = glow
-            target_entity._preview_grayscale = grayscale
-            target_entity._preview_invert = invert
-            target_entity._preview_tint_hue = tint_hue
-            target_entity._preview_tint_strength = tint_strength
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
-            for entity in target_entity._preview_number_entities.values():
-                entity.async_update_from_light()
-            target_entity._create_tracked_task(
-                target_entity.async_apply_display_mode(),
-                name=f"yeelight_cube_apply_preview_adjustments_{target_entity._ip}"
-            )
+            target_entity.set_preview_adjustments(data)
 
         run_on_lamps("SET_PREVIEW_ADJUSTMENTS", targets, _apply_one)
 
@@ -667,61 +463,15 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         Native effects freeze via the renderer's freeze-frame command
         ([64, 0, 4, {mode: 64}]). The lamp's clock instead re-sends its
         current command with the freeze mixer (64) -- sending mode 64 to the
-        clock shows a full-panel effect, not the frozen clock face. Resume is
-        client-driven: the cards re-apply the current effect / clock mode (i.e.
+        clock shows a full-panel effect, not the frozen clock face. A Cube
+        Matrix has neither: what it shows itself over Matter is replaced by a
+        still drawing of the held frame (light_matrix.async_matrix_freeze),
+        and a streamed effect stops being sent. Resume is client-driven: the cards re-apply the current effect / clock mode (i.e.
         resend the last command). Supports multi-entity parallel dispatch.
         """
         targets = _resolve_entities(service_call, "FREEZE_DISPLAY")
 
-        def _freeze_params(target):
-            if getattr(target, "_mode", None) == MODE_CLOCK:
-                data = base64.b64encode(
-                    target._native_clock_data_bytes()
-                ).decode("ascii")
-                return [
-                    NATIVE_CLOCK_EFFECT_ID,
-                    target._native_clock_style,
-                    NATIVE_CLOCK_APPLY,
-                    {"mode": NATIVE_CLOCK_EFFECT_ID, "mixer": 64, "data": data},
-                ]
-            return [64, 0, 4, {"mode": 64}]
-
-        async def _freeze_one(target):
-            params = _freeze_params(target)
-            is_clock = getattr(target, "_mode", None) == MODE_CLOCK
-            # Capture the background phase at freeze time so the preview holds
-            # that exact frame; sampling later would freeze on a stale frame.
-            target._display_frozen_at = time.time()
-
-            # Studio: the stream pauses (light_studio) and the lamp holds the
-            # frame it was last sent; no command.
-            studio = getattr(target, "studio_streaming", None)
-            if studio is not None and studio():
-                target._display_frozen = True
-                target.async_write_ha_state()
-                target._notify_camera_preview()
-                return
-
-            async def _do_send():
-                target._cube_matrix.close_fast_socket()
-                # The clock activation is socket-timing sensitive; give the
-                # fresh socket the same brief settle it uses in _activate_native_clock.
-                if is_clock:
-                    await asyncio.sleep(0.1)
-                await target._cube_matrix.send_raw_command(
-                    "set_fx_effect", params
-                )
-
-            await target._execute_hardware_op(_do_send, "freeze_display")
-            # Track the freeze so the fake camera holds the background frame
-            # (clock digits keep rendering live). Cleared by the next re-apply.
-            target._display_frozen = True
-            target.async_write_ha_state()
-            notify = getattr(target, "_notify_camera_preview", None)
-            if notify:
-                notify()
-
-        run_on_lamps("FREEZE_DISPLAY", targets, _freeze_one)
+        run_on_lamps("FREEZE_DISPLAY", targets, lambda target: target.async_freeze_display())
 
     hass.services.async_register(
         DOMAIN,
@@ -740,7 +490,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SAVE_STATE")
 
         async def _apply_one(target_entity):
-            target_entity._save_display_state()
+            target_entity.save_display_state()
             _LOGGER.debug("[SAVE_STATE] Saved display state for %s", target_entity.entity_id)
 
         run_on_lamps("SAVE_STATE", targets, _apply_one)
@@ -761,18 +511,13 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "RESTORE_STATE")
 
         async def _apply_one(target_entity):
-            if not target_entity._restore_display_state():
+            if not await target_entity.async_restore_saved_state():
                 _LOGGER.warning(
                     "[RESTORE_STATE] No saved state for %s -- "
                     "call save_state first",
                     target_entity.entity_id
                 )
                 return
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
-            await target_entity.async_apply_display_mode(update_type='color_change')
-            # The rotation that ran when the state was saved runs again.
-            await target_entity._async_resume_display_rotation()
             _LOGGER.debug("[RESTORE_STATE] Restored display state for %s", target_entity.entity_id)
 
         run_on_lamps("RESTORE_STATE", targets, _apply_one)

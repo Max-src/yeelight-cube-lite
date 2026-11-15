@@ -43,3 +43,17 @@ def lamp_answers():
     for a lamp that does not."""
     with patch("custom_components.yeelight_cube.config_flow.check_tcp", new=AsyncMock()) as probe:
         yield probe
+
+
+@pytest.fixture(autouse=True)
+def cube_matrix_layout():
+    """The model probe (get_prop, which only a Cube Matrix answers): no
+    answer by default, so the lamp is a Cube Lite; return a layout for a
+    Cube Matrix."""
+    patcher = patch(
+        "custom_components.yeelight_cube.config_flow._cube_matrix_layout", new=AsyncMock(return_value=None)
+    )
+    probe = patcher.start()
+    probe.original = patcher.temp_original  # the real probe, for its own test
+    yield probe
+    patcher.stop()

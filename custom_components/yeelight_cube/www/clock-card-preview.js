@@ -28,6 +28,7 @@ import {
 // The blank frame a current-style preview is built with (then painted).
 const BLANK_FRAME = Array.from({ length: MATRIX_SIZE }, () => [0, 0, 0]);
 import { PreviewVisibility } from "./preview-visibility.js";
+import { previewContext } from "./preview-context.js";
 import { clockPresetKey } from "./clock-preset-utils.js";
 
 export const ClockPreviewMixin = (Base) => class extends Base {
@@ -180,6 +181,9 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       this.config.lamp_matrix_box_shadow,
       this.config.lamp_ignore_black_pixels,
       vertical,
+      // A Cube Matrix's modules (a new layout: a new grid).
+      this._attrs().matrix_modules,
+      this._attrs().matrix_columns,
     ]);
     if (el._cells && el._appearanceSignature === appearanceSignature)
       return el._cells;
@@ -196,6 +200,8 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       pixelBoxShadow: this._spacingShadow(spacing),
       matrixBoxShadow: this.config.lamp_matrix_box_shadow === true,
       ignoreBlackPixels: this._lampIgnoreBlack(),
+      // A Cube Matrix's modules only (preview-context.js).
+      context: previewContext(this._attrs(), { pendingOrientation: this._previewOrientation() }),
     };
     // The shared preview markup (blank), painted in place by _paintPreview:
     // its cells, which keep the shadow in sync as pixels turn on/off, or for

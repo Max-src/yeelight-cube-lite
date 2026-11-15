@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  followPreviewState,
   previewOnly,
   previewAttributes,
 } from "../custom_components/yeelight_cube/www/offline-preview-state.js";
+import {
+  ColorModeController,
+  NATIVE_CARD_COLORS,
+} from "../custom_components/yeelight_cube/www/color-mode-controller.js";
 import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
 import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
 import { CARD_NAMES } from "../custom_components/yeelight_cube/www/card-list.js";
@@ -31,7 +36,6 @@ import { everyAvailable, withTargetEntities } from "../custom_components/yeeligh
 // Fake cards built from object literals get the shared card-base helpers
 // (_targets, _inputsChanged, ...) like the real card.
 const CardBase = YeelightCardMixin(class { connectedCallback() {} });
-import { createPendingValue } from "../custom_components/yeelight_cube/www/pending-value.js";
 const asCard = (fake) => Object.setPrototypeOf(fake, CardBase.prototype);
 import {
   nativeEffectItems,
@@ -45,13 +49,12 @@ import {
   rotationIntervalMs,
 } from "../custom_components/yeelight_cube/www/native-effect-card-utils.js";
 import {
-  renderNativeEffectOriented,
+  renderNativeEffect,
   effectOffersColorMode,
-  effectSupportsColorMode,
   effectSupportsColorOverride,
 } from "../custom_components/yeelight_cube/www/native-effect-preview.js";
 import { effectDisplayFrame } from "../custom_components/yeelight_cube/www/lamp-renderers.js";
-import { CLOCK_COLOR_MODES, NATIVE_COLOR_MODES } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
+import { NATIVE_COLOR_MODES } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import {
   clockPresetLibrary,
   clockColorModeOptions,
@@ -60,10 +63,8 @@ import {
 import { flipMatrixVertical } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import {
   getTargetEntities,
-  callServiceOnTargetEntities,
 } from "../custom_components/yeelight_cube/www/service-call-utils.js";
 import {
-  orientationOptions,
   nextOrientation,
 } from "../custom_components/yeelight_cube/www/orientation-control-utils.js";
 
@@ -102,7 +103,10 @@ test("native color choices retain configured order while effects respond to the 
     },
     _context: 1,
     _page: 5,
-    _pendingColor: createPendingValue({ yieldToLamp: true }),
+    // The card's Color Modes row (color-mode-controller.js).
+    get _colors() {
+      return (this.__colors ||= new ColorModeController(this, NATIVE_CARD_COLORS));
+    },
     requestUpdate() {},
   };
   card._lampColorSelection = cardMethod("_lampColorSelection", {
@@ -182,12 +186,12 @@ function cardMethod(name, dependencies = {}) {
 
 test("native unsaved color survives stale state echoes and unrelated updates", () => {
   const source = sourceFor("yeelight-cube-native-effects-card.js");
-  const body = source.match(/  set hass\(hass\) \{([\s\S]*?)\n  \}/)[1];
-  const update = new Function(
-    "getTargetEntities",
-    "previewOnly",
+  // The card's hass hook, behind the shared setter (card-base set hass).
+  const body = source.match(/  _hassUpdated\(hass\) \{([\s\S]*?)\n  \}/)[1];
+  const hassUpdated = new Function(
+    "followPreviewState",
     `return function(hass) {${body}}`,
-  )(getTargetEntities, previewOnly);
+  )(followPreviewState);
   const draft = [18, 52, 86];
   const card = asCard({
     config: { entity: "light.a", show_color_modes: true },
@@ -195,7 +199,8 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
     _attrs() {
       return previewAttributes(this);
     },
-    _customColorDraft: draft,
+    _hassUpdated: hassUpdated,
+    _customDraft: draft,
     _controls: { update() {} },
     requestUpdate() {},
     _state: {
@@ -206,7 +211,7 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
     },
   });
   for (const color of [null, [1, 2, 3], draft]) {
-    update.call(card, {
+    card.hass = {
       states: {
         "light.a": {
           attributes: {
@@ -215,8 +220,8 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
           },
         },
       },
-    });
-    assert.equal(card._customColorDraft, draft);
+    };
+    assert.equal(card._customDraft, draft);
   }
 });
 
@@ -540,25 +545,35 @@ test("the shared carousel swipe steps on horizontal swipes, every card declares 
   swipe(90, 0); // a tap
   assert.deepEqual(calls, [1, -1]);
   // Every card declares the shared gallery the same way (collection-gallery.js):
-  // the same core bindings; cards with favourites and animated previews also
-  // pass the mode-controls model and repaint on gallery-updated. Every
-  // gallery stays live while a pick is sent (quick picks: the latest wins).
+  // the same core bindings; cards with favourites and animated previews (the
+  // Clock and Native Effects) through its modeGallery, which also passes the
+  // mode-controls model and repaints on gallery-updated. Every gallery stays
+  // live while a pick is sent (quick picks: the latest wins).
   const core = [".config", ".items", ".active", "searchLabel", ".onSelect"];
   for (const [file, extra] of [
-    ["yeelight-cube-clock-card.js", [".model", "@gallery-updated"]],
-    ["yeelight-cube-native-effects-card.js", [".model", "@gallery-updated"]],
+    ["collection-gallery.js", [".model", "@gallery-updated"]],
     ["gradient-mode-selector.js", []],
   ]) {
     const source = sourceFor(file);
-    assert.match(source, /collection-gallery\.js/);
-    const tag = source.match(/<yc-collection-gallery([\s\S]*?)><\/yc-collection-gallery>/);
+    // The template (the last one: collection-gallery.js documents it first).
+    const tag = [...source.matchAll(/<yc-collection-gallery([\s\S]*?)><\/yc-collection-gallery>/g)].at(-1);
     assert.ok(tag, `${file}: <yc-collection-gallery> in its template`);
     const bound = [...tag[1].matchAll(/^\s*([.@?]?[A-Za-z-]+)=/gm)].map((m) => m[1]);
     for (const name of [...core, ...extra])
       assert.ok(bound.includes(name), `${file}: ${name}`);
-    assert.doesNotMatch(source, /createElement\("yc-collection-gallery"\)/);
     assert.ok(!bound.includes(".disabled"), `${file}: the gallery stays live`);
   }
+  for (const file of [
+    "yeelight-cube-clock-card.js",
+    "yeelight-cube-native-effects-card.js",
+    "gradient-mode-selector.js",
+  ]) {
+    const source = sourceFor(file);
+    assert.match(source, /collection-gallery\.js/);
+    assert.doesNotMatch(source, /createElement\("yc-collection-gallery"\)/);
+  }
+  for (const file of ["yeelight-cube-clock-card.js", "yeelight-cube-native-effects-card.js"])
+    assert.match(sourceFor(file), /modeGallery\(this, \{/, file);
 });
 
 test("named effects exclude raw experimental mode numbers even when explicitly visible", () => {
@@ -651,6 +666,12 @@ test("native editor sections follow the card and use shared conditional controls
       records.orientation = true;
     },
     renderColorModeSettings: () => "",
+    // Color Modes & Controls render by default (show_color_modes unset).
+    renderVisibleColorModes: () => {
+      records.colorModes = true;
+      return "";
+    },
+    NATIVE_COLOR_MODES: [],
     renderOrderableList: (options) => {
       records.list = options;
     },
@@ -746,6 +767,8 @@ test("native editor sections follow the card and use shared conditional controls
     show_intensity: false,
     show_device_orientation: false,
     show_gallery: false,
+    // On by default: off only when turned off.
+    show_color_modes: false,
   };
   render.call(editor);
   for (const key of ["matrices", "buttons", "sliders", "orientation", "list"])
@@ -1144,7 +1167,7 @@ test("native effect previews draw the direction chosen, turned for the mount", (
     flipMatrixVertical(
       effectDisplayFrame(
         "Rainbow",
-        renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50, "down"),
+        renderNativeEffect("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50, "down"),
       ),
     ),
   );
@@ -1153,7 +1176,7 @@ test("native effect previews draw the direction chosen, turned for the mount", (
     flipMatrixVertical(
       effectDisplayFrame(
         "Rainbow",
-        renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50),
+        renderNativeEffect("Rainbow", 2 * (0.25 + 50 / 55), "Left", null, null, 50),
       ),
     ),
   );
@@ -1222,4 +1245,14 @@ test("the cards preview the animations and the stored GIF they hold", async () =
     animationFrame("daydream", 0.5 / (0.25 + 128 / 55), "right"),
   );
   assert.equal(preview.renderNativeEffect("Stored GIF", 0.5, "Up", null, "normal", 128, "right", null, null, "nope").length, 100);
+});
+
+test("a new effect or clock card starts on the Original grid, 10 items a page", () => {
+  for (const file of ["yeelight-cube-native-effects-card.js", "yeelight-cube-clock-card.js"]) {
+    const source = readFileSync(new URL(`../custom_components/yeelight_cube/www/${file}`, import.meta.url), "utf8");
+    const stub = source.slice(source.indexOf("static getStubConfig"), source.indexOf("getCardSize"));
+    assert.match(stub, /style_selector_style: "original"/, file);
+    assert.match(stub, /effect_view: "grid"/, file);
+    assert.match(stub, /items_per_page: 10\b/, file);
+  }
 });

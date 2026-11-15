@@ -16,7 +16,6 @@ try:
     from .lamp_core import (
         DIRECTION_TABLE,
         HANDOVER_FLAGS,
-        LENGTH,
         REFERENCE_PROFILE,
         blend_grid,
         blur_columns,
@@ -37,6 +36,7 @@ try:
         read_back_flags,
         row_blur_grid,
         source_word,
+        settings_length,
         sx8,
     )
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
@@ -47,7 +47,6 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     from lamp_core import (
         DIRECTION_TABLE,
         HANDOVER_FLAGS,
-        LENGTH,
         REFERENCE_PROFILE,
         blend_grid,
         blur_columns,
@@ -68,6 +67,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         read_back_flags,
         row_blur_grid,
         source_word,
+        settings_length,
         sx8,
     )
 
@@ -88,6 +88,7 @@ def _grid_state(settings) -> dict:
         "table": colours["table"],
         "span": palette_span(len(colours["palette"])),
         "work": new_grid(width, height),
+        "length": settings_length(settings),
     }
 
 
@@ -100,6 +101,7 @@ def _breathing_init(settings, weight: int) -> dict:
     return {
         "table": effect_colours(settings)["table"],
         "weight": weight,
+        "length": settings_length(settings),
         "level": 0,  # the smoothed level, shared across slots
     }
 
@@ -122,7 +124,7 @@ def breathing_step(state, settings, clock_ms, render) -> bytes:
     if bright != 255:  # the sampler's gain
         gain = bright + 1
         red, green, blue = (red * gain) >> 8, (green * gain) >> 8, (blue * gain) >> 8
-    return bytes((red, green, blue)) * LENGTH  # one colour: no placement
+    return bytes((red, green, blue)) * state["length"]  # one colour: no placement
 
 
 # ── Slots 30, 26 and 25: the bars ───────────────────────────────────────
@@ -134,14 +136,16 @@ _BARS_WARMUP = 36  # the level, then the peak's next catch
 
 def _bars_init(settings, selector: int) -> dict:
     colours = effect_colours(settings)
+    length = settings_length(settings)
     return {
         "direction": settings["direction"],
         "table": colours["table"],
         "span": palette_span(len(colours["palette"])),
         "selector": selector,
-        "width": f32(LENGTH >> (1 if selector else 0)),
+        "length": length,
+        "width": f32(length >> (1 if selector else 0)),
         "limit": 8 - (settings["rate"] >> 5),
-        "strip": bytearray(3 * LENGTH),
+        "strip": bytearray(3 * length),
         "level": 0,
         "index": 0,
         "peak": 0,
@@ -160,24 +164,25 @@ def bars_25_init(settings) -> dict:
     return _bars_init(settings, 2)
 
 
-def _bars_draw(strip, selector: int, first: int, last: int, colour: bytes) -> None:
+def _bars_draw(strip, length: int, selector: int, first: int, last: int, colour: bytes) -> None:
     """Steps first..last - 1 of a bar, in one colour."""
     run = colour * (last - first)
     if selector == 1:
-        mid = LENGTH >> 1
+        mid = length >> 1
         strip[3 * (mid + first):3 * (mid + last)] = run
         strip[3 * (mid - last):3 * (mid - first)] = run
     else:
         strip[3 * first:3 * last] = run
         if selector == 2:
-            strip[3 * (LENGTH - last):3 * (LENGTH - first)] = run
+            strip[3 * (length - last):3 * (length - first)] = run
 
 
 def bars_step(state, settings, clock_ms, render) -> bytes:
     level, _, _, spectrum = demo_sound(render)
     strip, selector, width = state["strip"], state["selector"], state["width"]
+    length = state["length"]
     smoothed = state["level"] = (2 * state["level"] + level) // 3
-    fade_towards(strip, 254)
+    fade_towards(strip, 254, 0, length)
     gain = f32(f32(f32(f32(smoothed) * f32(settings["intensity"])) / 255.0) * 0.125)
     span = f32(width * (gain + gain) * 0.03125)
     bars = 1 if span < 1 else int(span if span <= width else width)
@@ -190,7 +195,7 @@ def bars_step(state, settings, clock_ms, render) -> bytes:
                 index, best = band, spectrum[band]
         state["index"] = (index * 17) & 0xFFFF if best >= spectrum[15] else 255
     at = 3 * ((state["span"] * (state["index"] & 255)) >> 8)
-    _bars_draw(strip, selector, 0, bars, state["table"][at:at + 3])
+    _bars_draw(strip, length, selector, 0, bars, state["table"][at:at + 3])
     peak = state["peak"]
     if bars >= peak:
         peak = bars - 1
@@ -198,7 +203,7 @@ def bars_step(state, settings, clock_ms, render) -> bytes:
         peak -= 1
     state["peak"] = peak
     if peak >= 0:
-        _bars_draw(strip, selector, peak, peak + 1, _WHITE)
+        _bars_draw(strip, length, selector, peak, peak + 1, _WHITE)
     return place_strip(strip, state["direction"])
 
 
@@ -207,7 +212,7 @@ _MUSIC_WARMUP = 11  # a re-sum, then the fade; ties on the beat hold it
 
 
 def music_init(settings) -> dict:
-    return {"colour": bytearray(3), "sums": (0, 0, 0)}
+    return {"colour": bytearray(3), "sums": (0, 0, 0), "length": settings_length(settings)}
 
 
 def music_step(state, settings, clock_ms, render) -> bytes:
@@ -232,7 +237,7 @@ def music_step(state, settings, clock_ms, render) -> bytes:
     colour = state["colour"]
     if target is not None:
         fade_towards(colour, 255, target, 1)  # the strip is one colour
-    return bytes(colour) * LENGTH
+    return bytes(colour) * state["length"]
 
 
 # ── Slot 41: Spectrum ───────────────────────────────────────────────────
@@ -288,7 +293,8 @@ def gather_init(settings) -> dict:
     state = _grid_state(settings)
     # A bar longer than the grid gives negative mirrored rows: the 16-bit index
     # clamps to the last pixel after the mapper, the cell the mapper sends there.
-    state["last"] = pixel_map(settings["direction"]).index(LENGTH - 1)
+    length = state["length"]
+    state["last"] = pixel_map(settings["direction"], REFERENCE_PROFILE, length).index(length - 1)
     return state
 
 
@@ -425,22 +431,22 @@ def equalizer_step(state, settings, clock_ms, render) -> bytes:
             row = lround(peak)
             cell = 3 * ((0 if height <= row else row) * width + column)
             work[cell:cell + 3] = first
-    return bytes(map(work.__getitem__, _equalizer_placement(settings)))
+    return bytes(map(work.__getitem__, _equalizer_placement(settings, state["length"])))
 
 
 _PLACEMENTS_51: dict = {}
 
 
-def _equalizer_placement(settings) -> tuple:
+def _equalizer_placement(settings, length: int) -> tuple:
     """Panel byte -> grid byte: each grid cell through the mapper on the
     flags slot 51 runs with (0x05 behind the clock), one panel pixel each."""
     mapped = DIRECTION_TABLE[REFERENCE_PROFILE][settings["direction"]]
     flags = HANDOVER_FLAGS if settings.get("handover") else read_back_flags(51, mapped)
-    key = (mapped, flags)
+    key = (mapped, flags, length)
     if key not in _PLACEMENTS_51:
-        table = [0] * (3 * LENGTH)
-        for pixel in range(LENGTH):
-            (index,) = flagged_targets(pixel, LENGTH, mapped, flags)
+        table = [0] * (3 * length)
+        for pixel in range(length):
+            (index,) = flagged_targets(pixel, length, mapped, flags)
             for channel in range(3):
                 table[3 * index + channel] = 3 * pixel + channel
         _PLACEMENTS_51[key] = tuple(table)
@@ -528,7 +534,7 @@ def impact_init(settings) -> dict:
     state["gravity"] = f32(state["height"] * f32(f32(settings["rate"] / -10000) + _IMPACT_FALL))
     state["particles"] = [
         {"y": 0.0, "x": 0.0, "vy": 0.0, "vx": 0.0, "alive": False, "level": 0, "radius": 0}
-        for _ in range(LENGTH >> 4)
+        for _ in range(state["length"] >> 4)
     ]
     state["active"] = 0  # the live particles
     state["stored"] = 0  # the level the last render kept

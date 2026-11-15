@@ -15,20 +15,20 @@ from yeelight import BulbException  # type: ignore
 from .color_utils import rgb_to_hex
 from .color_adjustments import adjust_color
 from .const import LAMP_MODES, MODE_NATIVE_EFFECT, ROTATION_KIND_MODES
-from .cube_matrix import (
+from .lamp_protocol import (
     trace_frame,
     CubeConnectionError,
     CubeFxModeLost,
     encode_rgb_frame,
     is_connection_error,
 )
-from .lamp_power import estimated_power
+from .lamp_power import NO_LIMIT_W, estimated_power
 from .light_color import hardware_brightness_for
 
 _LOGGER = logging.getLogger(__name__)
 
 # The waits around direct mode, in seconds, by the connection in use
-# (cube_matrix.transport), read where each one happens:
+# (LampClient.transport), read where each one happens:
 # - native_exit_settle: leaving a built-in mode (clock, effect), before
 #   activate_fx_mode, so the native renderer settles (light.ensure_fx_ready);
 # - direct_mode_settle: after activate_fx_mode, before the first frame;
@@ -46,7 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 # to a drawing at these waits, 3 rounds, no flicker and no lost first frame
 # (0.3 / 0.15 / 0.12 too); a drawing shown after 150 s without a frame, at
 # once (a session the lamp dropped while idle is put in direct mode again
-# when it opens: cube_matrix _udp_request). TCP: the waits tuned in the TCP
+# when it opens: LampClient._udp_request). TCP: the waits tuned in the TCP
 # days, kept (not tested again).
 ACTIVATION_TIMING = {
     "udp": {"native_exit_settle": 0.0, "direct_mode_settle": 0.05, "native_exit_resend": 0.03,
@@ -66,8 +66,25 @@ MUSIC_FLOW_EXIT_UPDATE_TYPES = {
 class DisplayMixin:
     """The display queue, the frame sender and the text scroll timer."""
 
-    def _init_scroll_state(self):
-        """The text scroll timer's state (scroll_text). Called by YeelightCubeLight.__init__."""
+    def _init_display_state(self):
+        """The frame sender's and the text scroll timer's state (scroll_text).
+        Called by YeelightCubeLight.__init__."""
+        # Apply timing (for queue processor stats, not cooldown-gating)
+        self._last_apply_time = 0
+        
+        # The frame with its color effects, before the lamp-only stages
+        # (low-brightness correction, per-channel accuracy): snapshotted in
+        # apply(), published as matrix_colors and re-sent by the brightness
+        # fast path.
+        self._base_matrix_colors = None
+        
+        # Power limit in W (NO_LIMIT_W = off): frames sent to the lamp are
+        # dimmed so its estimated draw stays under it, for weak or shared
+        # power supplies (lamp_power.py).
+        self._power_limit = NO_LIMIT_W
+        # Estimated draw of the last frame sent (None until one is sent).
+        self._last_frame_power = None
+
         # Text scrolling functionality
         self._scroll_speed = 0.2  # Scroll speed in seconds per step
         self._scroll_enabled = True  # Whether to enable auto-scroll for long text
@@ -75,7 +92,6 @@ class DisplayMixin:
         self._scroll_direction = 1  # 1 for right, -1 for left
         self._scroll_timer = None  # Timer for auto-scrolling
         self._max_scroll_offset = 0  # Maximum scroll offset for current text
-        self._is_scrolling = False  # Flag to indicate if currently in scroll animation
 
     async def erase_all(self):
         background_color_hex = rgb_to_hex(self._background_color)
@@ -93,8 +109,7 @@ class DisplayMixin:
         self._custom_text = text_chars
         
         # Notify text input entity of the change (only if it's been added to hass)
-        if self._text_input_entity and hasattr(self._text_input_entity, 'hass') and self._text_input_entity.hass is not None:
-            self._text_input_entity.async_update_from_light()
+        self._notify("text_input")
         
         # Push HA state eagerly so automations see the new custom_text
         # immediately (see handle_set_custom_text for detailed rationale).
@@ -106,7 +121,7 @@ class DisplayMixin:
 
     async def async_apply_display_mode(self, update_type: str = 'display_update', bypass_lock: bool = False):
         """Queue a display mode update to be processed sequentially"""
-        if getattr(self, "_external_display", False) and update_type in {
+        if self._external_display and update_type in {
             "display_update", "display_retry",
         }:
             return
@@ -171,7 +186,7 @@ class DisplayMixin:
         }
         if (
             self._in_native_fw_mode
-            and not getattr(self, "_external_display", False)
+            and not self._external_display
             and self._mode not in LAMP_MODES
             and update_type in _NATIVE_COMPETING_UPDATE_TYPES
             and not bypass_lock
@@ -239,8 +254,8 @@ class DisplayMixin:
         async def apply_requested_display():
             # External control can arrive while this operation waits for the
             # device lock. Recheck before a queued retry/remote restore draws.
-            if getattr(self, "_external_display", False) and (
-                getattr(self, "_restoring_after_lamp", False)
+            if self._external_display and (
+                self._restoring_after_lamp
                 or update_type in {"display_update", "display_retry"}
             ):
                 return
@@ -253,6 +268,27 @@ class DisplayMixin:
             coalesce="display",
         )
 
+    def _prepared_frame(self) -> list:
+        """The layout's frame as it is sent, before the power limit: its
+        color effects, then the brightness-dependent stages (low-brightness
+        correction, per-channel accuracy), written back to the layout.
+
+        The frame with its color effects but without those stages is kept as
+        ``_base_matrix_colors``: the snapshot _apply_brightness_only starts
+        from (so it must not apply the color effects again) and the colors
+        the cards and the camera show. Used by apply and, for a Cube Matrix
+        drawing over Matter, _apply_matrix_drawing (light_matrix)."""
+        frame = self._layout_colors()
+        effects = self._has_color_effects
+        if effects:
+            adjustments = self.color_adjustments()
+            frame = [adjust_color(rgb, adjustments) for rgb in frame]
+        self._base_matrix_colors = frame
+        staged = self._brightness_stages(frame)
+        if effects or staged is not frame:
+            self._write_layout_colors(staged)
+        return staged
+
     async def apply(self, *, off_frame: bool = False):
         """Draw the display. ``off_frame``: the black picture turn_off draws
         (the lamp stays powered): the light stays off."""
@@ -264,16 +300,16 @@ class DisplayMixin:
             # a retry. Previously this returned silently, which the queue processor
             # treated as success -- cancelling the retry chain and leaving the lamp
             # dark forever.
-            if not self._cube_matrix.is_connected():
+            if not self._lamp_client.is_connected():
                 _LOGGER.log(
-                    self._cube_matrix.outage_log_level(),
+                    self._lamp_client.outage_log_level(),
                     "[APPLY] [%s] SKIP -- cooldown active, raising to trigger retry "
                     "(fx_direct=%s, is_on=%s, "
                     "retry_count=%s/%s) "
                     "[%s]",
                     self._ip, self._fx_mode_is_direct, self._is_on,
                     self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                    self._cube_matrix.summary
+                    self._lamp_client.summary
                 )
                 raise CubeConnectionError("Cooldown active -- device not yet reachable")
             
@@ -297,13 +333,18 @@ class DisplayMixin:
             # visual effect) -- which is why a single send left the panel stuck
             # and a manual second send fixed it.  We re-send one frame below to
             # make the switch deterministic.
+            # A Cube Matrix showing drawings itself over Matter (light_matrix).
+            draws = getattr(self, "matrix_draws_over_matter", None)
+            if draws is not None and draws() and not self._is_scrolling:
+                if await self._apply_matrix_drawing(off_frame):
+                    return
             leaving_native_fw_mode = self._in_native_fw_mode and not self._fx_mode_is_direct
             if not self._fx_mode_is_direct:
                 await self.ensure_fx_ready()
             # The lamp's hardware brightness, before any frame of this update
             # and only when it differs (or is unknown): in direct mode a
             # set_bright after frames can make the lamp show an older picture
-            # again (cube_matrix.FRAME_SETTLE_DELAY). Over TCP it goes on the
+            # again (lamp_client_udp.FRAME_SETTLE_DELAY). Over TCP it goes on the
             # persistent socket, with the frames.
             if hardware_brightness != self._last_hardware_brightness:
                 _LOGGER.debug(
@@ -313,8 +354,8 @@ class DisplayMixin:
                     self._last_hardware_brightness, self._mode
                 )
                 try:
-                    await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-                    self._last_hardware_brightness = hardware_brightness
+                    await self._lamp_client.send_command_fast("set_bright", [hardware_brightness])
+                    self._note_hardware_brightness(hardware_brightness)
                 except Exception as e:
                     if is_connection_error(e):
                         raise
@@ -328,31 +369,18 @@ class DisplayMixin:
                     self._ip, hardware_brightness
                 )
 
-            # SNAPSHOT for _apply_brightness_only (fast path) and the published
-            # colors (cards, camera): the frame with its color effects, but
-            # without the brightness-dependent stages (low-brightness
-            # correction, per-channel accuracy). The fast path therefore must
-            # NOT apply the color effects again. The frame is read from the
-            # layout once, processed as RGB tuples, written back once.
-            frame = self._layout_colors()
-            effects = self._has_color_effects
-            if effects:
-                adjustments = self.color_adjustments()
-                frame = [adjust_color(rgb, adjustments) for rgb in frame]
-            self._base_matrix_colors = frame
-            staged = self._brightness_stages(frame)
-            if effects or staged is not frame:
-                self._write_layout_colors(staged)
-            frame = staged
-
+            frame = self._prepared_frame()
             lamp_frame = self._lamp_frame(frame)
             raw_rgb_data = encode_rgb_frame(lamp_frame)
 
             _apply_t0 = time.time()
 
-            # Count lit pixels for diagnostic logging
-            lit = sum(1 for rgb in frame if tuple(rgb) != (0, 0, 0))
-            idle_since_last_cmd = time.time() - self._cube_matrix.last_command_time if self._cube_matrix.last_command_time > 0 else -1
+            # The lit pixels, for the debug log only.
+            lit = (
+                sum(1 for rgb in frame if tuple(rgb) != (0, 0, 0))
+                if _LOGGER.isEnabledFor(logging.DEBUG) else 0
+            )
+            idle_since_last_cmd = time.time() - self._lamp_client.last_command_time if self._lamp_client.last_command_time > 0 else -1
             
             _LOGGER.debug(
                 "[APPLY] [%s] Sending update_leds: "
@@ -391,7 +419,7 @@ class DisplayMixin:
             # this is the deterministic equivalent of the manual second send
             # that was previously needed.
             if leaving_native_fw_mode:
-                await asyncio.sleep(ACTIVATION_TIMING[self._cube_matrix.transport]["native_exit_resend"])
+                await asyncio.sleep(ACTIVATION_TIMING[self._lamp_client.transport]["native_exit_resend"])
                 _LOGGER.debug(
                     "[APPLY] [%s] Native-exit re-send of first frame "
                     "(lamp just left clock/native mode)",
@@ -440,7 +468,7 @@ class DisplayMixin:
             self._last_connection_error = f"BulbException: {error_message}"
             connection_lost = isinstance(e, CubeConnectionError)
             if connection_lost:
-                self._fx_mode_is_direct = False
+                self._direct_mode_lost()
             self._last_apply_time = 0
             
             if connection_lost:
@@ -462,7 +490,7 @@ class DisplayMixin:
             self._last_connection_error = msg
             connection_lost = is_connection_error(e)
             if connection_lost:
-                self._fx_mode_is_direct = False
+                self._direct_mode_lost()
             self._last_apply_time = 0
             
             if connection_lost:
@@ -482,21 +510,21 @@ class DisplayMixin:
         connection changed (TCP took over, a new TCP socket) or it was idle
         longer than its connection's staleness (ACTIVATION_TIMING; an idle Cube can leave direct
         mode silently)."""
-        if self._cube_matrix.consume_reconnected_flag():
+        if self._lamp_client.consume_reconnected_flag():
             _LOGGER.info(
                 "[APPLY] [%s] Reconnection detected -- activating direct mode again "
                 "(fx_direct was %s)", self._ip, self._fx_mode_is_direct,
             )
-            self._fx_mode_is_direct = False
+            self._direct_mode_lost()
         elif self._fx_mode_is_direct and self._last_fx_mode_time > 0:
             fx_age = time.time() - self._last_fx_mode_time
-            staleness = ACTIVATION_TIMING[self._cube_matrix.transport]["staleness"]
+            staleness = ACTIVATION_TIMING[self._lamp_client.transport]["staleness"]
             if staleness is not None and fx_age > staleness:
                 _LOGGER.debug(
                     "[APPLY] [%s] Direct mode stale -- fx_age=%.0fs > %.0fs: activating it again",
                     self._ip, fx_age, staleness,
                 )
-                self._fx_mode_is_direct = False
+                self._direct_mode_lost()
         return self._fx_mode_is_direct
 
     async def _draw_direct(self, raw_rgb_data: str) -> None:
@@ -506,17 +534,17 @@ class DisplayMixin:
         again, at once -- without a retry, and without sending the
         brightness again (unchanged; a set_bright after frames can bring an
         older picture back). Raises CubeFxModeLost if it changes again."""
-        await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
-        if not self._cube_matrix.consume_reconnected_flag():
+        await self._lamp_client.draw_matrices_fast(raw_rgb_data)
+        if not self._lamp_client.consume_reconnected_flag():
             return
         _LOGGER.debug(
             "[APPLY] [%s] Connection changed during update_leds -- "
             "direct mode again, frame again", self._ip,
         )
         await self.ensure_fx_ready()
-        await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
-        if self._cube_matrix.consume_reconnected_flag():
-            self._fx_mode_is_direct = False
+        await self._lamp_client.draw_matrices_fast(raw_rgb_data)
+        if self._lamp_client.consume_reconnected_flag():
+            self._direct_mode_lost()
             raise CubeFxModeLost("Connection changed again during update_leds -- FX re-activation needed")
 
     # Text scrolling functionality
@@ -526,7 +554,12 @@ class DisplayMixin:
             self._scroll_timer.cancel()
         
         if self._max_scroll_offset <= 0:
+            self._scroll_timer = None
+            self._lamp_client.stream_running("scroll", False)
             return
+        # Scrolling streams frames: the transport keeps its pauses (each
+        # step's, longer at both ends) busy (LampClient.stream_running).
+        self._lamp_client.stream_running("scroll", True)
             
         # Use custom delay or default scroll speed
         scroll_delay = delay if delay is not None else self._scroll_speed
@@ -542,6 +575,8 @@ class DisplayMixin:
         """Handle a single scroll step"""
         _LOGGER.debug("[SCROLL_DEBUG] _handle_scroll_step called - text: '%s'", self._custom_text)
         if self._max_scroll_offset <= 0:
+            self._scroll_timer = None
+            self._lamp_client.stream_running("scroll", False)
             return
             
         # Update scroll position
@@ -581,4 +616,6 @@ class DisplayMixin:
         if self._scroll_timer is not None:
             self._scroll_timer.cancel()
             self._scroll_timer = None
+        if (lamp_client := self._lamp_client) is not None:
+            lamp_client.stream_running("scroll", False)
         _LOGGER.debug("[SCROLL] Timer stopped")

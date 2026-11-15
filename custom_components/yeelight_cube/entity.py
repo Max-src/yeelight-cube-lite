@@ -21,16 +21,27 @@ def cube_device_info(light_entity) -> dict:
     """Device info for a lamp. Every entity of the lamp returns this same
     dict, so the device registry does not change depending on which entity
     wrote it last."""
-    cube_matrix = light_entity._cube_matrix
+    lamp_client = light_entity.lamp_client
     info = {
-        "identifiers": {(DOMAIN, light_entity._config_entry.entry_id)},
-        "name": light_entity._lamp_name,
+        "identifiers": {(DOMAIN, light_entity.entry_id)},
+        "name": light_entity.lamp_name,
         "manufacturer": "Yeelight",
-        "model": cube_matrix.device_model or "Cube Lite",
+        "model": lamp_client.device_model or "Cube Lite",
     }
-    if cube_matrix.software_version:
-        info["sw_version"] = cube_matrix.software_version
+    if lamp_client.software_version:
+        info["sw_version"] = firmware_version(lamp_client.device_model, lamp_client.software_version)
     return info
+
+
+def firmware_version(model, version) -> str:
+    """The firmware version as the Yeelight app shows it. A Cube Matrix's
+    SSDP fw_ver is only its build number ("92"): its releases are 1.11.46 to
+    1.11.57, then 1.12.69 on, so "92" is 1.12.92."""
+    version = str(version)
+    if str(model or "").lower() == "cubematrix" and version.isdigit():
+        build = int(version)
+        return f"1.{11 if build < 69 else 12}.{build}"
+    return version
 
 
 class CubeDeviceEntity:
@@ -47,18 +58,21 @@ class CubeDeviceEntity:
     def device_info(self) -> dict:
         return cube_device_info(self._light_entity)
 
-    def _register_on_light(self, slot: str) -> None:
-        """Have the light push its changes to this entity (``light.<slot>``)
-        until the entity is removed (disabled, or its lamp unloaded): the
-        light then stops writing the state of an entity that is gone."""
-        light = self._light_entity
-        setattr(light, slot, self)
+    def _listen_to_light(self, topic: str, listener=None) -> None:
+        """Have the light tell this entity its changes on ``topic``
+        (light_state.TOPICS) until the entity is removed (disabled, or its
+        lamp unloaded). ``listener`` is called with what the light tells;
+        by default the entity's async_update_from_light, else its
+        async_write_ha_state. Never called while the entity is not in Home
+        Assistant."""
+        if listener is None:
+            listener = getattr(self, "async_update_from_light", None) or self.async_write_ha_state
 
-        def unregister() -> None:
-            if getattr(light, slot, None) is self:
-                setattr(light, slot, None)
+        def tell(*args) -> None:
+            if getattr(self, "hass", None) is not None:
+                listener(*args)
 
-        self.async_on_remove(unregister)
+        self.async_on_remove(self._light_entity.add_listener(topic, tell))
 
 
 class CubeControlEntity(CubeDeviceEntity):
@@ -73,10 +87,10 @@ class CubeControlEntity(CubeDeviceEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._light_entity._control_entities.add(self)
+        self._light_entity.add_control(self)
 
     async def async_will_remove_from_hass(self) -> None:
-        self._light_entity._control_entities.discard(self)
+        self._light_entity.remove_control(self)
         await super().async_will_remove_from_hass()
 
     @callback

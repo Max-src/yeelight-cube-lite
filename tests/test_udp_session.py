@@ -2,9 +2,18 @@
 lamp that answers like the Cube Lite does:
 a token from udp_sess_new, every command answered by its id except
 update_leds, -1 for a token it does not know."""
+import sys as _sys
+
+# Other test files import this one as tests.test_udp_session, test discovery as
+# test_udp_session: one module under both names, so its setup runs once and a patch
+# of it is seen by all.
+for _name in ("test_udp_session", "tests.test_udp_session"):
+    _sys.modules.setdefault(_name, _sys.modules[__name__])
+
 import asyncio
 import importlib.util
 import json
+import time
 import unittest
 
 from tests.test_native_features import ROOT
@@ -12,6 +21,22 @@ from tests.test_native_features import ROOT
 _spec = importlib.util.spec_from_file_location("udp_session", ROOT / "udp_session.py")
 udp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(udp)
+
+
+def shorter_waits(test, module):
+    """The session's waits for an answer, a third of the lamp's, for the
+    tests: the fake lamp on this computer answers within a millisecond, and
+    a silent one is then given up on sooner. The tests read the waits from
+    the module, so what they check is unchanged."""
+    answer = module.UdpSession._answer
+    saved = (answer.__defaults__, module.REPLY_TIMEOUT, module.HANDSHAKE_TIMEOUT)
+    module.REPLY_TIMEOUT, module.HANDSHAKE_TIMEOUT = saved[1] / 3, saved[2] / 3
+    answer.__defaults__ = (module.REPLY_TIMEOUT, module.ATTEMPTS)
+
+    def restore():
+        answer.__defaults__, module.REPLY_TIMEOUT, module.HANDSHAKE_TIMEOUT = saved
+
+    test.addCleanup(restore)
 
 
 class FakeLamp(asyncio.DatagramProtocol):
@@ -34,6 +59,7 @@ class FakeLamp(asyncio.DatagramProtocol):
     def datagram_received(self, data, addr):
         assert data.endswith(b"\r\n"), "the lamp ignores datagrams without \\r\\n"
         message = json.loads(data)
+        message["at"] = time.monotonic()  # when it arrived (silences between frames)
         self.received.append(message)
         if self.silent:
             return
@@ -58,6 +84,7 @@ class FakeLamp(asyncio.DatagramProtocol):
 
 class UdpSessionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        shorter_waits(self, udp)
         loop = asyncio.get_running_loop()
         self.lamp = FakeLamp()
         self.server, _ = await loop.create_datagram_endpoint(
@@ -103,6 +130,17 @@ class UdpSessionTests(unittest.IsolatedAsyncioTestCase):
         await self.session.request("set_power", ["on"])
         self.assertEqual(1, self.lamp.sessions)
 
+    async def test_the_stream_s_frames_and_gaps_are_counted_for_the_logs(self):
+        await self.session.request("update_leds", ["AAAA"])
+        await asyncio.sleep(0.2)
+        self.assertEqual(1, self.session.stream_stats()["frames"])
+        # The pause before the next frame is a gap of the stream.
+        await self.session.request("update_leds", ["BBBB"])
+        stats = self.session.stream_stats()
+        self.assertEqual(2, stats["frames"])
+        self.assertEqual(1, stats["gaps_over_100ms"])
+        self.assertGreaterEqual(stats["longest_gap_s"], 0.19)
+
     async def test_an_error_answer_is_returned_not_retried(self):
         answer = await self.session.request("bad_method", [])
         self.assertEqual(1, answer["error"]["code"])
@@ -139,6 +177,28 @@ class UdpSessionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(udp.UdpUnavailable):
             await self.session.request("set_bright", [80])
         self.assertFalse(self.session.is_open)
+
+    async def test_a_stream_whose_session_was_dropped_gets_a_new_one_at_once(self):
+        # The lamp answers a refused frame with -1. Frames have no waiter, so
+        # that refusal used to count as an answer (no keep-alive check) and
+        # every later frame was refused: the lamp went without frames until
+        # the next command. Now the next frame opens a new session, put in
+        # direct mode again first.
+        self.session.session_setup = [("activate_fx_mode", [{"mode": "direct"}])]
+        await self.session.request("update_leds", ["AAAA"])
+        self.lamp.forget()
+        await self.session.request("update_leds", ["BBBB"])  # refused
+        await asyncio.sleep(0.05)  # the refusal arrives
+        self.assertFalse(self.session.is_open)
+        await self.session.request("update_leds", ["CCCC"])
+        await asyncio.sleep(0.05)
+        self.assertEqual(2, self.lamp.sessions)
+        self.assertEqual(
+            ["udp_sess_new", "activate_fx_mode", "update_leds", "update_leds",
+             "udp_sess_new", "activate_fx_mode", "update_leds"],
+            self.methods(),
+        )
+        self.assertEqual(self.lamp.token, self.lamp.received[-1]["token"])
 
     async def test_frames_are_not_waited_for(self):
         await self.session.request("activate_fx_mode", [{"mode": "direct"}])

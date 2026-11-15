@@ -5,7 +5,7 @@ const path = require("node:path");
 const os = require("node:os");
 
 module.exports = async (t) => {
-  const { browser, page } = t;
+  const { page } = t;
   // A brand-new card: its <ha-card> shell has never rendered a <slot>. The
   // FIRST keystroke must not blur (this is exactly what the user hit).
   const freshCard = await page.evaluate(async () => {
@@ -27,6 +27,7 @@ module.exports = async (t) => {
     input.focus();
     return { focusedBeforeSlot: card.shadowRoot.activeElement === input };
   });
+  assert.equal(freshCard.focusedBeforeSlot, true, "a new card's search field takes focus before its first update");
   const fresh = page.locator(
     "yeelight-cube-clock-card:last-of-type input.yc-gallery-search",
   );

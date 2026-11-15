@@ -85,9 +85,10 @@ class LampPowerTests(unittest.TestCase):
                 "estimated_power": lamp_power.estimated_power,
             },
         )["_lamp_frame"]
+        # A Cube Lite: its frames go out in lamp order (device_profile.to_wire).
         light = SimpleNamespace(
             _power_limit=lamp_power.NO_LIMIT_W, _last_hardware_brightness=100,
-            _last_frame_power=None,
+            _last_frame_power=None, device_profile=SimpleNamespace(to_wire=lambda frame: frame),
         )
         self.assertIs(PIGLET, lamp_frame(light, PIGLET))  # off by default
         self.assertAlmostEqual(6.0, light._last_frame_power, delta=0.45)
@@ -214,10 +215,6 @@ class LampPowerTests(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class EnergyMeterTests(unittest.TestCase):
     def test_each_power_reading_holds_until_the_next(self):
         meter = lamp_power.EnergyMeter()
@@ -234,3 +231,7 @@ class EnergyMeterTests(unittest.TestCase):
         # A clock that did not advance (or went back) counts nothing.
         before = meter.total_kwh
         self.assertEqual(meter.update(1100, 3.0), before)
+
+
+if __name__ == "__main__":
+    unittest.main()

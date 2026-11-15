@@ -48,6 +48,15 @@ These overviews use generated screenshots of the actual cards with example data.
 All seven cards have visual editors, light/dark themes and configurable layouts.
 Normal display controls use **LAN Control**; **Matter is an optional extra**.
 
+> **Yeelight Cube Matrix** (the original Yeelight Cube, a base and 5×5 modules, LAN model `CubeMatrix`) is supported
+> too: text, drawings, colours, every native effect, animation and clock style. It is a very different lamp: it has
+> **no LAN command for its effects, clock or drawings** — only Matter starts them. So for a Cube Matrix, **Matter is
+> not optional if you want smooth effects**: shared to Home Assistant's Matter integration, it runs its own 50 effects (Fireworks included),
+> its clock and drawings itself; everything else (and everything without Matter, or while its demo mode runs) is drawn
+> by Home Assistant and streamed: as the lamp's drawing over Matter at 25 frames a second, or without Matter over the
+> LAN at about 5. No microphone effects, Music Flow or power-on
+> behaviour on it. Side-by-side comparison: [docs/CUBE_MATRIX.md](docs/CUBE_MATRIX.md#cube-lite-and-cube-matrix-compared).
+
 ---
 
 ## Installation via HACS
@@ -969,6 +978,30 @@ grid_options:
 
 ---
 
+<a id="matrix-modules-card"></a>
+
+### 🧩 Cube Matrix Modules Card (`custom:yeelight-cube-matrix-modules-card`)
+
+Set which modules a **Cube Matrix** has and the side its power supply is on, as on the Yeelight app's module
+page. The card shows the modules as they are fitted, from the power supply: add a Matrix, Spot or Panel module at
+the end of the chain (up to 6), remove any with its ✕, and pick the power supply's side (Left, Right, Down or Up;
+the chain is drawn that way). Edits stay a draft until **Save**, which sends
+[`set_matrix_modules`](SERVICES.md#set_matrix_modules) (over Matter) and the matching Device Orientation;
+**Reset** shows the lamp's modules again.
+
+```yaml
+type: custom:yeelight-cube-matrix-modules-card
+target_entities:
+  - light.cubematrix_6a80
+```
+
+| Option | Description |
+| :-- | :-- |
+| `target_entities` | The Cube Matrix lamps, each set up in its own block (a Cube Lite has no modules) |
+| `buttons_style`, `buttons_content_mode` | The shared button look |
+
+---
+
 ## Entities Created
 
 Each lamp creates its own set of per-device entities, plus the integration creates **global entities** (palettes, drawings, fonts, clock color presets) shared across all lamps.
@@ -1068,6 +1101,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Force Refresh** | Button | Re-activate connection for a stuck lamp |
 | **IP Address** | Sensor | Current IP address (updated after rediscovery) |
 | **Matter link** | Sensor | Whether the lamp is linked to Home Assistant's Matter integration: Not linked, Linked (read only), or Linked, settings available. See [Matter (optional)](#matter-optional) |
+| **Power cycle** | Binary sensor | **Needed** while the lamp must have its power turned off and on (a Repair says it stopped answering), else **Not needed**; its `reason` attribute names the Repair. See [Troubleshooting](#troubleshooting) |
 
 
 </details>
@@ -1500,8 +1534,9 @@ Device Orientation is native-effect-only; the lamp's clock cannot rotate. Enable
 favourites retain saved style IDs across renames and are stored separately from
 native-effect favourites. Both rotations share the same server-side lifecycle.
 
-Enable `show_color_modes` on the Native Effects Card for **Color Modes &
-Controls**. Its button/dropdown presentation and settings are shared with the
+The Native Effects Card shows **Color Modes & Controls** by default (turn
+**Show Color Modes** off in its editor, or set `show_color_modes: false`, to
+hide them). Its button/dropdown presentation and settings are shared with the
 Clock Card. Only hardware-confirmed palettes for the selected effect are offered:
 Default, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
 supported.
@@ -1826,6 +1861,7 @@ drawn by the lamp itself, so lower their brightness instead.
 | **The light's `connection` attribute shows `tcp`** | The lamp did not answer its UDP session (port 55444): the network blocks UDP between Home Assistant and the lamp, or it has no session. Everything still works over TCP; UDP is tried again after 5 minutes, and whenever the lamp comes back online |
 | **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, choose **Reconfigure** in its entry's ⋮ menu (Settings → Devices & services → Yeelight Cube Lite) and enter its new IP: it is checked before it is used |
 | **A Repair says a lamp is unreachable, or uses its slower connection** | Shown in **Settings → System → Repairs** after 30 minutes without an answer, or after 15 minutes with UDP blocked while TCP works; each says what to check, and goes away by itself once the problem is gone |
+| **A Repair says a lamp stopped answering** | The lamp accepts connections but answers no command (sometimes after a long stream of frames): only turning its power off and on fixes it. Its **Power cycle** sensor shows **Needed** meanwhile (state `on`), so a lamp on a smart plug can be recovered by an automation, for example:<br>`trigger: state, entity_id: binary_sensor.<lamp>_power_cycle, to: "on", for: "00:01:00"` → `switch.turn_off` the plug, `delay: 10 s`, `switch.turn_on`. Keep a limit (one try per hour, a `condition` on the last run) so a lamp that stays stuck is not cycled forever |
 
 **Reporting a problem:** attach the lamp's diagnostics to the
 [issue](https://github.com/Max-src/yeelight-cube-lite/issues). In
