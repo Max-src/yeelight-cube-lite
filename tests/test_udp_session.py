@@ -49,6 +49,7 @@ class FakeLamp(asyncio.DatagramProtocol):
         self.sessions = 0
         self.drop = 0
         self.silent = False
+        self.direct = True  # False: frames refused ("illegal request")
 
     def connection_made(self, transport):
         self.transport = transport
@@ -74,7 +75,13 @@ class FakeLamp(asyncio.DatagramProtocol):
         elif message.get("token") != self.token or self.token is None:
             reply = {"id": message["id"], "error": {"code": -1, "message": "invalid parameter"}}
         elif method == "update_leds":
+            if not self.direct:  # refused: not in direct mode
+                reply = {"id": message["id"], "error": {"code": 6, "message": "illegal request"}}
+                self.transport.sendto(json.dumps(reply).encode() + b"\r\n", addr)
             return  # frames are never answered
+        elif method == "activate_fx_mode":
+            self.direct = True
+            reply = {"id": message["id"], "result": ["ok"], "token": self.token}
         elif method == "bad_method":
             reply = {"id": message["id"], "error": {"code": 1, "message": "invalid params"}, "token": self.token}
         else:
@@ -199,6 +206,39 @@ class UdpSessionTests(unittest.IsolatedAsyncioTestCase):
             self.methods(),
         )
         self.assertEqual(self.lamp.token, self.lamp.received[-1]["token"])
+
+    async def test_frames_refused_out_of_direct_mode_put_it_back(self):
+        # 2026-11-16: a Matter setEffect left the top lamp in its drawing
+        # effect; it refused every frame ("illegal request") while answering
+        # every check, so the stream stayed dark. Now the next frame opens a
+        # new session, which puts the lamp in direct mode again; and only
+        # once per FRAME_REFUSED_REOPEN however many frames were refused.
+        self.session.session_setup = [("activate_fx_mode", [{"mode": "direct"}])]
+        await self.session.request("update_leds", ["AAAA"])
+        self.lamp.direct = False
+        await self.session.request("update_leds", ["BBBB"])  # refused
+        await asyncio.sleep(0.05)
+        self.assertFalse(self.session.is_open)
+        await self.session.request("update_leds", ["CCCC"])
+        await asyncio.sleep(0.05)
+        self.assertTrue(self.lamp.direct)
+        self.assertEqual(
+            ["udp_sess_new", "activate_fx_mode", "update_leds", "update_leds",
+             "udp_sess_new", "activate_fx_mode", "update_leds"],
+            self.methods(),
+        )
+        self.lamp.direct = False  # refused again at once: not reopened yet
+        for frame in ("DDDD", "EEEE"):
+            await self.session.request("update_leds", [frame])
+        await asyncio.sleep(0.05)
+        self.assertTrue(self.session.is_open)
+        self.assertEqual(2, self.lamp.sessions)
+
+    async def test_refused_frames_without_direct_mode_keep_the_session(self):
+        self.lamp.direct = False
+        await self.session.request("update_leds", ["AAAA"])
+        await asyncio.sleep(0.05)
+        self.assertTrue(self.session.is_open)  # nothing a new session would mend
 
     async def test_frames_are_not_waited_for(self):
         await self.session.request("activate_fx_mode", [{"mode": "direct"}])

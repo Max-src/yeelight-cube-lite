@@ -24,6 +24,7 @@ try:
         effect_colours,
         effect_geometry,
         f32,
+        f32s,
         fade_towards,
         flagged_targets,
         palette_span,
@@ -50,6 +51,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         effect_colours,
         effect_geometry,
         f32,
+        f32s,
         fade_towards,
         flagged_targets,
         palette_span,
@@ -67,7 +69,11 @@ def _read(state) -> int:
     """The random source's next word: one draw per read."""
     draw = state["reads"]
     state["reads"] = draw + 1
-    return source_word(draw)
+    # source_word(draw), inline: the renderers read it most.
+    value = ((draw ^ 0x5BD1E995) * 0x9E3779B1) & U32
+    value ^= value >> 15
+    value = (value * 0x85EBCA6B) & U32
+    return value ^ (value >> 13)
 
 
 def _scan_colour(state, pixels: int | None = None, mask: int = U32) -> bytes:
@@ -105,19 +111,21 @@ def _twinkle_pass(state) -> None:
     """Growing: s = c + (c * k >> 8) + 1; a channel at 255 ends the growth, and
     a channel that did not change doubles the sums. Else c * keep >> 8."""
     stars, growing, sums, keep = state["stars"], state["growing"], state["sums"], state["keep"]
-    for pixel in range(len(growing)):
+    # Pixel by pixel, none reads another: the keep on all (it leaves black
+    # black), then the growing ones from what they were.
+    size = 3 * len(growing)
+    rising = [pixel for pixel in range(len(growing)) if growing[pixel]]
+    before = [stars[3 * pixel:3 * pixel + 3] for pixel in rising]
+    stars[:size] = stars[:size].translate(keep)
+    for pixel, (red, green, blue) in zip(rising, before):
         at = 3 * pixel
-        red, green, blue = stars[at], stars[at + 1], stars[at + 2]
-        if growing[pixel]:
-            first, second, third = sums[red], sums[green], sums[blue]
-            new_red, new_green, new_blue = min(255, first), min(255, second), min(255, third)
-            if new_red == 255 or new_green == 255 or new_blue == 255:
-                growing[pixel] = 0
-            if new_red == red or new_green == green or new_blue == blue:
-                new_red, new_green, new_blue = min(255, 2 * first), min(255, 2 * second), min(255, 2 * third)
-            stars[at], stars[at + 1], stars[at + 2] = new_red, new_green, new_blue
-        elif red or green or blue:
-            stars[at], stars[at + 1], stars[at + 2] = keep[red], keep[green], keep[blue]
+        first, second, third = sums[red], sums[green], sums[blue]
+        new_red, new_green, new_blue = min(255, first), min(255, second), min(255, third)
+        if new_red == 255 or new_green == 255 or new_blue == 255:
+            growing[pixel] = 0
+        if new_red == red or new_green == green or new_blue == blue:
+            new_red, new_green, new_blue = min(255, 2 * first), min(255, 2 * second), min(255, 2 * third)
+        stars[at], stars[at + 1], stars[at + 2] = new_red, new_green, new_blue
 
 
 def _occupied(stars, target: int) -> bool:
@@ -712,12 +720,10 @@ def drift_step(state, settings, clock_ms, render) -> bytes:
         shares = _f32s([share * envelope for share in _f32s([1 - share for share in shares])])
         scale = particle["scale"]
         shares = _f32s([scale * share for share in shares])
-        for channel, value in enumerate(particle["colour"]):
-            if value:
-                at = 3 * first + channel
-                for add in _f32s([value * share for share in shares]):
-                    mixed[at] += int(add)
-                    at += 3
+        colour = particle["colour"]
+        adds = _f32s([value * share for share in shares for value in colour])
+        span = slice(3 * first, 3 * last + 3)
+        mixed[span] = [value + int(add) for value, add in zip(mixed[span], adds)]
     strip = state["strip"]
     strip[:] = bytes([value if value < 255 else 255 for value in mixed])
     strip_blur(strip, intensity, length)
@@ -825,6 +831,25 @@ def _disc_cells() -> tuple:
 
 
 _DISC = _disc_cells()
+_DISC_OFFSETS: dict[tuple, tuple] = {}
+
+
+def _disc_offsets(width: int, height: int, x: int, y: int) -> tuple:
+    """By ring of _DISC: the byte offsets of its cells on the box around
+    (x, y), in the ring's order (the cells off the box left out)."""
+    key = (width, height, x, y)
+    offsets = _DISC_OFFSETS.get(key)
+    if offsets is None:
+        if len(_DISC_OFFSETS) >= 1024:
+            _DISC_OFFSETS.clear()
+        offsets = _DISC_OFFSETS[key] = tuple(
+            tuple(
+                3 * ((y + dy) * width + x + dx) for dy, dx in cells
+                if 0 <= x + dx < width and 0 <= y + dy < height
+            )
+            for _distance, _root, cells in _DISC
+        )
+    return offsets
 
 
 def palette_init(settings) -> dict:
@@ -878,20 +903,20 @@ def palette_step(state, settings, clock_ms, render) -> bytes:
         red, green, blue = table[index] * gain >> 8, table[index + 1] * gain >> 8, table[index + 2] * gain >> 8
         size = f32(radius / 1000)
         square = f32(size * size)
-        x, y = blob["x"], blob["y"]
-        for distance, root, cells in _DISC:
-            if distance > square:
-                break
-            alpha = 255 if root <= 1 else int(f32(f32(1 - f32(root / size)) * 255))
+        rings = 0
+        while rings < len(_DISC) and _DISC[rings][0] <= square:
+            rings += 1
+        # A ring's alpha: 255 within 1, else (1 - root / size) * 255, in f32.
+        far = [root for _distance, root, _cells in _DISC[:rings] if root > 1]
+        alphas = [int(alpha) for alpha in f32s([share * 255 for share in f32s([1 - share for share in f32s([root / size for root in far])])])]
+        alphas = [255] * (rings - len(far)) + alphas
+        for alpha, ats in zip(alphas, _disc_offsets(width, height, blob["x"], blob["y"])):
             weight = _GAMMA[alpha]
             add_red, add_green, add_blue = red * weight >> 8, green * weight >> 8, blue * weight >> 8
-            for dy, dx in cells:
-                column, row = x + dx, y + dy
-                if 0 <= column < width and 0 <= row < height:
-                    at = 3 * (row * width + column)
-                    mixed[at] += add_red
-                    mixed[at + 1] += add_green
-                    mixed[at + 2] += add_blue
+            for at in ats:
+                mixed[at] += add_red
+                mixed[at + 1] += add_green
+                mixed[at + 2] += add_blue
     return place_strip([value if value < 255 else 255 for value in mixed], state["direction"])
 
 

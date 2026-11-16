@@ -21,7 +21,9 @@ from __future__ import annotations
 import math
 import struct
 import threading
+from array import array
 from contextlib import contextmanager
+from operator import add as _add, itemgetter
 
 try:
     from .mount_profile import DIRECTION_TABLE, REFERENCE_PROFILE
@@ -51,6 +53,11 @@ def f32(value: float) -> float:
         return _F32.unpack(_F32.pack(value))[0]
     except OverflowError:
         return math.copysign(math.inf, value)
+
+
+def f32s(values) -> list:
+    """f32 of every value, in one go (the same roundings)."""
+    return array("f", values).tolist()
 
 
 def f32_bits(value: float) -> int:
@@ -174,10 +181,15 @@ def _noise_ease(value: int) -> int:
     return 255 - doubled if value & 128 else doubled
 
 
+# _noise_int8 and _noise_ease by byte.
+_INT8 = tuple(_noise_int8(value) for value in range(256))
+_EASE = tuple(_noise_ease(value) for value in range(256))
+
+
 def _noise_lerp(start: int, end: int, fraction: int) -> int:
     if end > start:
-        return _noise_int8(start + scale8(end - start, fraction))
-    return _noise_int8(start - scale8(start - end, fraction))
+        return _INT8[(start + ((((end - start) & 255) * fraction) >> 8)) & 255]
+    return _INT8[(start - ((((start - end) & 255) * fraction) >> 8)) & 255]
 
 
 def _noise_grad(number: int, x: int, y: int, z: int) -> int:
@@ -185,36 +197,36 @@ def _noise_grad(number: int, x: int, y: int, z: int) -> int:
     u = y if number & 8 else x
     v = y if number < 4 else (x if number in (12, 14) else z)
     if number & 1:
-        u = _noise_int8(-u)
+        u = _INT8[-u & 255]
     if number & 2:
-        v = _noise_int8(-v)
-    return _noise_int8(((u + v) >> 1) + (u & 1))
+        v = _INT8[-v & 255]
+    return _INT8[(((u + v) >> 1) + (u & 1)) & 255]
 
 
 def inoise8_raw(x: int, y: int, z: int) -> int:
     """FastLED's 3-D 8-bit noise, as the lamp runs it."""
-    table = _NOISE_TABLE
+    table, grad, lerp = _NOISE_TABLE, _noise_grad, _noise_lerp
     a = (table[x >> 8] + (y >> 8)) & 255
     aa, ab = (table[a] + (z >> 8)) & 255, (table[a + 1] + (z >> 8)) & 255
     b = (table[(x >> 8) + 1] + (y >> 8)) & 255
     ba, bb = (table[b] + (z >> 8)) & 255, (table[b + 1] + (z >> 8)) & 255
-    u, v, w = _noise_ease(x & 255), _noise_ease(y & 255), _noise_ease(z & 255)
+    u, v, w = _EASE[x & 255], _EASE[y & 255], _EASE[z & 255]
     xx, yy, zz = (x & 255) >> 1, (y & 255) >> 1, (z & 255) >> 1
-    nx, ny, nz = _noise_int8(xx - 128), _noise_int8(yy - 128), _noise_int8(zz - 128)
-    x1 = _noise_lerp(_noise_grad(table[aa], xx, yy, zz), _noise_grad(table[ba], nx, yy, zz), u)
-    x2 = _noise_lerp(_noise_grad(table[ab], xx, ny, zz), _noise_grad(table[bb], nx, ny, zz), u)
-    x3 = _noise_lerp(_noise_grad(table[aa + 1], xx, yy, nz), _noise_grad(table[ba + 1], nx, yy, nz), u)
-    x4 = _noise_lerp(_noise_grad(table[ab + 1], xx, ny, nz), _noise_grad(table[bb + 1], nx, ny, nz), u)
-    return _noise_lerp(_noise_lerp(x1, x2, v), _noise_lerp(x3, x4, v), w)
+    nx, ny, nz = _INT8[(xx - 128) & 255], _INT8[(yy - 128) & 255], _INT8[(zz - 128) & 255]
+    x1 = lerp(grad(table[aa], xx, yy, zz), grad(table[ba], nx, yy, zz), u)
+    x2 = lerp(grad(table[ab], xx, ny, zz), grad(table[bb], nx, ny, zz), u)
+    x3 = lerp(grad(table[aa + 1], xx, yy, nz), grad(table[ba + 1], nx, yy, nz), u)
+    x4 = lerp(grad(table[ab + 1], xx, ny, nz), grad(table[bb + 1], nx, ny, nz), u)
+    return lerp(lerp(x1, x2, v), lerp(x3, x4, v), w)
 
 
 def _noise_grad_2d(number: int, x: int, y: int) -> int:
     u, v = (y, x) if number & 4 else (x, y)
     if number & 1:
-        u = _noise_int8(-u)
+        u = _INT8[-u & 255]
     if number & 2:
-        v = _noise_int8(-v)
-    return _noise_int8(((u + v) >> 1) + (u & 1))
+        v = _INT8[-v & 255]
+    return _INT8[(((u + v) >> 1) + (u & 1)) & 255]
 
 
 def inoise8_raw_2d(x: int, y: int) -> int:
@@ -223,9 +235,9 @@ def inoise8_raw_2d(x: int, y: int) -> int:
     a = (table[x >> 8] + (y >> 8)) & 255
     b = (table[(x >> 8) + 1] + (y >> 8)) & 255
     aa, ab, ba, bb = table[a], table[a + 1], table[b], table[b + 1]
-    u, v = _noise_ease(x & 255), _noise_ease(y & 255)
+    u, v = _EASE[x & 255], _EASE[y & 255]
     xx, yy = (x & 255) >> 1, (y & 255) >> 1
-    nx, ny = _noise_int8(xx - 128), _noise_int8(yy - 128)
+    nx, ny = _INT8[(xx - 128) & 255], _INT8[(yy - 128) & 255]
     first = _noise_lerp(_noise_grad_2d(table[aa], xx, yy), _noise_grad_2d(table[ba], nx, yy), u)
     second = _noise_lerp(_noise_grad_2d(table[ab], xx, ny), _noise_grad_2d(table[bb], nx, ny), u)
     return _noise_lerp(first, second, v)
@@ -245,6 +257,17 @@ def source_word(draw: int) -> int:
     value = (value * 0x85EBCA6B) & U32
     value ^= value >> 13
     return value
+
+
+def source_words(first: int, count: int) -> list:
+    """source_word of draws ``first`` .. ``first + count - 1``, in one go."""
+    out = []
+    for draw in range(first, first + count):
+        value = ((draw ^ 0x5BD1E995) * 0x9E3779B1) & U32
+        value ^= value >> 15
+        value = (value * 0x85EBCA6B) & U32
+        out.append(value ^ (value >> 13))
+    return out
 
 
 def random_source(draw: int) -> int:
@@ -855,8 +878,17 @@ def frame_index(buffer_index: int) -> int:
 
 
 _FRAME_ORDERS: dict[int, tuple] = {}  # by segment length: lamp-order byte -> panel byte
-_PLACEMENTS: dict[tuple, tuple] = {}
+_PLACEMENTS: dict[tuple, object] = {}  # by (direction, profile, length): _picker
+_FRAME_PICKERS: dict[int, object] = {}  # by segment length: _picker of _frame_order
 _READ_BACKS: dict[tuple, tuple] = {}
+
+
+def _picker(order):
+    """``source -> tuple(source[i] for i in order)``, in one call."""
+    if len(order) > 1:
+        return itemgetter(*order)
+    order = tuple(order)
+    return lambda source: tuple(source[index] for index in order)
 
 
 def _frame_order(length: int) -> tuple:
@@ -895,8 +927,8 @@ def place_strip(strip, direction: int, profile: int = REFERENCE_PROFILE) -> byte
         for pixel, index in enumerate(pixel_map(direction, profile, length)):
             for channel in range(3):
                 table[3 * index + channel] = 3 * pixel + channel
-        order = _PLACEMENTS[key] = tuple(table)
-    return bytes(map(strip.__getitem__, order))
+        order = _PLACEMENTS[key] = _picker(table)
+    return bytes(order(strip))
 
 
 def read_back(work, direction: int, profile: int = REFERENCE_PROFILE) -> bytes:
@@ -913,10 +945,12 @@ def panel_to_frame(panel) -> bytes:
     """A panel as a lamp frame (20 x 5, a shorter segment's panel in its
     first columns, the rest black)."""
     length = len(panel) // 3
+    pick = _FRAME_PICKERS.get(length)
+    if pick is None:
+        pick = _FRAME_PICKERS[length] = _picker(_frame_order(length))
     if length == LENGTH:
-        return bytes(map(panel.__getitem__, _frame_order(LENGTH)))
-    padded = bytes(panel) + bytes(3)
-    return bytes(map(padded.__getitem__, _frame_order(length)))
+        return bytes(pick(panel))
+    return bytes(pick(bytes(panel) + bytes(3)))
 
 
 def frame_pixels(frame) -> list:
@@ -1066,38 +1100,83 @@ def blend_grid(work, amount: int, width: int, height: int, target=(0, 0, 0), ind
     return work
 
 
+_ROW_BLUR_VISITS: dict[tuple, tuple] = {}
+_SHARE_TABLES: dict[int, bytes] = {}
+
+
+def _share_table(scale: int) -> bytes:
+    """(value * scale) >> 8 by value."""
+    table = _SHARE_TABLES.get(scale)
+    if table is None:
+        table = _SHARE_TABLES[scale] = bytes((value * scale) >> 8 for value in range(256))
+    return table
+
+
+def _row_blur_visits(width: int, height: int, index_of) -> tuple:
+    """The row blur's walk, by channel: (the byte offsets of column 0's
+    visits, then (here, before) of the others'), in order."""
+    key = (width, height, None if index_of is None else tuple(index_of))
+    visits = _ROW_BLUR_VISITS.get(key)
+    if visits is None:
+        identity = range(width * height) if index_of is None else index_of
+        walk = []
+        for column in range(width + 1):
+            at = column if column < width else 0
+            previous = (column - 1 if width > column - 1 else 0) if column else 0
+            for row in range(height + 1):
+                y = (row if row < height else 0) * width
+                walk.append((3 * identity[y + at], 3 * identity[y + previous] if column else None))
+        visits = _ROW_BLUR_VISITS[key] = tuple(
+            (
+                tuple(here + channel for here, before in walk if before is None),
+                tuple((here + channel, before + channel) for here, before in walk if before is not None),
+            )
+            for channel in range(3)
+        )
+    return visits
+
+
 def row_blur_grid(work, width: int, height: int, index_of=None):
     """Row blur helper: keep 239, c >> 5 added (saturating) to the
-    previous column; the same walk as the fade; one carry, never reset."""
-    identity = range(width * height) if index_of is None else index_of
-    carry = (0, 0, 0)
-    for column in range(width + 1):
-        at = column if column < width else 0
-        previous = (column - 1 if width > column - 1 else 0) if column else 0
-        for row in range(height + 1):
-            y = (row if row < height else 0) * width
-            here = 3 * identity[y + at]
-            red, green, blue = work[here], work[here + 1], work[here + 2]
-            part = (red >> 5, green >> 5, blue >> 5)
-            blended = (
-                min(255, ((red * 239) >> 8) + carry[0]),
-                min(255, ((green * 239) >> 8) + carry[1]),
-                min(255, ((blue * 239) >> 8) + carry[2]),
-            )
-            if column:
-                before = 3 * identity[y + previous]
-                work[before] = min(255, work[before] + part[0])
-                work[before + 1] = min(255, work[before + 1] + part[1])
-                work[before + 2] = min(255, work[before + 2] + part[2])
-            work[here], work[here + 1], work[here + 2] = blended
+    previous column; the same walk as the fade; one carry, never reset.
+    (Channel by channel: no channel reads another.)"""
+    keep = _share_table(239)
+    for firsts, others in _row_blur_visits(width, height, index_of):
+        carry = 0
+        for here in firsts:
+            value = work[here]
+            blended = keep[value] + carry
+            work[here] = blended if blended < 255 else 255
+            carry = value >> 5
+        for here, before in others:
+            value = work[here]
+            part = value >> 5
+            added = work[before] + part
+            work[before] = added if added < 255 else 255
+            blended = keep[value] + carry
+            work[here] = blended if blended < 255 else 255
             carry = part
     return work
 
 
 def blur_columns(work, amount: int, width: int, height: int, index_of=None):
     """Blur helper: FastLED blur1d down each column."""
-    identity = range(width * height) if index_of is None else index_of
     keep, seep = 255 - amount, amount >> 1
+    if index_of is None and height > 1 and 0 <= amount <= 255:
+        # Each cell: its kept part plus the seeps of the cells above and below
+        # it, the first add saturated, then the second (the walk's order).
+        stride, size = 3 * width, 3 * width * height
+        kept = work[:size].translate(_share_table(keep))
+        seeps = work[:size].translate(_share_table(seep))
+        below = bytes(stride) + seeps[:size - stride]
+        above = seeps[stride:] + bytes(stride)
+        total = list(map(_add, map(_add, kept, below), above))
+        if max(total) > 255:  # a saturating add: in its order
+            first = [value if value < 255 else 255 for value in map(_add, kept, below)]
+            total = [value if value < 255 else 255 for value in map(_add, first, above)]
+        work[:size] = bytes(total)
+        return work
+    identity = range(width * height) if index_of is None else index_of
     for column in range(width):
         carry = (0, 0, 0)
         for row in range(height):
@@ -1143,17 +1222,28 @@ def fade_towards(strip, amount: int, target: int = 0, length: int = LENGTH):
 def strip_blur(strip, amount: int, length: int = LENGTH):
     """Blur helper along the displayed pixels."""
     keep, seep = amount ^ 255, amount >> 1
-    carry = (0, 0, 0)
-    for pixel in range(length):
-        here = 3 * pixel
-        red, green, blue = strip[here], strip[here + 1], strip[here + 2]
-        share = ((red * seep) >> 8, (green * seep) >> 8, (blue * seep) >> 8)
-        if pixel:
-            strip[here - 3] = (strip[here - 3] + share[0]) & 255
-            strip[here - 2] = (strip[here - 2] + share[1]) & 255
-            strip[here - 1] = (strip[here - 1] + share[2]) & 255
-        strip[here] = (((red * keep) >> 8) + carry[0]) & 255
-        strip[here + 1] = (((green * keep) >> 8) + carry[1]) & 255
-        strip[here + 2] = (((blue * keep) >> 8) + carry[2]) & 255
-        carry = share
+    size = 3 * length
+    if not 0 <= amount <= 255 or size < 6:
+        carry = (0, 0, 0)
+        for pixel in range(length):
+            here = 3 * pixel
+            red, green, blue = strip[here], strip[here + 1], strip[here + 2]
+            share = ((red * seep) >> 8, (green * seep) >> 8, (blue * seep) >> 8)
+            if pixel:
+                strip[here - 3] = (strip[here - 3] + share[0]) & 255
+                strip[here - 2] = (strip[here - 2] + share[1]) & 255
+                strip[here - 1] = (strip[here - 1] + share[2]) & 255
+            strip[here] = (((red * keep) >> 8) + carry[0]) & 255
+            strip[here + 1] = (((green * keep) >> 8) + carry[1]) & 255
+            strip[here + 2] = (((blue * keep) >> 8) + carry[2]) & 255
+            carry = share
+        return strip
+    # Each pixel: its kept part plus the shares of its two neighbours, on 8 bits.
+    whole = bytes(strip[:size])
+    kept = whole.translate(_share_table(keep))
+    shares = whole.translate(_share_table(seep))
+    strip[:size] = bytes([
+        (value + left + right) & 255
+        for value, left, right in zip(kept, bytes(3) + shares[:size - 3], shares[3:] + bytes(3))
+    ])
     return strip

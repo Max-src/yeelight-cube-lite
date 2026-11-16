@@ -199,6 +199,9 @@ class OnOffMixin:
     async def _internal_turn_on(self, **kwargs):
         """Internal turn_on implementation -- runs under the global lock."""
         was_on = kwargs.pop("_was_on", False)
+        # Standby over: the stream (if it still runs) shows the effect again,
+        # at the brightness set meanwhile.
+        from_standby, self._studio_standby = self._studio_standby, False
         _LOGGER.debug("[TURN_ON] Executing - is_on: %s, custom_text: '%s', mode: '%s'", self._is_on, self._custom_text, self._mode)
 
         if self._music_flow_enabled:
@@ -220,6 +223,8 @@ class OnOffMixin:
                 await self._set_native_mode_brightness()
             else:
                 await self._activate_native_clock()
+                if from_standby:
+                    await self._set_native_mode_brightness()
             if self.hass is not None:
                 self.async_schedule_update_ha_state()
             return
@@ -234,6 +239,8 @@ class OnOffMixin:
                 await self._set_native_mode_brightness()
             else:
                 await self._activate_native_effect()
+                if from_standby:
+                    await self._set_native_mode_brightness()
             if self.hass is not None:
                 self.async_schedule_update_ha_state()
             return
@@ -292,6 +299,10 @@ class OnOffMixin:
             )
             return
         
+        # Keep Streaming When Off: the stream goes on, black (set before the
+        # light is off, so the stream never stops in between).
+        if self.keeps_streaming_when_off():
+            self._studio_standby = True
         # Update HA state IMMEDIATELY for responsive UI
         self._is_on = False
         self.stop_effect_rotation()
@@ -317,7 +328,11 @@ class OnOffMixin:
         # reaches the integration (a powered-down lamp's click only powers
         # it on).
         keep_powered = getattr(self, "remote_keeps_lamp_powered", False)
-        if (was_music_flow_enabled or self._mode in LAMP_MODES) and not keep_powered:
+        if self._studio_standby and not was_music_flow_enabled:
+            # The stream sends black frames until the lamp is turned on: a
+            # Cube Lite is never left silent after a busy stream.
+            _LOGGER.debug("[TURN_OFF] [%s] Off: streaming black frames", self._ip)
+        elif (was_music_flow_enabled or self._mode in LAMP_MODES) and not keep_powered:
             self._lamp_client.close_fast_socket()
             if note_power := getattr(self, "_expect_lamp_power", None):
                 note_power(False)

@@ -10,6 +10,8 @@ import math
 import random
 import traceback
 
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
+
 from .color_utils import rgb_to_hex
 from .lamp_protocol import is_connection_error, is_quota_error
 from .const import (
@@ -261,6 +263,10 @@ class MatrixRenderMixin:
             # The queue processor already logs the same error with full context.
             if is_connection_error(e) or is_quota_error(e):
                 _LOGGER.debug("[DISPLAY] [%s] Connection error in apply_display_mode (re-raising for retry): %s", self._ip, e)
+            elif isinstance(e, HomeAssistantError):
+                # Explained by the integration (errors.py), logged by the
+                # lamp's queue (light_connection): not unexpected.
+                _LOGGER.debug("[DISPLAY] [%s] apply_display_mode failed: %s", self._ip, e)
             else:
                 _LOGGER.error("[DISPLAY] [%s] Unexpected error during apply_display_mode: %s", self._ip, e)
             # Re-raise so the queue processor sees the failure and schedules

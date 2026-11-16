@@ -194,8 +194,9 @@ class MatterLinkTests(unittest.TestCase):
         self.assertFalse(link.linked)
 
 
-def load_light_matter():
-    """light_matter.py with homeassistant.core stubbed."""
+def load_light_matter(part="light_matter"):
+    """light_matter.py (or one of its parts, ``part``) with
+    homeassistant.core stubbed."""
     added = []
     for name in ("homeassistant", "homeassistant.core"):
         if name not in sys.modules:
@@ -204,18 +205,25 @@ def load_light_matter():
     core = sys.modules["homeassistant.core"]
     core.callback = getattr(core, "callback", lambda function: function)
     try:
-        return import_pure_module("light_matter")
+        return import_pure_module(part)
     finally:
         for name in added:
             sys.modules.pop(name, None)
 
 
 MATTER = load_light_matter()
+# light_matter's parts: the buttons, the lamp's own changes, its direction.
+REMOTE = load_light_matter("light_matter_remote")
+RESTORE = load_light_matter("light_matter_restore")
+ROTATION_PART = load_light_matter("light_matter_rotation")
 MOUNT = import_pure_module("light_mount_profile")
 STATE = import_pure_module("light_state")
 
 
-class FakeLight(MATTER.MatterMixin, MOUNT.MountProfileMixin, STATE.LightStateMixin):
+class FakeLight(
+    MATTER.MatterMixin, REMOTE.RemoteButtonsMixin, RESTORE.LampRestoreMixin,
+    ROTATION_PART.MatterRotationMixin, MOUNT.MountProfileMixin, STATE.LightStateMixin,
+):
     """The light's state the mixin reads and writes."""
 
     def __init__(self):
@@ -431,7 +439,7 @@ class FollowedReportTests(unittest.TestCase):
         self.assertFalse(sync("left"))  # already: nothing to restart
         self.assertEqual(1, len(written))
         # No server delivers it (the official one today): as before.
-        channel.error = MATTER.MatterCommandsUnavailable()
+        channel.error = import_pure_module("matter_commands").MatterCommandsUnavailable()
         self.assertFalse(sync("right"))
         channel.error = TimeoutError("no answer")
         self.assertFalse(sync("right"))
@@ -1187,7 +1195,7 @@ class AppContentTests(unittest.IsolatedAsyncioTestCase):
         light._execute_hardware_op = execute
         light._leave_direct_mode = leave_direct_mode
         # The real replay, not FakeLight's record of it.
-        light._replay_app_content = types.MethodType(MATTER.MatterMixin._replay_app_content, light)
+        light._replay_app_content = types.MethodType(RESTORE.LampRestoreMixin._replay_app_content, light)
         light._native_clock_data_bytes = lambda: bytes((1, 0, 0, 0))
         light._create_tracked_task = create_task
         self.light = light

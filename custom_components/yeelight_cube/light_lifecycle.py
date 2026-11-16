@@ -206,6 +206,11 @@ class LifecycleMixin:
             demo_mode=self.matrix_demo_mode,
             factory_modules=self.matrix_factory_modules,
             firmware_too_old=self.device_profile.firmware_too_old,
+            # A Cube Matrix showing everything over Matter (light_matrix):
+            # its LAN is only a fallback.
+            lan_fallback_only=(
+                self.is_cube_matrix and not self._music_flow_enabled and self.matrix_draws_over_matter()
+            ),
         )
         self._reported_problems = report_problems(
             self.hass, self, problems, self._reported_problems
@@ -214,6 +219,9 @@ class LifecycleMixin:
         if reason != self.power_cycle_reason:
             self.power_cycle_reason = reason
             self._notify("power_cycle")
+        # A stuck Cube Lite: brought back over the LAN when it can be
+        # (light_link_recovery), before anyone has to power-cycle it.
+        self._link_recovery_due(problems)
 
     async def async_update(self, *args, **kwargs):
         """Refresh the clock's UTC offset (daylight saving time): once when

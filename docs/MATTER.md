@@ -53,6 +53,11 @@ Cube Lite found via Matter*, with its address filled in:
   changing it here also
   sets the lamp's own direction, which the lamp applies to the next clock or
   native effect it starts.
+- **Smoother streamed effects:** the Palette color mode and the
+  integration's own effects are sent over Matter, each frame acknowledged
+  (from matterjs-server 1.5.4 with Home Assistant's own Matter server), and
+  over the LAN when Matter is not available: see
+  [How streamed effects reach the lamps](STREAMING.md).
 - **LAN Control turned off** in the app: a Repairs message tells you, since
   Home Assistant cannot reach the lamp until it is on again.
 

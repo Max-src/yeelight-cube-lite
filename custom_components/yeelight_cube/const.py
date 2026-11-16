@@ -96,6 +96,11 @@ CONF_RESTORE_MUSIC_CHANGES = "restore_after_music_changes"
 # presses only fire events and "off" keeps the lamp powered, black, so the
 # presses still reach the integration (light_matter.py, light.py turn_off).
 CONF_BUTTONS_WAKE_LAMP = "buttons_wake_lamp"
+# Keep Streaming When Off (switch.py, a Cube Lite's, off by default): turning
+# off an effect or clock Home Assistant streams keeps the stream going, black,
+# instead of powering the lamp off: a Cube Lite can hang when a busy stream
+# stops (light_studio, the standby stream).
+CONF_KEEP_STREAMING_WHEN_OFF = "keep_streaming_when_off"
 # The lamp's own playlist (effect id, custom id per slot), saved while Buttons
 # as remote keeps an all-black one on the lamp (light_matter.py); written back
 # when it is turned off.

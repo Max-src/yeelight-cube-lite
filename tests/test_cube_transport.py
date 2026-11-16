@@ -344,6 +344,19 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
         await self.settled()
         self.assertEqual(["AAAA", "AAAA"], self.frames())
 
+    async def test_changes_only_disables_even_pending_automatic_repeats(self):
+        self.short_stream_timings()
+        await self.cube.send_command_fast("update_leds", ["AAAA"])
+        self.cube.stream_changes_only = True
+        self.cube.stream_running("studio", True)
+        await self.cube.send_command_fast("update_leds", ["BBBB"])
+        await asyncio.sleep(0.2)
+        self.assertEqual(["AAAA", "BBBB"], self.frames())
+        self.cube.stream_changes_only = False
+        await self.cube.send_command_fast("update_leds", ["CCCC"])
+        await asyncio.sleep(0.15)
+        self.assertGreater(self.frames().count("CCCC"), 1)
+
     def short_stream_timings(self):
         for name, value in (("FRAME_SETTLE_DELAY", 0.02), ("STREAM_KEEP_BUSY", 0.05), ("STREAM_HOLD", 0.4)):
             self.addCleanup(setattr, client_udp, name, getattr(client_udp, name))

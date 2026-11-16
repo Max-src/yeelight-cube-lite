@@ -102,6 +102,7 @@ REPORTED = {
     "effect_sub": EFFECT_SUB,
     "hue": HUE,
     "saturation": SATURATION,
+    "reboot_count": REBOOT_COUNT,
 }
 
 # What a Cube Matrix's light follows (light_matrix.py).
@@ -362,6 +363,13 @@ class MatterLink:
     def _report_callback(self, name: str):
         def report(event, value) -> None:
             if getattr(event, "value", event) != "attribute_updated":
+                return
+            # The lamp reports a value when it changes; the same value again
+            # is the server reading everything anew (it subscribes again
+            # after losing the lamp for a while): nothing changed. The custom
+            # id excepted: a remote button's press on a playlist of one slot
+            # reports the same one again.
+            if name != "effect_sub" and name in self.values and self.values[name] == value:
                 return
             self.values[name] = value
             self._on_report(name, value, False)

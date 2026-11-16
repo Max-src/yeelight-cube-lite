@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ig
 from .const import (
     CONF_BUTTONS_AS_REMOTE,
     CONF_BUTTONS_WAKE_LAMP,
+    CONF_KEEP_STREAMING_WHEN_OFF,
     CONF_CAMERA_FOLLOWS_ORIENTATION,
     CONF_RESTORE_MUSIC_CHANGES,
 )
@@ -42,6 +43,7 @@ async def async_setup_entry(
         YeelightCubeButtonsAsRemoteSwitch(config_entry, light_entity),
         YeelightCubeRestoreMusicChangesSwitch(config_entry, light_entity),
         YeelightCubeButtonsWakeLampSwitch(config_entry, light_entity),
+        YeelightCubeKeepStreamingWhenOffSwitch(config_entry, light_entity),
     )
     if not matter:
         # An entry made for a Cube Matrix before models were told apart had
@@ -161,6 +163,16 @@ class YeelightCubeButtonsWakeLampSwitch(_YeelightCubeOptionSwitch):
 
     option_key = CONF_BUTTONS_WAKE_LAMP
     default = True  # what a lamp's button is expected to do
+    _attr_entity_category = EntityCategory.CONFIG
+
+
+class YeelightCubeKeepStreamingWhenOffSwitch(_YeelightCubeOptionSwitch):
+    """Turning off an effect or clock Home Assistant streams keeps the
+    stream going, black, until the lamp is turned on (off: the lamp is
+    powered off). A Cube Lite can hang when a busy stream stops
+    (light_studio.keeps_streaming_when_off)."""
+
+    option_key = CONF_KEEP_STREAMING_WHEN_OFF
     _attr_entity_category = EntityCategory.CONFIG
 
 

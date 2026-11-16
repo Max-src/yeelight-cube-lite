@@ -94,6 +94,13 @@ _DIRECT_MODE = [{"mode": "direct"}]
 class UdpChannelMixin:
     """LampClient's fast channel (lamp_client.py)."""
 
+    def end_direct_mode(self) -> None:
+        """The lamp left direct mode for something else (a Cube Lite's
+        stream drawn over Matter, light_matrix): no new UDP session is put
+        back in it, and no frame is sent again."""
+        self._cancel_frame_settle()
+        self._udp.session_setup = []
+
     def close_music_session(self) -> bool:
         """End a Cube Matrix's music-mode connection (music_channel), and with
         it direct mode: while it is open the lamp drops its Matter effects
@@ -225,6 +232,8 @@ class UdpChannelMixin:
         if command != "update_leds" or not self._udp_usable():
             return
         self._cancel_frame_settle()
+        if getattr(self, "stream_changes_only", False):
+            return  # Falling Blocks experiment: no automatic duplicate frames.
         now = time.monotonic()
         streaming = (
             (now - self._last_frame_at < STREAM_HOLD or bool(self._stream_owners))

@@ -21,6 +21,7 @@ try:
         effect_geometry,
         effective_direction,
         f32,
+        f32s,
         fade_grid,
         fade_towards,
         new_grid,
@@ -30,6 +31,7 @@ try:
         random_source,
         settings_length,
         source_word,
+        source_words,
     )
     from .lamp_effects_core import SLOTS as CORE_SLOTS
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
@@ -50,6 +52,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         effect_geometry,
         effective_direction,
         f32,
+        f32s,
         fade_grid,
         fade_towards,
         new_grid,
@@ -59,6 +62,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         random_source,
         settings_length,
         source_word,
+        source_words,
     )
     from lamp_effects_core import SLOTS as CORE_SLOTS
 
@@ -125,13 +129,13 @@ def aurora_step(state, settings, clock_ms, render) -> bytes:
             continue
         height = f32((age if f32(age / ttl) < 0.5 else f32(ttl - age)) / (ttl * 0.5))
         alpha = wave["alpha"]
-        red, green, blue = wave["colour"]
-        for pixel in range(first, last + 1):
-            factor = f32(alpha * f32(f32(1 - f32(abs(f32(pixel - centre)) / reach)) * height))
-            at = 3 * pixel
-            light[at] += int(f32(red * factor))
-            light[at + 1] += int(f32(green * factor))
-            light[at + 2] += int(f32(blue * factor))
+        colour = wave["colour"]
+        # By pixel: alpha * (1 - |pixel - centre| / reach) * height, each step in f32.
+        shares = f32s([abs(offset) / reach for offset in f32s([pixel - centre for pixel in range(first, last + 1)])])
+        shares = f32s([share * height for share in f32s([1 - share for share in shares])])
+        adds = f32s([channel * factor for factor in f32s([alpha * share for share in shares]) for channel in colour])
+        span = slice(3 * first, 3 * last + 3)
+        light[span] = [value + int(add) for value, add in zip(light[span], adds)]
     return place_strip([value if value < 255 else 255 for value in light], state["direction"])
 
 
@@ -152,10 +156,11 @@ def solar_flare_init(settings) -> dict:
 def solar_flare_step(state, settings, clock_ms, render) -> bytes:
     heat, cooling, draw = state["heat"], state["cooling"], state["draw"]
     length = len(heat)
-    for pixel in range(length):
-        left = heat[pixel] - ((((source_word(draw) & 255) * cooling >> 8) + 2) & 255)
+    # Each pixel cools by its draw, from pixel 0.
+    for pixel, word in enumerate(source_words(draw, length)):
+        left = heat[pixel] - ((((word & 255) * cooling >> 8) + 2) & 255)
         heat[pixel] = left if left > 8 else 8
-        draw += 1
+    draw += length
     bucket = (clock_ms // 32) & U32
     if bucket != state["bucket"]:
         state["bucket"] = bucket
@@ -463,6 +468,26 @@ def meteor_init(settings) -> dict:
     }
 
 
+_METEOR_SPEEDS: dict[tuple, tuple] = {}
+
+
+def _meteor_speed(speed: float, pace: int, height: int) -> tuple:
+    """What a meteor's speed gives: (speed * pace, the row it leaves past,
+    the fade, its full brightness, the trail's length)."""
+    key = (speed, pace, height)
+    out = _METEOR_SPEEDS.get(key)
+    if out is None:
+        trail = f32(speed * 2.5 + 1)
+        fade = f32(f32(speed - 1) * 0.2 + 0.4)
+        if len(_METEOR_SPEEDS) >= 256:
+            _METEOR_SPEEDS.clear()
+        out = _METEOR_SPEEDS[key] = (
+            f32(speed * pace), f32(height + f32(trail + trail)), fade, int(fade * 255),
+            int(f32(speed * 2.5 + 1)),
+        )
+    return out
+
+
 def meteor_step(state, settings, clock_ms, render) -> bytes:
     width, height, pace = state["width"], state["height"], state["pace"]
     meteors = state["meteors"]
@@ -485,36 +510,44 @@ def meteor_step(state, settings, clock_ms, render) -> bytes:
         elapsed = clock_ms - meteor["time"]
         if elapsed < 0:
             elapsed += 1 << 64
-        position = f32(meteor["start"] + f32(meteor["speed"] * pace) * (elapsed / 1000))
-        trail = f32(meteor["speed"] * 2.5 + 1)
-        if not position <= f32(height + f32(trail + trail)):
+        velocity, bound, _fade, _bright, _length = _meteor_speed(meteor["speed"], pace, height)
+        position = f32(meteor["start"] + velocity * (elapsed / 1000))
+        if not position <= bound:
             draw = state["draw"]
             state["draw"] = draw + 1
             if random_source(draw) < 128:
                 _meteor_spawn(state, meteor, clock_ms)
                 position = meteor["start"]
         speed, colour, column = meteor["speed"], meteor["colour"], meteor["column"]
+        _velocity, _bound, fade, bright, length = _meteor_speed(speed, pace, height)
         # Off the grid a draw lands 3 bytes before the buffer, which nothing reads.
         first = int(f32(position - 2))
         last = math.ceil(position) + 10
-        fade = f32(f32(speed - 1) * 0.2 + 0.4)
-        bright = int(fade * 255)
-        for row in range(max(first, 0), min(last, height - 1) + 1):
-            e = f32((abs(f32(row - position)) - 0.5) * 0.5)
-            if e < 0:
-                put(row, column, colour, bright)
-            elif e <= 1:
-                put(row, column, colour, int(f32(fade * f32(255 - e * 255))))
-        length = int(f32(speed * 2.5 + 1))
+        # The head, then the trail; each row's e and scale in f32, in one go.
+        rows = range(max(first, 0), min(last, height - 1) + 1)
+        if rows:
+            es = f32s([(abs(offset) - 0.5) * 0.5 for offset in f32s([row - position for row in rows])])
+            scales = f32s([fade * share for share in f32s([255 - e * 255 for e in es])])
+            for row, e, scale in zip(rows, es, scales):
+                if e < 0:
+                    put(row, column, colour, bright)
+                elif e <= 1:
+                    put(row, column, colour, int(scale))
         limit = f32(position - length)
         row = min(int(position), height - 1)
+        rows = []
         while row >= limit and row >= 0:
-            e = f32((abs(f32(row - position)) - 0.5) / length)
-            if e < 0:
-                put(row, column, colour, bright)
-            elif e <= 1:
-                put(row, column, colour, int(f32(fade * f32(255 - f32(e * e) * 255))))
+            rows.append(row)
             row -= 1
+        if rows:
+            es = f32s([(abs(offset) - 0.5) / length for offset in f32s([row - position for row in rows])])
+            squares = f32s([e * e for e in es])
+            scales = f32s([fade * share for share in f32s([255 - square * 255 for square in squares])])
+            for row, e, scale in zip(rows, es, scales):
+                if e < 0:
+                    put(row, column, colour, bright)
+                elif e <= 1:
+                    put(row, column, colour, int(scale))
     return place_strip(work, state["direction"])
 
 

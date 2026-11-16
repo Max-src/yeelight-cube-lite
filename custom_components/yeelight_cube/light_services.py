@@ -29,6 +29,7 @@ from .light_services_display import async_register_display_services
 from .light_services_native import async_register_native_services
 from .light_services_palette import async_register_palette_services
 from .light_services_pixel_art import async_register_pixel_art_services
+from .stream_preview_ws import async_register_stream_preview
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     async_register_palette_services(hass)
     async_register_clock_preset_services(hass)
     async_register_pixel_art_services(hass)
+    async_register_stream_preview(hass)
     async_register_native_services(hass)
     async_register_diagnostics_services(hass)
     return True

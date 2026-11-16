@@ -31,6 +31,8 @@ PROFILE = import_pure_module("device_profile")
 LINK = import_pure_module("matter_link")
 DISCOVERY = import_pure_module("matter_discovery")
 MATRIX = import_pure_module("light_matrix")
+MATRIX_SETTINGS = import_pure_module("light_matrix_settings")
+MATRIX_FOLLOW = import_pure_module("light_matrix_follow")
 CORE = import_pure_module("lamp_core")
 RENDERERS = import_pure_module("lamp_renderers")
 COMMANDS = import_pure_module("matter_commands")
@@ -241,7 +243,7 @@ class RotationTests(unittest.TestCase):
             self.assertEqual(rotation, lite._rotation_for(orientation), orientation)
         # Both ways it is written use it (the Device Orientation, and the
         # mount profile's check); at setup the lamp's own rotation is read.
-        matter = (ROOT / "light_matter.py").read_text(encoding="utf-8")
+        matter = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         self.assertEqual(2, matter.count("rotation = self._rotation_for(orientation)"))
         source = (ROOT / "light_lifecycle.py").read_text(encoding="utf-8")
         self.assertIn("self._matrix_rotated(self._lamp_client.profile.rotation, start=True)", source)
@@ -690,6 +692,29 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(36, sent[0][3]["effect"]["effectId"])
         self.assertLess(light.log.index("close_music"), light.log.index(sent[0]))
 
+    def test_its_text_changes_and_scrolls_over_its_own_drawing(self):
+        # The drawing over Matter is the lamp's drawing effect, but shows
+        # Home Assistant's picture: a new text and the scroll steps replace
+        # it (they were held back as competing with the lamp's own content,
+        # so a long text never scrolled on a Cube Matrix).
+        light = FakeLight()
+        light._mode = "Text Color Sequence"
+        run(light._draw_matrix_frame(light.device_profile.to_wire([(3, 2, 1)] * 100)))
+        light._execute_hardware_op = mock.AsyncMock()
+        run(light.async_apply_display_mode("text_change"))
+        run(light.async_apply_display_mode())  # a scroll step
+        self.assertEqual(2, light._execute_hardware_op.await_count)
+        # The lamp's own content (its effect, the Yeelight app) still keeps them out.
+        light._entered_builtin_mode()
+        light._execute_hardware_op.reset_mock()
+        run(light.async_apply_display_mode("text_change"))
+        run(light.async_apply_display_mode())
+        light._execute_hardware_op.assert_not_awaited()
+        # Back in direct mode: nothing is held back.
+        light._entered_direct_mode()
+        run(light.async_apply_display_mode("text_change"))
+        light._execute_hardware_op.assert_awaited_once()
+
 
 class MatterChangeTests(unittest.TestCase):
     def test_matter_becoming_available_shows_it_the_lamp_s_way(self):
@@ -704,15 +729,15 @@ class MatterChangeTests(unittest.TestCase):
         light._create_tracked_task = track
         light.async_apply_display_mode = lambda update_type: asyncio.sleep(0)
         # Streamed so far, the lamp can show it now: shown again.
-        MATRIX.MatrixMixin._matrix_matter_changed(light)
+        MATRIX_SETTINGS.MatrixSettingsMixin._matrix_matter_changed(light)
         self.assertEqual(1, len(tasks))
         # Already the lamp's: nothing to do.
         light._matrix_shown = ("setPresetsEffect", {})
-        MATRIX.MatrixMixin._matrix_matter_changed(light)
+        MATRIX_SETTINGS.MatrixSettingsMixin._matrix_matter_changed(light)
         self.assertEqual(1, len(tasks))
         # The lamp's, and Matter went away: streamed again.
         light._matter = types.SimpleNamespace(linked=False, values={})
-        MATRIX.MatrixMixin._matrix_matter_changed(light)
+        MATRIX_SETTINGS.MatrixSettingsMixin._matrix_matter_changed(light)
         self.assertEqual(2, len(tasks))
         self.assertIsNone(light._matrix_shown)
 
@@ -729,9 +754,9 @@ class MatterChangeTests(unittest.TestCase):
         light._matrix_refused_at, light._matrix_retry_after = 0.0, MATRIX.MATTER_RETRY_FIRST
         light._matrix_stream_failures = 0
         clock = [1000.0]
-        retry = MATRIX.MatrixMixin._retry_matrix_native
+        retry = MATRIX_SETTINGS.MatrixSettingsMixin._retry_matrix_native
         with mock.patch.object(MATRIX.time, "monotonic", lambda: clock[0]):
-            MATRIX.MatrixMixin._refuse_matrix_native(light)
+            MATRIX_SETTINGS.MatrixSettingsMixin._refuse_matrix_native(light)
             self.assertTrue(light._matrix_native_refused)
             self.assertIsNone(MATRIX.MatrixMixin.matrix_native_command(light))
             # Not at once from the minute check, nor straight after the failure.
@@ -746,7 +771,7 @@ class MatterChangeTests(unittest.TestCase):
             self.assertEqual(1, shown_again())  # shown again, the lamp's way
             self.assertEqual(2 * MATRIX.MATTER_RETRY_FIRST, light._matrix_retry_after)
             # ...failing again, the minute check waits twice as long.
-            MATRIX.MatrixMixin._refuse_matrix_native(light)
+            MATRIX_SETTINGS.MatrixSettingsMixin._refuse_matrix_native(light)
             clock[0] += MATRIX.MATTER_RETRY_FIRST
             self.assertFalse(retry(light))
             clock[0] += MATRIX.MATTER_RETRY_FIRST
@@ -754,12 +779,12 @@ class MatterChangeTests(unittest.TestCase):
             self.assertEqual(2, shown_again())
             # Never past the most.
             for _ in range(20):
-                MATRIX.MatrixMixin._refuse_matrix_native(light)
+                MATRIX_SETTINGS.MatrixSettingsMixin._refuse_matrix_native(light)
                 clock[0] += MATRIX.MATTER_RETRY_MOST
                 retry(light)
             self.assertEqual(MATRIX.MATTER_RETRY_MOST, light._matrix_retry_after)
             # Nothing to retry without Matter, or when it never failed.
-            MATRIX.MatrixMixin._refuse_matrix_native(light)
+            MATRIX_SETTINGS.MatrixSettingsMixin._refuse_matrix_native(light)
             light._matter = types.SimpleNamespace(linked=False, values={})
             clock[0] += MATRIX.MATTER_RETRY_MOST
             self.assertFalse(retry(light))
@@ -768,7 +793,7 @@ class MatterChangeTests(unittest.TestCase):
         light_source = (ROOT / "light_lifecycle.py").read_text(encoding="utf-8")
         check = light_source.split("def _async_check_problems", 1)[1].split("    def ", 1)[0]
         self.assertIn("self._retry_matrix_native()", check)
-        matter_source = (ROOT / "light_matter.py").read_text(encoding="utf-8")
+        matter_source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         self.assertIn("retry(link_back=True)", matter_source)
 
 
@@ -841,32 +866,32 @@ class RestartRotationTests(unittest.TestCase):
 
     def test_reported_after_the_restart_it_is_written_again(self):
         light = self.light()
-        MATRIX.MatrixMixin._matrix_lamp_restarted(light)
-        MATRIX.MatrixMixin._matrix_rotated(light, 0)
+        MATRIX_FOLLOW.MatrixFollowMixin._matrix_lamp_restarted(light)
+        MATRIX_FOLLOW.MatrixFollowMixin._matrix_rotated(light, 0)
         self.assertIn(("write", "up", True), light.log)
         self.assertNotIn(("orientation", "right"), light.log)
         self.assertEqual(3, light._lamp_client.profile.rotation)
 
     def test_reported_just_before_the_restart_it_is_undone(self):
         light = self.light()
-        MATRIX.MatrixMixin._matrix_rotated(light, 0)       # taken for the app's at first
+        MATRIX_FOLLOW.MatrixFollowMixin._matrix_rotated(light, 0)       # taken for the app's at first
         self.assertIn(("orientation", "right"), light.log)
         light._device_orientation = "right"
-        MATRIX.MatrixMixin._matrix_lamp_restarted(light)
+        MATRIX_FOLLOW.MatrixFollowMixin._matrix_lamp_restarted(light)
         self.assertEqual(("orientation", "up"), light.log[-1])
 
     def test_a_change_in_the_app_is_still_followed(self):
         light = self.light()
-        MATRIX.MatrixMixin._matrix_rotated(light, 2)
+        MATRIX_FOLLOW.MatrixFollowMixin._matrix_rotated(light, 2)
         self.assertEqual([("orientation", "left")], [e for e in light.log if e[0] in ("orientation", "write")])
         # A restart long after does not undo it.
         light._device_orientation = "left"
         light._matrix_turned_from = (light._matrix_turned_from[0] - MATRIX.MATRIX_RESTART_WINDOW, "up")
-        MATRIX.MatrixMixin._matrix_lamp_restarted(light)
+        MATRIX_FOLLOW.MatrixFollowMixin._matrix_lamp_restarted(light)
         self.assertNotIn(("orientation", "up"), light.log)
 
     def test_our_music_connection_is_closed_before_the_rotation_is_written(self):
-        source = (ROOT / "light_matter.py").read_text(encoding="utf-8")
+        source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         write = source.split("async def _sync_lamp_rotation", 1)[1]
         self.assertLess(write.index("cube.close_music_session()"), write.index("channel.async_write(ROTATION, rotation)"))
 
@@ -894,7 +919,7 @@ class DemoLoopTests(unittest.TestCase):
 
     def test_seen_over_matter_it_is_reported(self):
         clock = [1000.0]
-        real, MATRIX.time = MATRIX.time, types.SimpleNamespace(monotonic=lambda: clock[0])
+        real, MATRIX_FOLLOW.time = MATRIX_FOLLOW.time, types.SimpleNamespace(monotonic=lambda: clock[0])
         try:
             light = FakeLight()
             light.hass = object()
@@ -905,7 +930,7 @@ class DemoLoopTests(unittest.TestCase):
                 clock[0] += 30.0
             light._on_matrix_report("running_effect", 17, False)  # the third 30 s
         finally:
-            MATRIX.time = real
+            MATRIX_FOLLOW.time = real
         self.assertTrue(light.matrix_demo_mode)
         self.assertIn("check_problems", light.log)  # the Repair
         self.assertIn("matter_changed", light.log)  # streamed from now on
@@ -1101,13 +1126,13 @@ class SetupTests(unittest.TestCase):
             self.assertIn(marker, (ROOT / name).read_text(encoding="utf-8"), name)
 
     def test_the_cube_matrix_link_is_its_own(self):
-        matter = (ROOT / "light_matter.py").read_text(encoding="utf-8")
+        matter = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         self.assertIn("products=(self.device_profile.matter_product,), reported=MATRIX_REPORTED", matter)
         # The Cube Lite's button playlist and orientation check are not run.
         self.assertIn("if self.device_profile.matter:\n            self.sync_remote_playlist()", matter)
 
     def test_stale_nodes_go_only_once_the_new_node_answers(self):
-        matter = (ROOT / "light_matter.py").read_text(encoding="utf-8")
+        matter = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         check = matter[matter.index("        async def check() -> None:"):]
         self.assertLess(check.index("await channel.async_available()"),
                         check.index("await self._matter.remove_stale_nodes()"))

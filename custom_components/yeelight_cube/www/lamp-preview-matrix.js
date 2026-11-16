@@ -21,6 +21,7 @@ import { nativeEffectLampFrame } from "./native-effect-card-utils.js";
 import { matrixFrame } from "./matrix-frame.js";
 import { withSpotColours } from "./matrix-modules.js";
 import { contextGrid, previewContext } from "./preview-context.js";
+import { acquireStreamFrames } from "./stream-frames.js";
 import {
   isVerticalMount,
   matrixView,
@@ -107,7 +108,9 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     if (!this._nativeLoop) {
       this._nativeLoop = createRafLoop((now, due) => this._nativeAnimFrame(due), {
         minIntervalMs: 100, // ~10 fps
+        // Streamed frames come 25 a second: each is painted.
         smoothWhen: () =>
+          !!this._streamSubscription?.latest() ||
           isLampRendered(
             this._hass?.states?.[this._primaryEntity()]?.attributes
               ?.native_effect,
@@ -129,8 +132,35 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     );
   }
 
+  // The frame the lamp's stream sent last (stream-frames.js), while it
+  // streams; null: the preview draws the effect itself.
+  _streamedFrame() {
+    const entityId = this._primaryEntity();
+    const connection = this._hass?.connection;
+    if (!connection || !entityId) return null;
+    const current = this._streamSubscription;
+    if (!current || current.entityId !== entityId || current.connection !== connection) {
+      current?.release();
+      this._streamSubscription = {
+        entityId,
+        connection,
+        ...acquireStreamFrames(connection, entityId),
+      };
+    }
+    return this._streamSubscription.latest();
+  }
+
+  // Neither loop shows the lamp any more: its streamed frames are no longer
+  // needed.
+  _releaseStreamFrames() {
+    if (this._nativeLoop?.running || this._clockLoop?.running) return;
+    this._streamSubscription?.release();
+    this._streamSubscription = null;
+  }
+
   _stopNativeAnimation() {
     if (this._nativeLoop) this._nativeLoop.stop();
+    this._releaseStreamFrames();
     this._setInstantDots(false);
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
@@ -148,6 +178,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       this._clockLoop = createRafLoop((now, due) => this._clockAnimFrame(due), {
         minIntervalMs: () => this._clockAnimInterval(),
         smoothWhen: () => {
+          if (this._streamSubscription?.latest()) return true;
           const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
           return !!attrs && clockUsesLampRenderer(attrs);
         },
@@ -165,6 +196,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
   _stopClockAnimation() {
     if (this._clockLoop) this._clockLoop.stop();
+    this._releaseStreamFrames();
     this._setInstantDots(false);
     this._clockAnimStartedAt = null;
     this._frozenBackgroundSeconds = null;
@@ -190,6 +222,13 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     }
     const dots = this._getLampDots();
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
+    // A streamed clock: the frame the lamp was sent.
+    const streamed = this._streamedFrame();
+    if (streamed) {
+      this._setInstantDots(true);
+      this._updateMatrixColors(this._matrixColorsToGridColors(streamed, st), st);
+      return;
+    }
     this._setInstantDots(clockUsesLampRenderer(st.attributes));
 
     const now = performance.now();
@@ -243,6 +282,13 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const dots = this._getLampDots();
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
+    // A streamed effect: the frame the lamp was sent.
+    const streamed = this._streamedFrame();
+    if (streamed) {
+      this._setInstantDots(true);
+      this._updateMatrixColors(this._matrixColorsToGridColors(streamed, st), st);
+      return;
+    }
     const effect = st.attributes.native_effect || "Ribbon";
     this._setInstantDots(isLampRendered(effect));
     const dir = st.attributes.native_effect_direction || "Right";

@@ -184,8 +184,11 @@ class DisplayMixin:
         _NATIVE_COMPETING_UPDATE_TYPES = {
             "text_change", "display_update", "display_retry",
         }
+        # A Cube Matrix's drawing over Matter is in a built-in mode too, but
+        # shows Home Assistant's own picture: its text and scroll steps pass.
         if (
             self._in_native_fw_mode
+            and not self._shows_own_drawing
             and not self._external_display
             and self._mode not in LAMP_MODES
             and update_type in _NATIVE_COMPETING_UPDATE_TYPES

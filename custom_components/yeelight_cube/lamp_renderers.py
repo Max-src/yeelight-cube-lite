@@ -318,16 +318,25 @@ class Timeline:
         stop = None if exact or replays_in_full() else time.perf_counter() + _REPLAY_SECONDS
         if self.slot["warmup"] == 0:  # a pure function of the render: no way there
             cursor.render = target - 1
-        while cursor.render < target:
-            render = cursor.render + 1
-            frame = panel_to_frame(step(cursor.state, settings, clock_at(rate, render), render))
-            cursor.render, cursor.frame = render, frame
-            if render >= cursor.settled:
-                self.frames[render] = frame
-                if len(self.frames) > _RING:
-                    del self.frames[next(iter(self.frames))]
-            if stop is not None and time.perf_counter() > stop:
-                break
+        # A warmup render's panel is turned into a frame only if it is the last.
+        state, frames, settled = cursor.state, self.frames, cursor.settled
+        render, panel = cursor.render, None
+        try:
+            while render < target:
+                panel = step(state, settings, clock_at(rate, render + 1), render + 1)
+                render += 1
+                if render >= settled:
+                    frames[render] = frame = panel_to_frame(panel)
+                    panel = None
+                    cursor.frame = frame
+                    if len(frames) > _RING:
+                        del frames[next(iter(frames))]
+                if stop is not None and time.perf_counter() > stop:
+                    break
+        finally:
+            cursor.render = render
+            if panel is not None:
+                cursor.frame = panel_to_frame(panel)
         self.uses += 1
         cursor.used = self.uses
         return cursor.frame

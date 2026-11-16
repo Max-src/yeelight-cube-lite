@@ -75,6 +75,11 @@ class LightStateMixin:
         # must use a longer settle + graceful FIN to avoid the lamp resetting to
         # the ribbon (default loading state) during the mode transition.
         self._in_native_fw_mode = False
+        # True when that built-in mode is Home Assistant's own picture (a Cube
+        # Matrix's drawing over Matter, light_matrix): updates of the
+        # picture (a new text, a scroll step) are not the lamp's own content
+        # competing with it (light_display's guard).
+        self._shows_own_drawing = False
         # The hardware brightness last sent to the lamp (None: unknown, sent
         # again with the next frame or mode).
         self._last_hardware_brightness = None
@@ -110,6 +115,11 @@ class LightStateMixin:
         (``direct`` False) streamed where direct mode is set per session."""
         self._fx_mode_is_direct = direct
         self._in_native_fw_mode = False
+        self._shows_own_drawing = False
+        if direct:
+            # Frames over the LAN replace a drawing shown over Matter
+            # (light_matrix): it is started again before any setData.
+            self._matrix_shown = None
 
     def _direct_mode_lost(self) -> None:
         """The lamp may no longer be in direct mode (a lost connection, a
@@ -117,15 +127,19 @@ class LightStateMixin:
         again."""
         self._fx_mode_is_direct = False
 
-    def _entered_builtin_mode(self) -> None:
+    def _entered_builtin_mode(self, *, own_drawing: bool = False) -> None:
         """The lamp shows one of its own modes (clock, effect, color flow): no
-        longer in direct mode, and leaving it takes the longer settle."""
+        longer in direct mode, and leaving it takes the longer settle.
+        ``own_drawing``: the mode shows Home Assistant's picture (a Cube
+        Matrix's drawing over Matter), which its next updates replace."""
         self._fx_mode_is_direct = False
         self._in_native_fw_mode = True
+        self._shows_own_drawing = own_drawing
 
     def _left_builtin_mode(self) -> None:
         """The lamp no longer shows one of its own modes."""
         self._in_native_fw_mode = False
+        self._shows_own_drawing = False
 
     def _note_hardware_brightness(self, level) -> None:
         """The lamp's hardware brightness is ``level`` (sent, or None: unknown,

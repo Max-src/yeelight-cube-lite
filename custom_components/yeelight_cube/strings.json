@@ -206,6 +206,9 @@
             },
             "buttons_wake_lamp": {
                 "name": "Buttons: Wake Lamp When Off"
+            },
+            "keep_streaming_when_off": {
+                "name": "Keep Streaming When Off"
             }
         },
         "binary_sensor": {

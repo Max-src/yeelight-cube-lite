@@ -356,6 +356,22 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             else:
                 light.async_apply_display_mode.assert_awaited_once_with(update_type="turn_on")
 
+    async def test_an_outage_whose_flags_another_command_cleared_is_still_recovered(self):
+        # Power cut mid-stream: the stream's own check gets the first answer
+        # once the lamp is back, which clears the client's unreachable flag.
+        # The health check still recovers: the light published available
+        # again and its display applied again (it stayed "unavailable").
+        light = make_light(self.helpers)
+        light.async_write_ha_state = Mock()
+        await self.health_cycle(light, reachable=False)
+        self.assertIsNotNone(light._outage_since)
+        light.async_apply_display_mode.reset_mock()
+        light.async_write_ha_state.reset_mock()
+        await self.health_cycle(light)  # a fresh client: no flag left
+        self.assertIsNone(light._outage_since)
+        light.async_apply_display_mode.assert_awaited_once_with(update_type="turn_on")
+        light.async_write_ha_state.assert_called()
+
     async def test_an_outage_is_logged_once_when_it_starts_and_once_when_it_ends(self):
         # A lamp switched off for hours: one warning, not one per probe.
         namespace = self.helpers["_periodic_health_check"].__globals__
@@ -1287,6 +1303,8 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "APPLY_HARD_TIMEOUT": 8, "CIRCUIT_BREAKER_WINDOW": 30,
             "LOCK_WAIT_WARNING_MS": 3000, "_DEVICE_LOCK_HOLDERS": {},
             "BulbException": BULB_EXCEPTION,
+            # A failure the integration explains (errors.failed).
+            "HomeAssistantError": type("HomeAssistantError", (Exception,), {}),
             "CubeConnectionError": CUBE_CONNECTION_ERROR,
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
@@ -1434,6 +1452,8 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "CIRCUIT_BREAKER_WINDOW": 30.0,
             "LOCK_WAIT_WARNING_MS": 3000,
             "BulbException": BULB_EXCEPTION,
+            # A failure the integration explains (errors.failed).
+            "HomeAssistantError": type("HomeAssistantError", (Exception,), {}),
             "CubeConnectionError": CUBE_CONNECTION_ERROR,
             "_DEVICE_LOCKS": {},
             "_DEVICE_LOCK_HOLDERS": {},

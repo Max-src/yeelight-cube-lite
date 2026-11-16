@@ -700,7 +700,7 @@ class StartupRotationTests(unittest.TestCase):
         light = self.light()
         light._on_matrix_report("rotation", 2, False)
         self.assertEqual("2", light._lamp_client.capabilities["rotation_angle"])
-        source = (ROOT / "light_matter.py").read_text(encoding="utf-8")
+        source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         self.assertIn('if note := getattr(self, "matrix_note_rotation", None):', source)
 
 

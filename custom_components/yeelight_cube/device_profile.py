@@ -291,9 +291,19 @@ class DeviceProfile:
 
 
     def drawing_pixels(self, wire):
-        """A frame in wire order (to_wire's) as a Cube Matrix drawing's
-        pixels (Matter, matrix_effects.drawing_data): 25 pixels a block and
-        one a spot slot (the Yeelight app's layout)."""
+        """A frame in wire order (to_wire's) as the lamp's drawing's pixels
+        (Matter, matrix_effects.drawing_data). A Cube Matrix: 25 pixels a
+        block and one a spot slot (the Yeelight app's layout). A Cube Lite:
+        its 100 pixels column by column from the base, each column from the
+        bottom (``column * 5 + row``), whereas update_leds takes them row by
+        row (filmed 2026-11-16: the same pixels, both ways, gave the same
+        picture and the same colours)."""
+        if self.key != CUBEMATRIX:
+            black = (0, 0, 0)
+            return [
+                wire[row * COLS + column] if row * COLS + column < len(wire) else black
+                for column in range(COLS) for row in range(ROWS)
+            ]
         pixels, start = [], 0
         for leds in self.chain:
             pixels.extend(wire[start:start + leds] if leds == BLOCK_LEDS else wire[start:start + 1])

@@ -321,6 +321,11 @@ class ConnectionMixin:
             )
             # Answered, not applied: named on the cards until a change works.
             note_command_result(self, op_name, refused)
+        except HomeAssistantError as e:
+            # An expected failure the integration explains itself (errors.py:
+            # the lamp stopped an animation upload...): no traceback.
+            _LOGGER.warning("[OP #%s] [%s] %s failed: %s", op_id, self._ip, op_name, e)
+            note_command_result(self, op_name, e)
         except Exception as e:  # noqa: BLE001 -- the lamp's queue: a failed operation is reported, never raised
             _LOGGER.error(
                 "[OP #%s] [%s] Unexpected error in %s: %s", op_id, self._ip, op_name, e,
@@ -575,6 +580,11 @@ class ConnectionMixin:
                 )
                 is_stuck = (
                     self._lamp_client.is_unreachable or
+                    # An outage not recovered from here yet: another command
+                    # (the stream's check) may have got an answer first and
+                    # cleared the flags, but the light is still published
+                    # unavailable and its display not applied again.
+                    self._outage_since is not None or
                     rotation_due or
                     self._display_retry_count >= self.MAX_DISPLAY_RETRIES or
                     self._lamp_client.consecutive_failures > 0 or

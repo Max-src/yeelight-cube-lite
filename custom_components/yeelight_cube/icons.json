@@ -179,6 +179,9 @@
                     "off": "mdi:lightbulb-off-outline"
                 }
             },
+            "keep_streaming_when_off": {
+                "default": "mdi:play-circle-outline"
+            },
             "buttons_as_remote": {
                 "default": "mdi:remote",
                 "state": {

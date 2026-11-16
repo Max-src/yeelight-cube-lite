@@ -252,7 +252,7 @@ class NativeFeatureTests(unittest.TestCase):
         device = types.SimpleNamespace(
             _external_display=True, _is_on=True, _rotation_resume_pending=False,
             _rotation_active=False, _calibration_lock=False, _music_flow_enabled=False,
-            _in_native_fw_mode=True, _mode="Solid Color", _display_overlay=False,
+            _in_native_fw_mode=True, _shows_own_drawing=False, _mode="Solid Color", _display_overlay=False,
             _display_retry_count=0, MAX_DISPLAY_RETRIES=3, _ip="test", _custom_text="text",
             _restoring_after_lamp=False,
         )
@@ -996,7 +996,7 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertEqual(asked, read.called, model)
         # A Cube Lite's demo loop is never read (only a Cube Matrix has one).
         light = make_light()
-        with patch.object(module("light_matrix"), "tcp_request", AsyncMock()) as request:
+        with patch.object(module("light_matrix_settings"), "tcp_request", AsyncMock()) as request:
             light._check_matrix_demo()
         self.assertIsNone(light._matrix_demo_task)
         request.assert_not_called()

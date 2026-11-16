@@ -564,9 +564,11 @@ STREAM_NAMES = {
     "_chosen_effect_intensity", "_start_studio_stream", "_native_effect_streamed",
     "_studio_loop", "stop_studio_stream", "_clock_style", "studio_clock_frame",
     "_run_studio_loop", "_start_matrix_stream", "_stream_probe",
-    "_streams_changed", "_stream_watchdog", "stream_report",
+    "_streams_changed", "_stream_watchdog", "stream_report", "_partial_frames",
+    "_publish_stream_frame", "_preview_shows_drive", "streamed_preview_frame",
 }
 CLOCK_FACE = import_pure_module("clock_face")
+PROTOCOL_PARTIAL_FRAME = import_pure_module("lamp_protocol").partial_frame
 # A clock style over Fire.
 FIRE_CLOCK = next(
     style_id for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
@@ -595,7 +597,14 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 "drawn_in_full": LAMP_CORE_FULL,
                 "_get_device_lock": lambda ip: self.lock,
                 "ACTIVATION_TIMING": activation_timing(),
-                "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05,
+                "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05, "STUDIO_HOLD_SECONDS": 0.01,
+                "STREAM_CHANGES_ONLY_EFFECTS": frozenset(),
+                # The previews' frames (test_stream_preview.py).
+                "STREAM_PREVIEW_FRESH": 1.0, "led_appearance": lambda rgb: tuple(rgb),
+                "LAMP_RENDERED_EFFECTS": frozenset(),
+                # Partial frames (test_partial_frames.py): off here, every frame in full.
+                "PARTIAL_FRAME_EFFECTS": frozenset(), "PARTIAL_FULL_FRAME_SECONDS": 2.0, "LAMP_FRAME_BUFFERS": 2,
+                "partial_frame": PROTOCOL_PARTIAL_FRAME,
                 "STUDIO_PROBE_SECONDS": 0.05, "STUDIO_SILENT_PROBE_SECONDS": 0.05, "STUDIO_RESTART_MOST": 0.2,
                 "STUDIO_SILENT_AFTER": 3,
                 # A Cube Lite: every render is sent (device_profile.max_fps None).
@@ -728,6 +737,22 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         await self.run_for(0.2)
         self.assertGreater(len(self.frames()), stopped)  # going on
         self.assertGreater(self.sent.count(("activate_fx_mode", None)), activations)
+        self.light.stop_studio_stream()
+
+    async def test_a_lamp_stuck_after_the_stream_fell_back_to_tcp_is_seen(self):
+        # 2026-11-16 15:34: the top Cube Lite stuck, its UDP session failed and
+        # the stream fell back to TCP (frames held); the lamp still accepted
+        # connections, so nothing reported it. The check goes on over TCP.
+        checks = []
+        self.light._async_check_problems = lambda: checks.append(1)
+        await self.light._start_studio_stream()
+        await self.run_for(0.03)
+        self.light._lamp_client.transport = "tcp"
+        self.light._lamp_client.answers = False
+        await self.run_for(0.3)
+        self.assertIn(("probe", True), self.sent)
+        self.assertGreaterEqual(len(checks), 3)  # the problem check runs: reported stuck
+        self.assertTrue(self.light._lamp_client.stream_silent)
         self.light.stop_studio_stream()
 
     async def test_a_scrolling_text_is_checked_too(self):

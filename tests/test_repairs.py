@@ -141,6 +141,64 @@ class ReportProblemTests(unittest.TestCase):
         self.report(None, self.light, set(), reported)
         self.registry.async_delete_issue.assert_called_once_with(None, "yeelight_cube", "udp_blocked_e1")
 
+    def devices(self, **device):
+        """Home Assistant's device registry, holding the lamp's device."""
+        found = SimpleNamespace(**device) if device else None
+        lookup = Mock(return_value=found)
+        patcher = patch.object(ISSUES, "dr", SimpleNamespace(
+            async_get=Mock(return_value=SimpleNamespace(async_get_device=lookup)),
+        ))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return lookup
+
+    def shown_name(self):
+        return self.registry.async_create_issue.call_args.kwargs["translation_placeholders"]["name"]
+
+    def test_the_issue_names_the_device_as_home_assistant_shows_it(self):
+        # 2026-11-16: "CubeLite 7e78 stopped answering over UDP", for the
+        # device named "Computer CubeLite Bottom": which lamp was it?
+        lookup = self.devices(name_by_user="Computer CubeLite Bottom", name="CubeLite 7e78")
+        self.report(None, self.light, {"udp_unanswered"}, None)
+        self.assertEqual("Computer CubeLite Bottom", self.shown_name())
+        lookup.assert_called_with(identifiers={("yeelight_cube", "e1")})
+
+    def test_newer_home_assistant_looks_the_device_up_in_its_entry(self):
+        # 2026.11: async_get_device is deprecated (identifiers are unique per
+        # config entry only); the per-entry lookup is used when there.
+        found = SimpleNamespace(name_by_user="Computer CubeLite Top", name="CubeLite 7e78")
+        old, new = Mock(), Mock(return_value=found)
+        patcher = patch.object(ISSUES, "dr", SimpleNamespace(async_get=Mock(return_value=SimpleNamespace(
+            async_get_device=old, async_get_device_by_identifier=new,
+        ))))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.report(None, self.light, {"udp_unanswered"}, None)
+        self.assertEqual("Computer CubeLite Top", self.shown_name())
+        new.assert_called_with(("yeelight_cube", "e1"), "e1")
+        old.assert_not_called()
+
+    def test_without_a_given_name_the_device_s_own(self):
+        self.devices(name_by_user=None, name="CubeLite 7e78")
+        self.report(None, self.light, {"udp_unanswered"}, None)
+        self.assertEqual("CubeLite 7e78", self.shown_name())
+
+    def test_without_a_device_the_lamp_s_name(self):
+        self.devices()
+        self.report(None, self.light, {"udp_unanswered"}, None)
+        self.assertEqual("Desk", self.shown_name())
+
+    def test_a_renamed_device_s_issues_are_shown_again_with_its_new_name(self):
+        self.devices(name_by_user="Top", name="CubeLite 7e78")
+        reported = self.report(None, self.light, {"udp_unanswered"}, None)
+        self.registry.async_create_issue.reset_mock()
+        reported = self.report(None, self.light, {"udp_unanswered"}, reported)
+        self.registry.async_create_issue.assert_not_called()  # unchanged
+        self.devices(name_by_user="Bottom", name="CubeLite 7e78")
+        self.report(None, self.light, {"udp_unanswered"}, reported)
+        self.registry.async_create_issue.assert_called_once()
+        self.assertEqual("Bottom", self.shown_name())
+
     def test_a_deleted_lamp_s_issues_go_with_it(self):
         expected = {
             ("yeelight_cube", "lamp_unreachable_e1"),
@@ -188,6 +246,16 @@ class ReportProblemTests(unittest.TestCase):
         self.assertEqual({"music_blocked"}, problems({**stuck, "silent_for": None}, True, 3600))
         # Out of reach everywhere (Matter too): the usual repair.
         self.assertEqual({"lamp_not_responding"}, problems(stuck, False, 3600))
+
+    def test_a_cube_matrix_showing_everything_over_matter_needs_no_power_cycle(self):
+        # 2026-11-16: the Power cycle sensor was on while the lamp showed its
+        # stream over Matter without fault: its LAN was only a fallback.
+        problems = ISSUES.lamp_problems
+        stuck = {"udp_failing_for": ISSUES.UDP_BLOCKED_AFTER, "channel": "music",
+                 "silent_for": ISSUES.NOT_RESPONDING_AFTER}
+        self.assertEqual(set(), problems(stuck, True, 3600, lan_fallback_only=True))
+        # Matter gone too: reported.
+        self.assertEqual({"lamp_not_responding"}, problems(stuck, False, 3600, lan_fallback_only=True))
 
     def test_every_issue_has_its_text(self):
         strings = json.loads((ROOT / "strings.json").read_text(encoding="utf-8"))["issues"]

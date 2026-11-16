@@ -24,6 +24,8 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
             "CIRCUIT_BREAKER_WINDOW": 30.0,
             "LOCK_WAIT_WARNING_MS": 3000,
             "BulbException": bulb_exception,
+            # A failure the integration explains (errors.failed).
+            "HomeAssistantError": type("HomeAssistantError", (Exception,), {}),
             "CubeConnectionError": type("CubeConnectionError", (bulb_exception,), {}),
             "_DEVICE_LOCKS": {},
             "_DEVICE_LOCK_HOLDERS": {},

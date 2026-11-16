@@ -5,6 +5,7 @@ removed with it (__init__.async_remove_entry)."""
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.helpers import device_registry as dr  # type: ignore
 from homeassistant.helpers import issue_registry as ir  # type: ignore
 
 from .const import DOMAIN
@@ -44,6 +45,7 @@ def lamp_problems(
     demo_mode: bool = False,
     factory_modules: bool = False,
     firmware_too_old: bool = False,
+    lan_fallback_only: bool = False,
 ) -> set[str]:
     """The issues a lamp has, from its connection state
     (LampClient.connection_state) and availability. ``since_added``: how
@@ -62,7 +64,12 @@ def lamp_problems(
     either: its LAN is stuck (matrix_lan_stuck: it accepts connections and
     closes them, while Matter still works), which only a power cycle fixes.
     A Cube Lite whose UDP sessions keep opening while their commands fail
-    gets udp_unanswered: the network lets UDP through, the lamp is at fault."""
+    gets udp_unanswered: the network lets UDP through, the lamp is at fault.
+    ``lan_fallback_only``: a Cube Matrix showing everything over Matter,
+    which works: a stuck LAN is then no problem of its own (2026-11-16: the
+    Power cycle sensor on while the lamp showed its stream without fault); it
+    is reported once something needs the LAN again (Matter failing, Music
+    Flow)."""
     problems = set()
     if demo_mode:
         problems.add("demo_mode")
@@ -73,7 +80,9 @@ def lamp_problems(
     since_success = state.get("since_success")
     music = state.get("channel") == "music"
     silent = (state.get("silent_for") or 0) >= NOT_RESPONDING_AFTER
-    if silent:
+    if silent and music and available and lan_fallback_only:
+        pass  # everything shows over Matter: the LAN is only a fallback
+    elif silent:
         problems.add("matrix_lan_stuck" if music and available else "lamp_not_responding")
     elif not available and (since_added if since_success is None else since_success) >= UNREACHABLE_AFTER:
         problems.add("lamp_unreachable")
@@ -97,13 +106,38 @@ def _issue_id(key: str, entry_id: str) -> str:
     return f"{key}_{entry_id}"
 
 
+def lamp_display_name(hass: HomeAssistant, light) -> str:
+    """The lamp's name as Home Assistant shows its device: the name given to
+    it (Settings → Devices), else the device's own; the lamp's name when the
+    device is not registered (yet)."""
+    entry_id = light._config_entry.entry_id
+    try:
+        registry = dr.async_get(hass)
+        by_identifier = getattr(registry, "async_get_device_by_identifier", None)
+        if callable(by_identifier):
+            # Home Assistant 2026.11 on: identifiers are unique per entry.
+            device = by_identifier((DOMAIN, entry_id), entry_id)
+        else:
+            device = registry.async_get_device(identifiers={(DOMAIN, entry_id)})
+    except Exception:  # noqa: BLE001 -- no registry: the lamp's own name
+        device = None
+    for name in (getattr(device, "name_by_user", None), getattr(device, "name", None)):
+        if isinstance(name, str) and name:
+            return name
+    return light._lamp_name
+
+
 def report_problems(hass: HomeAssistant, light, problems: set[str], reported: set[str] | None) -> set[str]:
     """Show ``problems`` and remove the issues that are gone; only what
-    changed since ``reported`` (None: unknown, every issue is set). Returns
-    what is now reported."""
+    changed since ``reported`` (None: unknown, every issue is set), and every
+    issue shown again when the device's name changed (lamp_display_name).
+    Returns what is now reported."""
     entry_id = light._config_entry.entry_id
+    name = lamp_display_name(hass, light)
+    renamed = name != getattr(light, "_problems_name", None)
+    light._problems_name = name
     for key in ISSUES:
-        if reported is not None and (key in problems) == (key in reported):
+        if reported is not None and (key in problems) == (key in reported) and not (renamed and key in problems):
             continue
         if key in problems:
             ir.async_create_issue(
@@ -111,7 +145,7 @@ def report_problems(hass: HomeAssistant, light, problems: set[str], reported: se
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=key,
-                translation_placeholders={"name": light._lamp_name, "ip": light._ip},
+                translation_placeholders={"name": name, "ip": light._ip},
             )
         else:
             ir.async_delete_issue(hass, DOMAIN, _issue_id(key, entry_id))

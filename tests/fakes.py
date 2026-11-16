@@ -328,6 +328,9 @@ class FakeCube:
     def close_music_session(self):
         return False
 
+    def end_direct_mode(self):
+        self.sent.append(("end_direct_mode", "end_direct_mode", None))
+
     def close_fast_socket(self):
         pass
 
@@ -497,6 +500,10 @@ def light_state(**attrs):
         )
         lamp_turns_clock = False
 
+        def keeps_streaming_when_off(self):
+            """Nothing streams from a stand-in (light_studio's standby)."""
+            return False
+
     profiles = module("device_profile")
     light = LightState()
     # As YeelightCubeLight.__init__ starts it.
@@ -566,6 +573,9 @@ _LIGHT_MODULES = (
     "light", "light_display", "light_brightness", "light_color", "light_native", "light_studio",
     "light_render", "light_connection", "light_restore", "light_rotation", "light_matter",
     "light_matrix", "light_mount_profile",
+    # their parts (split by concern)
+    "light_matter_remote", "light_matter_restore", "light_matter_rotation",
+    "light_matrix_follow", "light_matrix_settings", "light_music_flow", "light_link_recovery",
     # light.py's own concerns (its mixins since the split)
     "light_attributes", "light_lifecycle", "light_onoff", "light_power", "light_settings",
 )

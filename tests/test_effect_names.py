@@ -632,7 +632,9 @@ class MusicFlowTests(unittest.TestCase):
     effects' former names never apply to it."""
 
     def test_music_flow_names_stay_in_their_own_list(self):
-        native = (ROOT / "light_native.py").read_text(encoding="utf-8")
+        native = "\n".join(
+            (ROOT / name).read_text(encoding="utf-8") for name in ("light_native.py", "light_music_flow.py")
+        )
         for function in ("_build_music_flow_payload", "async_set_music_flow_effect"):
             self.assertNotIn("canonical", _function_source(native, function))
         restore = (ROOT / "light_restore.py").read_text(encoding="utf-8")

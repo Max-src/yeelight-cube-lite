@@ -31,7 +31,7 @@ while direct service calls use `entity_id`.
 | `show_current_preview` | Clock | Show the current clock preview |
 | `show_preview`, `lamp_preview_size`, `preview_brightness` | Native Effects | Show the current animation preview, its size (30–100 %) and whether it follows lamp brightness |
 | `show_actions`, `action_buttons`, `actions_buttons_style`, `actions_buttons_content_mode` | Both | Actions row (Previous, Next, Random, Freeze display, Refresh, Power), its order and button styling |
-| `show_brightness`, `show_animation_speed`, `show_intensity`, `slider_grey_out_unused`, `slider_style`, `slider_value`, `slider_ends`, `slider_step_size`, `slider_snap`, `slider_width`, `slider_thickness`, `slider_theme` | Both | Lamp sliders and their shared settings: unused speed/intensity greyed out instead of hidden, style, value (`none`, `percent`, `raw` device units), tappable ends (`icons`, `plus_minus`, `none`), step size, snap, width, thickness (`thin`, `medium`, `thick`) and card background (see the README's slider settings) |
+| `show_brightness`, `show_animation_speed`, `show_intensity`, `slider_grey_out_unused`, `slider_style`, `slider_value`, `slider_ends`, `slider_step_size`, `slider_snap`, `slider_width`, `slider_thickness`, `slider_theme` | Both | Lamp sliders and their shared settings: unused speed/intensity greyed out instead of hidden, style, value (`none`, `percent`, `raw` device units), tappable ends (`icons`, `plus_minus`, `none`), step size, snap, width, thickness (`thin`, `medium`, `thick`) and card background (see [Lamp Sliders](#lamp-sliders)) |
 | `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
 | `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-color selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
 | `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the color row |
@@ -59,6 +59,76 @@ appearance presets and browser layouts. Color-responsive filtering is automatic;
 `show_only_responding_styles` is obsolete. Every effect and clock style is
 offered: there is no Experimental Features setting any more.
 
+### Card Behaviour
+
+- **Browsers.** The Native Effects Card shares its capsule sliders and Text /
+  Live Preview selectors with the Clock Card. Text offers filled buttons or
+  dropdowns; Live Preview offers lists, grids, strips, carousels, wheels and a
+  3D album. **Original** offers grid and list layouts with capability badges.
+  Browsing offers text search and your order or A → Z; the experimental
+  effects that had only a number are hidden.
+- **Several lamps.** Set `target_entities` to control several lamps together
+  (`entity` remains supported for a single lamp). The first target supplies
+  the main preview and control values.
+- **Color modes.** The Native Effects Card shows **Color Modes & Controls** by
+  default (turn **Show Color Modes** off in its editor, or set
+  `show_color_modes: false`, to hide them). Its button/dropdown presentation
+  and settings are shared with the Clock Card.
+- **Clock Card.** It uses the same Actions, Favourites and Rotation components
+  and editor settings. Actions are enabled by default; `show_actions` can hide
+  them. Clock rotation is labelled **Clock Mode Rotation**. Clock favourites
+  retain saved style IDs across renames and are stored separately from
+  native-effect favourites. Both rotations share the same server-side
+  lifecycle.
+- **Favourite stars.** Favourites are indicated by a gold star badge next to
+  every item in the style browser (text, preview and original selectors,
+  including the wheel). Set `favourites_show_stars: false` (the Favourites
+  editor's "Show favourite stars" toggle) to hide the badges.
+- **Rotation interval.** Rotation always follows the favourites list, advanced
+  in order at the lamp's rotation interval (the Shuffle button in the
+  Favourites toolbar randomly reorders the list itself). The interval (1
+  second up to 7 days) is set in the card editor's **Rotation Settings**
+  (**Rotate every**): add rows that add up, e.g. 1 minute + 10 seconds = 70
+  seconds (**+ Add interval**, one row per unit; each row can be removed). It
+  is stored on the lamp per kind (see
+  [`set_rotation_interval`](#set_rotation_interval)). Very short intervals are
+  limited by how fast the lamp applies a change (around a second): a step that
+  takes longer lands on the next boundary of the schedule.
+- **Rotation from the card.** Add at least two available favourites to start
+  rotation. It only uses effects available on every available target and
+  starts only on explicit Play; Stop and manual card commands stop it, and a
+  rotation never wakes a lamp. While a rotation runs, every card shows the
+  list and interval the lamp is actually playing, wherever it was started
+  from, and the freeze indicator follows the lamp's `display_frozen` state.
+  The service side (scheduling, recovery, restart) is under
+  [`start_effect_rotation`](#start_effect_rotation).
+
+### Lamp Sliders
+
+The brightness, speed and intensity sliders on the Native Effects, Clock and
+Lamp Preview cards are one shared slider with the same settings on every card,
+and share one conversion, so a given device value reads the same percentage on
+every card:
+
+| Setting | Option | Choices |
+|---|---|---|
+| **Grey out unused sliders** | `slider_grey_out_unused` | Speed and intensity are hidden while the effect or clock style shown doesn't use them; on, they stay in place, greyed out and inactive (not on the Lamp Preview, whose brightness is always used) |
+| **Slider Style** | `slider_style` | `slider`, `bar`, `wheel`, `matrix`, `rotary` (dials side by side, on the card's background), `capsule`; each with its own options below it |
+| **Value** | `slider_value` | `none`, `percent` (default), `raw`: the device value (speed, intensity and brightness 0–255), shown exactly. Brightness 0 turns the lamp off |
+| **Ends** | `slider_ends` | Slider, Bar and Capsule: `icons` (the Capsule's default: 🌙 → ☀️ brightness, 🐢 → ⚡ speed, 💧 → 🌊 intensity, 🔈 → 🔊 for a music effect's intensity), `plus_minus` (➖ → ➕) or `none` (the Slider's and Bar's default). Tapping an end steps the value |
+| **Step Size** | `slider_step_size` | 1–25 % (default 5): an end tap, a mouse-wheel notch and the Wheel's stops |
+| **Snap to Positions** | `slider_snap` | Snaps to 20, 40, 60 and 80 % |
+| **Control Width** | `slider_width` | 30–100 % (not for Rotary) |
+| **Thickness** | `slider_thickness` | `thin`, `medium` (default), `thick` (the Slider's and Capsule's thick track) |
+| **Card background** | `slider_theme` | `subtle` (default) or `flat` (not for Rotary) |
+
+Older slider options (`slider_show_value`, `slider_show_raw_value`,
+`slider_value_display`, `slider_value_side`, `slider_step_buttons`,
+`slider_step_position`, `slider_show_icon_left` / `_right`, `slider_icons`,
+`slider_variant`, `slider_capsule_variant`, `slider_wheel_step` and a
+thickness in pixels) are read as these and replaced when the card is next
+saved.
+
 ### Favourites, Presets and Offline Use
 
 - **Favourites** are stored per lamp in Home Assistant, separately for Clock and
@@ -77,8 +147,12 @@ offered: there is no Experimental Features setting any more.
   unavailable), style and color selections become local preview edits.
   Built-in catalogues and favourite previews remain available. Hardware actions
   stay gated; returning live state discards preview drafts without
-  automatically applying them. While at least one lamp is available the card
-  keeps controlling its lamps and names the offline ones (see
+  automatically applying them. The last known favourites stay shown (they
+  are edited again once the lamp is back), even if the entity temporarily
+  disappears. While at least one lamp is available the card keeps
+  controlling its lamps (each change also reaches the offline lamp once it
+  is back), shows the first available lamp and names the offline ones
+  (*Lamp unavailable: Bedroom. The other lamps are controlled.*; see
   [Multi-Entity Operations](#-multi-entity-operations)).
 - Missing rotation attributes show **Status unavailable**, not a fabricated
   running/stopped result. A previously observed matching active/waiting rotation
@@ -1894,6 +1968,26 @@ data:
 ## 🔄 Node-RED Integration
 
 All services are fully compatible with Node-RED with parameter descriptions, entity selectors, input validation, dropdown menus for mode selection, and sliders for numeric values.
+
+**Home Assistant automations / scripts:**
+
+```yaml
+action: yeelight_cube.set_custom_text
+data:
+  entity_id: light.cubelite_192_168_4_102
+  text: "HELLO"
+```
+
+<table>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+  </tr>
+</table>
+
+**Node-RED** - use an Action node:
+
+- **Action**: `yeelight_cube.set_custom_text`
+- **Data**: `{"text": msg.payload, "entity_id": "light.cubelite_192_168_4_102"}`
 
 <details>
 <summary>View Node-RED example</summary>

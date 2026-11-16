@@ -251,11 +251,9 @@ With Matter, it follows on its own. A lamp added with an earlier version, or
 whose orientation is still unknown after 10 minutes, gets a **Repairs**
 message (*Set the orientation of …*) pointing to **Configure**.
 
-Until it is known, effects move as for **270°**: what the lamp runs when its
-orientation was never saved in the app, or after a factory reset. (Earlier
-versions assumed 180°: if you had saved 180° in the app, choose it in
-**Configure**.) With the lamp also linked over Matter, an orientation saved in the app is read
-from the lamp and followed; a lamp never saved gets **Device Orientation**
+Until it is known, effects move as for **270°** (earlier versions assumed
+180°: if you had saved 180° in the app, choose it in **Configure**). Over
+Matter, a lamp whose orientation was never saved gets **Device Orientation**
 written once (with a Matter server that delivers Yeelight's settings): see
 [Matter](docs/MATTER.md#the-lamps-orientation).
 
@@ -330,8 +328,7 @@ server-side favourites rotation that continues after you close the dashboard.
 The Clock and Native Effects cards offer **Text**, **Live Preview**, and
 **Original** browsers in the visual editor's **Previews** section. Styles
 follow your configured order and filter to those that respond to the selected
-colour mode or RGB override, without deleting favourites. The former
-`show_only_responding_styles` toggle is no longer used.
+colour mode or RGB override, without deleting favourites.
 
 See [card configuration and behaviour](SERVICES.md#clock-and-native-effects-cards)
 for layouts, offline editing and multi-lamp rotation.
@@ -423,8 +420,8 @@ rotation_interval: 30   # seconds; used until the lamp has its own interval
 
 </details>
 
-Use `target_entities` with a list of light entity IDs to control multiple lamps.
-See [configuration and storage details](SERVICES.md#clock-and-native-effects-cards).
+Several lamps, favourites and rotation work as for the Native Effects Card
+(see [Shared behaviour](#native-effects-card) below).
 
 ---
 
@@ -521,26 +518,17 @@ rotation_interval: 30   # seconds; used until the lamp has its own interval
 
 </details>
 
-**Shared behaviour:** favourites store the style/effect together with its color
-mode and custom RGB, separately for Clock and Native Effects. They are saved on
-the lamp in Home Assistant (a card with several lamps shows the list of its first
-available lamp and saves it to all of them), so every dashboard, browser and device shows the
-same favourites, rotation interval and rotation status. A running rotation is
-resumed after a Home Assistant restart. Add at least two available
-favourites to start rotation. For multiple lamps, use `target_entities` with a
-list of light entity IDs on either card.
+**Shared behaviour (Clock and Native Effects):** favourites store the
+style/effect with its color mode and custom RGB, separately for each card
+kind, and are saved on the lamp in Home Assistant, so every dashboard, browser
+and device shows the same favourites, rotation interval and rotation status.
+Rotation needs at least two available favourites, runs in Home Assistant and
+resumes after a restart. Use `target_entities` (a list of light entity IDs)
+for several lamps. While a lamp is unavailable, previews and color choices
+stay usable and hardware controls are gated; with several lamps, the cards
+keep controlling the available ones and name the offline ones.
 
-**When a lamp is unavailable:** previews and color choices remain usable, and
-the last known favourites stay shown (they are edited again once the lamp is
-back), even if the entity temporarily disappears. Hardware
-controls are gated. Reconnection discards local preview drafts without sending
-them to the lamps. Unknown rotation status is not treated as an active rotation.
-With several lamps this only happens once **none** of them is available: while
-one is, every card keeps controlling the lamps (each change also reaches the
-offline lamp once it is back), shows the first available lamp and names the
-offline ones (*Lamp unavailable: Bedroom. The other lamps are controlled.*).
-
-See [configuration and storage details](SERVICES.md#clock-and-native-effects-cards),
+In detail: [card options, favourites, rotation, sliders and offline use](SERVICES.md#clock-and-native-effects-cards),
 [service calls](SERVICES.md#-clock-native-effects-and-rotation).
 
 ---
@@ -1093,6 +1081,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Buttons: Right as Remote** | Switch | Off by default. Replaces the lamp's right-button playlist with tagged black entries (the original is written back when turned off): a press fires `right_button` and the integration's content comes back. Needs Matter settings; its `remote_status` attribute shows the actual state. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 | **Buttons: Left as Remote** | Switch | Off by default. Undoes microphone music started or changed by the left button (or an app): the integration's content comes back. Needs the Matter link. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 | **Buttons: Wake Lamp When Off** | Switch | On by default. With Right or Left as Remote, a press on a lamp that is off turns it on with its content. Off: presses only fire their events and the lamp stays dark ("off" then keeps it powered, black). See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
+| **Keep Streaming When Off** | Switch | Cube Lite. Off by default. Turning off an effect or clock that Home Assistant streams (the lamp has no such effect itself, or a palette it cannot take) keeps the stream going with black frames until the lamp is turned on again, instead of powering it off; the effect then goes on where it was. A Cube Lite can stop answering, until it is unplugged, when a busy stream stops: this keeps it from ever going silent |
 
 #### Diagnostic
 
@@ -1201,37 +1190,32 @@ managed by the Clock and Native Effects cards (see
 
 All entities (light, selectors, sliders, text, switches) can be used in standard automations, scripts, and Node-RED flows. The integration also registers **custom actions (services)** under the `yeelight_cube` domain.
 
-> [!NOTE]
-> For a complete reference of all available actions with full field descriptions and examples, see [SERVICES.md](SERVICES.md).
-
 ### Quick Reference
 
-#### Display Control
+Every action, with its fields and examples, is documented in
+[SERVICES.md](SERVICES.md). The most used ones:
 
-| Action | Description | Key Fields |
-| :-- | :-- | :-- |
-| `yeelight_cube.set_custom_text` | Display text on the matrix | `text`, `entity_id` |
-| `yeelight_cube.set_mode` | Switch display mode | `mode`, `entity_id` |
-| `yeelight_cube.set_solid_color` | Set a single solid color | `rgb_color`, `entity_id` |
-| `yeelight_cube.set_angle` | Set gradient angle | `angle` (0–360), `entity_id` |
-| `yeelight_cube.set_brightness` | Set brightness | `brightness` (1–100), `entity_id` |
-| `yeelight_cube.set_button_effects` | Update the physical-button preset slots | `effects` (1–8 names), `entity_id` |
+- **Display:** [`set_custom_text`](SERVICES.md#set_custom_text),
+  [`set_mode`](SERVICES.md#set_mode),
+  [`set_solid_color`](SERVICES.md#set_solid_color),
+  [`set_angle`](SERVICES.md#set_angle),
+  [`set_brightness`](SERVICES.md#set_brightness)
+- **Pixel art:** [`apply_custom_pixels`](SERVICES.md#apply_custom_pixels),
+  [`apply_pixel_art`](SERVICES.md#apply_pixel_art),
+  [`save_pixel_art`](SERVICES.md#save_pixel_art)
+- **Palettes & colors:** [`load_palette`](SERVICES.md#load_palette),
+  [`save_palette`](SERVICES.md#save_palette),
+  [`set_text_colors`](SERVICES.md#set_text_colors)
+- **Clock, effects and rotation:** [`set_native_effect`](SERVICES.md#set_native_effect),
+  [`set_clock_style`](SERVICES.md#set_clock_style),
+  [`start_effect_rotation`](SERVICES.md#start_effect_rotation)
+- **Status displays:** [`save_state`](SERVICES.md#save_state) /
+  [`restore_state`](SERVICES.md#restore_state)
+- **Lamp buttons:** [`set_button_effects`](SERVICES.md#set_button_effects)
+  (the physical button's presets; needs Matter settings)
 
-#### Pixel Art
-
-| Action | Description | Key Fields |
-| :-- | :-- | :-- |
-| `yeelight_cube.apply_custom_pixels` | Push pixel array to lamp | `pixels`, `entity_id` |
-| `yeelight_cube.apply_pixel_art` | Apply a saved art by index, or a saved or built-in one by name | `idx` or `name`, `entity_id` |
-| `yeelight_cube.save_pixel_art` | Save a pixel array as named art | `pixels`, `name` |
-
-#### Palettes & Colors
-
-| Action | Description | Key Fields |
-| :-- | :-- | :-- |
-| `yeelight_cube.load_palette` | Apply saved palette by index | `idx`, `entity_id` |
-| `yeelight_cube.save_palette` | Save a new color palette | `palette`, `name`, `entity_id` |
-| `yeelight_cube.set_text_colors` | Set gradient/sequence colors | `text_colors`, `entity_id` |
+How to call them from automations, scripts and Node-RED:
+[Node-RED Integration](SERVICES.md#-node-red-integration).
 
 ### Example Automations
 
@@ -1294,39 +1278,6 @@ Use an **Inject** node → **Change** node (set `msg.payload.idx`) → **Call Se
 
 </details>
 
-### Calling Custom Actions
-
-<details>
-<summary>View HA and Node-RED examples</summary>
-
-**Home Assistant automations / scripts:**
-
-```yaml
-action: yeelight_cube.set_custom_text
-data:
-  entity_id: light.cubelite_192_168_4_102
-  text: "HELLO"
-```
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
-  </tr>
-</table>
-
-**Node-RED** - use an Action node:
-
-- **Action**: `yeelight_cube.set_custom_text`
-- **Data**: `{"text": msg.payload, "entity_id": "light.cubelite_192_168_4_102"}`
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="NodeRED - set_custom_text"></td>
-  </tr>
-</table>
-
-</details>
-
 ---
 
 ## Display Modes
@@ -1356,284 +1307,23 @@ When Matrix content is active, the **Matrix: Display Mode** entity or Gradient C
 | **Panel Color Sequence** | Color sequence across all pixels |
 | **Custom Draw** | Pixel art mode (use the Draw Card) |
 
-<details>
-<summary>Display reference: pixel art, clock styles and native effects</summary>
+- **Built-in pixel art:** the 68 official drawings from the Yeelight app
+  (Nature and Geometry, flat and standing), read-only, beside your own in the
+  **Matrix: Pixel Art** entity and the [Draw Card](#draw-card).
+- **Clock:** 73 styles (the lamp's 10 and experimental ones over the other
+  effects), with date, 12/24-hour and colon options.
+- **Native effects:** the lamp's built-in animations, the integration's own
+  streamed effects, and four animations (Snowfall, Daydream, Halloween glow,
+  Moonlit clouds) uploaded over Matter. The previews are drawn by Home
+  Assistant the way the lamp draws them.
+- **Palette color mode:** effects and clock styles in the lamp's palette:
+  sent with the effect when the lamp takes all its colors, otherwise streamed
+  over the LAN (UDP).
 
-### Built-in Pixel Art
-
-The integration includes 68 official drawings from the Yeelight app as
-local, read-only presets, in two collections: **Nature** and **Geometry** (35
-drawn for a lamp lying flat, 33 for a lamp stood on its end). They are never
-imported into, written to, or allowed to overwrite your own drawings.
-
-- **Pixel Art entity:** your drawings first, then the official ones.
-- **Draw card:** the drawings in groups, **All · My drawings · Nature ·
-  Geometry**, shown as tabs by default; the editor offers the same layouts as
-  the color sections (dropdown, carousel, side by side, categories…). Picking
-  an official drawing loads it into the canvas like one of yours (and sends it
-  to the lamp with *Apply to lamp automatically*); save it to make your own
-  editable copy.
-- **On each card**, the editor's **Official pixel arts** settings choose
-  which official drawings show: all of them by default, or exactly the ones
-  listed (with their order and names on that card). Your own drawings are
-  still renamed and deleted in the gallery.
-- **Orientation filter**: a toggle beside the search field (All ·
-  Horizontal · Vertical) shows your drawings and the official ones by
-  orientation, the same in every group; the browser remembers the choice.
-  The editor's **Orientation** settings pick what shows first (or *Follow
-  the lamp*: the vertical ones while it stands on its end) and can hide the
-  toggle.
-- **`apply_pixel_art`** shows one by name (e.g. `Built-in: Horizontal 01`).
-
-### Native Clock
-
-Clock mode provides 73 styles (the lamp's 10 built-in ones and experimental
-styles over the other effects) and separate options for date
-display, 12/24-hour time, and colon blinking. Brightness and orientation
-previews remain available while Clock mode is active.
-
-The clock command uses the Cube Lite's private LAN protocol. The lamp does
-not report the active clock configuration back to Home Assistant, so entity
-states represent the last settings requested by this integration. Changes made
-from the Yeelight app or physical button may therefore not appear immediately in
-Home Assistant (without Matter; with it, a switch to another effect or a music
-mode is followed). An animated clock's preview runs the lamp's own background
-at the speed the lamp gets; a solid style's color is an approximation.
-
-### Native Effects
-
-Native Effect mode exposes the 18 presets that the Cube Lite accepts directly
-through its private LAN protocol. Speed and direction entities are available
-only when the selected effect supports them. **Hacking** supports only **Up**
-and **Down**; other directional effects may also offer **Left** and **Right**.
-A direction is what you see, however the lamp is mounted: choose it with the
-arrows on the Native Effects card, the direction entity or `set_native_effect`.
-One direction is shared by all effects, like the speed; **Device Orientation**
-only says how the lamp is mounted, and effects are turned to match.
-Winter, Dream, Halloween, and Moonlight are not exposed because the Yeelight app
-uploads a GIF through a Matter-only vendor command before activation; the
-private LAN protocol cannot reproduce that transaction.
-
-The lamp does not provide live frame readback, so the Matrix Preview cameras
-and the cards compute the picture themselves, with the lamp's own renderers:
-every effect is drawn as the lamp draws it, frame by frame, for the speed,
-direction, color and palette it was given, and shown as those LEDs look on a
-screen. Random effects (Fireworks, Starry Sky, ...) use stand-in random numbers,
-so a preview shows the same kind of picture, not the same sparks at the same
-moment. Effects that react to sound run on a fixed demo beat, because nothing can
-hear the lamp's microphone: the preview shows how the effect moves, not what the
-lamp shows now.
-
-**Stored GIF and animations.** A lamp keeps one GIF and plays it as the
-**Stored GIF** effect, over LAN, without Matter. The cards and the effect
-dropdown do not list it (the four animations below are chosen instead), but
-`set_native_effect` and the dropdown's `select_option` still take it by name,
-and it shows while it plays. Its picture cannot be read back,
-so its preview is a placeholder unless the GIF is one of the integration's
-animations. Snowfall is in the Sparkles family, Daydream in Waves, Halloween
-glow and Moonlit clouds in Glow. Four animations come with the integration, drawn for it: **Snowfall**,
-**Daydream**, **Halloween glow** and **Moonlit clouds**. Starting one uploads
-it to the lamp as its stored GIF, then plays it. The upload needs a Matter
-server that delivers the Yeelight commands
-([docs/MATTER_COMMANDS.md](docs/MATTER_COMMANDS.md)): without one, the
-animations are not listed. The lamp writes the GIF to its memory, so the
-integration uploads only when the lamp does not hold that animation yet (it
-remembers which one it stored, for which mount, speed and colors). The lamp
-plays a GIF at its own pace and in its own colors, so the **effect speed**
-(about a quarter to four times as fast) and the Lamp Preview card's **color
-adjustments** are put in the GIF itself: changing one while an animation
-plays uploads it again, which takes a few seconds; the previews show them at
-once. Each animation stands for one
-of the Yeelight app's four: Snowfall for Winter, Daydream for Dream, Halloween
-glow for Halloween and Moonlit clouds for Moonlight. It is played under that
-animation's id, so the app shows it as the one playing (Stored GIF too, while
-the lamp holds one of them). The lamp shows the Yeelight app's own GIFs
-rearranged: the app sends a 20 × 5 picture, which the lamp lays out five
-pixels to a column. The integration sends its animations upright by default;
-the **Native effect: Animation layout** select sends them the app's way
-instead, so they look like the app's on the lamp. The previews follow it, and
-changing it uploads a playing animation again. The Yeelight app
-replaces the stored GIF when it plays one of its own. Effect rotations skip the
-animations, which would upload a GIF at every step.
-
-Effect names are the lamp's own. An effect's or clock style's name from
-1.4.0 or earlier (Streamer, Ocean Waves, Bonfire, Sunset, Blue White, a slot
-number, ...) still works in actions, automations, saved favourites, rotations,
-button lists and card configurations; see
-[`set_native_effect`](SERVICES.md#set_native_effect) for the full list. The
-lamp reports today's names: a trigger or condition comparing the effect or clock
-style dropdown's state with an old name needs the new one.
-
-The **Native Effects Card** shares its capsule sliders and Text / Live Preview
-selectors with the Clock Card. Text offers filled buttons or dropdowns; Live
-Preview offers lists, grids, strips, carousels, wheels and a 3D album. **Original** offers
-grid and list layouts with capability badges.
-Browsing offers text search and your order or A → Z (no filters); the
-experimental effects that had only a number are hidden.
-
-Set `target_entities` to control several lamps together (`entity` remains
-supported for a single lamp). The first target supplies the main preview and
-control values. Optional `show_favourites` and `show_rotation` sections provide
-animated, reorderable favourites and timed effect rotation. Favourites are stored
-on the lamp in Home Assistant (`set_favourites`) and published in its
-`favourites` attribute, so every dashboard shows the same list and updates when
-another one edits it. Favourites an older version kept in a browser move to the
-lamp automatically the first time that browser opens the card.
-
-Rotation always follows the favourites list, advanced in order at the lamp's
-rotation interval (the Shuffle button in the Favourites toolbar randomly
-reorders the list itself). The interval (1 second up to 7 days) is set in the
-card editor's **Rotation Settings** (**Rotate every**): add rows that add up,
-e.g. 1 minute + 10 seconds = 70 seconds (**+ Add interval**, one row per unit;
-each row can be removed). It is stored on the lamp per kind, so every dashboard uses the same
-interval, and a running rotation switches to it at once, keeping its current
-item. Until a lamp has its own interval, the card's `rotation_interval` is
-used; a Start also stores the interval it uses on the lamp. Very short
-intervals are limited by how fast the lamp applies a change (around a second):
-a step that takes longer lands on the next boundary of the schedule.
-
-While a rotation runs, the card's effect / clock style list follows it: each
-step is highlighted, its color mode is shown in the color row, and the list
-turns to the page holding it. Turn off **Follow in effect list / Follow in style
-list** (`rotation_follow_active: false`, in Rotation Settings) to browse and pick
-freely while the rotation runs: the list keeps your selection, page and color
-mode until it stops. The playing favourite stays highlighted either way; turn
-off **Highlight in favourites** (`rotation_highlight_favourite: false`) to keep
-the favourites highlight on your own selection too. Rotation is driven **server-side** by the light entity via the
-`start_effect_rotation` / `stop_effect_rotation` / `skip_effect_rotation`
-services, so it keeps rotating after the dashboard tab is closed or refreshed —
-the lamp(s) hold the loop, not the browser. It only uses effects available on
-every available target and starts only on explicit Play. Start is fire-and-forget: every
-lamp's loop is scheduled concurrently, so several lamps advance in parallel.
-Stop and manual card commands stop rotation. Retryable failures use bounded
-per-lamp recovery; an unreachable lamp can retain rotation intent and rejoin
-the group's current scheduled item after reconnecting. Turning a lamp off
-or enabling Music Flow cancels pending rotation intent. A running rotation is
-saved with the lamp: after a Home Assistant restart or an integration reload it
-resumes automatically (same list, interval and kind) if the lamp is still on
-and in that mode; an unreachable lamp resumes when it reconnects. A rotation
-that was stopped (Stop, a manual pick, lamp off, a mode change) is not resumed,
-and a rotation never wakes a lamp. Per-lamp failures are reported
-in `effect_rotation.error`. Unknown or gated items are skipped, so a successful
-Start is not proof of a display command or physical output. See
-[rotation diagnostics](SERVICES.md#rotation-diagnostics-and-regression-checks).
-While a rotation runs, every card shows the list and interval the lamp is
-actually playing, wherever it was started from, and the freeze indicator follows
-the lamp's `display_frozen` state.
-
-Favourites are indicated by a gold star badge next to every item in the style
-browser (text, preview and original selectors, including the wheel). Set
-`favourites_show_stars: false` (the Favourites editor's "Show favourite stars"
-toggle) to hide the badges.
-
-The **Clock Card** uses the same Actions, Favourites and Rotation components and
-editor settings. Actions are enabled by default; `show_actions` can hide them.
-Device Orientation is native-effect-only; the lamp's clock cannot rotate. Enable
-`show_favourites` and `show_rotation` for either card. Clock rotation is labelled
-**Clock Mode Rotation**. Clock
-favourites retain saved style IDs across renames and are stored separately from
-native-effect favourites. Both rotations share the same server-side lifecycle.
-
-The Native Effects Card shows **Color Modes & Controls** by default (turn
-**Show Color Modes** off in its editor, or set `show_color_modes: false`, to
-hide them). Its button/dropdown presentation and settings are shared with the
-Clock Card. Only hardware-confirmed palettes for the selected effect are offered:
-Default, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
-supported.
-
-**Palette** shows effects and clock styles in the colors of the lamp's
-palette, the one loaded from the Palette card (`load_palette`) or set with
-`set_text_colors`, and follows it: load another palette and they change with
-it. It is the one color mode for the palette, on the Native Effects card
-(`color_mode: palette` in `set_native_effect`) and the Clock card (in
-`set_clock_style`). Each effect gets the whole palette in the best way it
-can:
-
-| The effect | How Palette shows it | Needs |
-| :-- | :-- | :-- |
-| Takes all the palette's colors itself: the six music modes (Music Gather, Breathing, Blossom, Spectrum, Note, Impact: up to 16 colors), an effect drawing as many colors as the palette has (Rotating colour bands: 4, Two-colour alternation: 2...), any effect taking a color when the palette has one | **On the lamp**: the colors are sent with the effect, as always | LAN |
-| Listens to the microphone (the music effects) | **On the lamp**, whatever it takes: the palette's colors it takes (the music modes all of them, the others the first), as the room is heard only there | LAN |
-| Any other effect: more palette colors than it takes, or none at all (Rainbow, Fire, Starry Sky, Hacking...) | **Streamed**: Home Assistant draws the effect as the lamp would, in the whole palette, and sends it 25 times a second (the lamp's own pace), like a drawing | LAN over UDP |
-| An animation (Snowfall, Daydream, Halloween glow, Moonlit clouds) | **Its GIF recolored**, stored and played by the lamp, in the layout chosen (upright or as the Yeelight app), uploaded again when the palette changes | Matter, as every animation |
-| A clock style over an effect the lamp cannot show in the whole palette | **Streamed**: the background recolored, shown through the digits for the current time, as the lamp's clock does | LAN over UDP |
-| A plain clock style | **On the lamp**, in the palette's first color | LAN |
-
-Streaming needs no Matter: only the animations do (their GIF is uploaded over
-Matter, see [Matter commands](docs/MATTER_COMMANDS.md)). Without Matter, every
-effect but the animations still takes the whole palette. A streamed effect
-needs the lamp reachable over UDP (it holds its last frame while the
-connection falls back to TCP; a network blocking UDP is reported in Repairs),
-keeps Home Assistant a little busy while it runs, and starts from its
-beginning (Building Blocks on an empty panel). Speed, direction, intensity,
-Lamp mounted, favourites, rotation and Freeze work as for any effect.
-
-In a streamed effect the colors move with it: an effect whose picture is in
-its colors (Rainbow, Magic, Wonderland...) maps them onto the palette; a field
-of light (Waves, Aurora, Fire, Sunrise and sunset...) takes them by the
-brightness around each pixel, followed smoothly (no pixel flickers between
-colors), the brightest the palette's first color; separate dots and shapes
-(Starry Sky, Building Blocks, Hacking's digits...) each keep one color for as
-long as they are lit; White fill-in and wipe-out take the first color. The
-music modes run in the direction chosen when a Matter server sends Yeelight
-commands to the lamp, otherwise in the lamp's own.
-
-The `set_native_effect` service accepts `color_mode`; this setting is
-independent of clock colors and persists with the lamp state. An incompatible
-effect uses its original colors. Restart Home Assistant after updating before using
-this feature; an older backend does not expose the palette controls.
-
-Time/date content, clock format and the saved clock-style
-library remain clock-only. No custom native-effect preset library is introduced.
-Both cards support custom RGB where the selected style or effect permits it.
-Native previews and camera previews use the existing shared palette renderers.
-
-The brightness, speed and intensity sliders on the Native Effects, Clock and
-Lamp Preview cards are one shared slider with the same settings on every card,
-and share one conversion, so a given device value reads the same percentage on
-every card:
-
-| Setting | Option | Choices |
-|---|---|---|
-| **Grey out unused sliders** | `slider_grey_out_unused` | Speed and intensity are hidden while the effect or clock style shown doesn't use them; on, they stay in place, greyed out and inactive (not on the Lamp Preview, whose brightness is always used) |
-| **Slider Style** | `slider_style` | `slider`, `bar`, `wheel`, `matrix`, `rotary` (dials side by side, on the card's background), `capsule`; each with its own options below it |
-| **Value** | `slider_value` | `none`, `percent` (default), `raw`: the device value (speed, intensity and brightness 0–255), shown exactly. Brightness 0 turns the lamp off |
-| **Ends** | `slider_ends` | Slider, Bar and Capsule: `icons` (the Capsule's default: 🌙 → ☀️ brightness, 🐢 → ⚡ speed, 💧 → 🌊 intensity, 🔈 → 🔊 for a music effect's intensity), `plus_minus` (➖ → ➕) or `none` (the Slider's and Bar's default). Tapping an end steps the value |
-| **Step Size** | `slider_step_size` | 1–25 % (default 5): an end tap, a mouse-wheel notch and the Wheel's stops |
-| **Snap to Positions** | `slider_snap` | Snaps to 20, 40, 60 and 80 % |
-| **Control Width** | `slider_width` | 30–100 % (not for Rotary) |
-| **Thickness** | `slider_thickness` | `thin`, `medium` (default), `thick` (the Slider's and Capsule's thick track) |
-| **Card background** | `slider_theme` | `subtle` (default) or `flat` (not for Rotary) |
-
-Older slider options (`slider_show_value`, `slider_show_raw_value`,
-`slider_value_display`, `slider_value_side`, `slider_step_buttons`,
-`slider_step_position`, `slider_show_icon_left` / `_right`, `slider_icons`,
-`slider_variant`, `slider_capsule_variant`, `slider_wheel_step` and a
-thickness in pixels) are read as these and replaced when the card is next
-saved.
-
-The lamp's state is never read back (see [How the State Updates](#how-the-state-updates)),
-so while Clock or Native Effect mode is active, Home Assistant keeps the last
-settings requested by the integration until another command is sent.
-Brightness remains available and is applied after activating the native
-renderer so it does not cancel the selected clock or animation.
-
-The `set_button_effects` action writes one to eight ordered presets to the
-physical-button slots, over Matter (it needs
-[Matter settings](docs/MATTER.md#optional-matter-settings), and **Buttons:
-Right as Remote** off). Updating a shorter list only overwrites those leading
-slots: the lamp has no command that shortens the list.
-
-```yaml
-action: yeelight_cube.set_button_effects
-data:
-  entity_id: light.yeelight_cube_lite
-  effects:
-    - Ribbon
-    - Rainbow
-    - "Clock: Yellow"
-```
-
-</details>
+Built-in pixel art, the clock, native effects, the animations, Palette and
+Music Flow in detail: [docs/DISPLAY_MODES.md](docs/DISPLAY_MODES.md). Effect
+and clock style names: [`set_native_effect`](SERVICES.md#set_native_effect)
+and [`set_clock_style`](SERVICES.md#set_clock_style).
 
 <a id="music-flow"></a>
 
@@ -1651,84 +1341,9 @@ does not require Matter.
 For dashboard access, add these two select entities to a standard Home
 Assistant **Entities card**.
 
-<details>
-<summary>Music Flow modes, restoration, previews and automation example</summary>
-
-Selecting **Music Flow** in the **Content mode** selector starts the Cube Lite
-the lamp's microphone-reactive renderer locally on the device. **Music Flow
-Effect** selects one of the six official modes: Gather, Breathing, Blossom,
-Spectrum, Music Note, or Impact.
-
-Music Flow behaves as an overlay on top of the underlying content. The
-integration remembers the previous Matrix, Clock, or Native Effect content and
-returns to it when Music Flow stops. The selected effect can be changed while
-Music Flow is inactive and will be used the next time it starts.
-
-The integration also preserves the lamp's previous power state:
-
-- If the lamp was on, stopping Music Flow restores the previous display.
-- If the lamp was off, stopping Music Flow turns the lamp off again.
-- If Home Assistant restarts while Music Flow is active, the Music Flow content
-  mode, effect, and prior power state are restored from per-device integration
-  storage.
-- If the Music Flow stop command succeeds but redrawing the previous display
-  fails, Home Assistant still records Music Flow as off. Reselect a content
-  mode or use **Force Refresh** to retry the display render.
-
-The hourly clock check is skipped while Music Flow is active, because opening
-another control connection can interrupt the lamp's renderer.
-Selecting Matrix, Clock, Native Effect, text, or pixel art is treated as an
-explicit content change and stops Music Flow first.
-
-Both Matrix Preview cameras show a deterministic static illustration for the
-selected effect. These are locally generated 20x5 identifiers, not live frames
-from the lamp:
-
-| Music Flow Effect | Static preview cue |
-| :-- | :-- |
-| Gather | Multicolor bands converging on the center |
-| Breathing | Purple-pink center glow |
-| Blossom | Three flower shapes |
-| Spectrum | Rainbow equalizer bars |
-| Music Note | Musical-note glyph |
-| Impact | Center burst |
-
-Round and Square previews use the same RGB pixels and differ only in pixel
-shape. Brightness and device orientation are applied locally. Generating or
-viewing a preview sends no command to the lamp.
-
-> [!NOTE]
-> The lamp does not expose live microphone-animation frames. Changes made
-> from another app while Music Flow is active may not be reflected in Home
-> Assistant until Music Flow stops or another HA command runs. With the Matter
-> link, a music mode started or stopped on the lamp or in the app is followed.
-
-```yaml
-sequence:
-  - action: select.select_option
-    target:
-      entity_id: select.my_cube_music_flow_effect
-    data:
-      option: Spectrum
-  - action: select.select_option
-    target:
-      entity_id: select.my_cube_content_mode
-    data:
-      option: Music Flow
-  - delay: "00:00:30"
-  # Selecting another content mode stops Music Flow
-  - action: select.select_option
-    target:
-      entity_id: select.my_cube_content_mode
-    data:
-      option: Clock
-```
-
-Replace the example entity IDs with the **Music Flow effect** and **Content
-mode** entities created for your Cube Lite. There is no separate Music Flow
-switch: Music Flow starts and stops through Content mode.
-
-</details>
+Music Flow is an overlay: stopping it brings back the previous content and the
+lamp's previous power state. Its modes, previews and an automation example:
+[Music Flow in detail](docs/DISPLAY_MODES.md#music-flow).
 
 ---
 
@@ -1748,9 +1363,10 @@ switch: Music Flow starts and stops through Content mode.
 - **Yeelight Cube Smart Lamp Lite** (the 20 × 5 matrix lamp, model `cubelite`),
   with **LAN Control** on in the Yeelight app. Several lamps can be set up,
   each as its own device; the cards can drive several at once.
+- **Yeelight Cube Matrix** (the original Yeelight Cube, model `CubeMatrix`):
+  see [docs/CUBE_MATRIX.md](docs/CUBE_MATRIX.md).
 - Other Yeelight lamps are left to Home Assistant's own **Yeelight**
-  integration (this one keeps its discovery away from the Cube Lite lamps
-  only). Other Cube models (the modular Yeelight Cube) are not tested.
+  integration (this one keeps its discovery away from its own lamps only).
 
 ---
 
@@ -1837,8 +1453,10 @@ of port per lamp.
 (Configuration, 0.4–7 W; 7 W = no limit). Bright pictures are dimmed just
 enough to stay under it, keeping their colors; dim pictures are untouched.
 Two lamps on a 15 W port run reliably at 5 W each. The limit applies to
-everything the integration draws; Clock, Native Effects and Music Flow are
-drawn by the lamp itself, so lower their brightness instead.
+everything the integration draws, streamed effects and clocks included
+(the integration's own effects, Palette mode, everything on a Cube Matrix);
+effects, clocks and Music Flow the lamp draws itself are not limited, so
+lower their brightness instead.
 
 ---
 

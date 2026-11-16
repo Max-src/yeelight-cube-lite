@@ -33,13 +33,20 @@ from .entity import cube_device_info
 from .pixel_art_storage import expand_pixels
 from .light_color import ColorPipelineMixin
 from .light_native import NativeModesMixin
+from .light_music_flow import MusicFlowMixin
 from .light_studio import StudioStreamMixin
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
+from .light_link_recovery import LinkRecoveryMixin
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
 from .light_matter import MatterMixin
+from .light_matter_remote import RemoteButtonsMixin
+from .light_matter_restore import LampRestoreMixin
+from .light_matter_rotation import MatterRotationMixin
 from .light_matrix import MatrixMixin
+from .light_matrix_follow import MatrixFollowMixin
+from .light_matrix_settings import MatrixSettingsMixin
 from .light_mount_profile import MountProfileMixin
 from .light_brightness import BrightnessMixin
 from .light_display import DisplayMixin
@@ -179,13 +186,20 @@ class YeelightCubeLight(
     BrightnessMixin,
     ColorPipelineMixin,
     NativeModesMixin,
+    MusicFlowMixin,
     StudioStreamMixin,
     MatrixRenderMixin,
     ConnectionMixin,
+    LinkRecoveryMixin,
     StateRestoreMixin,
     RotationMixin,
     MatterMixin,
+    RemoteButtonsMixin,
+    LampRestoreMixin,
+    MatterRotationMixin,
     MatrixMixin,
+    MatrixFollowMixin,
+    MatrixSettingsMixin,
     MountProfileMixin,
     LightEntity,
     RestoreEntity,

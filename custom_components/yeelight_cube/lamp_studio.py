@@ -54,6 +54,7 @@ Mirrored in www/lamp-studio.js (tests/test_lamp_studio.py).
 from __future__ import annotations
 
 import threading
+from operator import itemgetter
 
 try:
     from .effect_catalog import ALL_NATIVE_EFFECTS, PALETTE_COLOR_MODE
@@ -309,24 +310,26 @@ def _around(index: int, offsets):
             yield r * COLS + c
 
 
+# _around of every pixel, by pixel.
+_NEAR = tuple(tuple(_around(index, _NEIGHBOURS)) for index in range(LENGTH))
+_SIDE = tuple(tuple(_around(index, _SIDES)) for index in range(LENGTH))
+
+
 def track_step(state, frame, floor: int):
     """The objects of ``frame`` after ``state`` (labels, levels, count: the
     previous frame's object per pixel, -1 for none, its brightness, and how
     many objects appeared so far). A pixel belongs to an object while it is
     at least ``floor`` bright."""
     labels_before, levels_before, count = state
-    levels = [max(pixel[0], pixel[1], pixel[2]) for pixel in frame]
+    levels = list(map(max, frame))
     lit = [level >= floor for level in levels]
-    labels = [-1] * LENGTH
-    for index in range(LENGTH):
-        if lit[index] and labels_before[index] >= 0:
-            labels[index] = labels_before[index]
+    labels = [before if on and before >= 0 else -1 for on, before in zip(lit, labels_before)]
     moved = [False] * LENGTH
     for index in range(LENGTH):
         if not lit[index] or labels[index] >= 0:
             continue
         best, brightest = -1, -1
-        for near in _around(index, _NEIGHBOURS):
+        for near in _NEAR[index]:
             if (
                 labels_before[near] >= 0
                 and levels[near] < levels_before[near]
@@ -344,13 +347,13 @@ def track_step(state, frame, floor: int):
         while waiting:
             pixel = waiting.pop()
             group.append(pixel)
-            for near in _around(pixel, _SIDES):
+            for near in _SIDE[pixel]:
                 if lit[near] and labels[near] == -1:
                     labels[near] = -2
                     waiting.append(near)
         group.sort()
         joined = next(
-            (labels[near] for pixel in group for near in _around(pixel, _SIDES) if moved[near]),
+            (labels[near] for pixel in group for near in _SIDE[pixel] if moved[near]),
             -1,
         )
         if joined < 0:
@@ -371,21 +374,30 @@ _LEVEL_AROUND = (2, 1)
 _LEVEL_SMOOTHING = 3
 
 
+def _level_boxes() -> tuple:
+    """By pixel: (the pixels around it, as one itemgetter; how many)."""
+    across, down = _LEVEL_AROUND
+    out = []
+    for index in range(LENGTH):
+        row, col = divmod(index, COLS)
+        box = [
+            r * COLS + c
+            for r in range(max(0, row - down), min(ROWS, row + down + 1))
+            for c in range(max(0, col - across), min(COLS, col + across + 1))
+        ]
+        out.append((itemgetter(*box), len(box)))
+    return tuple(out)
+
+
+_LEVEL_BOXES = _level_boxes()
+
+
 def level_step(state, frame):
     """The followed brightness of ``frame`` after ``state`` (None: the first
     frame's own): per pixel, the mean brightness around it (_LEVEL_AROUND),
     moved part of the way from the previous (_LEVEL_SMOOTHING)."""
-    levels = [max(pixel[0], pixel[1], pixel[2]) for pixel in frame]
-    across, down = _LEVEL_AROUND
-    around = []
-    for index in range(LENGTH):
-        row, col = divmod(index, COLS)
-        total = count = 0
-        for r in range(max(0, row - down), min(ROWS, row + down + 1)):
-            for c in range(max(0, col - across), min(COLS, col + across + 1)):
-                total += levels[r * COLS + c]
-                count += 1
-        around.append(total // count)
+    levels = list(map(max, frame))
+    around = [sum(box(levels)) // count for box, count in _LEVEL_BOXES]
     if state is None:
         return around
     return [before + ((now - before) >> _LEVEL_SMOOTHING) for before, now in zip(state, around)]
@@ -457,7 +469,7 @@ class _Palette:
     (palette_table), the part of them the cycle uses, and the last color's
     position."""
 
-    __slots__ = ("colours", "table", "cycle", "last")
+    __slots__ = ("colours", "table", "cycle", "last", "picks", "seen")
 
     def __init__(self, colours):
         count = len(colours)
@@ -466,13 +478,34 @@ class _Palette:
         # 256 // count positions a color: past count of them, nothing.
         self.cycle = count * (256 // count)
         self.last = palette_span(count)
+        self.picks: dict[tuple, tuple] = {}
+        self.seen: dict[tuple, dict] = {}  # by look: pixel -> its color (_recolour_picked)
 
     def at(self, position: int) -> tuple:
         table = self.table
         return table[3 * position], table[3 * position + 1], table[3 * position + 2]
 
+    def pick(self, look) -> tuple:
+        """By key 0-255 (the followed brightness for "level", the hue for
+        "wheel" and "hue"), the color recolour takes, and its brightest
+        channel."""
+        picks = self.picks.get(look)
+        if picks is None:
+            out = []
+            for key in range(256):
+                if look[0] == "level":
+                    colour = self.at(self.last - _along(key, look[1:], self.last))
+                elif look[0] == "wheel":
+                    colour = self.at(((key - look[1]) & 255) * self.cycle >> 8)
+                else:
+                    colour = self.at(_along(_hue_offset(key, look[1], look[2:]), look[2:], self.last))
+                out.append((*colour, max(colour)))
+            picks = self.picks[look] = tuple(out)
+        return picks
+
 
 _PALETTES: dict[tuple, _Palette] = {}
+_SEEN_LIMIT = 4096
 _PALETTES_LIMIT = 32
 
 
@@ -520,6 +553,8 @@ def recolour(frame, look, palette, followed=None) -> list[tuple[int, int, int]]:
         return [(0, 0, 0)] * len(frame)
     prepared = _prepared(colours)
     kind = look[0]
+    if kind in ("wheel", "hue") or kind == "level" and (followed is None or len(followed) == len(frame)):
+        return _recolour_picked(frame, look, prepared, followed)
     out = []
     for index, pixel in enumerate(frame):
         level = max(pixel[0], pixel[1], pixel[2])
@@ -550,6 +585,46 @@ def recolour(frame, look, palette, followed=None) -> list[tuple[int, int, int]]:
             out.append((0, 0, 0))
             continue
         out.append((red * level // high, green * level // high, blue * level // high))
+    return out
+
+
+def _recolour_picked(frame, look, prepared: _Palette, followed) -> list[tuple[int, int, int]]:
+    """recolour for a look whose color is a function of one byte (_Palette.pick)."""
+    picks = prepared.pick(look)
+    out = []
+    if look[0] == "level":
+        keys = followed if followed is not None else [max(pixel[0], pixel[1], pixel[2]) for pixel in frame]
+        for key, pixel in zip(keys, frame):
+            level = max(pixel[0], pixel[1], pixel[2])
+            if not level:
+                out.append((0, 0, 0))
+                continue
+            if 0 <= key <= 255:
+                red, green, blue, high = picks[key]
+            else:
+                red, green, blue = prepared.at(prepared.last - _along(key, look[1:], prepared.last))
+                high = max(red, green, blue)
+            out.append((red * level // high, green * level // high, blue * level // high) if high else (0, 0, 0))
+        return out
+    first = prepared.at(0)
+    first = (*first, max(first))
+    # By pixel: its color is a function of the pixel alone.
+    seen = prepared.seen.setdefault(look, {})
+    if len(seen) > _SEEN_LIMIT:
+        seen.clear()
+    for pixel in frame:
+        colour = seen.get(pixel)
+        if colour is None:
+            level = max(pixel[0], pixel[1], pixel[2])
+            if not level:
+                colour = (0, 0, 0)
+            else:
+                hue = hue_byte(pixel)
+                red, green, blue, high = first if hue is None else picks[hue]
+                colour = (red * level // high, green * level // high, blue * level // high) if high else (0, 0, 0)
+            if isinstance(pixel, tuple):
+                seen[pixel] = colour
+        out.append(colour)
     return out
 
 

@@ -56,6 +56,11 @@ APPLY_PRIORITY = 2
 
 CLOCK_EFFECT = 40
 DRAWING_EFFECT = 36
+# The custom id of a Cube Lite's stream drawn over Matter (light_matrix): the
+# lamp reports it with the drawing (Matter effect_sub), so the stream's
+# reports are told from the Yeelight app's drawings (cloud ids) and from the
+# Right-as-Remote black slots (1000 to 1007, light_matter).
+OWN_DRAWING_ID = 2000
 # The clock's backgrounds (its mixer): 0 is the plain colour.
 CLOCK_BACKGROUNDS = frozenset({0, 17, 39, 42, 54, 57, 58, 59})
 # The drawing's mixers the lamp runs (6, scrolling, it has not).
@@ -383,12 +388,14 @@ def drawing_data(pixels) -> bytes:
 
 def drawing_payload(
     pixels, mixer: int = 0, speed: int = DEFAULT_SPEED, direction: int = 0,
-    apply: int = APPLY_SHOW,
+    apply: int = APPLY_SHOW, custom_id: int = 0,
 ) -> dict:
-    """setEffect for a drawing (DRAWING_MIXERS animate it on the lamp)."""
+    """setEffect for a drawing (DRAWING_MIXERS animate it on the lamp);
+    ``custom_id``: the id the lamp reports for it (OWN_DRAWING_ID: a Cube
+    Lite's stream, told from the Yeelight app's drawings)."""
     if mixer not in DRAWING_MIXERS:
         raise UnsafeMatrixCommand(f"drawing mixer {mixer}")
-    return _effect(DRAWING_EFFECT, 0, apply, {
+    return _effect(DRAWING_EFFECT, custom_id, apply, {
         "mode": DRAWING_EFFECT,
         "color": None,  # the app sends none
         "speed": speed,

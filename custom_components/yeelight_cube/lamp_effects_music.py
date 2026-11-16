@@ -283,10 +283,11 @@ def spectrum_step(state, settings, clock_ms, render) -> bytes:
 # after up to 111 and 190 renders at rate 0).
 def _add(work, cell: int, table, at: int) -> None:
     """A palette colour added, saturating."""
-    at_cell = 3 * cell
-    for channel in range(3):
-        value = work[at_cell + channel] + table[at + channel]
-        work[at_cell + channel] = value if value < 255 else 255
+    here = 3 * cell
+    red, green, blue = work[here] + table[at], work[here + 1] + table[at + 1], work[here + 2] + table[at + 2]
+    work[here] = red if red < 255 else 255
+    work[here + 1] = green if green < 255 else 255
+    work[here + 2] = blue if blue < 255 else 255
 
 
 def gather_init(settings) -> dict:

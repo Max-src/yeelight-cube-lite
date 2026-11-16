@@ -11,7 +11,7 @@ from fakes import ROOT, make_light
 # The state light_state owns: written there only, read everywhere.
 OWNED = {
     "_mode", "_matrix_mode", "_custom_draw_active", "_is_scrolling", "_display_frozen",
-    "_fx_mode_is_direct", "_in_native_fw_mode", "_last_hardware_brightness",
+    "_fx_mode_is_direct", "_in_native_fw_mode", "_last_hardware_brightness", "_shows_own_drawing",
 }
 PLATFORMS = (
     "select", "switch", "number", "text", "sensor", "binary_sensor", "event", "camera",

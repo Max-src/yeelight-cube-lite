@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from tests.test_live_effect import FNS
-from tests.test_matter_link import LINK, MATTER, FakeLight
+from tests.test_matter_link import LINK, FakeLight
 from tests.test_native_features import CONSTANTS, import_pure_module
 
 PROFILE = import_pure_module("mount_profile")
@@ -271,7 +271,7 @@ class MatterProfileTests(unittest.TestCase):
         light = ProfileLight({"mount_profile": 3, "mount_profile_source": "user"})
         light._device_orientation = "right"
         channel = Channel(backend=None)
-        channel.error = MATTER.MatterCommandsUnavailable()
+        channel.error = import_pure_module("matter_commands").MatterCommandsUnavailable()
         light.link(7, 0, channel)
         light._check_mount_profile()
         light.run_tasks()

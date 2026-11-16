@@ -315,6 +315,13 @@ def lava_step(state, settings, clock_ms, render) -> bytes:
     for row in range(height):
         centre_y = row * _LAVA_CELL + _LAVA_CELL // 2
         glow = _LAVA_LIQUID_TOP + (_LAVA_LIQUID_BOTTOM - _LAVA_LIQUID_TOP) * (top - centre_y) // top
+        # A blob whose reach along stops short of the row adds nothing to it.
+        near = []
+        for x, y, side2, along2, colour in shapes:
+            dy = centre_y - y
+            down = dy * dy * 256 // along2
+            if down < _LAVA_REACH:
+                near.append((x, down, side2, colour))
         for column in range(width):
             centre_x = column * _LAVA_CELL + _LAVA_CELL // 2
             # The pool: its edge (256) at the surface, rising smoothly below it
@@ -326,12 +333,12 @@ def lava_step(state, settings, clock_ms, render) -> bytes:
                 pool = 65536 // (256 + above * above * 256 // 576)
             field = weight = pool
             red, green, blue = first[0] * pool, first[1] * pool, first[2] * pool
-            for x, y, side2, along2, colour in shapes:
-                dx, dy = centre_x - x, centre_y - y
-                q = dx * dx * 256 // side2 + dy * dy * 256 // along2
+            for x, down, side2, colour in near:
+                dx = centre_x - x
+                q = dx * dx * 256 // side2 + down
                 if q >= _LAVA_REACH:
                     continue
-                part = 65536 // max(16, q)
+                part = 65536 // (q if q > 16 else 16)
                 field += part
                 weight += part
                 red += colour[0] * part

@@ -385,7 +385,14 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             return [(0, 0, 0)] * 100
 
         mode = state.mode
-        if state.music_flow_enabled:
+        # A streamed effect or clock: the very frame the lamp was last sent
+        # (light_studio.streamed_preview_frame, already in screen colours),
+        # not this camera's own drawing of it (its own start and seeds).
+        streamed = getattr(self._light_entity, "streamed_preview_frame", None)
+        streamed = streamed() if callable(streamed) else None
+        if streamed is not None and len(streamed) == 100:
+            base = streamed
+        elif state.music_flow_enabled:
             base = self._get_music_flow_preview(state)
         elif mode == MODE_CLOCK:
             base = self._get_clock_preview(state)
@@ -399,7 +406,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             return [(0, 0, 0)] * 100
         # The lamp renderer's frame is LED drive: shown as those LEDs look.
         # Display only (simulated_lamp_frame keeps the lamp's values).
-        if self._shows_lamp_renderer(state):
+        if streamed is None and self._shows_lamp_renderer(state):
             base = [led_appearance(rgb) for rgb in base]
 
         # --- Compute the effective multiplier (same net result as JS) ---

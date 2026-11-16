@@ -55,6 +55,13 @@ CONFIRM_AFTER = 20.0
 KEEP_ALIVE = ["keeplive_interval", 10]
 # What answers a refused token (also a command sent without a session).
 _TOKEN_REFUSED = -1
+# What answers a frame when the lamp is not in direct mode ("illegal
+# request"): something else changed its effect (2026-11-16: a Matter
+# setEffect left the top lamp in its drawing effect; every frame refused
+# while the lamp kept answering checks). A new session puts it back in direct
+# mode (session_setup), at most once every FRAME_REFUSED_REOPEN seconds.
+_FRAME_REFUSED = 6
+FRAME_REFUSED_REOPEN = 2.0
 # Commands the lamp never answers: sent without waiting.
 _UNANSWERED = frozenset({"update_leds"})
 # A command the lamp answers waits until no frame was sent for this long. The
@@ -128,6 +135,9 @@ class UdpSession:
         # the command that needed it: what must hold in whichever session
         # the lamp is in (set by LampClient: direct mode, while it is on).
         self.session_setup: list[tuple[str, list]] = []
+        # When a session was last dropped for a refused frame
+        # (FRAME_REFUSED_REOPEN).
+        self._frame_refused_at = float("-inf")
 
     @property
     def is_open(self) -> bool:
@@ -146,6 +156,11 @@ class UdpSession:
                 continue
             future = self._waiting.get(message.get("id"))
             error = message.get("error")
+            if future is None and isinstance(error, dict):
+                _LOGGER.warning(
+                    "[UDP] [%s] Unsolicited error id=%s method=%s error=%s; stats=%s",
+                    self._ip, message.get("id"), message.get("method"), error, self.stream_stats(),
+                )
             if (
                 future is None and isinstance(error, dict) and error.get("code") == _TOKEN_REFUSED
                 and message.get("method") != "udp_sess_token"
@@ -159,6 +174,16 @@ class UdpSession:
                     _LOGGER.debug("[UDP] [%s] A frame's session was refused: opening a new one", self._ip)
                 self._token = None
                 continue
+            if (
+                future is None and isinstance(error, dict) and error.get("code") == _FRAME_REFUSED
+                and self.session_setup and self._token is not None
+                and time.monotonic() - self._frame_refused_at >= FRAME_REFUSED_REOPEN
+            ):
+                # Frames refused: the lamp left direct mode. The next frame
+                # opens a new session, which sends direct mode first.
+                _LOGGER.info("[UDP] [%s] Frames refused (the lamp left direct mode): direct mode again", self._ip)
+                self._frame_refused_at = time.monotonic()
+                self._token = None
             self._last_answer = time.monotonic()
             if message.get("method") == "udp_sess_token":
                 token = (message.get("params") or {}).get("token")
@@ -314,6 +339,9 @@ class UdpSession:
         gaps = [gap for at, gap in self._gaps if now - at <= STATS_WINDOW]
         return {
             "frames": self.frames_sent,
+            "sessions_opened": self.sessions_opened,
+            "session_open": self.is_open,
+            "since_last_answer_s": round(now - self._last_answer, 2) if self._last_answer else None,
             "gaps_over_100ms": len(gaps),
             "longest_gap_s": round(max(gaps), 2) if gaps else 0.0,
             "since_last_frame_s": round(now - self._last_frame, 2) if self._last_frame else None,
