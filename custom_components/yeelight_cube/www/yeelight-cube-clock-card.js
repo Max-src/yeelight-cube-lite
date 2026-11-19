@@ -126,9 +126,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     });
     // The Color Modes row (color-mode-controller.js).
     this._colors = new ColorModeController(this, CLOCK_CARD_COLORS);
-    this._elapsed = 0;
-    this._lastPhaseTs = null;
-    this._animLoop = null;
+    this._animation = null;
     this._visible = new Set();
     this._visibility = null;
     this._stateSignature = null;
@@ -355,6 +353,9 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     super.connectedCallback();
     this._colors.connect();
     this._startAnimation();
+    // Back on the page (a view switch): render, so the previews are observed
+    // and painted again (disconnectedCallback released them).
+    this.requestUpdate();
   }
 
   disconnectedCallback() {
@@ -374,18 +375,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     if (TEXT_SELECTOR_STYLES.includes(v) || PREVIEW_SELECTOR_STYLES.includes(v))
       return v;
     return "preview-grid";
-  }
-
-  _isPreviewSelector() {
-    return PREVIEW_SELECTOR_STYLES.includes(this._selectorStyle());
-  }
-
-  _displayMode() {
-    const style = this._selectorStyle();
-    if (style === "preview-wheel") return "wheel";
-    if (style === "preview-carousel") return "carousel";
-    if (style === "preview-strip") return "strip";
-    return "list";
   }
 
   // ── Preview appearance helpers (shared semantics with the reference cards) ─
@@ -494,7 +483,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // (cached per hass.states until one appears).
   _getNativeClockFont(states = this._hass?.states) {
     if (!states) return { fontMap: null, metrics: null };
-    this._nativeFontCache = lookupNativeClockFont(states, this._nativeFontCache);
+    this._nativeFontCache = lookupNativeClockFont(
+      states,
+      this._nativeFontCache,
+      this._hass?.entities,
+    );
     return this._nativeFontCache.font;
   }
 

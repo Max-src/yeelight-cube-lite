@@ -26,6 +26,25 @@ const RETRY_MS = 30000;
 // per page): found again once it is gone (renamed or removed).
 let found = {};
 
+// A sensor the cards look for by its attributes (clock presets, the clock
+// font) and did not find: the next scan of every entity waits for a new
+// entity (Home Assistant's entity registry, hass.entities, changes) or this
+// long (ms, its attributes may come later). Home Assistant pushes new states
+// several times a second: a card must not rescan them all each time.
+export const SENSOR_RETRY_MS = 10000;
+
+/** Whether a scan of `hass` for a sensor found missing (`miss`: the
+ * registry and time of that scan) can wait. Without a registry (an older
+ * Home Assistant), every new states object is scanned. */
+export function missStillValid(miss, hass) {
+  return (
+    !!miss &&
+    !!hass?.entities &&
+    miss.entities === hass.entities &&
+    Date.now() - miss.at < SENSOR_RETRY_MS
+  );
+}
+
 /** Forget the sensors found (tests). */
 export function clearSensorLookups() {
   found = {};

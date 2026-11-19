@@ -195,17 +195,16 @@ class PayloadTests(unittest.TestCase):
         # Module m, pixel j (column j // 5, row j % 5) at m * 100 + 4 * j.
         at = 1 * 100 + 4 * (1 * 5 + 4)
         self.assertEqual(bytes((0xFF, 9, 8, 7)), data[at:at + 4])
-        payload = EFFECTS.drawing_payload(pixels, mixer=3, speed=60)
+        payload = EFFECTS.drawing_payload(pixels)
         params = payload["effect"]["effectParams"][0]
         # No colour list (the app sends none).
         self.assertNotIn("color", params)
-        self.assertEqual((0, 36, 36, 3, 60),
+        # Always still (mixer 0).
+        self.assertEqual((0, 36, 36, 0, 128),
                          (payload["apply"], payload["effect"]["effectId"], params["mode"],
                           params["mixer"], params["speed"]))
         self.assertEqual(base64.b64decode(params["data"]), data)
         self.assertEqual({"data": params["data"]}, EFFECTS.set_data_payload(pixels))
-        with self.assertRaises(EFFECTS.UnsafeMatrixCommand):
-            EFFECTS.drawing_payload(pixels, mixer=6)  # no scrolling on this lamp
 
     def test_a_spot_slot_is_one_drawing_pixel(self):
         profile = matrix_profile("2,2,3,0,0,0,0,0,", strip="55")

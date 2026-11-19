@@ -138,6 +138,9 @@ class UdpSession:
         # When a session was last dropped for a refused frame
         # (FRAME_REFUSED_REOPEN).
         self._frame_refused_at = float("-inf")
+        # An unsolicited error was logged as a WARNING since the lamp last
+        # answered without one (the rest of the episode goes at DEBUG).
+        self._unsolicited_logged = False
 
     @property
     def is_open(self) -> bool:
@@ -157,10 +160,16 @@ class UdpSession:
             future = self._waiting.get(message.get("id"))
             error = message.get("error")
             if future is None and isinstance(error, dict):
-                _LOGGER.warning(
+                # Refused frames come one per frame: the first of an episode
+                # is a WARNING, the rest DEBUG until the lamp answers again.
+                _LOGGER.log(
+                    logging.DEBUG if self._unsolicited_logged else logging.WARNING,
                     "[UDP] [%s] Unsolicited error id=%s method=%s error=%s; stats=%s",
                     self._ip, message.get("id"), message.get("method"), error, self.stream_stats(),
                 )
+                self._unsolicited_logged = True
+            elif error is None:
+                self._unsolicited_logged = False  # an answer: the episode is over
             if (
                 future is None and isinstance(error, dict) and error.get("code") == _TOKEN_REFUSED
                 and message.get("method") != "udp_sess_token"

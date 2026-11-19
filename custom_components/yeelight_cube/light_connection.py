@@ -51,6 +51,7 @@ LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged 
 CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
                               # reject new operations immediately instead of queueing them
                               # behind the lock for another APPLY_HARD_TIMEOUT each.
+                              # The timeouts' times are time.monotonic() (recent_hard_timeouts).
 
 
 # Per-device locks to serialize hardware commands to the SAME physical lamp.
@@ -103,7 +104,7 @@ class ConnectionMixin:
         
         # Circuit breaker: tracks recent hard timeouts to reject new ops early
         # instead of queueing them behind the lock for APPLY_HARD_TIMEOUT each.
-        self._hard_timeout_times = []  # List of timestamps of recent hard timeouts
+        self._hard_timeout_times = []  # time.monotonic() of each recent hard timeout
         # Set by _execute_hardware_op: whether the last failure was a
         # connection problem worth retrying, and the operation holding the lock.
         self._hardware_failure_retryable = False
@@ -151,11 +152,26 @@ class ConnectionMixin:
         effective_timeout = timeout_override or APPLY_HARD_TIMEOUT
         self._hardware_failure_retryable = False
         
+        # A stuck Cube Lite being brought back over the LAN
+        # (light_link_recovery): the sweep holds the lamp's lock for up to
+        # about a minute and the lamp answers nothing meanwhile, so an
+        # operation fails at once, as when the lamp is not reached, rather
+        # than waiting for the sweep. The lamp's content is drawn again
+        # once it is back.
+        if getattr(self, "_link_recovery_running", False):
+            self._hardware_failure_retryable = True
+            self._last_connection_error = "The lamp is stuck and being brought back over the LAN"
+            _LOGGER.warning(
+                "[OP #%s] [%s] %s not sent: the lamp is stuck and being brought back over the LAN",
+                op_id, self._ip, op_name,
+            )
+            return False
+
         # CIRCUIT BREAKER: If 2+ hard timeouts occurred in the last N seconds,
         # reject immediately instead of queueing behind the lock for
         # APPLY_HARD_TIMEOUT each. This prevents the cascade where 5+ operations
         # pile up, each waiting for its own timeout, leaving the lamp stuck.
-        now = time.time()
+        now = time.monotonic()
         self._hard_timeout_times = [t for t in self._hard_timeout_times if now - t < CIRCUIT_BREAKER_WINDOW]
         if len(self._hard_timeout_times) >= 2:
             self._hardware_failure_retryable = True
@@ -244,7 +260,7 @@ class ConnectionMixin:
                     self._direct_mode_lost()
                     self._lamp_client.close_fast_socket()
                     self._last_connection_error = f"Hard timeout: {op_name}"
-                    self._hard_timeout_times.append(time.time())
+                    self._hard_timeout_times.append(time.monotonic())
                     self._lamp_client.record_failure()
                     # Only schedule display retries for display operations
                     if is_display_op:
@@ -333,6 +349,12 @@ class ConnectionMixin:
             )
             note_command_result(self, op_name, e)
         return False
+
+    def recent_hard_timeouts(self) -> list[float]:
+        """The hard timeouts (time.monotonic()) of the last
+        CIRCUIT_BREAKER_WINDOW seconds."""
+        now = time.monotonic()
+        return [t for t in self._hard_timeout_times if now - t < CIRCUIT_BREAKER_WINDOW]
 
     MAX_DISPLAY_RETRIES = 3  # 3 retries ~= 20s total, then health check takes over
 
@@ -533,6 +555,14 @@ class ConnectionMixin:
                     or self._music_flow_enabled
                     or matrix_shown is not None
                 )
+                stream = getattr(self, "_studio_task", None)
+                streaming = getattr(self, "studio_streaming", None)
+                if silent_mode and stream is not None and not stream.done() and streaming and streaming():
+                    # A streamed effect or clock sends frames: not silent.
+                    # Its own check asks the lamp (light_studio._stream_watchdog;
+                    # a Cube Matrix's LAN, LampClient._recover_udp), so no
+                    # ping here mid-stream.
+                    silent_mode = False
                 last_success = self._lamp_client.last_success_time
                 time_since_success = time.time() - last_success if last_success > 0 else 999
                 if has_active_issues:
@@ -820,20 +850,20 @@ class ConnectionMixin:
         _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor started")
         
         while self._pending_brightness is not None:
-            # Wait for connection to be available
-            if not self._lamp_client.is_connected():
-                await asyncio.sleep(0.5)  # Check every 500ms
-                continue
-            
             # Get pending brightness
             pending_value, queued_timestamp = self._pending_brightness
-            
-            # Check if brightness expired (30s TTL)
+
+            # Check if brightness expired (30s TTL), also while disconnected
             if time.time() - queued_timestamp > 30.0:
                 _LOGGER.debug("[BRIGHTNESS RETRY] Dropping expired brightness: %s", pending_value)
                 self._pending_brightness = None
                 continue
-            
+
+            # Wait for connection to be available
+            if not self._lamp_client.is_connected():
+                await asyncio.sleep(0.5)  # Check every 500ms
+                continue
+
             # ANTI-OVERWRITE CHECK: Has a newer brightness already succeeded?
             if self._last_successful_brightness is not None:
                 last_success_time, last_success_value = self._last_successful_brightness

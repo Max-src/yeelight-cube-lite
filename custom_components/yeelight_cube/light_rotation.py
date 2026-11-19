@@ -740,9 +740,11 @@ class RotationMixin:
                     _hold_rotation_for_resume(self)
                 return False
             delay = (5.0, 15.0)[attempt]
-            recent = [stamp for stamp in self._hard_timeout_times if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]
+            # The circuit breaker's hard timeouts (time.monotonic(), light_connection).
+            now = time.monotonic()
+            recent = [stamp for stamp in self._hard_timeout_times if now - stamp < CIRCUIT_BREAKER_WINDOW]
             if len(recent) >= 2:
-                delay = max(delay, max(recent) + CIRCUIT_BREAKER_WINDOW - time.time() + 0.1)
+                delay = max(delay, max(recent) + CIRCUIT_BREAKER_WINDOW - now + 0.1)
             self._rotation_retry_attempt = attempt + 1
             self._rotation_retry_at = time.time() + delay
             _LOGGER.warning(

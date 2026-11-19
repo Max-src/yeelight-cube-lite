@@ -7,7 +7,7 @@
  */
 
 // The order both cards list effects in when the card editor sets none
-// (light._native_effect_catalog): effect_catalog.py NATIVE_EFFECTS' slots, the official
+// (the lamp's catalogue, native-effect-catalog.js): effect_catalog.py NATIVE_EFFECTS' slots, the official
 // effects as the Yeelight app lists them, then every other slot in slot order.
 // The clock card lists its effect styles in it too.
 export const OFFICIAL_EFFECT_SLOTS = Object.freeze([
@@ -109,7 +109,7 @@ export function canonicalEffectName(name) {
 
 /** `names` (a config's list of effect or clock style names) in today's names,
  * with `canonical`; the same array when nothing changes. */
-export function canonicalNames(names, canonical = canonicalEffectName) {
+function canonicalNames(names, canonical = canonicalEffectName) {
   if (!Array.isArray(names)) return names;
   const renamed = names.map((name) => canonical(name));
   return renamed.some((name, index) => name !== names[index])
@@ -119,7 +119,7 @@ export function canonicalNames(names, canonical = canonicalEffectName) {
 
 /** A card's item_labels ({name: label}) keyed by today's names; the same
  * object when nothing changes. A label set on today's name wins. */
-export function canonicalLabels(labels, canonical = canonicalEffectName) {
+function canonicalLabels(labels, canonical = canonicalEffectName) {
   if (!labels || typeof labels !== "object") return labels;
   const keys = Object.keys(labels);
   if (!keys.some((key) => canonical(key) !== key)) return labels;

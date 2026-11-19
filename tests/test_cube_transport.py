@@ -200,6 +200,25 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
             await cube._recover_udp()
             self.assertEqual(0, cube.silent_for)
 
+    async def test_the_udp_recovery_outlives_an_unexpected_error(self):
+        # A ping that fails unexpectedly is logged at debug level, and the
+        # recovery pings again: UDP is used once the lamp answers.
+        pings = []
+
+        async def ping():
+            pings.append(1)
+            if len(pings) == 1:
+                raise ValueError("unexpected")
+            return True
+
+        self.cube._udp.ping = ping
+        with patch.object(client_udp, "UDP_RECOVERY_FIRST_PING", 0.0), \
+                patch.object(client_udp, "UDP_RECOVERY_PING", 0.01):
+            self.cube._udp_retry_at = client_udp.time.monotonic() + 5
+            await asyncio.wait_for(self.cube._recover_udp(), 1)
+        self.assertEqual(2, len(pings))
+        self.assertEqual(0.0, self.cube._udp_retry_at)
+
     async def test_a_new_session_is_put_in_direct_mode_before_the_next_frame(self):
         # The lamp dropped the session: the new one gets direct mode first,
         # and nothing has to recover (no re-activation, no brightness sent).

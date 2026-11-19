@@ -164,16 +164,13 @@ PREVIEW_ADJUSTMENTS = (
 )
 
 
-async def _matrix_drawing_live(light) -> None:
-    await light.async_matrix_drawing_changed()
-
-
-# A Cube Matrix's drawing animation speed (light_matrix; the Drawing
-# animation select): the lamp's raw speed, 1-255.
-MATRIX_NUMBERS = (
+# A Cube Lite's stream frame rate limit (light_studio._lite_lan_gap): new
+# pictures at most this many times a second over the LAN. Applies at the next
+# render; not on a Cube Matrix (its streams go over Matter).
+LITE_NUMBERS = (
     SettingNumber(
-        "drawing_animation_speed", "_matrix_drawing_speed", 1, 255, 1, 128,
-        translation_key="drawing_animation_speed", after=_matrix_drawing_live,
+        "stream_fps_limit", "_lite_stream_fps", 1, 25, 1, 5,
+        unit="fps", translation_key="stream_fps_limit", category=EntityCategory.CONFIG,
     ),
 )
 
@@ -225,9 +222,11 @@ async def async_setup_entry(
     if light_entity is None:
         return False
 
-    # The matrix transition settings of an earlier version (transitions removed).
+    # Retired settings: the matrix transitions of an earlier version, and a
+    # Cube Matrix's drawing animation speed (drawings are always still).
     remove_retired_entities(hass, "number", [
-        f"{light_entity.unique_id}_{key}" for key in ("transition_steps", "transition_duration")
+        f"{light_entity.unique_id}_{key}"
+        for key in ("transition_steps", "transition_duration", "drawing_animation_speed")
     ])
     async_add_entities([
         YeelightCubeGradientAngleNumber(light_entity, entry),
@@ -238,8 +237,8 @@ async def async_setup_entry(
             for spec in (*SETTING_NUMBERS, *PREVIEW_ADJUSTMENTS)
         ),
         *(
-            CubeSettingNumber(light_entity, entry, spec) for spec in MATRIX_NUMBERS
-            if light_entity.is_cube_matrix
+            CubeSettingNumber(light_entity, entry, spec) for spec in LITE_NUMBERS
+            if not light_entity.is_cube_matrix
         ),
     ])
     return True

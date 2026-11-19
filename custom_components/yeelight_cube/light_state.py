@@ -37,7 +37,7 @@ TOPICS = frozenset({
     # Built-in mode controls.
     "native_effect", "native_effect_direction", "native_effect_speed",
     "native_effect_intensity", "music_flow_effect", "power_on_state",
-    "matrix_power_on", "matrix_drawing_animation",
+    "matrix_power_on",
     # Sensors, events and Matter-dependent controls.
     "power", "power_cycle", "energy", "matter_link", "lamp_buttons",
     "lamp_button_event", "buttons_as_remote",
@@ -164,10 +164,6 @@ class LightStateMixin:
                 listeners.remove(listener)
 
         return remove
-
-    def has_listener(self, topic: str) -> bool:
-        """Whether a control listens to ``topic``."""
-        return bool(self._listeners.get(topic))
 
     def _notify(self, *topics: str, args: tuple = ()) -> None:
         """Tell every listener of each topic, in order (each with ``args``)."""

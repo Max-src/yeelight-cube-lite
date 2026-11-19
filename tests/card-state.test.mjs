@@ -284,6 +284,7 @@ test("Draw shows only its pending edit and accepts unrelated HA updates", () => 
     _loadBuiltinPixelArts: () => {}, // the official ones: not this test's
     _pixelArts: cardMethod("yeelight-cube-draw-card", "_pixelArts"),
     _hassInputs: cardMethod("yeelight-cube-draw-card", "_hassInputs", { previewOnly }),
+    _lampColorsKey: () => "",
     ...hooks,
   });
   const set = (hass) => {

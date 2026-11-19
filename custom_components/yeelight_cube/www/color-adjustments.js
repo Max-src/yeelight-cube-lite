@@ -63,8 +63,8 @@ function unitMod(x) {
   return rest < 0 ? rest + 1 : rest;
 }
 
-// colorsys.rgb_to_hsv / hsv_to_rgb.
-function rgbToHsv(r, g, b) {
+// colorsys.rgb_to_hsv / hsv_to_rgb (channels 0-1; the cards' one RGB to HSV).
+export function rgbToHsv(r, g, b) {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   if (min === max) return [0, 0, max];

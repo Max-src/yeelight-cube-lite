@@ -1027,7 +1027,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **(the lamp's name)** | Light | Main light entity, named after the lamp (on/off and brightness; RGB color in Matrix mode) |
 | **Content mode** | Select | Switch between Matrix, built-in Clock, Native Effect, and Music Flow |
 | **Matrix: Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
-| **Matrix: Display Text** | Text | Text shown by the Matrix text modes |
+| **Matrix: Display Text** | Text | Text shown by the Matrix text modes (at most 255 characters) |
 | **Matrix: Font** | Select | Basic, Fat, Italic, or Native (Basic with the built-in clock's digit shapes) |
 | **Matrix: Text Alignment** | Select | Text alignment: left, center, right |
 | **Matrix: Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
@@ -1078,9 +1078,11 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
 | **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
+| **Stream frame rate limit** | Number | Cube Lite only. The most new pictures a second for what the integration streams to it (effects it can't run itself, clocks, scrolling text), 1–25, default 5. Above 5 is smoother but a Cube Lite is more likely to stop answering; below 5 the last picture is still sent every 0.2 s. See [How streamed effects reach the lamps](docs/STREAMING.md) |
 | **Buttons: Right as Remote** | Switch | Off by default. Replaces the lamp's right-button playlist with tagged black entries (the original is written back when turned off): a press fires `right_button` and the integration's content comes back. Needs Matter settings; its `remote_status` attribute shows the actual state. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 | **Buttons: Left as Remote** | Switch | Off by default. Undoes microphone music started or changed by the left button (or an app): the integration's content comes back. Needs the Matter link. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 | **Buttons: Wake Lamp When Off** | Switch | On by default. With Right or Left as Remote, a press on a lamp that is off turns it on with its content. Off: presses only fire their events and the lamp stays dark ("off" then keeps it powered, black). See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
+| **Skip Unchanged Stream Frames** | Switch | Cube Lite. Off by default. A streamed frame that is the same as the last one is not sent, not even as the 0.2 s repeat: the Stream frame rate limit becomes a maximum, and still frames send nothing. Fewer frames, but each pause is like a stream ending, when a Cube Lite is more likely to stop answering |
 | **Keep Streaming When Off** | Switch | Cube Lite. Off by default. Turning off an effect or clock that Home Assistant streams (the lamp has no such effect itself, or a palette it cannot take) keeps the stream going with black frames until the lamp is turned on again, instead of powering it off; the effect then goes on where it was. A Cube Lite can stop answering, until it is unplugged, when a busy stream stops: this keeps it from ever going silent |
 
 #### Diagnostic

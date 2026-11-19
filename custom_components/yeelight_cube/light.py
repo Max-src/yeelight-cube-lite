@@ -211,11 +211,11 @@ class YeelightCubeLight(
     _attr_should_poll = False
 
     # Published for the cards but not stored in the recorder's history: large
-    # (the 100 matrix colors, the effect catalogue), frequently changing
-    # (rotation status), or configuration with no use as history (calibration).
+    # (the 100 matrix colors), frequently changing (rotation status), or
+    # configuration with no use as history.
     _unrecorded_attributes = frozenset({
         "matrix_colors",
-        "native_effect_catalog",
+        "native_effect_catalog_key",
         "favourites",
         "rotation_intervals",
         "effect_rotation",
@@ -223,10 +223,6 @@ class YeelightCubeLight(
         "external_display",
         "mount_profile",
         "button_effects",
-        "last_hardware_brightness",
-        "calib_gamma_r", "calib_gamma_g", "calib_gamma_b",
-        "calib_hw_threshold", "calib_hw_full", "calib_channel_balance",
-        "calib_gain_r", "calib_gain_g", "calib_gain_b",
     })
 
     @property

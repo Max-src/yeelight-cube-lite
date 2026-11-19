@@ -3,11 +3,9 @@ import {
   normalizeHex,
   createEmptyMatrix as _createEmptyMatrix,
 } from "./draw_utils.js";
-import { MATRIX_SIZE } from "./draw_card_const.js";
 import { updateRecentColors } from "./draw_card_state.js";
 // Saves the drawing and recent colors (batched, see draw_card_storage.js).
 import { StorageUtils } from "./draw_card_storage.js";
-import { hexToRgb } from "./color-utils.js";
 
 export class MatrixOperations1D {
   constructor(card) {
@@ -113,25 +111,6 @@ export class MatrixOperations1D {
 
     StorageUtils.saveMatrix(this.card.matrix);
 
-    this.card.requestUpdate();
-  }
-
-  // Fill all pixels with selected color
-  fillAll() {
-    if (this.card.selectedColor) {
-      this.pushMatrixHistory();
-      this.card.matrix = Array(MATRIX_SIZE).fill(this.card.selectedColor);
-
-      StorageUtils.saveMatrix(this.card.matrix);
-    }
-  }
-
-  // Toggle fill all mode
-  toggleFillAll() {
-    this.card.fillAllMode = !this.card.fillAllMode;
-    this.card.areaFillMode = false;
-    this.card.eraserMode = false;
-    this.card.previewFillArea = new Set();
     this.card.requestUpdate();
   }
 
@@ -241,40 +220,8 @@ export class MatrixOperations1D {
     StorageUtils.saveRecentColors(this.card.recentColors);
   }
 
-  // Get color count in matrix
-  getColorCount() {
-    if (!this.card.matrix) return 0;
-    const uniqueColors = new Set(this.card.matrix);
-    return uniqueColors.size;
-  }
-
-  // Check if matrix is valid
-  isValidMatrix(matrix) {
-    return Array.isArray(matrix) && matrix.length === MATRIX_SIZE;
-  }
-
   // Initialize empty matrix
   createEmptyMatrix() {
     return _createEmptyMatrix();
-  }
-
-  // Get pixel color at index
-  getPixelColor(idx) {
-    if (!this.card.matrix || idx < 0 || idx >= this.card.matrix.length) {
-      return "#000000";
-    }
-    return this.card.matrix[idx];
-  }
-
-  // Set pixel color at index without triggering updates (for bulk operations)
-  setPixelQuiet(idx, color) {
-    if (!this.card.matrix || idx < 0 || idx >= this.card.matrix.length) return;
-    this.card.matrix[idx] = color;
-  }
-
-  // Convert matrix to different formats for export/import
-  toRGBMatrix() {
-    if (!this.card.matrix) return [];
-    return this.card.matrix.map((hexColor) => hexToRgb(hexColor) ?? [0, 0, 0]);
   }
 }

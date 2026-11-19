@@ -453,24 +453,19 @@ class SecondRoundTests(unittest.TestCase):
         self.run(light.async_set_matrix_power_on("off"))
         self.assertEqual([("1/6/16387", 0)], writes)
         self.assertEqual("off", light._matrix_power_on)
+        # The Power-on behavior select hears of a change the lamp reports.
+        told = []
+        light.add_listener("matrix_power_on", lambda: told.append(light._matrix_power_on))
         light._on_matrix_report("start_up_on_off", 1, False)
         self.assertEqual("on", light._matrix_power_on)
+        light._on_matrix_report("start_up_on_off", 1, False)  # the same: nothing new
+        light._on_matrix_report("start_up_on_off", 0, True)   # read when linked
+        self.assertEqual(["on", "off"], told)
         light._matter = types.SimpleNamespace(linked=False, values={})
         with self.assertRaises(MATRIX_TESTS.MatrixSettingUnavailable):
             self.run(light.async_set_matrix_power_on("on"))
         recovery = (ROOT / "light_connection.py").read_text(encoding="utf-8")
         self.assertIn('self._matrix_power_on == "off"', recovery)
-
-    def test_a_drawing_s_animation_changes_live(self):
-        light = self.FakeLight()
-        light._matrix_shown = ("setEffect", EFFECTS.drawing_payload([(1, 2, 3)] * 100))
-        light.log.clear()
-        self.run(light.async_set_matrix_drawing_animation(2))   # scroll
-        sent = [entry[2:] for entry in light.log if isinstance(entry, tuple) and entry[0] == "matter"]
-        self.assertEqual(["setMixer", "setDirection", "setRate"], [name for name, _ in sent])
-        self.assertEqual({"mixer": 2}, sent[0][1])
-        with self.assertRaises(ValueError):
-            self.run(light.async_set_matrix_drawing_animation(6))   # no scrolling mixer 6
 
     def test_the_clock_shows_the_date_4_s_of_10(self):
         from datetime import datetime, timezone
@@ -636,8 +631,10 @@ class RestartTests(unittest.TestCase):
         self.assertGreater(LIGHT_MATRIX.MATRIX_RESTART_FALLBACK, 90)
 
     def test_without_a_restart_report_the_fallback_sends_it_again(self):
-        from test_cube_matrix_matter import MATRIX as LIGHT_MATRIX
         light = self.light()
+        # The module the method runs in (light_matrix_follow imports the
+        # constant): patching light_matrix's left the real 240 s wait.
+        follow = light.matrix_await_restart.__func__.__globals__
         drawn = []
 
         async def apply(update_type=None):
@@ -647,12 +644,12 @@ class RestartTests(unittest.TestCase):
         light._matrix_shown = ("setPresetsEffect", {})
         tasks = []
         light._create_tracked_task = lambda coro, name=None: tasks.append(coro)
-        real, LIGHT_MATRIX.MATRIX_RESTART_FALLBACK = LIGHT_MATRIX.MATRIX_RESTART_FALLBACK, 0
+        real, follow["MATRIX_RESTART_FALLBACK"] = follow["MATRIX_RESTART_FALLBACK"], 0
         try:
             light.matrix_await_restart()
             asyncio.run(tasks[0])
         finally:
-            LIGHT_MATRIX.MATRIX_RESTART_FALLBACK = real
+            follow["MATRIX_RESTART_FALLBACK"] = real
         self.assertEqual([("turn_on", None)], drawn)
 
     def test_the_health_check_leaves_it_to_the_report(self):
@@ -915,7 +912,7 @@ class RefreshTests(unittest.TestCase):
 
     def test_refresh_sends_it_in_full(self):
         light = (ROOT / "light_onoff.py").read_text(encoding="utf-8")
-        refresh = light[light.index("    async def _force_refresh_impl"):][:1400]
+        refresh = light[light.index("    async def _force_refresh_impl"):][:2400]
         self.assertLess(refresh.index("self._matrix_shown = None"), refresh.index("await self._apply_display_mode_internal()"))
 
 
@@ -997,6 +994,18 @@ class MatterStreamTests(unittest.TestCase):
         light._native_effect, light._native_effect_color_mode = "Rainbow", "white_orange"
         run(light._activate_matrix_content())
         self.assertTrue(light.matrix_streams_over_matter())
+
+    def test_a_frame_that_goes_resets_the_wait_before_matter_is_tried_again(self):
+        # The wait doubles with each retry; Matter working again (a stream
+        # frame, as a command) starts it from the first again.
+        from test_cube_matrix_matter import run
+        light = self.light()
+        light._matrix_retry_after = 4 * MATRIX_TESTS.MATTER_RETRY_FIRST
+        run(light._send_matrix_stream_frame([(1, 2, 3)] * 100))
+        self.assertEqual(MATRIX_TESTS.MATTER_RETRY_FIRST, light._matrix_retry_after)
+        light._matrix_retry_after = 4 * MATRIX_TESTS.MATTER_RETRY_FIRST
+        run(light._send_matrix_stream_frame([(4, 5, 6)] * 100))  # setData
+        self.assertEqual(MATRIX_TESTS.MATTER_RETRY_FIRST, light._matrix_retry_after)
 
     def test_the_brightness_goes_over_tcp_while_streaming_over_matter(self):
         # Sent over the LAN (Matter not delivering it), the brightness goes on

@@ -112,8 +112,14 @@ class OnOffMixin:
             # Sent again in full: unchanged, a Cube Matrix's effect or clock
             # would be an empty live change (light_matrix).
             self._matrix_shown = None
+        draws = getattr(self, "draws_over_matter", None)
         if self._mode in LAMP_MODES:
             self._lamp_client.close_fast_socket()
+        elif draws is not None and draws():
+            # A picture over Matter: its drawing sent again in full, never
+            # direct mode first (light_matrix).
+            self._matrix_shown = None
+            self._forget_hardware_brightness()
         else:
             # Its brightness is confirmed too (sent right after direct mode,
             # before any frame): something else may have changed it.
@@ -246,8 +252,10 @@ class OnOffMixin:
             return
         
         # Direct mode first (apply() then sends the brightness, if it differs,
-        # before the frames).
-        if not self._fx_mode_is_direct:
+        # before the frames); not for a picture drawn over Matter
+        # (light_matrix.draws_over_matter), which direct mode would replace.
+        draws = getattr(self, "draws_over_matter", None)
+        if not self._fx_mode_is_direct and not (draws is not None and draws()):
             _LOGGER.debug("[TURN_ON] Activating FX mode via raw TCP")
             await self.ensure_fx_ready()
         
@@ -367,7 +375,6 @@ class OnOffMixin:
         # In direct mode "off" is a black picture: the lamp's hardware
         # brightness is unchanged, so it is not sent again when it comes back
         # on (a set_bright after frames can bring an older picture back).
-        self._last_apply_time = 0  # Reset cooldown timer to ensure turn_on will work immediately
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         _LOGGER.debug("[TURN_OFF] Turn off complete")

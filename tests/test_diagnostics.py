@@ -62,7 +62,6 @@ def _lamp():
         "favourites": {"clock": [{"name": "Waves"}]},
         "last_command_error": {"message": f"Lamp {IP} refused it"},
         "matrix_colors": [(255, 0, 0), (0, 0, 0), (0, 9, 0)],
-        "native_effect_catalog": [{"name": "Rainbow"}],
     }
     return light_state(
         _lamp_client=lamp_client, _ip=IP, extra_state_attributes=attributes,
@@ -95,10 +94,9 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual((True, True, 128), (lamp["available"], lamp["is_on"], lamp["brightness"]))
         self.assertEqual("udp", lamp["connection"]["transport"])
         self.assertEqual("Custom Draw", lamp["state"]["mode"])
-        # The frame as its lit pixel count; the catalog left out.
+        # The frame as its lit pixel count.
         self.assertEqual(2, lamp["state"]["matrix_lit_pixels"])
         self.assertNotIn("matrix_colors", lamp["state"])
-        self.assertNotIn("native_effect_catalog", lamp["state"])
         # Style names are kept (only the lamp's own name is redacted).
         self.assertEqual("Waves", lamp["state"]["favourites"]["clock"][0]["name"])
         self.assertEqual({"palettes_v2": 1, "pixel_arts": 2, "clock_presets": 0},

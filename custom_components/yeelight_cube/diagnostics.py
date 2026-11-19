@@ -24,9 +24,8 @@ TO_REDACT = {CONF_IP, CONF_DEVICE_ID, CONF_MATTER_MAC, "ip_address", "custom_tex
 # The same in the lamp's capabilities (its own answer): its id and the name
 # set in the Yeelight app.
 CAPABILITIES_TO_REDACT = {"id", "name"}
-# Attributes left out: the frame (100 colors; its lit pixel count instead)
-# and the effect catalog (the same for every lamp).
-LEFT_OUT = {"matrix_colors", "native_effect_catalog"}
+# Attributes left out: the frame (100 colors; its lit pixel count instead).
+LEFT_OUT = {"matrix_colors"}
 # The shared collections: their sizes only.
 COLLECTIONS = ("palettes_v2", "pixel_arts", "clock_presets")
 

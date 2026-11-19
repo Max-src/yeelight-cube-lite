@@ -9,7 +9,7 @@ Mixed into ``YeelightCubeLight``; not usable on its own.
 import logging
 
 from .color_adjustments import ADJUSTMENT_DEFAULTS, active_adjustments
-from .lamp_power import estimated_power, limit_frame_power
+from .lamp_power import limited_frame
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -274,8 +274,7 @@ class ColorPipelineMixin:
         # Unknown hardware brightness (None):
         # assume full brightness, the worst case.
         hardware = self._last_hardware_brightness or 100
-        sent = limit_frame_power(frame, self._power_limit, hardware)
-        self._last_frame_power = estimated_power(sent, hardware)
+        sent, self._last_frame_power = limited_frame(frame, self._power_limit, hardware)
         return self.device_profile.to_wire(sent)
 
     def _apply_color_accuracy(self, rgb_color):

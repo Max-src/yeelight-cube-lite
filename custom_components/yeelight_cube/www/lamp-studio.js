@@ -35,7 +35,6 @@ import { LAMP_ANIMATIONS } from "./lamp-animations.js";
 
 export const STUDIO_FPS = 25;
 export const STUDIO_PALETTE_LIMIT = 32;
-export const MIN_HUE_SPAN = 64;
 const GREY_RATIO = 4;
 const HUE_FLOOR = 16;
 

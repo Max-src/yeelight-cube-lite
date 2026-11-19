@@ -2,15 +2,11 @@
 // preview / capsule templates (rendered by <yc-angle-view>), drag and keyboard
 // handling. Mixed into YeelightCubeGradientCard.
 import { ANGLE_NO_DRAG_SELECTOR } from "./gradient-card-utils.js";
-import {
-  createColorWheelSegments as _sharedCreateColorWheelSegments,
-  createWheelGradientStops as _sharedCreateWheelGradientStops,
-} from "./angle-wheel-utils.js";
+import { createWheelGradientStops as _sharedCreateWheelGradientStops } from "./angle-wheel-utils.js";
 import { LitElement, html, nothing, svg } from "./lib/lit-all.js";
 import { defineOnce } from "./card-registration.js";
 import { AngleStylesMixin } from "./gradient-angle-styles.js";
 import { updateCapsuleVisuals } from "./capsule-slider-utils.js";
-import { rgbToHex as _sharedRgbToHex } from "./color-utils.js";
 import {
   MATRIX_SIZE,
   deviceOrientation,
@@ -369,14 +365,6 @@ export const AngleControlMixin = (Base) => class extends AngleStylesMixin(Base) 
         ),
       );
     }, 800);
-  }
-
-  _rgbToHex(rgb) {
-    return _sharedRgbToHex(rgb);
-  }
-
-  _createColorWheelSegments(colors, radius) {
-    return _sharedCreateColorWheelSegments(colors, radius);
   }
 
   _createWheelGradientStops(colors) {

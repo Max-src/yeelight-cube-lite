@@ -20,9 +20,6 @@
             "native_effect_speed": {
                 "default": "mdi:speedometer"
             },
-            "drawing_animation_speed": {
-                "default": "mdi:speedometer-medium"
-            },
             "native_effect_intensity": {
                 "default": "mdi:tune-vertical"
             },
@@ -31,6 +28,9 @@
             },
             "power_limit": {
                 "default": "mdi:flash-alert-outline"
+            },
+            "stream_fps_limit": {
+                "default": "mdi:speedometer"
             },
             "hue_shift": {
                 "default": "mdi:palette-outline"
@@ -72,9 +72,6 @@
             },
             "power_on_state": {
                 "default": "mdi:power-settings"
-            },
-            "drawing_animation": {
-                "default": "mdi:animation-play"
             },
             "text_alignment": {
                 "default": "mdi:format-align-center"
@@ -181,6 +178,9 @@
             },
             "keep_streaming_when_off": {
                 "default": "mdi:play-circle-outline"
+            },
+            "skip_unchanged_frames": {
+                "default": "mdi:skip-next-circle-outline"
             },
             "buttons_as_remote": {
                 "default": "mdi:remote",

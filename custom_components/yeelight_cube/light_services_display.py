@@ -24,6 +24,7 @@ from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
 from .input_error import InputError
 from .layout import FONT_MAPS
 from .light import _entity_id_or_list
+from .light_display import MAX_TEXT_LENGTH
 from .light_services_common import (
     COLOR_LIST_SCHEMA,
     _resolve_entity,
@@ -207,7 +208,9 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         "set_custom_text",
         handle_set_custom_text,
         schema=vol.Schema({
-            vol.Required("text", description="Text to display on the cube matrix"): cv.string,
+            vol.Required("text", description="Text to display on the cube matrix"): vol.All(
+                cv.string, vol.Length(max=MAX_TEXT_LENGTH)
+            ),
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
@@ -414,7 +417,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         """Set color adjustment values for the lamp (all effects). Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "SET_PREVIEW_ADJUSTMENTS")
 
-        # Extract raw data once (defaults are per-entity, applied inside _apply_one)
+        # Only the adjustments given change; the others stay as each lamp has them.
         data = service_call.data
 
         async def _apply_one(target_entity):
@@ -427,16 +430,16 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         "set_preview_adjustments",
         handle_set_preview_adjustments,
         schema=vol.Schema({
-            vol.Optional("saturation", default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
-            vol.Optional("hue_shift", default=0): vol.All(vol.Coerce(int), vol.Range(min=-180, max=180)),
-            vol.Optional("contrast", default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
-            vol.Optional("temperature", default=0): vol.All(vol.Coerce(int), vol.Range(min=-100, max=100)),
-            vol.Optional("vibrance", default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
-            vol.Optional("grayscale", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-            vol.Optional("invert", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-            vol.Optional("glow", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-            vol.Optional("tint_hue", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=360)),
-            vol.Optional("tint_strength", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional("saturation"): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
+            vol.Optional("hue_shift"): vol.All(vol.Coerce(int), vol.Range(min=-180, max=180)),
+            vol.Optional("contrast"): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
+            vol.Optional("temperature"): vol.All(vol.Coerce(int), vol.Range(min=-100, max=100)),
+            vol.Optional("vibrance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
+            vol.Optional("grayscale"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional("invert"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional("glow"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional("tint_hue"): vol.All(vol.Coerce(int), vol.Range(min=0, max=360)),
+            vol.Optional("tint_strength"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
             vol.Required("entity_id"): _entity_id_or_list,
         })
     )

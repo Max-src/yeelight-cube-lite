@@ -255,14 +255,6 @@ export function normalizeClockAppearance(config) {
   return normalizePreviewAppearance(config, "clock");
 }
 
-export function clockSectionAppearance(config, section) {
-  const normalized = normalizeClockAppearance(config);
-  return {
-    ...normalized.preview_appearance,
-    ...normalized.preview_overrides[section],
-  };
-}
-
 export function resolveClockAppearance(config) {
   return resolvePreviewAppearance(config, "clock");
 }

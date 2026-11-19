@@ -20,6 +20,10 @@ import { normalizeCardOptions } from "./card-config.js";
 import "./clock-preset-manager.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
+  nativeEffectCatalog,
+  withNativeEffectCatalog,
+} from "./native-effect-catalog.js";
+import {
   sharedRotationInterval,
   saveEditorRotationInterval,
 } from "./shared-lamp-settings.js";
@@ -78,7 +82,13 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
     if (!this._config) return "";
     const config = this._config;
     const targets = getTargetEntities(config);
-    const attrs = this.hass?.states[targets[0]]?.attributes || {};
+    // The lamp's catalogue (native-effect-catalog.js: the editor renders
+    // again when it arrives).
+    const attrs =
+      withNativeEffectCatalog(
+        this.hass?.states[targets[0]]?.attributes,
+        nativeEffectCatalog(this.hass, targets[0], this),
+      ) || {};
     const effects = nativeEffectItems(attrs, {
       ...config,
       visible_effects: undefined,

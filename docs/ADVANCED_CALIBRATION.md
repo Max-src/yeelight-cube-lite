@@ -13,8 +13,7 @@ lamp without restarting Home Assistant. Changes are applied immediately but are
 **not persisted** — once you find values you like, copy them into the code
 defaults in [`light_color.py`](../custom_components/yeelight_cube/light_color.py) so they survive a restart.
 
-All current values are also published on the light entity as
-`calib_*` attributes, so you can read back the live state.
+Each call logs the values it changes (old -> new) at the info level.
 
 ---
 
@@ -94,8 +93,8 @@ brightness 1, so it never fights System 1 at the dim end.
    parameters. Changes apply immediately and re-render the current frame, so you
    can watch the lamp while you dial values in. Only the keys you pass are
    updated; everything else keeps its current value.
-2. Read the live state back from the light entity's `calib_*` attributes to
-   confirm what is currently applied.
+2. Check the log (`[CALIBRATION] ... Updated: key: old -> new`) to confirm
+   what is currently applied.
 3. When satisfied, paste the numbers into the corresponding constants/defaults
    in [`light_color.py`](../custom_components/yeelight_cube/light_color.py) so they survive a restart:
    - System 1 → `self._calib_gamma_*`, `_calib_hw_*`, `_calib_channel_balance`

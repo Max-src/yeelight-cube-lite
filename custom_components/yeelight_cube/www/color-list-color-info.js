@@ -1,26 +1,13 @@
-// Color information helpers of the color list editor card: hex/RGB
-// conversion, the color labels (the shared swatches' names) and contrasting
-// text.
+// Color information helpers of the color list editor card: the color labels
+// (the shared swatches' names) and contrasting text.
 // Mixed into YeelightCubeColorListEditorCard.
-import { contrastInk, hexToRgb, rgbToCss, rgbToHex } from "./color-utils.js";
-import { closestColorName, colorLabel } from "./swatch-utils.js";
+import { contrastInk, rgbToCss } from "./color-utils.js";
+import { colorLabel } from "./swatch-utils.js";
 
 export const ColorInfoMixin = (Base) => class extends Base {
   // ----- Color helpers -----------------------------------------------
 
-  rgbToHex(rgb) {
-    return rgbToHex(rgb);
-  }
-
-  hexToRgb(hex) {
-    return hexToRgb(hex);
-  }
-
-  // The shared color names and labels (swatch-utils.js).
-  getClosestCssColorName(rgb) {
-    return closestColorName(rgb);
-  }
-
+  // The shared color labels (swatch-utils.js).
   formatColorInfo(color, displayMode) {
     return colorLabel(color, displayMode);
   }

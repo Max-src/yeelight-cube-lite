@@ -62,24 +62,29 @@ _MATRIX_MUSIC_ONLY = frozenset({"update_leds", "activate_fx_mode"})
 FRAME_SETTLE_DELAY = 0.3
 # A Cube Lite saves its state about 0.8 s after its last command (a debounce
 # that every command restarts). During a stream of frames that save hangs the
-# lamp for good, until a power cycle, about once in 6 pauses (lab, 2026-11-13:
+# lamp for good, until a power cycle, about once in 6 pauses (tests, 2026-11-13:
 # 45 s streams with 3 s silent pauses hung both lamps 4 times in 22 pauses;
 # with the last frame sent again every 0.4 s through the same pauses, never in
 # 22; continuous streams never in hours). So while frames keep coming
 # (the previous one less than STREAM_HOLD before), the last frame is sent
-# again every STREAM_KEEP_BUSY: a stream stays a steady 25 frames a second
-# (the owner's rule), a still moment or a slow producer (the text scroll's
-# steps) included. A single frame (a picture, the clock) gets no repeats:
+# again after STREAM_KEEP_BUSY without a new one (a new frame cancels it), a
+# still moment or a slow producer (the text scroll's steps) included: never
+# closer than that to the frame before. 0.25 s, not every 40 ms: frames 40 ms
+# apart left a lamp stuck about once in 5 stream ends, 200 ms apart never in
+# 50 (2026-11-17; light_studio.LITE_LAN_GAP). Under 0.3 s: after 300 ms
+# without a frame the lamp's network part sends again, in one block, every
+# frame its LED part has not confirmed. Over 0.2 s: the text scroll's default
+# step (0.2 s) is never doubled by a re-send. A single frame (a picture, the clock) gets no repeats:
 # the save after it is the lamp's usual one. Not a Cube Matrix (its music
 # connection).
-STREAM_KEEP_BUSY = 0.04
+STREAM_KEEP_BUSY = 0.25
 STREAM_HOLD = 3.0
 # While a producer of frames says it runs (stream_running: the effect and
 # clock stream, the text scroll), every pause in its frames is kept busy the
 # same way, however long (a slow render, the scroll's pause at each end, a
 # stalled renderer), up to STREAM_STALL_LIMIT without a new frame: then the
 # re-sends stop and the stall is logged (re-sending through a long stall did
-# not keep the lamps from hanging in the lab, 2026-11-14, and would hide it).
+# not keep the lamps from hanging in tests, 2026-11-14, and would hide it).
 STREAM_STALL_LIMIT = 60.0
 # Commands that leave the picture as it is (the re-send still applies) and
 # direct mode on: any other may end it, so a new UDP session is no longer
@@ -93,13 +98,6 @@ _DIRECT_MODE = [{"mode": "direct"}]
 
 class UdpChannelMixin:
     """LampClient's fast channel (lamp_client.py)."""
-
-    def end_direct_mode(self) -> None:
-        """The lamp left direct mode for something else (a Cube Lite's
-        stream drawn over Matter, light_matrix): no new UDP session is put
-        back in it, and no frame is sent again."""
-        self._cancel_frame_settle()
-        self._udp.session_setup = []
 
     def close_music_session(self) -> bool:
         """End a Cube Matrix's music-mode connection (music_channel), and with
@@ -145,23 +143,28 @@ class UdpChannelMixin:
             wait = UDP_RECOVERY_PING
             if self._udp_retry_at <= time.monotonic():
                 return  # tried again meanwhile (the lamp came back online)
-            if isinstance(self._udp, MusicChannel) and time.monotonic() - last_check >= MUSIC_LAN_CHECK:
-                # A Cube Matrix that does not connect back may be blocked by
-                # the network, or its LAN may be stuck: it accepts every
-                # connection and closes it at once (seen 2026-11-11 and 12,
-                # Matter still working; only a power cycle fixed it). A
-                # command over TCP tells them apart (silent_for: issues.py).
-                last_check = time.monotonic()
-                if not await self.probe(answering=True) and self.silent_for and not self._lan_stuck_logged:
-                    self._lan_stuck_logged = True
-                    _LOGGER.warning(
-                        "[HEALTH] [%s] The Cube Matrix accepts connections but answers no "
-                        "command over the LAN (its effects over Matter still work): its "
-                        "network part is stuck and needs a power cycle", self._ip,
-                    )
-                elif not self.silent_for:
-                    self._lan_stuck_logged = False
-            if await self._udp.ping():
+            try:
+                if isinstance(self._udp, MusicChannel) and time.monotonic() - last_check >= MUSIC_LAN_CHECK:
+                    # A Cube Matrix that does not connect back may be blocked by
+                    # the network, or its LAN may be stuck: it accepts every
+                    # connection and closes it at once (seen 2026-11-11 and 12,
+                    # Matter still working; only a power cycle fixed it). A
+                    # command over TCP tells them apart (silent_for: issues.py).
+                    last_check = time.monotonic()
+                    if not await self.probe(answering=True) and self.silent_for and not self._lan_stuck_logged:
+                        self._lan_stuck_logged = True
+                        _LOGGER.warning(
+                            "[HEALTH] [%s] The Cube Matrix accepts connections but answers no "
+                            "command over the LAN (its effects over Matter still work): its "
+                            "network part is stuck and needs a power cycle", self._ip,
+                        )
+                    elif not self.silent_for:
+                        self._lan_stuck_logged = False
+                answered = await self._udp.ping()
+            except Exception as err:  # noqa: BLE001 -- the recovery goes on at the next ping
+                _LOGGER.debug("[UDP] [%s] UDP recovery check failed: %s", self._ip, err)
+                continue
+            if answered:
                 _LOGGER.info("[UDP] [%s] The lamp answers over UDP again", self._ip)
                 self._udp_retry_at = 0.0
                 self._udp_failing_since = 0.0
@@ -242,6 +245,17 @@ class UdpChannelMixin:
         self._last_frame_at = now
         self._stall_logged = False
 
+        async def resend() -> None:
+            """The frame again. UdpUnavailable ends the re-sends (the next
+            command finds out and falls back); anything else is logged and
+            the re-sends go on."""
+            try:
+                await self._udp.request("update_leds", params)
+            except UdpUnavailable:
+                raise
+            except Exception as err:  # noqa: BLE001 -- a re-send never stops the stream
+                _LOGGER.debug("[UDP] [%s] A frame could not be sent again: %s", self._ip, err)
+
         async def _settle():
             try:
                 # Mid-stream the next frame's moment; a lone frame's re-send
@@ -249,7 +263,7 @@ class UdpChannelMixin:
                 await asyncio.sleep(STREAM_KEEP_BUSY if streaming else FRAME_SETTLE_DELAY)
                 if not self._udp_usable():
                     return  # UDP failed meanwhile: TCP took over
-                await self._udp.request("update_leds", params)
+                await resend()
                 trace_frame(self._ip, "re-sent frame", params[0])
                 while streaming:
                     await asyncio.sleep(STREAM_KEEP_BUSY)
@@ -267,7 +281,7 @@ class UdpChannelMixin:
                         break
                     if not self._udp_usable():
                         return
-                    await self._udp.request("update_leds", params)
+                    await resend()
             except UdpUnavailable:
                 pass  # the next command finds out and falls back
             finally:

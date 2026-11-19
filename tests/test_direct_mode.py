@@ -118,7 +118,7 @@ class TurnOffTests(unittest.IsolatedAsyncioTestCase):
         lamp = light_state(
             _mode=mode, _music_flow_enabled=music, remote_keeps_lamp_powered=keep_powered,
             _is_on=True, hass=None, _music_flow_restore_power=None,
-            _last_hardware_brightness=100, _last_apply_time=1,
+            _last_hardware_brightness=100,
             _lamp_client=types.SimpleNamespace(
                 close_fast_socket=lambda: None, send_raw_command=record("raw"),
             ),

@@ -2,7 +2,7 @@
 // rows, grid, cards) and the per-color controls. Mixed into
 // YeelightCubeColorListEditorCard.
 import { html, nothing } from "./lib/lit-all.js";
-import { rgbToCss } from "./color-utils.js";
+import { rgbToCss, rgbToHex } from "./color-utils.js";
 
 export const ColorListLayoutsMixin = (Base) => class extends Base {
   _renderItems(textColors, options) {
@@ -68,7 +68,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
     const display = this.config.color_info_display || "hex";
     return textColors.map((color, idx) => {
       if (!(Array.isArray(color) && color.length === 3)) return "";
-      const hex = this.rgbToHex(color);
+      const hex = rgbToHex(color);
       return html`<div
         class="compact-item"
         data-idx=${idx}
@@ -108,7 +108,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
     return html`<div class="chips-container">
       ${textColors.map((color, idx) => {
         if (!(Array.isArray(color) && color.length === 3)) return "";
-        const hex = this.rgbToHex(color);
+        const hex = rgbToHex(color);
         const contrast = this.getContrastTextColor(color);
         const shade = contrast === "#ffffff" ? "255,255,255" : "0,0,0";
         return html`<div
@@ -153,7 +153,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
     const display = this.config.color_info_display || "name";
     return textColors.map((color, idx) => {
       if (!(Array.isArray(color) && color.length === 3)) return "";
-      const hex = this.rgbToHex(color);
+      const hex = rgbToHex(color);
       return html`<div
         class="tile-item"
         data-idx=${idx}
@@ -191,7 +191,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
     const display = this.config.color_info_display || "name";
     return textColors.map((color, idx) => {
       if (!(Array.isArray(color) && color.length === 3)) return "";
-      const hex = this.rgbToHex(color);
+      const hex = rgbToHex(color);
       const contrast = this.getContrastTextColor(color);
       const shade = contrast === "#ffffff" ? "255,255,255" : "0,0,0";
       return html`<div
@@ -242,7 +242,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
     const display = this.config.color_info_display || "hex";
     return textColors.map((color, idx) => {
       if (!(Array.isArray(color) && color.length === 3)) return "";
-      const hex = this.rgbToHex(color);
+      const hex = rgbToHex(color);
       const info = this.formatColorInfo(color, display);
       return html`<div
         class="color-grid-item"
@@ -379,7 +379,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
   }
 
   _renderCard(color, idx, options, layout) {
-    const hex = this.rgbToHex(color);
+    const hex = rgbToHex(color);
     const cssColor = rgbToCss(color);
     return html`<div
       class=${layout.wrapperClass || "card-wrapper"}

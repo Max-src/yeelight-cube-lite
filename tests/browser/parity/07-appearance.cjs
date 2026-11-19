@@ -784,7 +784,8 @@ module.exports = async (t) => {
             content = card._matrix({ name: "Rainbow" }, true);
           if (profile === "lamp")
             content = html`${unsafeHTML(
-              card._getStyles() +
+              // The card's stylesheet (lamp-preview-styles.js).
+              `<style>${card.constructor.styles.cssText}</style>` +
                 card._generateMatrixHtml(pixels, {
                   attributes: { device_orientation: "right" },
                 }),

@@ -265,6 +265,9 @@ class FireworksLampTests(unittest.TestCase):
             f"const m = await import({json.dumps(module)});"
             f"const f = await import({json.dumps(renderers)});"
             "const out = [];"
+            # One requestAnimationFrame for every loop of the page: each run
+            # stops its loop, so the next starts the ticker again.
+            "globalThis.cancelAnimationFrame = () => {};"
             "for (const hz of [60, 120, 144]) for (let start = 0; start < 40; start += 3) {"
             " let callback = null; globalThis.requestAnimationFrame = (c) => { callback = c; return 1; };"
             " const shown = []; let due = 0;"
@@ -274,6 +277,7 @@ class FireworksLampTests(unittest.TestCase):
             " loop.start();"
             " for (let i = 1; i <= hz * 10; i += 1) callback(i * 1000 / hz);"
             " const jumps = shown.slice(1).map((v, i) => v - shown[i]);"
+            " loop.stop();"
             " out.push({ hz, start, most: Math.max(...jumps), due });"
             "}"
             "let callback = null; globalThis.requestAnimationFrame = (c) => { callback = c; return 1; };"

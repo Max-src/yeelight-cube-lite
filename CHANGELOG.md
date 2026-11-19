@@ -6,13 +6,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **Cube Lite effects stream over Matter.** A Cube Lite shared to Home
-  Assistant's Matter server (matterjs-server 1.5.4 or later) gets its
-  streamed effects and clocks (the Palette color mode, Knight Rider, Lava
-  Lamp, Falling Blocks) as its drawing over Matter, each frame acknowledged
-  before the next, like the Cube Matrix: filmed at 25 frames a second with no
-  older picture flashing back. The same frames as over the LAN, which stays
-  the fallback when Matter is not available. See docs/STREAMING.md.
+- **Steady streamed effects on a Cube Lite.** An effect or clock a Cube Lite
+  can't run itself is streamed over the LAN in direct mode, paced by its
+  Stream frame rate limit (default 5 new pictures a second), with only the
+  frames it needs when Skip Unchanged Stream Frames is on. A Cube Matrix is
+  streamed as its drawing over Matter. See docs/STREAMING.md.
 - **Previews show exactly what a streamed lamp shows.** While an effect or
   clock is streamed, the preview cameras and the Lamp Preview card show the
   frames the lamp was sent, not their own drawing of the effect (which
@@ -24,6 +22,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (about a minute at most); the lamp then restarts by itself and its content
   is drawn again. Up to 3 tries, 10 minutes apart; when none is answered,
   the Power cycle sensor and its Repair stay as they are.
+- **Stream frame rate limit** (a number on each Cube Lite, 1-25, default 5):
+  the most new pictures a second for what Home Assistant streams to it. Above
+  5 is smoother, with more risk of the lamp stopping to answer; below 5 the
+  last picture is still sent every 0.2 s.
+- **Skip Unchanged Stream Frames** switch (Cube Lite, off by default): a
+  streamed frame the same as the last one is not sent, not even as the 0.2 s
+  repeat, so the frame rate limit becomes a maximum. The lamp is then left
+  without frames while the picture holds still, when a Cube Lite is more
+  likely to stop answering.
 - **Keep Streaming When Off** switch (Cube Lite, off by default): turning
   off a streamed effect or clock keeps the stream going with black frames
   until the lamp is turned on again, where the effect goes on; the lamp is
@@ -83,11 +90,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   the same frames. Speed, direction, intensity, Lamp mounted, favourites,
   rotation and Freeze work as for any effect; over TCP the lamp holds its
   last frame until UDP answers again.
-- **Cube Matrix settings** (with Matter): **Power-on behavior** (Always on /
+- **Cube Matrix setting** (with Matter): **Power-on behavior** (Always on /
   Always off: the lamp's Matter `StartUpOnOff`; set to off, the lamp is not
-  switched back on after a power cut) and **Drawing animation** (Static,
-  Scroll, Breathe, Flash, Reveal) with its speed: the lamp animates the
-  text or picture it shows itself.
+  switched back on after a power cut).
 - **Three effects from the Cube Matrix**, on both lamps, with a clock style
   over each: **Northern Lights** (the Cube Matrix's Aurora, in the aurora's
   own colours where Aurora is green), **Rose Sea** (its Flower Sea: red to
@@ -140,12 +145,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   can be recovered by an automation that switches the plug off and on.
 
 ### Changed
-- **Streams to a Cube Lite are a steady 25 frames a second:** every frame is
-  sent, the same as the last one or not (only the changed ones were before, so
-  a still moment was a pause), and while anything streams (an effect, a clock,
-  scrolling text) the last frame is sent again 25 times a second between new
-  ones. The lamp's hang was tied to its traffic stopping and starting, never to
-  a steady stream.
+- **Long text scrolls on a Cube Matrix too**, as its drawing over Matter.
+- **Streams to a Cube Lite are paced:** a frame when the picture changes,
+  never closer than 0.2 s to the last one, and the last one again 0.2 s after
+  it without a change (direct mode is never left silent, and never quiet for
+  the 300 ms after which a Cube Lite sends its unconfirmed frames again in
+  one block: an old picture for a moment, and a stuck lamp when there are
+  several). Measured on two Cube
+  Lites, streams that stopped abruptly: frames 40 ms apart left a lamp stuck
+  about 1 time in 5, 200 ms apart 0 times in 50. Over Matter (tried first),
+  every frame dimmed a Cube Lite for a moment: Lava Lamp's background blinked
+  and Knight Rider and Falling Blocks stuttered.
 - **Cube Matrix modules:** a lamp with other modules than 4 Matrix ones (set in the
   Yeelight app's module splicing) is drawn for them. A **Spot** module (one bright
   light) now shows the blend of the picture on either side of it (it was always
@@ -161,6 +171,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   already on a dashboard keep their settings.
 - The Native Effects card shows its **Color Modes & Controls** by default;
   turn **Show Color Modes** off in its editor to hide them.
+- **Quieter logs:** the stream diagnostics are at debug level; a failed
+  frame is warned about once per outage (and its recovery once), a frame the
+  lamp refuses once per episode.
+- **The native effect list is no longer a light attribute** (about 12 KB on
+  every state): the cards fetch it once per change. The light publishes
+  `native_effect_catalog_key` instead. The `calib_*`,
+  `color_accuracy_enabled` and `last_hardware_brightness` attributes are
+  gone too (the calibration services are unchanged).
+- **A scrolling text writes far less history:** the light's state, the
+  preview cameras and the power sensors are updated at most once a second
+  while it scrolls (about 5 writes per step before), the last step always.
+  The Lamp Preview card still follows every step.
+- **Lighter cards:** the Palette, Gradient and Draw cards load about 40%
+  less code; animated previews share one animation loop per page and stop
+  while scrolled off screen; the Draw and Gradient cards no longer redraw at
+  every step of a scrolling text.
+- **While a stuck Cube Lite is being brought back over the LAN,** commands
+  and actions fail at once instead of waiting about a minute.
 - **Log names:** the lamp connection's messages now come from
   `custom_components.yeelight_cube.lamp_client` and its `lamp_client_*`
   parts (was `…yeelight_cube.cube_matrix`), and some of the light's from new
@@ -169,6 +197,41 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `…lamp_client` instead.
 
 ### Fixed
+- **A lamp turned off stays off after a Home Assistant restart**, also when
+  it was unreachable at the restart; its brightness is kept for when it is
+  turned on.
+- **Display text up to 255 characters:** `set_custom_text` and the Display
+  Text control share this limit; a longer text is refused instead of
+  breaking the text entity (and a saved one is shortened).
+- **`set_preview_adjustments` changes only the adjustments given**; the
+  others were set back to their defaults.
+- **Kept across a restart or reload:** the Stream frame rate limit, Full
+  panel, and an effect intensity of 0. A malformed saved setting no longer
+  stops the light from loading.
+- **Font and Alignment show the new choice at once,** also when the lamp
+  cannot be redrawn.
+- **The stream's check of a Cube Lite no longer pauses its frames** for
+  seconds while it asks the lamp over TCP or Matter, and the 10 s health
+  check no longer pings a lamp that is streaming.
+- **A stream that stops on an error while off on standby** (Keep Streaming
+  When Off) comes back, black, and goes on where the effect was.
+- **The Cube Matrix's Power-on behavior select follows the lamp** when it is
+  changed in the Yeelight app, and its retry delay for Matter resets once
+  Matter frames work again.
+- **Camera previews no longer fail (403) during a fast scroll,** and a lamp
+  whose unload fails keeps working.
+- **Cards:** after a cancelled touch on a slider the page scrolls again and
+  the next swipe no longer changes the brightness; the Clock card's previews
+  no longer stay frozen after switching views; the Gradient card's previews
+  and the Palette card follow the card's main lamp; a failed official pixel
+  art request is retried after 30 s, not at every update.
+- **A Cube Lite that stops answering during a stream is asked over Matter
+  too:** the log says whether its LED part is stuck (a power cycle) or its
+  network part restarts.
+- **A frame over Matter no longer holds the lamp for half a minute.** Each
+  waits at most 2 s (5 s to start the drawing): a lamp whose network part
+  restarted mid-stream kept one frame waiting 38 s, and every other command
+  to it behind.
 - **A Cube Matrix showing everything over Matter is no longer told to be
   power cycled.** Its LAN can stop answering while Matter keeps working; the
   Power cycle sensor was then on although the lamp showed its effects without

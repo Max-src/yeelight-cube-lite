@@ -363,18 +363,10 @@ def char_advance(font: str, letter: str, glyph_positions: List[int]) -> int:
 
 
 class Layout:
-    def __init__(self, layout_orientation: str, base: str, device_layout: List[Any] | None = None):
-        self.layout_orientation = layout_orientation
-        self.base = base
-        device_layout = [] if device_layout is None else device_layout
-        self.device_layout = device_layout
-        self.number_modules = len(device_layout)
-        self.image_draw_flipped = False
-        self.rotation_degrees = self.get_rotation_degrees()
+    """The frame's modules, one per pixel (device_layout)."""
 
-    def get_rotation_degrees(self) -> int:
-        if self.layout_orientation == "vertical":return 180 if self.base == "bottom" else 0
-        return 270 if self.base == "left" else 90
+    def __init__(self, device_layout: List[Any] | None = None):
+        self.device_layout = [] if device_layout is None else device_layout
 
 
 class Module:

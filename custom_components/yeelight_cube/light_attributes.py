@@ -2,13 +2,15 @@
 
 Owns AttributesMixin: the light entity's properties (is_on, brightness,
 rgb_color, color modes, available, the text colours and text, the content
-mode), the state attributes the cards read (extra_state_attributes, with
-the native effect catalogue the cards list, _native_effect_catalog, and the
-matrix colours, _published_matrix_colors), the settings saved apart for a
-restart (extra_restore_state_data, _last_settings) and the layout colour
-helpers.
+mode), the state attributes the cards read (extra_state_attributes: the settings
+declared in light_restore.SETTINGS, the key of the native effect catalogue
+the cards fetch, native_effect_catalog, and the matrix colours,
+_published_matrix_colors), the settings saved apart for a restart
+(extra_restore_state_data, _last_settings) and the layout colour helpers.
 Used only as a mixin of :class:`YeelightCubeLight` (light.py).
 """
+import hashlib
+import json
 import logging
 import functools
 from types import SimpleNamespace
@@ -21,7 +23,7 @@ from .effect_catalog import (
     effect_family,
 )
 from .color_utils import hex_to_rgb, rgb_to_hex
-from .light_restore import SavedSettings
+from .light_restore import SavedSettings, published_settings
 from .matrix_effects import OWN_VERSIONS as MATRIX_OWN_VERSIONS, SPEEDLESS_MODES
 from .lamp_renderers import LAMP_MUSIC_EFFECTS
 
@@ -29,11 +31,21 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @functools.lru_cache(maxsize=16)
+def native_effect_catalog_key(*args) -> str:
+    """A short key of _native_effect_catalog(*args): it changes whenever
+    the catalogue does (the light publishes it, native_effect_catalog_key;
+    the cards fetch the catalogue again when it changes)."""
+    listed = json.dumps(_native_effect_catalog(*args), sort_keys=True)
+    return hashlib.sha1(listed.encode("utf-8")).hexdigest()[:12]
+
+
+@functools.lru_cache(maxsize=16)
 def _native_effect_catalog(
     playing: str | None, animations: bool = False, hearing: bool = True, matrix: bool = False,
 ) -> list:
-    """The native effects the cards list (11 KB): built once per
-    combination instead of on every state write. Shared, never modified.
+    """The native effects the cards list (11 KB; the websocket command
+    yeelight_cube/native_effect_catalog, native_catalog_ws): built once per
+    combination. Shared, never modified.
     Every effect is listed; ``extended`` only marks those the Yeelight app
     does not offer (the cards' badge; its music modes are offered). ``animations``: whether the animations
     to upload (LAMP_ANIMATION_EFFECTS) are offered, while a server delivers
@@ -125,16 +137,25 @@ class AttributesMixin:
         Home Assistant then saves its state without attributes, so they would
         be lost (2026-11-14: both Cube Lites came back on Ribbon in default
         colours after a restart while they were stuck)."""
-        return SavedSettings({**self.extra_state_attributes, "brightness": self._brightness})
+        return SavedSettings({
+            **self.extra_state_attributes, "brightness": self._brightness, "is_on": self._is_on,
+        })
 
     async def _last_settings(self):
         """The last state to restore the settings from: the saved state, or
         the settings saved apart (extra_restore_state_data) when it has none."""
         old_state = await self.async_get_last_state()
-        if old_state is not None and "mode" in old_state.attributes:
-            return old_state
         extra = await self.async_get_last_extra_data()
         saved = extra.as_dict() if extra is not None else None
+        if old_state is not None and "mode" in old_state.attributes:
+            # A light that is off publishes no brightness: the one saved
+            # apart, for when it is turned on.
+            if old_state.attributes.get("brightness") is None and isinstance(saved, dict) \
+                    and saved.get("brightness") is not None:
+                return SimpleNamespace(state=old_state.state, attributes={
+                    **old_state.attributes, "brightness": saved["brightness"],
+                })
+            return old_state
         if not isinstance(saved, dict) or "mode" not in saved:
             return old_state
         _LOGGER.info("[RESTORE] [%s] The lamp was unreachable at the restart: its saved settings are restored", self._ip)
@@ -182,24 +203,11 @@ class AttributesMixin:
             # note_command_result); the cards name it.
             "last_command_error": self._last_command_error,
             "text_colors": self._text_colors,
-            "custom_text": self._custom_text,
             "clock_style": NATIVE_CLOCK_STYLES.get(
                 self._native_clock_style,
                 NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
             )["name"],
-            "clock_style_id": self._native_clock_style,
-            "clock_show_date": self._native_clock_show_date,
             "clock_content": self._native_clock_content,
-            "clock_12_hour": self._native_clock_12_hour,
-            "clock_colon_blink": self._native_clock_colon_blink,
-            "clock_color": self._native_clock_color,
-            "clock_color_mode": self._native_clock_color_mode,
-            "native_effect": self._native_effect,
-            "native_effect_speed": self._native_effect_speed,
-            "native_effect_intensity": self._native_effect_intensity,
-            "native_effect_color_mode": self._native_effect_color_mode,
-            "native_effect_color": self._native_effect_color,
-            "native_effect_direction": self._native_effect_direction,
             "effect_direction_own": True,
             # A Cube Matrix: the effects it draws its own way (matrix_effects).
             **({"matrix_own_versions": dict(MATRIX_OWN_VERSIONS)} if self.is_cube_matrix else {}),
@@ -211,29 +219,11 @@ class AttributesMixin:
             **({"matrix_modules": self.device_profile.layout,
                 "matrix_module_list": self.device_profile.module_names,
                 "matrix_columns": self.device_profile.columns} if self.is_cube_matrix else {}),
-            "native_effect_catalog": _native_effect_catalog(
-                # An animation, or a hidden effect, still listed while it plays.
-                self._native_effect
-                if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
-                or ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("hidden")
-                else None,
-                self.animations_available,
-                self.device_profile.microphone,
-                self.is_cube_matrix,
-            ),
-            "stored_gif": self._stored_gif,
-            "animation_layout": self._animation_layout,
-            "music_flow_enabled": self._music_flow_enabled,
-            "music_flow_effect": self._music_flow_effect,
-            "music_flow_restore_power": self._music_flow_restore_power,
-            "power_on_state": self._power_on_state,
+            # The native effect catalogue's key: the cards fetch the
+            # catalogue (yeelight_cube/native_effect_catalog) when it changes.
+            "native_effect_catalog_key": native_effect_catalog_key(*self._native_effect_catalog_args()),
             # How commands reach the lamp: "udp" (its UDP session) or "tcp".
             "connection": self._lamp_client.transport,
-            "button_effects": list(self._button_effects),
-            "background_color": self._background_color,
-            "alignment": self._alignment,
-            "angle": self._angle,
-            "font": self._font,
             "orientation": self._orientation,
             "device_orientation": self._device_orientation,
             # The lamp's Matter node and what it reports (light_matter.py);
@@ -246,36 +236,33 @@ class AttributesMixin:
             # None, and its source ("matter", "user", "unknown").
             "mount_profile": self._mount_profile_summary(),
             "rgb_color": self._rgb_color,
-            "full_panel": self._full_panel,
-            # Color effects (used by lamp preview card)
-            "preview_hue_shift": self._preview_hue_shift,
-            "preview_temperature": self._preview_temperature,
-            "preview_saturation": self._preview_saturation,
-            "preview_vibrance": self._preview_vibrance,
-            "preview_contrast": self._preview_contrast,
-            "preview_glow": self._preview_glow,
-            "preview_grayscale": self._preview_grayscale,
-            "preview_invert": self._preview_invert,
-            "preview_tint_hue": self._preview_tint_hue,
-            "preview_tint_strength": self._preview_tint_strength,
-            "color_accuracy_enabled": self._color_accuracy_enabled,
-            # Calibration values (for debug calibration card)
-            "calib_gamma_r": self._calib_gamma_r,
-            "calib_gamma_g": self._calib_gamma_g,
-            "calib_gamma_b": self._calib_gamma_b,
-            "calib_hw_threshold": self._calib_hw_threshold,
-            "calib_hw_full": self._calib_hw_full,
-            "calib_channel_balance": self._calib_channel_balance,
-            "calib_gain_r": self._calib_gain_r,
-            "calib_gain_g": self._calib_gain_g,
-            "calib_gain_b": self._calib_gain_b,
-            "last_hardware_brightness": self._last_hardware_brightness,
-            "scroll_speed": self._scroll_speed,
-            "scroll_enabled": self._scroll_enabled,
-            "power_limit": self._power_limit,
+            # The settings kept across a restart (light_restore.SETTINGS):
+            # text, clock, native effect, colour adjustments, scroll, power
+            # limit, a Cube Lite's stream frame rate...
+            **published_settings(self),
         }
         attrs["matrix_colors"] = self._published_matrix_colors()
         return attrs
+
+    def _native_effect_catalog_args(self) -> tuple:
+        """What this light's native effect catalogue depends on
+        (_native_effect_catalog's arguments)."""
+        return (
+            # An animation, or a hidden effect, still listed while it plays.
+            self._native_effect
+            if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("animation")
+            or ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("hidden")
+            else None,
+            self.animations_available,
+            self.device_profile.microphone,
+            self.is_cube_matrix,
+        )
+
+    def native_effect_catalog(self) -> dict:
+        """The native effect catalogue the cards list and its key, as the
+        websocket command yeelight_cube/native_effect_catalog answers."""
+        args = self._native_effect_catalog_args()
+        return {"key": native_effect_catalog_key(*args), "catalog": _native_effect_catalog(*args)}
 
     def _published_matrix_colors(self) -> list:
         """What the lamp shows right now, as 100 RGB tuples (matrix_colors).

@@ -4,12 +4,12 @@
  * and lamp frames are 300 bytes, r, g, b by pixel). The renderers live in
  * lamp-effects-<family>.js.
  */
+import { RENDER_MS, RENDER_SECONDS } from "./lamp-timing.js";
 
 export const LENGTH = 100;
 export const COLS = 20;
 export const ROWS = 5;
-export const RENDER_SECONDS = 0.04;
-export const RENDER_MS = 40;
+export { RENDER_MS, RENDER_SECONDS };
 // mount_profile.py DIRECTION_TABLE: drawn = TABLE[profile][sent].
 export const DIRECTION_TABLE = [
   [2, 3, 1, 0],

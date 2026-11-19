@@ -9,7 +9,7 @@
 // and the effect's settings as the lamp reports them (speed, intensity,
 // palette, color mode...). A Cube Lite, or no lamp at all, is all 20 columns
 // and no spot.
-import { chosenIntensity, chosenSpeed } from "./lamp-renderers.js";
+import { chosenIntensity, chosenSpeed } from "./lamp-settings.js";
 import { adjustmentsOf } from "./color-adjustments.js";
 import { moduleGrid, moduleKey, shownColumns, spotsOf } from "./matrix-modules.js";
 import { MATRIX_ROWS, deviceOrientation, isUpsideDownMount, isVerticalMount } from "./matrix-view.js";

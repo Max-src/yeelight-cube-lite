@@ -1,4 +1,5 @@
 import { CollectionState } from "./collection-state.js";
+import { missStillValid } from "./sensor-lookup.js";
 import {
   VISIBILITY_KEYS,
   visibleItems,
@@ -17,6 +18,9 @@ export function clockColorToRgb(intColor) {
 const EMPTY_PRESETS = Object.freeze([]);
 const presetLibraryCache = new WeakMap();
 let presetEntityId = null;
+// Without the preset sensor, the next scan of every entity waits
+// (sensor-lookup.js missStillValid).
+let presetMiss = null;
 
 // The library as Home Assistant publishes it (cached per states object).
 function publishedClockPresets(hass) {
@@ -27,7 +31,7 @@ function publishedClockPresets(hass) {
   let presets = presetEntityId
     ? states[presetEntityId]?.attributes?.clock_presets
     : undefined;
-  if (!Array.isArray(presets)) {
+  if (!Array.isArray(presets) && !missStillValid(presetMiss, hass)) {
     presets = EMPTY_PRESETS;
     presetEntityId = null;
     for (const id in states) {
@@ -38,7 +42,9 @@ function publishedClockPresets(hass) {
         break;
       }
     }
+    presetMiss = presetEntityId ? null : { entities: hass.entities, at: Date.now() };
   }
+  if (!Array.isArray(presets)) presets = EMPTY_PRESETS;
   presetLibraryCache.set(states, presets);
   return presets;
 }

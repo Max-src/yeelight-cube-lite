@@ -52,10 +52,12 @@ class SettingsMixin:
             _LOGGER.error("Invalid font: %s. Available: %s", font, list(FONT_MAPS.keys()))
             return
         self._font = font
-        await self.async_apply_display_mode(update_type='text_change')
+        # Published before the redraw: a redraw that fails (an unreachable
+        # lamp) still leaves the choice shown.
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         self._notify("font")
+        await self.async_apply_display_mode(update_type='text_change')
 
 
     @property
@@ -172,10 +174,12 @@ class SettingsMixin:
             _LOGGER.error("Invalid alignment value: %s", alignment)
             return
         self._alignment = alignment
-        await self.async_apply_display_mode(update_type='text_change')
+        # Published before the redraw: a redraw that fails (an unreachable
+        # lamp) still leaves the choice shown.
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         self._notify("alignment")
+        await self.async_apply_display_mode(update_type='text_change')
 
 
     async def async_set_animation_layout(self, layout: str) -> None:

@@ -3,6 +3,7 @@ effect Home Assistant streams to a Cube Lite keeps the stream going, black,
 until the lamp is turned on, and the effect goes on where it was."""
 
 import asyncio
+import unittest.mock
 import unittest
 
 import fakes
@@ -11,6 +12,22 @@ from fakes import FakeCube, FakeEntry, FakeHass, make_light, module, run
 fakes.install_stubs()
 CONST = module("const")
 PROFILE = module("device_profile")
+
+
+# These tests check the stream's mechanics frame by frame: a Cube Lite's
+# LAN pacing (light_studio.LITE_LAN_GAP) off; test_lite_lan_pace checks it.
+_UNPACED = None
+
+
+def setUpModule():
+    global _UNPACED
+    from unittest.mock import patch as _patch
+    _UNPACED = _patch.multiple(module("light_studio"), LITE_LAN_GAP=0.0, LITE_LAN_RESEND=0.0)
+    _UNPACED.start()
+
+
+def tearDownModule():
+    _UNPACED.stop()
 
 
 def streaming_light(*, option=True, effect="Falling Blocks", profile=None, brightness=3):
@@ -121,6 +138,45 @@ class StandbyStreamTests(unittest.TestCase):
         matrix = streaming_light(profile=PROFILE.profile_for("CubeMatrix"))
         matrix._studio_task = asyncio.Future(loop=asyncio.new_event_loop())
         self.assertFalse(matrix.keeps_streaming_when_off())
+
+    def test_a_crash_on_standby_comes_back_on_standby(self):
+        # A stream that stops on an error while off on standby starts again
+        # after its wait, still black: meanwhile it still counts as running
+        # (Keep Streaming When Off holds), and once on it goes on from the
+        # render after the last one shown, not as far on as the wait.
+        studio = module("light_studio")
+
+        async def scenario():
+            light = streaming_light()
+            await light._activate_native_effect()
+            await asyncio.sleep(0.2)
+            await light.async_turn_off()
+            await asyncio.sleep(0.1)
+            black, failures = light._standby_payload, [1]
+
+            def flaky():
+                if failures[0]:
+                    failures[0] -= 1
+                    raise RuntimeError("unexpected")
+                return black()
+
+            light._standby_payload = flaky
+            await asyncio.sleep(0.1)
+            self.assertEqual(0, failures[0])  # crashed: waiting to start again
+            self.assertTrue(light._studio_standby)
+            self.assertTrue(light.keeps_streaming_when_off())
+            last = light._studio_last_render
+            await asyncio.sleep(studio.STUDIO_RETRY_SECONDS + 0.3)
+            mark = len(light._lamp_client.sent)
+            await asyncio.sleep(0.2)
+            self.assertEqual({black()}, set(frames(light, mark)))  # black again
+            await light.async_turn_on()
+            await asyncio.sleep(0.1)
+            self.assertLessEqual(light._studio_last_render - last, 5)
+            await stop(light)
+
+        with unittest.mock.patch.object(module("light_studio"), "STUDIO_RETRY_SECONDS", 0.2):
+            run(scenario())
 
     def test_the_standby_ends_with_the_stream(self):
         async def scenario():

@@ -24,6 +24,7 @@ import { ColorListLayoutsMixin } from "./color-list-layouts.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { ColorListDragMixin } from "./color-list-drag.js";
 import { ColorInfoMixin } from "./color-list-color-info.js";
+import { hexToRgb, rgbToHex } from "./color-utils.js";
 import { COLOR_LIST_EDITOR_STYLES } from "./color-list-editor-styles.js";
 
 // The colors just set on a lamp, shown until it reports them back
@@ -386,7 +387,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     // An unfinished value reverts to the actual color. Lit only rewrites
     // .value when the bound value changes, so reset the live value here.
     const color = this._getCurrentColors()[parseInt(event.target.dataset.idx)];
-    if (Array.isArray(color)) event.target.value = this.rgbToHex(color);
+    if (Array.isArray(color)) event.target.value = rgbToHex(color);
     this._gate.release("text");
     this.requestUpdate();
   }
@@ -401,7 +402,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     const idx = parseInt(event.target.dataset.idx);
     const hex = event.target.value;
     this._editing = { idx, value: hex };
-    const rgb = /^#[0-9a-f]{6}$/i.test(hex) ? this.hexToRgb(hex) : null;
+    const rgb = /^#[0-9a-f]{6}$/i.test(hex) ? hexToRgb(hex) : null;
     if (!rgb) {
       this.requestUpdate();
       return;
@@ -448,7 +449,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     event.stopPropagation();
     this._openColorPickerAt(
       idx,
-      this.rgbToHex(color),
+      rgbToHex(color),
       event.pageX,
       event.pageY,
     );
@@ -496,7 +497,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       pageX: clickX,
       pageY: clickY,
       onInput: (hex) => {
-        const rgb = this.hexToRgb(hex);
+        const rgb = hexToRgb(hex);
         if (!rgb) return;
         const currentColors = this._getCurrentColors();
         if (idx >= currentColors.length) return;

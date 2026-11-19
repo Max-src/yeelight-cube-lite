@@ -13,6 +13,7 @@ from .const import (
     CONF_KEEP_STREAMING_WHEN_OFF,
     CONF_CAMERA_FOLLOWS_ORIENTATION,
     CONF_RESTORE_MUSIC_CHANGES,
+    CONF_SKIP_UNCHANGED_FRAMES,
 )
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
@@ -44,6 +45,7 @@ async def async_setup_entry(
         YeelightCubeRestoreMusicChangesSwitch(config_entry, light_entity),
         YeelightCubeButtonsWakeLampSwitch(config_entry, light_entity),
         YeelightCubeKeepStreamingWhenOffSwitch(config_entry, light_entity),
+        YeelightCubeSkipUnchangedFramesSwitch(config_entry, light_entity),
     )
     if not matter:
         # An entry made for a Cube Matrix before models were told apart had
@@ -173,6 +175,16 @@ class YeelightCubeKeepStreamingWhenOffSwitch(_YeelightCubeOptionSwitch):
     (light_studio.keeps_streaming_when_off)."""
 
     option_key = CONF_KEEP_STREAMING_WHEN_OFF
+    _attr_entity_category = EntityCategory.CONFIG
+
+
+class YeelightCubeSkipUnchangedFramesSwitch(_YeelightCubeOptionSwitch):
+    """A streamed frame the same as the last one sent is not sent, not even
+    as the stream's keep-alive repeat; the Stream frame rate limit still
+    applies to the frames that change (light_studio._skips_unchanged_frames).
+    Read at every frame: applies to a stream already running."""
+
+    option_key = CONF_SKIP_UNCHANGED_FRAMES
     _attr_entity_category = EntityCategory.CONFIG
 
 

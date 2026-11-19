@@ -54,6 +54,17 @@ ACTIVATION_TIMING = {
     "tcp": {"native_exit_settle": 0.3, "direct_mode_settle": 0.15, "native_exit_resend": 0.12,
             "staleness": 90.0, "blank_repeat": None},
 }
+# The longest text shown (set_custom_text, the Display text control): a state
+# is at most 255 characters, and the text control's state is the text.
+MAX_TEXT_LENGTH = 255
+
+# While a text scrolls, the frames drawn are published (the light's state with
+# its matrix_colors, the cameras, the power sensors) at most this often, in
+# seconds, and the last one always: each step written made ~5 state writes
+# (50-90k recorder rows an hour). Every step still goes to the previews
+# listening to the light's frames (yeelight_cube/stream_frames).
+SCROLL_PUBLISH_INTERVAL = 1.0
+
 MUSIC_FLOW_EXIT_UPDATE_TYPES = {
     "turn_off",
     "brightness_change",
@@ -69,9 +80,6 @@ class DisplayMixin:
     def _init_display_state(self):
         """The frame sender's and the text scroll timer's state (scroll_text).
         Called by YeelightCubeLight.__init__."""
-        # Apply timing (for queue processor stats, not cooldown-gating)
-        self._last_apply_time = 0
-        
         # The frame with its color effects, before the lamp-only stages
         # (low-brightness correction, per-channel accuracy): snapshotted in
         # apply(), published as matrix_colors and re-sent by the brightness
@@ -84,6 +92,12 @@ class DisplayMixin:
         self._power_limit = NO_LIMIT_W
         # Estimated draw of the last frame sent (None until one is sent).
         self._last_frame_power = None
+        # When a drawn frame was last published (monotonic), the publication
+        # waiting for SCROLL_PUBLISH_INTERVAL, and whether it tells the
+        # cameras too (_publish_frame).
+        self._frame_published_at = 0.0
+        self._frame_publish_timer = None
+        self._frame_publish_cameras = False
 
         # Text scrolling functionality
         self._scroll_speed = 0.2  # Scroll speed in seconds per step
@@ -295,6 +309,7 @@ class DisplayMixin:
     async def apply(self, *, off_frame: bool = False):
         """Draw the display. ``off_frame``: the black picture turn_off draws
         (the lamp stays powered): the light stays off."""
+        drawn = False
         try:
             if claim := getattr(self, "_claim_display", None):
                 claim()
@@ -336,10 +351,12 @@ class DisplayMixin:
             # visual effect) -- which is why a single send left the panel stuck
             # and a manual second send fixed it.  We re-send one frame below to
             # make the switch deterministic.
-            # A Cube Matrix showing drawings itself over Matter (light_matrix).
-            draws = getattr(self, "matrix_draws_over_matter", None)
-            if draws is not None and draws() and not self._is_scrolling:
+            # The picture (a still one, or a scroll step) as the lamp's drawing
+            # over Matter when it can: the stream's route (light_matrix).
+            draws = getattr(self, "draws_over_matter", None)
+            if draws is not None and draws():
                 if await self._apply_matrix_drawing(off_frame):
+                    drawn = True  # published below (_publish_frame)
                     return
             leaving_native_fw_mode = self._in_native_fw_mode and not self._fx_mode_is_direct
             if not self._fx_mode_is_direct:
@@ -440,29 +457,15 @@ class DisplayMixin:
                 _LOGGER.debug("[APPLY] Lamp auto-turned on by pixel data, updating state")
                 self._is_on = True
             
-            # Render camera images + push camera state FIRST so the image
-            # is already cached when the light state change triggers the
-            # frontend's HTTP fetch.  This eliminates the double-request.
-            if self.hass is not None:
-                _t_state_push = time.time()
-                self._notify_camera_preview()
-                _t_after_cam = time.time()
-                self.async_schedule_update_ha_state()
-                _t_done = time.time()
-                _LOGGER.debug(
-                    "[TIMING] [%s] apply pipeline: "
-                    "send=%.1fms "
-                    "post_delay=%.1fms "
-                    "camera_render=%.1fms "
-                    "state_push=%.1fms "
-                    "total=%.1fms "
-                    "epoch=%.3f",
-                    self._ip, (_t_after_send - _t_before_send)*1000,
-                    (_t_state_push - _t_after_send)*1000,
-                    (_t_after_cam - _t_state_push)*1000, (_t_done - _t_after_cam)*1000,
-                    (_t_done - _apply_t0)*1000, _t_done
-                )
-            
+            # The cameras are told of the new frame with the state written
+            # below (_publish_frame).
+            drawn = True
+            _LOGGER.debug(
+                "[TIMING] [%s] apply pipeline: send=%.1fms total=%.1fms",
+                self._ip, (_t_after_send - _t_before_send)*1000,
+                (time.time() - _apply_t0)*1000,
+            )
+
         except BulbException as e:
             error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
             error_code = error_dict.get('code', 0)
@@ -472,8 +475,6 @@ class DisplayMixin:
             connection_lost = isinstance(e, CubeConnectionError)
             if connection_lost:
                 self._direct_mode_lost()
-            self._last_apply_time = 0
-            
             if connection_lost:
                 _LOGGER.debug(
                     "[APPLY] [%s] BulbException (connection): code=%s, "
@@ -494,8 +495,6 @@ class DisplayMixin:
             connection_lost = is_connection_error(e)
             if connection_lost:
                 self._direct_mode_lost()
-            self._last_apply_time = 0
-            
             if connection_lost:
                 _LOGGER.debug(
                     "[APPLY] [%s] Connection issue: %s: %s -- re-raising for retry", self._ip, type(e).__name__, msg
@@ -504,8 +503,57 @@ class DisplayMixin:
                 _LOGGER.error("[APPLY] [%s] Unexpected error: %s: %s", self._ip, type(e).__name__, e)
             raise
         finally:
-                if self.hass is not None:
-                    self.async_schedule_update_ha_state()
+            if self.hass is not None:
+                self._publish_frame(cameras=drawn)
+
+    def _publish_frame(self, *, cameras: bool = True) -> None:
+        """Publish what apply() drew: the light's state (its matrix_colors,
+        and the power sensors with it) and, ``cameras``, the new frame to
+        the cameras. While a text scrolls, at most once per
+        SCROLL_PUBLISH_INTERVAL: a step in between is published with the
+        next one, or when the interval ends (so the last frame always is);
+        each step goes to the previews listening to the light's frames."""
+        self._frame_publish_cameras = self._frame_publish_cameras or cameras
+        if self._is_scrolling:
+            if cameras:
+                self._send_frame_to_previews()
+            wait = self._frame_published_at + SCROLL_PUBLISH_INTERVAL - time.monotonic()
+            if wait > 0:
+                if self._frame_publish_timer is None:
+                    self._frame_publish_timer = self.hass.loop.call_later(
+                        wait, self._publish_frame_now
+                    )
+                return
+        self._publish_frame_now()
+
+    def _publish_frame_now(self) -> None:
+        """Publish the frame now (_publish_frame)."""
+        if self._frame_publish_timer is not None:
+            self._frame_publish_timer.cancel()
+            self._frame_publish_timer = None
+        if self.hass is None:
+            return
+        self._frame_published_at = time.monotonic()
+        if self._frame_publish_cameras:
+            self._frame_publish_cameras = False
+            self._notify_camera_preview()
+        self.async_schedule_update_ha_state()
+
+    def _send_frame_to_previews(self) -> None:
+        """A scroll step's frame (as matrix_colors gives it) to the previews
+        listening to the light's frames (light_studio.
+        add_stream_preview_listener: yeelight_cube/stream_frames)."""
+        listeners = tuple(getattr(self, "_stream_preview_listeners", ()))
+        if not listeners:
+            return
+        frame = self._published_matrix_colors()
+        if not frame:
+            return
+        for listener in listeners:
+            try:
+                listener(frame)
+            except Exception:  # noqa: BLE001 -- a preview never stops the scroll
+                _LOGGER.debug("[SCROLL] [%s] A preview listener failed", self._ip, exc_info=True)
 
     def _direct_mode_trusted(self) -> bool:
         """Whether the lamp can still be trusted to be in direct mode; when

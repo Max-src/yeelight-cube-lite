@@ -127,6 +127,10 @@ class LifecycleMixin:
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
         self.stop_scroll_timer()
+        # A scroll frame waiting to be published (light_display._publish_frame).
+        if getattr(self, "_frame_publish_timer", None) is not None:
+            self._frame_publish_timer.cancel()
+            self._frame_publish_timer = None
         self.stop_studio_stream()
         if self._lamp_power_unsub is not None:
             self._lamp_power_unsub()

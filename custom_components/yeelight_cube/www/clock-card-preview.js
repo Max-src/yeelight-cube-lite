@@ -2,18 +2,19 @@
 // observer and painting the lamp and style previews. Mixed into
 // YeelightCubeClockCard.
 import {
-  createRafLoop,
   matrixSurface,
   paintCellBackground,
   paintCellBoxShadow,
 } from "./matrix-animator.js";
+import { AnimatedPreview, PreviewClock } from "./preview-animation.js";
+import { RENDER_SECONDS } from "./lamp-timing.js";
 import {
   clockPhase,
   clockSpeed,
   renderClockFrame,
   clockUsesLampRenderer,
 } from "./clock-preview-utils.js";
-import { RENDER_SECONDS, chosenIntensity } from "./lamp-renderers.js";
+import { chosenIntensity } from "./lamp-renderers.js";
 import {
   MATRIX_SIZE,
   isVerticalMount,
@@ -33,24 +34,44 @@ import { clockPresetKey } from "./clock-preset-utils.js";
 
 export const ClockPreviewMixin = (Base) => class extends Base {
   // ── Animation ─────────────────────────────────────────────────────────────
-  // A single rAF loop repaints ONLY the on-screen previews, in place (updating
-  // each dot's background rather than rebuilding HTML), throttled to ~11 fps and
-  // paused while the tab is hidden (shared createRafLoop). This keeps a long
-  // gallery of animated previews smooth instead of full-innerHTML rebuilds.
+  // The page's one rAF loop repaints ONLY the on-screen previews, in place
+  // (updating each dot's background rather than rebuilding HTML), throttled
+  // to ~11 fps, idle while the tab is hidden or the card scrolled away
+  // (preview-animation.js). This keeps a long gallery of animated previews
+  // smooth instead of full-innerHTML rebuilds.
   _startAnimation() {
-    if (!this._animLoop) {
-      this._animLoop = createRafLoop((now, due) => this._paintVisible(due, false), {
-        minIntervalMs: 90, // ~11 fps
-        smoothWhen: () => this._smoothTiles,
-      });
-    }
-    this._animLoop.start();
+    this._animation ||= new AnimatedPreview(this, {
+      onFrame: (due) => this._paintVisible(due, false),
+      minIntervalMs: 90, // ~11 fps
+      smoothWhen: () => this._smoothTiles,
+      // Back on screen: the previews as they are now, at once.
+      onShown: () => this._paintVisible(),
+    });
+    this._animation.start();
   }
 
   _stopAnimation() {
-    if (this._animLoop) this._animLoop.stop();
+    this._animation?.disconnect();
     this._visibility?.disconnect();
     this._visible = new Set();
+  }
+
+  // The animation's seconds (preview-animation.js PreviewClock, on the wall
+  // clock): held while the lamp's display is frozen.
+  _previewTime() {
+    return (this.__previewTime ||= new PreviewClock({ now: () => Date.now() }));
+  }
+  get _elapsed() {
+    return this._previewTime().elapsed;
+  }
+  set _elapsed(seconds) {
+    this._previewTime().elapsed = seconds;
+  }
+  get _lastPhaseTs() {
+    return this._previewTime().last;
+  }
+  set _lastPhaseTs(time) {
+    this._previewTime().last = time;
   }
 
   // Current clock animation speed (1-255), read from the lamp so the preview
@@ -73,11 +94,8 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     return clockPhase(this._elapsed, this._animationSpeed());
   }
 
-  _advanceElapsed() {
-    const now = Date.now();
-    if (this._lastPhaseTs == null) this._lastPhaseTs = now;
-    this._elapsed += (now - this._lastPhaseTs) / 1000;
-    this._lastPhaseTs = now;
+  _advanceElapsed(frozen = false) {
+    this._previewTime().advance(frozen);
   }
 
   // Track which preview tiles are actually on screen so the loop never wastes
@@ -105,6 +123,8 @@ export const ClockPreviewMixin = (Base) => class extends Base {
           ),
         ]
       : [];
+    // A render: what the previews show is worked out again (_tileAttrs).
+    this._previewGeneration = (this._previewGeneration || 0) + 1;
     // One observer for the card's lifetime: a re-render only observes the
     // tiles it added and releases the ones it removed.
     this._visibility ||= new PreviewVisibility({
@@ -153,8 +173,7 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     // Freezing holds the background animation on its current frame, but the
     // clock digits/colon keep evolving -- so skip advancing the phase yet keep
     // repainting, exactly like the frozen lamp.
-    if (!this._controls?.frozen) this._advanceElapsed();
-    else this._lastPhaseTs = Date.now();
+    this._advanceElapsed(!!this._controls?.frozen);
     const phase = this._phase();
     const moment = `${Math.floor(this._elapsed / RENDER_SECONDS)}:${Math.floor(Date.now() / 1000)}`;
     this._visible.forEach((el) => {
@@ -168,13 +187,17 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     if (all) this._smoothTiles = [...this._visible].some((el) => el._smooth);
   }
 
-  // Build a tile's dot grid exactly once, caching the cell nodes on the element.
-  // Card-owned tiles (current preview) use the Lamp Preview
-  // appearance settings.
-  _ensureGrid(el) {
+  // The card's own tiles' look (their grid is built again when it changes):
+  // worked out when what it reads changes, not on every frame.
+  _gridSignature() {
+    const attrs = this._attrs();
+    const orientation = this._previewOrientation();
+    const memo = this.__gridSignature;
+    if (memo?.config === this.config && memo.attrs === attrs && memo.orientation === orientation)
+      return memo.value;
     // Standing up while the lamp does (the shared renderer's vertical view).
-    const vertical = isVerticalMount(this._previewOrientation());
-    const appearanceSignature = JSON.stringify([
+    const vertical = isVerticalMount(orientation);
+    const value = JSON.stringify([
       this.config.lamp_pixel_style,
       this.config.lamp_matrix_background,
       this.config.lamp_spacing_mode,
@@ -182,11 +205,21 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       this.config.lamp_ignore_black_pixels,
       vertical,
       // A Cube Matrix's modules (a new layout: a new grid).
-      this._attrs().matrix_modules,
-      this._attrs().matrix_columns,
+      attrs.matrix_modules,
+      attrs.matrix_columns,
     ]);
+    this.__gridSignature = { config: this.config, attrs, orientation, value };
+    return value;
+  }
+
+  // Build a tile's dot grid exactly once, caching the cell nodes on the element.
+  // Card-owned tiles (current preview) use the Lamp Preview
+  // appearance settings.
+  _ensureGrid(el) {
+    const appearanceSignature = this._gridSignature();
     if (el._cells && el._appearanceSignature === appearanceSignature)
       return el._cells;
+    const vertical = isVerticalMount(this._previewOrientation());
     el._appearanceSignature = appearanceSignature;
     const spacing = this.config.lamp_spacing_mode || "normal";
     const gap = this._spacingGap(spacing);
@@ -213,6 +246,34 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     return el._cells;
   }
 
+  // The styles shown, by key (once per list).
+  _stylesByKey() {
+    const list = this._styleList();
+    if (this.__stylesByKey?.list !== list)
+      this.__stylesByKey = {
+        list,
+        byKey: new Map(list.map((item) => [clockPresetKey(item), item])),
+      };
+    return this.__stylesByKey.byKey;
+  }
+
+  // A style's preview attributes (_previewAttrs), worked out once per render,
+  // lamp update and dragged speed or intensity rather than on every frame.
+  _tileAttrs(style) {
+    const inputs = [
+      this._previewGeneration,
+      this._attrs(),
+      this._animationSpeed(),
+      this._animationIntensity(),
+    ];
+    let memo = this.__tileAttrs;
+    if (!memo?.inputs.every((value, index) => value === inputs[index]))
+      memo = this.__tileAttrs = { inputs, byStyle: new Map() };
+    let attrs = memo.byStyle.get(style);
+    if (!attrs) memo.byStyle.set(style, (attrs = this._previewAttrs(style)));
+    return attrs;
+  }
+
   _paintPreview(el, phase) {
     let styleName;
     let isCurrent = false;
@@ -231,12 +292,15 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       let matrix = el._cellsGrid;
       if (!matrix?.isConnected || !el.contains(matrix))
         matrix = el.querySelector(".gallery-matrix-preview");
-      if (!matrix || matrixPreviewCells(matrix).length !== 100) return;
+      if (!matrix) return;
       const vertical = matrix.dataset.vertical === "true";
+      // Its cells read again only for a new grid or layout.
       if (el._cellsGrid !== matrix || el._cellsVertical !== vertical) {
+        const found = matrixPreviewCells(matrix);
+        if (found.length !== 100) return;
         el._cellsGrid = matrix;
         el._cellsVertical = vertical;
-        el._cells = matrixPreviewCells(matrix);
+        el._cells = found;
       }
       // Each time: the card's settings change on the same grid.
       el._ignoreBlack = this._galleryIgnoreBlack();
@@ -248,9 +312,7 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       });
       cells = el._cells;
     }
-    const style =
-      this._styleList().find((item) => clockPresetKey(item) === styleName) ||
-      this._currentStyle();
+    const style = this._stylesByKey().get(styleName) || this._currentStyle();
     if (!style) return;
     // A powered-off lamp shows a blank screen: black out the current preview.
     const grid = el._cellsGrid || el.querySelector(".gallery-matrix-preview");
@@ -264,7 +326,7 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       return;
     }
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
-    const attrs = this._previewAttrs(style);
+    const attrs = this._tileAttrs(style);
     el._smooth = clockUsesLampRenderer(attrs);
     const { fontMap, metrics } = this._getNativeClockFont();
     // renderClockFrame is bottom-origin (row 0 = physical bottom): shown as

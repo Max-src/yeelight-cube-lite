@@ -34,9 +34,17 @@ async def test_an_unavailable_state_restores_the_settings_saved_apart(hass):
 
 
 async def test_a_state_with_its_settings_is_used_as_before(hass):
-    state = State("light.cube", "on", {"mode": "Text", "custom_text": "HI"})
+    state = State("light.cube", "on", {"mode": "Text", "custom_text": "HI", "brightness": 120})
     restored = await YeelightCubeLight._last_settings(_light(state, RestoredExtraData(SETTINGS)))
     assert restored is state
+
+
+async def test_a_light_that_was_off_keeps_the_brightness_saved_apart(hass):
+    # An off light publishes no brightness: the one saved apart is used.
+    state = State("light.cube", "off", {"mode": "Text", "custom_text": "HI"})
+    restored = await YeelightCubeLight._last_settings(_light(state, RestoredExtraData(SETTINGS)))
+    assert restored.state == "off"
+    assert restored.attributes == {"mode": "Text", "custom_text": "HI", "brightness": 80}
     # Nothing saved apart (an older version): the state, whatever it holds.
     assert await YeelightCubeLight._last_settings(_light(None, None)) is None
     empty = State("light.cube", "unavailable", {})
@@ -46,6 +54,6 @@ async def test_a_state_with_its_settings_is_used_as_before(hass):
 def test_the_saved_settings_are_json_as_home_assistant_stores_them():
     saved = SavedSettings({**SETTINGS, "favourites": {"native": [{"name": "Waves"}]}, "angle": 0.0})
     assert '"native_effect":"Falling Blocks"' in json_dumps(saved.as_dict())
-    light = SimpleNamespace(extra_state_attributes={"mode": "Clock"}, _brightness=42)
+    light = SimpleNamespace(extra_state_attributes={"mode": "Clock"}, _brightness=42, _is_on=False)
     data = YeelightCubeLight.extra_restore_state_data.fget(light).as_dict()
-    assert data == {"mode": "Clock", "brightness": 42}
+    assert data == {"mode": "Clock", "brightness": 42, "is_on": False}

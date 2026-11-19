@@ -56,6 +56,21 @@ import * as trailsEffects from "./lamp-effects-trails.js";
 import * as musicEffects from "./lamp-effects-music.js";
 import * as streamedEffects from "./lamp-effects-streamed.js";
 import { FORMERLY_NUMBERED_EFFECT_NAMES } from "./effect-names.js";
+import {
+  INTENSITY_RANGE,
+  UNDIRECTED_EFFECT_DIRECTION,
+} from "./lamp-settings.js";
+
+// The lamp's settings as reported (lamp-settings.js: no renderer needed).
+export {
+  DEFAULT_EFFECT_INTENSITY,
+  DEFAULT_EFFECT_SPEED,
+  INTENSITY_RANGE,
+  SPEED_RANGE,
+  UNDIRECTED_EFFECT_DIRECTION,
+  chosenIntensity,
+  chosenSpeed,
+} from "./lamp-settings.js";
 
 export {
   LENGTH,
@@ -762,12 +777,7 @@ export const LAMP_RATE_LIMITS = { 28: 254, 51: 239 };
 // them: [colour selector, intensity, rate, direction]. A command starts from
 // the row, then only the sent keys change.
 // effect_catalog.py DEFAULT_NATIVE_EFFECT_SPEED, DEFAULT_NATIVE_EFFECT_INTENSITY,
-// SPEED_RANGE, INTENSITY_RANGE and UNDIRECTED_EFFECT_DIRECTION.
-export const DEFAULT_EFFECT_SPEED = 128;
-export const DEFAULT_EFFECT_INTENSITY = 128;
-export const SPEED_RANGE = Object.freeze({ min: 0, max: 255 });
-export const INTENSITY_RANGE = Object.freeze({ min: 0, max: 255 });
-export const UNDIRECTED_EFFECT_DIRECTION = 0;
+// SPEED_RANGE, INTENSITY_RANGE and UNDIRECTED_EFFECT_DIRECTION: lamp-settings.js.
 
 export const PRESET_ROWS = {
   3: [0, 128, 128, 0],
@@ -816,22 +826,7 @@ export function lampIntensity(mode, intensity) {
   return Math.max(value, LAMP_INTENSITY_MINIMUMS[mode] ?? value);
 }
 
-/** The intensity chosen on a lamp (its native_effect_intensity attribute), the
- * default when it reports none. Previews pass it on as the lamp gets it: only
- * the effects that read it change. */
-export const chosenIntensity = (attrs) =>
-  lampSetting(attrs?.native_effect_intensity, INTENSITY_RANGE, DEFAULT_EFFECT_INTENSITY);
-
-/** The speed chosen on a lamp (its native_effect_speed attribute, 0-255),
- * the default when it reports none. */
-export const chosenSpeed = (attrs) =>
-  lampSetting(attrs?.native_effect_speed, SPEED_RANGE, DEFAULT_EFFECT_SPEED);
-
-// A reported setting in its range; 0 is a value, only a missing one defaults.
-function lampSetting(value, { min, max }, fallback) {
-  const n = value == null || value === "" ? NaN : Number(value);
-  return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : fallback;
-}
+// chosenIntensity, chosenSpeed: lamp-settings.js (re-exported above).
 
 // The intensity a command sends for the effect `spec`: null when the effect
 // reads none or none is chosen, so the preset row's applies (lamp_renderers.py

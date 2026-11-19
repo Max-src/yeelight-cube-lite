@@ -6,6 +6,10 @@ import {
 } from "./offline-preview-state.js";
 import { ColorModeController, NATIVE_CARD_COLORS } from "./color-mode-controller.js";
 import { nativePreviewCatalogue } from "./native-effect-card-utils.js";
+import {
+  nativeEffectCatalog,
+  withNativeEffectCatalog,
+} from "./native-effect-catalog.js";
 import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
@@ -65,13 +69,10 @@ import {
 } from "./card-shell.js";
 import { LampSliders } from "./lamp-sliders.js";
 import { availableTargets, everyAvailable } from "./service-call-utils.js";
+import { matrixSurface } from "./matrix-animator.js";
+import { AnimatedPreview, PreviewClock } from "./preview-animation.js";
+import { RENDER_SECONDS } from "./lamp-timing.js";
 import {
-  createRafLoop,
-  createVisibilityTracker,
-  matrixSurface,
-} from "./matrix-animator.js";
-import {
-  RENDER_SECONDS,
   chosenIntensity,
   chosenSpeed,
   isLampRendered,
@@ -118,46 +119,27 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   constructor() {
     super();
     this.config = {};
-    this._elapsed = 0;
+    // The previews' seconds: held while the lamp's display is frozen; a
+    // frame adds at most 200 ms (the tab hidden, the card scrolled away).
+    this._clock = new PreviewClock({ maxStep: 200 });
     this._frames = [];
     // The gallery shows the favourites' stars (it follows _controls).
     this._controls = new ModeControlsController(createNativeCardAdapter(this));
     this._colors = new ColorModeController(this, NATIVE_CARD_COLORS);
-    this._loop = createRafLoop(
-      (now, due) => {
-        const delta = this._lastFrame
-          ? Math.min(200, now - this._lastFrame)
-          : 0;
-        this._lastFrame = now;
-        // A tile coming on screen shows what it is now, even with nothing
-        // moving: its grid may be another item's by now.
-        const shown = this._previewVisibility?.shown;
-        if (shown !== this._paintedShown) {
-          this._paintedShown = shown;
-          this._paint();
-        }
-        // A frozen display holds its current frame, mirroring the lamp.
-        if (!this._controls.frozen && this._visibility?.onScreen) {
-          this._elapsed += delta / 1000;
-          // The display refreshes faster than the lamp renders: a frame
-          // already painted stays.
-          const render = Math.floor(this._elapsed / RENDER_SECONDS);
-          if (render !== this._paintedRender) {
-            this._paintedRender = render;
-            this._paint(due);
-          }
-        }
-      },
-      {
-        minIntervalMs: 100,
-        smoothWhen: () =>
-          this._frames.some(
-            (frame) =>
-              isLampRendered(frame.name) &&
-              this._previewVisibility?.visible.has(frame.node),
-          ),
-      },
-    );
+    // The previews' loop (preview-animation.js): running while the card
+    // has previews and is on screen.
+    this._animation = new AnimatedPreview(this, {
+      onFrame: (due) => this._animationFrame(due),
+      minIntervalMs: 100,
+      smoothWhen: () =>
+        this._frames.some(
+          (frame) =>
+            isLampRendered(frame.name) &&
+            this._previewVisibility?.visible.has(frame.node),
+        ),
+      // Back on screen: the previews as they are now, at once.
+      onShown: () => this._paint(),
+    });
     // Dragged values survive until the lamp reports them back
     // (lamp-sliders.js); a slider change stops a running rotation first.
     const slider = (ns, commit) => ({
@@ -196,6 +178,33 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ),
       ),
     });
+  }
+
+  /** The previews' seconds (the clock's). */
+  get _elapsed() {
+    return this._clock.elapsed;
+  }
+  set _elapsed(seconds) {
+    this._clock.elapsed = seconds;
+  }
+
+  _animationFrame(due) {
+    // A tile coming on screen shows what it is now, even with nothing
+    // moving: its grid may be another item's by now.
+    const shown = this._previewVisibility?.shown;
+    if (shown !== this._paintedShown) {
+      this._paintedShown = shown;
+      this._paint();
+    }
+    // A frozen display holds its current frame, mirroring the lamp.
+    const seconds = this._clock.advance(!!this._controls.frozen);
+    // The display refreshes faster than the lamp renders: a frame already
+    // painted stays.
+    const render = Math.floor(seconds / RENDER_SECONDS);
+    if (render !== this._paintedRender) {
+      this._paintedRender = render;
+      this._paint(due);
+    }
   }
 
   _commandsChanged() {
@@ -318,9 +327,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   connectedCallback() {
     super.connectedCallback();
     this._colors.connect();
-    this._visibility = createVisibilityTracker(this);
-    this._visibility.connect();
-    this._loop.start();
+    // The loop starts once the previews are rendered (_refreshPreviews).
     this.requestUpdate();
   }
 
@@ -329,9 +336,9 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._colors.disconnect();
     this._controls.disconnect();
     this._commands.reset();
-    this._loop.stop();
+    this._animation.disconnect();
+    this._hadFrames = false;
     this._lampSliders.destroy();
-    this._visibility?.disconnect();
     this._previewVisibility?.disconnect();
     this._frames = [];
   }
@@ -343,9 +350,14 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     await this.shadowRoot.querySelector("yeelight-color-mode")?.updateComplete;
     return complete;
   }
-  // Offline: the preview catalogue (previewAttributes).
+  // Offline: the preview catalogue (previewAttributes). Online, with the
+  // lamp's catalogue (native-effect-catalog.js: fetched once per change,
+  // the card renders again when it arrives).
   _attrs() {
-    return previewAttributes(this, PREVIEW_DEFAULTS, OFFLINE_ATTRIBUTES);
+    return withNativeEffectCatalog(
+      previewAttributes(this, PREVIEW_DEFAULTS, OFFLINE_ATTRIBUTES),
+      nativeEffectCatalog(this._hass, this._primaryEntity(), this),
+    );
   }
   _items() {
     const attrs = this._attrs();
@@ -658,7 +670,12 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     if (previewOnly(this))
       return nativePreviewCatalogue.some((item) => item.name === effect);
     return everyAvailable(this._hass, this.config, (entity, state) =>
-      nativeEffectItems(state.attributes).some((item) => item.name === effect),
+      nativeEffectItems(
+        withNativeEffectCatalog(
+          state.attributes,
+          nativeEffectCatalog(this._hass, entity, this),
+        ),
+      ).some((item) => item.name === effect),
     );
   }
 
@@ -826,7 +843,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       html`<div class="body yc-stack">
         ${offline
           ? lampUnavailableLine()
-          : !Array.isArray(attrs.native_effect_catalog)
+          : !Array.isArray(attrs.native_effect_catalog) &&
+              attrs.native_effect_catalog_key == null
             ? html`<div role="alert" class="error">
                 Native-effect catalogue unavailable. Reload the updated
                 integration.
@@ -943,6 +961,11 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     // A render can land after the card left the page: never observe then
     // (disconnectedCallback already released the observer).
     if (this.isConnected === false) return;
+    // Animated while it has previews (and is on screen): started when they
+    // appear (a loop stopped meanwhile, e.g. for a capture, stays stopped).
+    if (!this._frames.length) this._animation.stop();
+    else if (!this._hadFrames) this._animation.start();
+    this._hadFrames = this._frames.length > 0;
     // One observer for the card's lifetime: a re-render only observes the
     // previews it added and releases the ones it removed. New previews count
     // as visible until the observer reports, so they are painted at once.

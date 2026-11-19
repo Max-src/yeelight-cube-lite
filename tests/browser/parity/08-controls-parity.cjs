@@ -433,8 +433,11 @@ module.exports = async (t) => {
 
     // Native: elapsed holds while frozen, advances once resumed.
     const wait = () => new Promise((r) => setTimeout(r, 160));
-    if (native._visibility) native._visibility.onScreen = true;
-    native._paused = false;
+    // Its previews animate while it has some and is on screen
+    // (preview-animation.js).
+    await configure({ show_actions: true, show_preview: true }, 358, null);
+    native.scrollIntoView();
+    await wait();
     native._controls.frozen = false;
     const e0 = native._elapsed;
     await wait();

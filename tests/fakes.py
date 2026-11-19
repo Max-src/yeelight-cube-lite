@@ -328,9 +328,6 @@ class FakeCube:
     def close_music_session(self):
         return False
 
-    def end_direct_mode(self):
-        self.sent.append(("end_direct_mode", "end_direct_mode", None))
-
     def close_fast_socket(self):
         pass
 

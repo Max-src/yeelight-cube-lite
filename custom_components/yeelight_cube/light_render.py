@@ -36,7 +36,7 @@ class MatrixRenderMixin:
     def _init_render_state(self) -> None:
         """What the text and drawing modes render, and how the lamp is
         mounted. Called by YeelightCubeLight.__init__."""
-        self._layout = Layout("vertical", "bottom", [Module("1x1") for _ in range(100)])
+        self._layout = Layout([Module("1x1") for _ in range(100)])
         self._custom_text = "HELLO"
         self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
         # Custom Draw mode: the drawing's pixels (_custom_draw_active, in

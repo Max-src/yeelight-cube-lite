@@ -108,34 +108,6 @@ export function albumStyles(classPrefix = "album") {
       border-radius: var(--yc-album-radius, 16px);
     }
     
-    .album-gradient {
-      height: 60%;
-      position: relative;
-    }
-    
-    .album-content {
-      padding: 12px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-    
-    .album-title {
-      font-weight: 600;
-      color: var(--primary-text-color, #333);
-      font-size: 0.9em;
-      margin-bottom: 4px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    
-    .album-meta {
-      font-size: 0.75em;
-      color: var(--secondary-text-color, #666);
-    }
-    
     .album-nav-btn {
       position: absolute;
       top: 50%;

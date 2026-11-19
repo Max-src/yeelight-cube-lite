@@ -1,6 +1,5 @@
 """A Cube Matrix's own effects, clock and drawings over Matter, and what its
-Matter link reports (device_profile, matrix_effects); a Cube Lite's stream
-over Matter.
+Matter link reports (device_profile, matrix_effects).
 
 A Cube Matrix shared to Home Assistant's Matter server (its node linked,
 matter_link, and the server delivering Yeelight commands, matter_commands)
@@ -31,20 +30,9 @@ nothing is sent over Matter (a LAN stream is not interrupted by it), and a
 Repair says how to leave it. It is read over the LAN (get_prop
 show_off_mode) and seen in the Matter reports.
 
-A Cube Lite shared to the Matter server streams the same way (2026-11-16):
-its drawing effect (36, OWN_DRAWING_ID as its custom id) started with
-setEffect, then each frame's pixels with setData, at 25 a second, each
-acknowledged before the next. Filmed: 1,499 frames of 1,499 acknowledged in
-60 s, 24.9 picture changes a second, no older picture flashing back (the
-LAN stream's UDP frames, never acknowledged, arrive in bursts and showed
-older frames). Its frames are the LAN stream's own (light_studio.
-_studio_payload: the same renderers, colours, brightness stages and power
-limit), only reordered for the drawing (device_profile.drawing_pixels).
-Everything else of the Cube Lite (its own effects, clock, pictures, text)
-stays on the LAN. Over the LAN (UDP, then TCP) when Matter is not available
-or failed, tried again as above. A Matter acknowledgement comes from the
-lamp's network part: the stream's check (light_studio._stream_watchdog)
-still asks the lamp itself whether it answers.
+A Cube Lite streams over the LAN only (light_studio): its Matter link is
+used for its reports, its settings, its animations and the check that its
+LED part answers (matter_controller_check).
 """
 
 from __future__ import annotations
@@ -78,11 +66,9 @@ from .matrix_effects import (
     APP_DIRECTION_MODES,
     CLOCK_BACKGROUNDS,
     CLOCK_STYLE_COLOURS,
-    DEFAULT_SPEED,
     CLOCK_EFFECT,
     DRAWING_EFFECT,
     ENGINE_MODES,
-    OWN_DRAWING_ID,
     MATRIX_EFFECTS,
     ONE_AXIS_APP_EFFECTS,
     ONE_AXIS_MODES,
@@ -98,7 +84,6 @@ from .matrix_effects import (
     preset_payload,
     set_data_payload,
 )
-from .lamp_protocol import decode_rgb_frame
 from .matter_commands import EFFECTS_CLUSTER
 from .mount_profile import LOW_PAIR, compensate_direction, effective_profile, one_axis_direction
 
@@ -124,6 +109,14 @@ FROZEN_CLOCK_TICK = 2.0
 # Frames of a stream over Matter that failed one after the other before the
 # stream goes over the LAN (until Matter is tried again).
 MATTER_STREAM_FAILURES = 3
+# The longest a stream's frame waits for the lamp's acknowledgement over Matter
+# (s): its new pixels, and the drawing started (setEffect). A lamp whose
+# network part restarts mid-stream left one setData unanswered for 38 s
+# (2026-11-16 night, filmed: the picture held 20 s); meanwhile the frame held
+# the lamp's lock, so every other command waited. A frame that takes longer
+# counts as failed (MATTER_STREAM_FAILURES).
+MATTER_FRAME_TIMEOUT = 2.0
+MATTER_DRAWING_TIMEOUT = 5.0
 # After Matter failed (a command, or the stream's frames), what is selected is
 # streamed over the LAN, and Matter tried again (_retry_matrix_native) after
 # this long (s), twice as long after each failure in a row, up to the most;
@@ -133,8 +126,10 @@ MATTER_STREAM_FAILURES = 3
 MATTER_RETRY_FIRST = 60.0
 MATTER_RETRY_MOST = 30 * 60.0
 MATTER_RETRY_LEAST = 10.0
-# A Cube Lite's stream goes over Matter when it can (lite_streams_over_matter).
-LITE_STREAMS_OVER_MATTER = True
+# The wait for a Cube Lite's answer to getPersistEffectList over Matter
+# (matter_controller_check): a healthy lamp answers within ~0.25 s, a stuck one
+# "Failure" within ~0.6 s (2026-11-16 night, both lamps, 10 stuck episodes).
+CONTROLLER_CHECK_TIMEOUT = 3.0
 # How often the demo mode is read again over the LAN (s).
 DEMO_READ_INTERVAL = 30 * 60
 # The clock needs this many Matrix modules (topology type 2).
@@ -209,11 +204,6 @@ class MatrixMixin:
             time.monotonic() if self._matrix_demo_lan is not None else None
         )
         self._matrix_demo_task = None
-        # A drawing's animation on the lamp (matrix_effects.DRAWING_MIXERS:
-        # the Drawing animation select and speed number).
-        self._matrix_drawing_mixer = 0
-        self._matrix_drawing_speed = DEFAULT_SPEED
-        self._matrix_drawing_direction = 0
         # Frames of the stream over Matter that failed in a row.
         self._matrix_stream_failures = 0
         # What the lamp does at power-on (Matter StartUpOnOff: "on" or "off";
@@ -553,41 +543,44 @@ class MatrixMixin:
         """light_display.apply sends its frame as the lamp's drawing."""
         return not self._matrix_native_refused and self.matrix_matter_ready()
 
-    def _matrix_drawing_shown(self, mixer: int | None = None) -> bool:
-        """The lamp shows a drawing (with ``mixer``, when given)."""
+    def _matrix_drawing_shown(self) -> bool:
+        """The lamp shows this integration's drawing (always still)."""
         shown = self._matrix_shown
-        if shown is None:
-            return False
-        params = shown[1].get("effect", {})
-        if params.get("effectId") != DRAWING_EFFECT:
-            return False
-        return mixer is None or (params.get("effectParams") or [{}])[0].get("mixer") == mixer
+        return shown is not None and shown[1].get("effect", {}).get("effectId") == DRAWING_EFFECT
 
-    async def _draw_matrix_frame(self, wire_frame, mixer: int | None = None) -> None:
-        """A drawing (in the lamp's wire order) shown by the lamp: its new
-        pixels when its drawing already runs (setData), else the drawing
-        effect with the chosen animation (``mixer``: this one instead).
-        Raises when Matter refuses (the caller falls back to LAN)."""
+    def draws_over_matter(self) -> bool:
+        """Whether what Home Assistant draws (light_display.apply's pictures,
+        the text scroll, light_studio's stream) goes as the lamp's drawing
+        over Matter: one route for every frame of a Cube Matrix
+        (matrix_draws_over_matter). A Cube Lite draws over the LAN.
+        docs/STREAMING.md."""
+        return self.matrix_draws_over_matter()
+
+    async def _draw_matrix_frame(self, wire_frame) -> None:
+        """A still drawing (in the lamp's wire order) shown by the lamp: its
+        new pixels when its drawing already runs (setData), else the drawing
+        effect. Each command waits as long as a stream frame at most. Raises
+        when Matter refuses (the caller falls back to LAN)."""
         pixels = self.device_profile.drawing_pixels(wire_frame)
-        if self._matrix_drawing_shown(mixer):
-            name, payload = "setData", set_data_payload(pixels)
+        if self._matrix_drawing_shown():
+            name, payload, limit = "setData", set_data_payload(pixels), MATTER_FRAME_TIMEOUT
         else:
-            name, payload = "setEffect", drawing_payload(
-                pixels, self._matrix_drawing_mixer if mixer is None else mixer,
-                self._matrix_drawing_speed, self._matrix_drawing_direction, APPLY_SHOW,
-            )
+            name, payload, limit = "setEffect", drawing_payload(pixels, APPLY_SHOW), MATTER_DRAWING_TIMEOUT
             await self._release_lan_display()
             await self._leave_matrix_clock(name, payload)
         await self._set_matrix_brightness()
         self._matrix_command_at = time.monotonic()
         self._matrix_sent_id = DRAWING_EFFECT
         try:
-            await self._matter_commands.async_command(EFFECTS_CLUSTER, name, payload)
+            await asyncio.wait_for(
+                self._matter_commands.async_command(EFFECTS_CLUSTER, name, payload), limit,
+            )
         except Exception:
             self._refuse_matrix_native()
             self._matrix_shown = None
             raise
         self._matrix_command_at = time.monotonic()
+        self._matrix_retry_after = MATTER_RETRY_FIRST  # Matter works again
         if name == "setEffect":
             self._matrix_shown = (name, payload)
         # The lamp runs its drawing effect, showing Home Assistant's picture.
@@ -596,33 +589,49 @@ class MatrixMixin:
     # ── The stream over Matter ──────────────────────────────────────────
     def matrix_streams_over_matter(self) -> bool:
         """light_studio's stream goes as the lamp's drawing over Matter
-        (_send_matrix_stream_frame), not over the LAN: a Cube Matrix's
-        (matrix_draws_over_matter), a Cube Lite's (lite_streams_over_matter)."""
-        if self.is_cube_matrix:
-            return self.matrix_draws_over_matter()
-        return self.lite_streams_over_matter()
+        (_send_matrix_stream_frame), not over the LAN: the same route as
+        every picture (draws_over_matter)."""
+        return self.draws_over_matter()
 
-    def lite_streams_over_matter(self) -> bool:
-        """A Cube Lite whose Matter node is linked and whose Yeelight
-        commands a server delivers, Matter not refused lately: its stream goes
-        over Matter (module docstring)."""
-        if self.is_cube_matrix or not LITE_STREAMS_OVER_MATTER or self._matrix_native_refused:
-            return False
-        if not self.device_profile.matter or getattr(self, "_music_flow_enabled", False):
-            return False
+    async def matter_controller_check(self) -> str | None:
+        """Whether a Cube Lite's LED part answers, asked over Matter
+        (getPersistEffectList: the network part asks the part that drives
+        the LEDs, and answers "Failure" when it does not). "answers",
+        "stuck" (the network part answers, the LED part does not: a power
+        cycle helps), "no answer" (the network part does not answer: it
+        restarts, or is off the network); None without Matter. Filmed and
+        logged 2026-11-16 night: every stuck lamp answered "Failure" in
+        ~0.6 s, every working one answered in ~0.1-0.25 s. Only after a LAN
+        check went unanswered: it is not polled."""
+        if self.is_cube_matrix or not self.device_profile.matter:
+            return None
         link, channel = getattr(self, "_matter", None), getattr(self, "_matter_commands", None)
-        return bool(getattr(link, "linked", False) and getattr(channel, "backend", None))
+        if not (getattr(link, "linked", False) and getattr(channel, "backend", None)):
+            return None
+        try:
+            await asyncio.wait_for(
+                channel.async_command(EFFECTS_CLUSTER, "getPersistEffectList", {}), CONTROLLER_CHECK_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return "no answer"
+        except Exception as err:  # noqa: BLE001 -- the server's answer for the lamp
+            return "stuck" if "failure" in str(err).lower() else "no answer"
+        return "answers"
 
     async def _matrix_stream_pixels(self, render: int) -> list:
-        """Frame ``render`` of the stream as a drawing's pixels: the same
-        frame the LAN stream sends (light_studio._studio_payload; a Cube
-        Lite's is that very frame, reordered)."""
-        if not self.is_cube_matrix:
-            return self.device_profile.drawing_pixels(decode_rgb_frame(await self._studio_payload(render)))
-        frame = await self.hass.async_add_executor_job(drawn_in_full, self._own_effect_frame, render)
+        """Frame ``render`` of the stream as a drawing's pixels: drawn, then
+        given the brightness stages and the power limit, in one executor job
+        (_matrix_stream_frame)."""
+        frame, pixels = await self.hass.async_add_executor_job(self._matrix_stream_frame, render)
         # For the previews (light_studio._publish_stream_frame).
         self._studio_rendered = (frame, not self.device_profile.raw_colours)
-        return self.device_profile.drawing_pixels(self._lamp_frame(self._brightness_stages(frame)))
+        return pixels
+
+    def _matrix_stream_frame(self, render: int) -> tuple[list, list]:
+        """_matrix_stream_pixels' work, in the executor: the frame drawn
+        (lamp order) and its drawing's pixels."""
+        frame = drawn_in_full(self._own_effect_frame, render)
+        return frame, self.device_profile.drawing_pixels(self._lamp_frame(self._brightness_stages(frame)))
 
     def _standby_pixels(self) -> list:
         """A black frame as the drawing's pixels (the standby stream)."""
@@ -639,28 +648,24 @@ class MatrixMixin:
         if self._lamp_client.close_music_session():
             await asyncio.sleep(MUSIC_CLOSE_SETTLE)
         self._direct_mode_lost()
-        lite = not self.is_cube_matrix
         try:
-            if self._matrix_drawing_shown(0):
+            if self._matrix_drawing_shown():
                 # Not a new command for the echo window: the lamp's button
                 # pressed during the stream is still followed.
-                await self._matter_commands.async_command(
-                    EFFECTS_CLUSTER, "setData", set_data_payload(pixels),
+                await asyncio.wait_for(
+                    self._matter_commands.async_command(EFFECTS_CLUSTER, "setData", set_data_payload(pixels)),
+                    MATTER_FRAME_TIMEOUT,
                 )
             else:
-                payload = drawing_payload(
-                    pixels, 0, self._matrix_drawing_speed, self._matrix_drawing_direction, APPLY_SHOW,
-                    custom_id=OWN_DRAWING_ID if lite else 0,
-                )
-                if lite:
-                    # The drawing replaces direct mode: a new UDP session must
-                    # not put the lamp back in it (it would leave the drawing).
-                    self._lamp_client.end_direct_mode()
+                payload = drawing_payload(pixels, APPLY_SHOW)
                 await self._leave_matrix_clock("setEffect", payload)
                 await self._set_matrix_brightness()
                 self._matrix_sent_id = DRAWING_EFFECT
                 self._matrix_command_at = time.monotonic()
-                await self._matter_commands.async_command(EFFECTS_CLUSTER, "setEffect", payload)
+                await asyncio.wait_for(
+                    self._matter_commands.async_command(EFFECTS_CLUSTER, "setEffect", payload),
+                    MATTER_DRAWING_TIMEOUT,
+                )
                 self._matrix_command_at = time.monotonic()
                 self._matrix_shown = ("setEffect", payload)
         except Exception:
@@ -675,11 +680,13 @@ class MatrixMixin:
                 )
             raise
         self._matrix_stream_failures = 0
+        self._matrix_retry_after = MATTER_RETRY_FIRST  # Matter works again
 
     async def _apply_matrix_drawing(self, off_frame: bool) -> bool:
         """light_display.apply's frame (_prepared_frame, then the power
         limit), shown as the lamp's drawing. False when Matter refused it:
-        apply goes on over the LAN."""
+        apply goes on over the LAN. apply publishes the frame (its
+        throttled _publish_frame)."""
         try:
             await self._draw_matrix_frame(self._lamp_frame(self._prepared_frame()))
         except Exception as err:  # noqa: BLE001 -- drawn over the LAN instead
@@ -689,9 +696,6 @@ class MatrixMixin:
             return False
         if not self._is_on and not off_frame:
             self._is_on = True
-        if self.hass is not None:
-            self._notify_camera_preview()
-            self.async_schedule_update_ha_state()
         return True
 
     # ── Freeze ──────────────────────────────────────────────────────────
@@ -721,7 +725,7 @@ class MatrixMixin:
 
     async def _draw_matrix_held_frame(self) -> list:
         frame = await self.hass.async_add_executor_job(self._matrix_held_frame)
-        await self._draw_matrix_frame(self._lamp_frame(self._brightness_stages(frame)), mixer=0)
+        await self._draw_matrix_frame(self._lamp_frame(self._brightness_stages(frame)))
         return frame
 
     async def async_matrix_freeze(self) -> None:
@@ -746,7 +750,7 @@ class MatrixMixin:
     def _matrix_clock_frozen(self) -> bool:
         return (
             self._display_frozen and self._is_on and self._mode == MODE_CLOCK
-            and self._matrix_drawing_shown(0)
+            and self._matrix_drawing_shown()
         )
 
     async def _matrix_frozen_clock(self, sent: list | None = None) -> None:
@@ -765,7 +769,7 @@ class MatrixMixin:
             async def draw(frame=frame) -> None:
                 if self._matrix_clock_frozen():
                     await self._draw_matrix_frame(
-                        self._lamp_frame(self._brightness_stages(frame)), mixer=0,
+                        self._lamp_frame(self._brightness_stages(frame)),
                     )
 
             try:

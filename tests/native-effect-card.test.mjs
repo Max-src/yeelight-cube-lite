@@ -32,6 +32,10 @@ import {
 import { readFileSync } from "node:fs";
 import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
 import { everyAvailable, withTargetEntities } from "../custom_components/yeelight_cube/www/service-call-utils.js";
+import {
+  nativeEffectCatalog,
+  withNativeEffectCatalog,
+} from "../custom_components/yeelight_cube/www/native-effect-catalog.js";
 
 // Fake cards built from object literals get the shared card-base helpers
 // (_targets, _inputsChanged, ...) like the real card.
@@ -446,6 +450,8 @@ test("rotation retains only effects available on every target", () => {
       everyAvailable,
       getTargetEntities,
       nativeEffectItems,
+      nativeEffectCatalog,
+      withNativeEffectCatalog,
       nativePreviewCatalogue,
       previewOnly,
     }),
@@ -666,6 +672,8 @@ test("native editor sections follow the card and use shared conditional controls
       records.orientation = true;
     },
     renderColorModeSettings: () => "",
+    nativeEffectCatalog,
+    withNativeEffectCatalog,
     // Color Modes & Controls render by default (show_color_modes unset).
     renderVisibleColorModes: () => {
       records.colorModes = true;

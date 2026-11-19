@@ -150,40 +150,6 @@ def encode_rgb_frame(colors) -> str:
     ).decode("ascii")
 
 
-def decode_rgb_frame(payload: str) -> list[tuple[int, int, int]]:
-    """An update_leds payload (encode_rgb_frame's) as its RGB colours."""
-    data = base64.b64decode(payload)
-    return [tuple(data[index:index + 3]) for index in range(0, len(data) - 2, 3)]
-
-
-# How many of the last frames a partial frame covers the changes since (it
-# runs up to the last pixel that differs from any of them): a frame the lamp
-# missed is put right by the next.
-LAMP_FRAME_BUFFERS = 2
-
-
-def partial_frame(payload: str, shown: tuple[bytes, ...]) -> tuple[str, bytes]:
-    """``payload`` (an update_leds frame) as the shortest frame that makes
-    the lamp show it. update_leds sets the pixels it is given, from the
-    first, and keeps the others, in the buffer it writes: ``shown`` holds
-    the frames the lamp was last left with, oldest first, one per buffer
-    (LAMP_FRAME_BUFFERS; fewer: unknown, the frame goes in full). The frame
-    runs up to the last pixel that differs from any of them, and is a
-    single pixel (the first) when none does, so the stream never pauses.
-    Returns the frame to send and the frame the lamp is left with."""
-    full = base64.b64decode(payload)
-    if len(shown) < LAMP_FRAME_BUFFERS or any(len(each) != len(full) for each in shown):
-        return payload, full
-    last = next(
-        (i for i in range(len(full) - 1, -1, -1) if any(full[i] != each[i] for each in shown)),
-        None,
-    )
-    pixels = 1 if last is None else last // 3 + 1
-    if pixels * 3 == len(full):
-        return payload, full
-    return base64.b64encode(full[:pixels * 3]).decode("ascii"), full
-
-
 # What a command to the lamp raises: a socket failure or timeout (OSError,
 # TimeoutError included), or the lamp's refusal or the connection's
 # (BulbException, CubeConnectionError included).

@@ -39,6 +39,8 @@ export function isEffectName(name) {
   return typeof name === "string" && name.trim() !== "" && !/^\d+$/.test(name.trim());
 }
 
+/** The effects a card lists: `attrs` with the lamp's catalogue
+ * (native-effect-catalog.js withNativeEffectCatalog). */
 export function nativeEffectItems(attrs = {}, config = {}) {
   const catalogue = Array.isArray(attrs.native_effect_catalog)
     ? attrs.native_effect_catalog
@@ -144,7 +146,7 @@ export const nativePreviewCatalogue = [
       : previewDirections,
   })),
   // The slots named by number until 1.4.0, as the integration sends them. Not
-  // the stored GIF for now (light._native_effect_catalog): it has no row there.
+  // the stored GIF for now (the lamp's catalogue): it has no row there.
   ...Object.values(FORMERLY_NUMBERED_EFFECT_NAMES)
     .filter((name) => LAMP_EFFECTS[name])
     .map((name) => {

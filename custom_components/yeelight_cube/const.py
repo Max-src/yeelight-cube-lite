@@ -101,6 +101,11 @@ CONF_BUTTONS_WAKE_LAMP = "buttons_wake_lamp"
 # instead of powering the lamp off: a Cube Lite can hang when a busy stream
 # stops (light_studio, the standby stream).
 CONF_KEEP_STREAMING_WHEN_OFF = "keep_streaming_when_off"
+# Skip Unchanged Stream Frames (switch.py, a Cube Lite's, off by default): a
+# streamed frame the same as the last one sent is not sent (light_studio's
+# LAN stream), not even as the stream's keep-alive repeat; the Stream frame
+# rate limit still applies to the frames that change.
+CONF_SKIP_UNCHANGED_FRAMES = "skip_unchanged_frames"
 # The lamp's own playlist (effect id, custom id per slot), saved while Buttons
 # as remote keeps an all-black one on the lamp (light_matter.py); written back
 # when it is turned off.

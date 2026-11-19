@@ -164,7 +164,7 @@ class CoalescedRedrawTests(LampTestCase):
             self.lamp._execute_hardware_op(waiting, "display:waiting", coalesce="display"))
         await asyncio.sleep(0)
         # The circuit breaker rejects the next redraw before it is queued.
-        self.lamp._hard_timeout_times = [time.time(), time.time()]
+        self.lamp._hard_timeout_times = [time.monotonic(), time.monotonic()]
         self.assertFalse(await self.lamp._execute_hardware_op(
             Mock(), "display:rejected", coalesce="display"))
         self.lamp._hard_timeout_times = []

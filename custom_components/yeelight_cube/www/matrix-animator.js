@@ -8,8 +8,10 @@
 // consistent and prevents any one card from regressing on performance.
 //
 // Provides:
-//   • createRafLoop        — a requestAnimationFrame loop that throttles to a
-//                            target interval and pauses while the tab is hidden.
+//   • createRafLoop        — a loop that throttles to a target interval and
+//                            pauses while the tab is hidden; every running
+//                            loop of the page shares one requestAnimationFrame
+//                            (preview-animation.js builds the cards' on it).
 //   • createVisibilityTracker — an IntersectionObserver wrapper that reports
 //                            whether a host element is on screen.
 //   • paintCellBackground / paintCellBoxShadow — change-only style writes that
@@ -41,12 +43,9 @@ export function createRafLoop(onFrame, options = {}) {
   const { minIntervalMs = 1000 / 24, smoothWhen } = options;
   const intervalOf =
     typeof minIntervalMs === "function" ? minIntervalMs : () => minIntervalMs;
-  let rafId = null;
   let last = 0;
   let lastSmooth = 0;
   const loop = (t) => {
-    rafId = requestAnimationFrame(loop);
-    if (typeof document !== "undefined" && document.hidden) return;
     const due = t - last >= intervalOf();
     if (!due && (t - lastSmooth < SMOOTH_INTERVAL_MS || !smoothWhen?.())) return;
     lastSmooth = t;
@@ -55,18 +54,51 @@ export function createRafLoop(onFrame, options = {}) {
   };
   return {
     start() {
-      if (rafId == null) rafId = requestAnimationFrame(loop);
+      joinTicker(loop);
     },
     stop() {
-      if (rafId != null) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
+      leaveTicker(loop);
     },
     get running() {
-      return rafId != null;
+      return tickerLoops.has(loop);
     },
   };
+}
+
+// Every running loop of the page shares one requestAnimationFrame callback
+// (one per display refresh, whatever the number of cards), requested only
+// while a loop runs.
+const tickerLoops = new Set();
+let tickerId = null;
+
+function tick(t) {
+  tickerId = requestAnimationFrame(tick);
+  if (typeof document !== "undefined" && document.hidden) return;
+  for (const loop of [...tickerLoops]) {
+    // A loop stopped by another during this refresh is not called.
+    if (!tickerLoops.has(loop)) continue;
+    try {
+      loop(t);
+    } catch (error) {
+      // One card's error never stops the others' previews.
+      queueMicrotask(() => {
+        throw error;
+      });
+    }
+  }
+}
+
+function joinTicker(loop) {
+  tickerLoops.add(loop);
+  if (tickerId == null) tickerId = requestAnimationFrame(tick);
+}
+
+function leaveTicker(loop) {
+  tickerLoops.delete(loop);
+  if (!tickerLoops.size && tickerId != null) {
+    cancelAnimationFrame(tickerId);
+    tickerId = null;
+  }
 }
 
 /**

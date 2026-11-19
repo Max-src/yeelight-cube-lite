@@ -73,7 +73,7 @@ class MatrixFollowMixin:
             elif name == "topology":
                 self._matrix_modules_changed(value)
             elif name == "start_up_on_off":
-                self._matrix_power_on = "off" if value == 0 else "on"
+                self._matrix_power_on_reported(value)
             elif name == "lan_control":
                 self._async_check_problems()
         elif name == "rotation":
@@ -98,9 +98,17 @@ class MatrixFollowMixin:
             if "cube_topology" not in (getattr(self._lamp_client, "capabilities", None) or {}):
                 self._matrix_modules_changed(value)
         elif name == "start_up_on_off":
-            self._matrix_power_on = "off" if value == 0 else "on"
+            self._matrix_power_on_reported(value)
         if self.hass is not None:
             self.async_write_ha_state()
+
+    def _matrix_power_on_reported(self, value) -> None:
+        """The lamp's StartUpOnOff, as it reports it: the Power-on behavior
+        select is told when it changed."""
+        power_on = "off" if value == 0 else "on"
+        if power_on != self._matrix_power_on:
+            self._matrix_power_on = power_on
+            self._notify("matrix_power_on")
 
     def _matrix_followed(self, running) -> None:
         """The lamp started something itself (its button steps its playlist,

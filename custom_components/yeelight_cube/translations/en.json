@@ -107,9 +107,6 @@
             "power_on_state": {
                 "name": "Power-on behavior"
             },
-            "drawing_animation": {
-                "name": "Drawing animation"
-            },
             "palette": {
                 "name": "Matrix: Palette"
             },
@@ -133,9 +130,6 @@
             "native_effect_speed": {
                 "name": "Effect speed"
             },
-            "drawing_animation_speed": {
-                "name": "Drawing animation speed"
-            },
             "native_effect_intensity": {
                 "name": "Effect intensity"
             },
@@ -144,6 +138,9 @@
             },
             "power_limit": {
                 "name": "Power limit"
+            },
+            "stream_fps_limit": {
+                "name": "Stream frame rate limit"
             },
             "gradient_angle": {
                 "name": "Matrix: Gradient Angle"
@@ -209,6 +206,9 @@
             },
             "keep_streaming_when_off": {
                 "name": "Keep Streaming When Off"
+            },
+            "skip_unchanged_frames": {
+                "name": "Skip Unchanged Stream Frames"
             }
         },
         "binary_sensor": {
@@ -725,7 +725,7 @@
             "fields": {
                 "text": {
                     "name": "Text",
-                    "description": "Text to display on the cube matrix"
+                    "description": "Text to display on the cube matrix (at most 255 characters)"
                 },
                 "entity_id": {
                     "name": "Entity",

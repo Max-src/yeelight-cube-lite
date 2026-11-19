@@ -24,7 +24,7 @@ const lengthFor = (options) =>
  * (ignoreBlackPixels) and lose their shadow. Shared by renderMatrixPreview
  * (markup) and paintMatrixPreview (in place) so both always agree.
  */
-export function matrixCellLook(color, options) {
+function matrixCellLook(color, options) {
   let css;
   let isBlack;
   if (Array.isArray(color)) {

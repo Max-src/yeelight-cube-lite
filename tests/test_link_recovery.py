@@ -219,6 +219,36 @@ class DecisionTests(unittest.TestCase):
 
         run(scenario())
 
+    def test_operations_fail_at_once_while_the_sweep_runs(self):
+        # The sweep holds the lamp's lock for up to about a minute: a service
+        # call or a redraw meanwhile fails at once, as when the lamp is not
+        # reached, rather than waiting for it.
+        async def scenario():
+            light = stuck_light()
+            light._link_recovery_tries = 1
+            started, release = asyncio.Event(), asyncio.Event()
+
+            async def sweep(ip, port):
+                started.set()
+                await release.wait()
+                return None
+
+            operation = AsyncMock()
+            with patch.object(RECOVERY, "realign", sweep):
+                recovery = asyncio.ensure_future(light._async_recover_link())
+                await started.wait()
+                result = await asyncio.wait_for(light._execute_hardware_op(operation, "set_brightness"), 1)
+                self.assertFalse(result)
+                operation.assert_not_called()
+                self.assertTrue(light._hardware_failure_retryable)
+                release.set()
+                await recovery
+            self.assertFalse(light._link_recovery_running)
+            self.assertTrue(await light._execute_hardware_op(operation, "set_brightness"))
+            operation.assert_awaited_once()
+
+        run(scenario())
+
     def test_an_unanswered_sweep_leaves_the_power_cycle_to_the_user(self):
         async def scenario():
             light = stuck_light()

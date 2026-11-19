@@ -108,16 +108,6 @@ export class ToolManager {
     });
   }
 
-  // Get tool content (icon or label)
-  getToolContent(tool, paintContent) {
-    const cfg = TOOL_CONFIG[tool];
-    if (!cfg) return tool;
-    if (paintContent === "label") {
-      return cfg.label;
-    }
-    return html`<ha-icon icon="${cfg.icon}"></ha-icon>`;
-  }
-
   // Get tool selection state
   getToolSelection(tool) {
     switch (tool) {

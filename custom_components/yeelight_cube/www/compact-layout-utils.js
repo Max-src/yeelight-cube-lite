@@ -30,11 +30,6 @@ export const compactLayoutStyles = `
     opacity: 0.5;
   }
   
-  /* Compact Preview - Fixed size preview area */
-  .compact-preview {
-    flex-shrink: 0;
-  }
-  
   /* Compact Info - Text content area */
   .compact-info {
     display: flex;
@@ -120,33 +115,6 @@ export const compactLayoutStyles = `
     padding-left: calc(10px * var(--card-size-multiplier, 0.7));
   }
   
-  /* Container for multiple compact items */
-  .compact-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: calc(11.43px * var(--card-size-multiplier, 0.7));
-    margin-bottom: 16px;
-    justify-content: space-between;
-  }
-  
-  .compact-title {
-    font-weight: 500;
-    color: var(--primary-text-color, #24292f);
-    font-size: calc(0.95em * var(--card-size-multiplier, 0.7));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  
-  .compact-title.clickable {
-    cursor: pointer;
-    transition: color 0.2s ease;
-  }
-  
-  .compact-title.clickable:hover {
-    color: var(--primary-color, #03a9f4);
-    text-decoration: underline;
-  }
 `;
 
 

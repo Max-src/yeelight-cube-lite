@@ -38,7 +38,6 @@ from .matter_commands import (
     MatterCommands,
 )
 from .matter_discovery import async_offer_matter_lamps
-from .matrix_effects import OWN_DRAWING_ID
 from .matter_link import MATRIX_REPORTED, ROTATION_ORIENTATIONS, MatterLink
 
 _LOGGER = logging.getLogger(__name__)
@@ -329,6 +328,8 @@ class MatterMixin:
                 # The lamp's new node answers: its earlier pairings' nodes go.
                 if channel.backend and self._matter is not None and self._matter.stale_node_ids:
                     await self._matter.remove_stale_nodes()
+            except Exception as err:  # noqa: BLE001 -- checked again at the next minute
+                _LOGGER.debug("[MATTER] [%s] The Matter commands check failed: %s", self._ip, err)
             finally:
                 self._matter_commands_check = None
             if (channel.backend, channel.reason) != before and self.hass is not None:
@@ -392,25 +393,24 @@ class MatterMixin:
         self._effect_before_command = self._expected_effect()
 
     def _expected_effect(self) -> int | None:
-        """The effect the lamp reports for the light's state: Music Flow's,
+        """The effect a Cube Lite reports for the light's state: Music Flow's,
         the native effect's, the clock command's outer id, or DRAWING_EFFECT
         when this integration draws (a streamed palette effect or clock too); the Yeelight app's content's when it is
         shown again (_replay_app_content); while off, DRAWING_EFFECT (the
         black picture that keeps a lamp powered, light._internal_turn_off);
         None when unknown."""
+        # What this integration draws goes in direct mode (over the LAN).
+        drawn = DRAWING_EFFECT
         if not self._is_on:
-            return DRAWING_EFFECT
+            return drawn
         if self._external_display:
             return self._app_content_effect()
         if self._music_flow_enabled:
             return MUSIC_FLOW_EFFECTS.get(self._music_flow_effect)
-        # A streamed palette effect or clock: direct mode (light_studio), or
-        # the lamp's drawing when streamed over Matter (light_matrix).
+        # A streamed palette effect or clock: direct mode (light_studio).
         studio = getattr(self, "studio_selected", None)
         if studio is not None and studio():
-            if self._streams_over_matter():
-                return REMOTE_DRAWING_EFFECT
-            return DRAWING_EFFECT
+            return drawn
         if self._mode == MODE_NATIVE_EFFECT:
             # A music effect in the palette color mode runs as its music mode.
             palette_music = getattr(self, "_palette_music", None)  # light_native
@@ -422,7 +422,7 @@ class MatterMixin:
             # Use the same builder as activation: treating its report as a
             # button press would rewrite the remote playlist while restoring.
             return self._native_clock_params()[0]
-        return DRAWING_EFFECT
+        return drawn
 
     def _matter_echo(self) -> bool:
         """Whether a command started or ended within MATTER_ECHO_WINDOW."""
@@ -501,25 +501,7 @@ class MatterMixin:
         stream opens no echo window, and the Matter server reports every
         value again when it subscribes anew (a lamp it lost for a while).
         Such a report is the lamp still showing it, never another app."""
-        if effect_id == DRAWING_EFFECT:
-            return self._expected_effect() == DRAWING_EFFECT
-        return self._own_stream_drawing_report(effect_id)
-
-    def _streams_over_matter(self) -> bool:
-        """The stream goes as the lamp's drawing over Matter (light_matrix)."""
-        over_matter = getattr(self, "matrix_streams_over_matter", None)
-        return bool(over_matter is not None and over_matter())
-
-    def _own_stream_drawing_report(self, effect_id: int) -> bool:
-        """Whether a reported drawing (effect 36) is this integration's
-        stream over Matter: its custom id (OWN_DRAWING_ID, reported as
-        effect_sub, in either order with the effect: then within a command's
-        echo window), not a Right-as-Remote slot nor the Yeelight app's
-        drawing."""
-        if effect_id != REMOTE_DRAWING_EFFECT or self._expected_effect() != REMOTE_DRAWING_EFFECT:
-            return False
-        sub = (self._matter.values if self._matter else {}).get("effect_sub")
-        return sub == OWN_DRAWING_ID or (sub not in REMOTE_SLOTS and self._matter_echo())
+        return effect_id == DRAWING_EFFECT and self._expected_effect() == DRAWING_EFFECT
 
     def _lamp_restarted(self) -> None:
         """The lamp's network chip started again (Matter RebootCount up): a
@@ -566,17 +548,9 @@ class MatterMixin:
                 self._lamp_restarted()
             if name in ("effect", "effect_sub"):
                 self._note_app_gif()
-            if name == "effect" and isinstance(value, int) and not self._own_stream_drawing_report(value):
-                # The lamp left a drawing streamed over Matter: the stream
-                # starts it again before any setData (light_matrix).
-                self._matrix_shown = None
-            if name == "effect_sub" and value != OWN_DRAWING_ID:
-                self._matrix_shown = None
             if name == "effect" and isinstance(value, int):
                 self._effect_reported_at = time.monotonic()
-                if self._own_stream_drawing_report(value):
-                    self._content_reports_ignored_at = time.monotonic()
-                elif self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
+                if self.remote_playlist_active and value == REMOTE_DRAWING_EFFECT:
                     # A black slot: the press is its custom id (effect_sub).
                     self._direct_mode_lost()
                     self._check_lamp_content()
@@ -592,10 +566,6 @@ class MatterMixin:
                     self._check_lamp_content()
                 else:
                     self._lamp_changed_effect(value)
-            elif name == "effect_sub" and value == OWN_DRAWING_ID:
-                # The stream's own drawing over Matter (light_matrix).
-                self._effect_sub_reported_at = time.monotonic()
-                self._content_reports_ignored_at = time.monotonic()
             elif name == "effect_sub" and value not in REMOTE_SLOTS:
                 self._effect_sub_reported_at = time.monotonic()
                 # The app's next clock style or picture: only the id changes.

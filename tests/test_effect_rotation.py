@@ -256,7 +256,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         async def fail(item):
             light._hardware_failure_retryable = True
             light._last_connection_error = "Device timeout"
-            light._hard_timeout_times = [time.time(), time.time()]
+            light._hard_timeout_times = [time.monotonic(), time.monotonic()]
             return False
         light._apply_rotation_item = AsyncMock(side_effect=fail)
         light._wait_rotation_retry = AsyncMock(return_value=True)

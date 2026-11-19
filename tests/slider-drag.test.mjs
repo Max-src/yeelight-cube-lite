@@ -35,6 +35,8 @@ function stubDocument() {
     removeEventListener(type, fn) {
       if (listeners.get(type) === fn) listeners.delete(type);
     },
+    dispatch: (type) => listeners.get(type)?.(),
+    listening: (type) => listeners.has(type),
   };
   return {
     release: () => listeners.get("mouseup")?.(),
@@ -329,4 +331,25 @@ test("brightness and speed use one curve, exact at the ends and round-tripping",
     [lightSliderConfig({}, "brightness").rawMin, lightSliderConfig({}, "speed").rawMin],
     [0, 0],
   );
+});
+
+test("a cancelled touch ends a rotary drag", () => {
+  const doc = stubDocument();
+  try {
+    const { host, handlers } = slider({ commitDelay: 5000 });
+    // A rotary 100 px wide: a touch on its right side.
+    const container = {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+      querySelector: () => null,
+    };
+    handlers._slRotaryStart({ clientX: 90, clientY: 50 }, container);
+    assert.equal(host._slRotaryDragging, true);
+    // The browser cancels the touch (a system gesture): the drag is over,
+    // the next swipe scrolls the page instead of turning the rotary.
+    globalThis.document.dispatch("touchcancel");
+    assert.equal(host._slRotaryDragging, false);
+    assert.equal(globalThis.document.listening("touchmove"), false);
+  } finally {
+    doc.restore();
+  }
 });

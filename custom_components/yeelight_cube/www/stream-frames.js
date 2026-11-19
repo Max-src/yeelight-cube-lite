@@ -36,28 +36,39 @@ export function acquireStreamFrames(connection, entityId) {
   let subscription = subscriptions.get(entityId);
   if (!subscription || subscription.connection !== connection) {
     if (subscription) close(subscription);
-    subscription = { connection, frame: null, at: 0, users: 0 };
-    subscription.unsubscribe = connection
-      .subscribeMessage(
-        (message) => {
-          if (typeof message?.frame !== "string") return;
-          subscription.frame = decodeFrame(message.frame);
-          subscription.at = Date.now();
-        },
-        { type: "yeelight_cube/stream_frames", entity_id: entityId },
-      )
-      // An older integration without the command: previews draw as before.
-      .catch(() => null);
+    // The frame as sent (base64), unpacked when a preview asks for it: frames
+    // arrive 25 a second, a preview may paint fewer (or none: hidden tab).
+    subscription = { connection, text: null, frame: null, unpacked: null, at: 0, users: 0 };
+    // A connection without subscriptions (a test page): no frames.
+    subscription.unsubscribe =
+      typeof connection.subscribeMessage !== "function"
+        ? null
+        : connection
+            .subscribeMessage(
+              (message) => {
+                if (typeof message?.frame !== "string") return;
+                subscription.text = message.frame;
+                subscription.at = Date.now();
+              },
+              { type: "yeelight_cube/stream_frames", entity_id: entityId },
+            )
+            // An older integration without the command: previews draw as before.
+            .catch(() => null);
     subscriptions.set(entityId, subscription);
   }
   subscription.users += 1;
   let released = false;
   return {
     latest() {
-      return subscription.frame &&
-        Date.now() - subscription.at < STREAM_FRAME_FRESH_MS
-        ? subscription.frame
-        : null;
+      if (!subscription.text || Date.now() - subscription.at >= STREAM_FRAME_FRESH_MS)
+        return null;
+      // The same array while no new frame came: a caller can tell a frame it
+      // already painted.
+      if (subscription.unpacked !== subscription.text) {
+        subscription.unpacked = subscription.text;
+        subscription.frame = decodeFrame(subscription.text);
+      }
+      return subscription.frame;
     },
     release() {
       if (released) return;

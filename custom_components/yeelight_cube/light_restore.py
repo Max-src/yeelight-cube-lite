@@ -1,11 +1,13 @@
 """Display state persistence for the Yeelight Cube Lite light entity.
 
 Restoring the settings saved in the last state after a Home Assistant restart
-(table-driven, see _RESTORED_ATTRIBUTES), and the in-memory snapshot used by
+(each declared once, in SETTINGS: published and restored from it), and the in-memory snapshot used by
 the save_state / restore_state actions. Mixed into YeelightCubeLight.
 """
 import logging
 import copy
+from collections.abc import Callable
+from typing import NamedTuple
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers.restore_state import ExtraStoredData  # type: ignore
@@ -35,10 +37,12 @@ from .effect_catalog import (
     canonical_button_effect_name,
     clock_style_name_saved_by_1_4,
     canonical_effect_name,
+    INTENSITY_RANGE,
     SPEED_RANGE,
 )
 from .color_adjustments import active_adjustments
 from .layout import FONT_MAPS
+from .light_display import MAX_TEXT_LENGTH
 from .pixel_art_storage import expand_pixels, group_pixels
 from .storage import async_schedule_save
 
@@ -144,55 +148,123 @@ def _bool_only(value):
     return value if isinstance(value, bool) else _INVALID
 
 
-# State attribute -> (entity attribute, converter), restored in this order.
-# Missing or None attributes are skipped, and so is a value the converter
-# rejects. Values that depend on each other (brightness, text colors, mode,
-# clock content, orientation) are restored in YeelightCubeLight._restore_state.
-_RESTORED_ATTRIBUTES = (
+def _text(value):
+    """A saved text, cut to the longest shown (an older version took any)."""
+    return value[:MAX_TEXT_LENGTH] if isinstance(value, str) else _INVALID
+
+
+def _rgb_tuple(value):
+    rgb = _rgb_list(value)
+    return rgb if rgb is _INVALID else tuple(rgb)
+
+
+class Setting(NamedTuple):
+    """A setting kept across a restart, declared once: published as ``key``
+    (extra_state_attributes, saved apart too: extra_restore_state_data) from
+    the light's ``attr``, and restored from it through ``convert``, which
+    returns the value or _INVALID to keep the light's default (its
+    _init_*_state). ``published``: whether a light publishes it (default:
+    every light); ``copy``: what is published from the value (default: the
+    value)."""
+    key: str
+    attr: str
+    convert: Callable
+    published: Callable | None = None
+    copy: Callable | None = None
+
+
+# The settings, restored in this order. Missing or None attributes are
+# skipped, and so is a value the converter rejects. Values that depend on
+# each other (RESTORED_APART) are restored in _restore_state.
+SETTINGS = (
     # Preview adjustments
-    ("preview_hue_shift", "_preview_hue_shift", int),
-    ("preview_temperature", "_preview_temperature", int),
-    ("preview_saturation", "_preview_saturation", int),
-    ("preview_vibrance", "_preview_vibrance", int),
-    ("preview_contrast", "_preview_contrast", int),
-    ("preview_glow", "_preview_glow", int),
-    ("preview_grayscale", "_preview_grayscale", int),
-    ("preview_invert", "_preview_invert", int),
-    ("preview_tint_hue", "_preview_tint_hue", int),
-    ("preview_tint_strength", "_preview_tint_strength", int),
+    Setting("preview_hue_shift", "_preview_hue_shift", int),
+    Setting("preview_temperature", "_preview_temperature", int),
+    Setting("preview_saturation", "_preview_saturation", int),
+    Setting("preview_vibrance", "_preview_vibrance", int),
+    Setting("preview_contrast", "_preview_contrast", int),
+    Setting("preview_glow", "_preview_glow", int),
+    Setting("preview_grayscale", "_preview_grayscale", int),
+    Setting("preview_invert", "_preview_invert", int),
+    Setting("preview_tint_hue", "_preview_tint_hue", int),
+    Setting("preview_tint_strength", "_preview_tint_strength", int),
     # Native clock
-    ("clock_style_id", "_native_clock_style", lambda v: int(v) if int(v) in NATIVE_CLOCK_STYLES else _INVALID),
-    ("clock_show_date", "_native_clock_show_date", bool),
-    ("clock_12_hour", "_native_clock_12_hour", bool),
-    ("clock_colon_blink", "_native_clock_colon_blink", bool),
-    ("clock_color", "_native_clock_color", _int_or_none),
-    ("clock_color_mode", "_native_clock_color_mode", _member_of(NATIVE_COLOR_MODES)),
+    Setting("clock_style_id", "_native_clock_style", lambda v: int(v) if int(v) in NATIVE_CLOCK_STYLES else _INVALID),
+    Setting("clock_show_date", "_native_clock_show_date", bool),
+    Setting("clock_12_hour", "_native_clock_12_hour", bool),
+    Setting("clock_colon_blink", "_native_clock_colon_blink", bool),
+    Setting("clock_color", "_native_clock_color", _int_or_none),
+    Setting("clock_color_mode", "_native_clock_color_mode", _member_of(NATIVE_COLOR_MODES)),
     # Native effects and Music Flow
-    ("native_effect_color", "_native_effect_color", _rgb_list),
-    ("native_effect_color_mode", "_native_effect_color_mode", _member_of(NATIVE_COLOR_MODES)),
-    ("native_effect", "_native_effect", _native_effect_name),
-    ("native_effect_speed", "_native_effect_speed", _clamped(int, 0, 255)),
-    ("native_effect_intensity", "_native_effect_intensity", _clamped(int, 1, 255)),
-    ("native_effect_direction", "_native_effect_direction", _member_of(NATIVE_EFFECT_DIRECTION_VALUES)),
-    ("music_flow_enabled", "_music_flow_enabled", bool),
-    ("music_flow_effect", "_music_flow_effect", _member_of(MUSIC_FLOW_EFFECTS)),
-    ("music_flow_restore_power", "_music_flow_restore_power", _bool_only),
-    ("stored_gif", "_stored_gif", _stored_gif),
-    ("animation_layout", "_animation_layout", _member_of(ANIMATION_LAYOUTS)),
-    ("power_on_state", "_power_on_state", _power_on_state),
-    ("button_effects", "_button_effects", _button_effect_names),
+    Setting("native_effect_color", "_native_effect_color", _rgb_list),
+    Setting("native_effect_color_mode", "_native_effect_color_mode", _member_of(NATIVE_COLOR_MODES)),
+    Setting("native_effect", "_native_effect", _native_effect_name),
+    Setting("native_effect_speed", "_native_effect_speed", _clamped(int, *SPEED_RANGE)),
+    Setting("native_effect_intensity", "_native_effect_intensity", _clamped(int, *INTENSITY_RANGE)),
+    Setting("native_effect_direction", "_native_effect_direction", _member_of(NATIVE_EFFECT_DIRECTION_VALUES)),
+    Setting("music_flow_enabled", "_music_flow_enabled", bool),
+    Setting("music_flow_effect", "_music_flow_effect", _member_of(MUSIC_FLOW_EFFECTS)),
+    Setting("music_flow_restore_power", "_music_flow_restore_power", _bool_only),
+    Setting("stored_gif", "_stored_gif", _stored_gif),
+    Setting("animation_layout", "_animation_layout", _member_of(ANIMATION_LAYOUTS)),
+    Setting("power_on_state", "_power_on_state", _power_on_state),
+    Setting("button_effects", "_button_effects", _button_effect_names, copy=list),
     # Text and layout
-    ("custom_text", "_custom_text", lambda v: v),
-    ("background_color", "_background_color", tuple),
-    ("alignment", "_alignment", _member_of(("left", "center", "right"))),
-    ("font", "_font", _member_of(FONT_MAPS)),
-    ("angle", "_angle", float),
+    Setting("custom_text", "_custom_text", _text),
+    Setting("background_color", "_background_color", _rgb_tuple),
+    Setting("alignment", "_alignment", _member_of(("left", "center", "right"))),
+    Setting("font", "_font", _member_of(FONT_MAPS)),
+    Setting("angle", "_angle", float),
+    Setting("full_panel", "_full_panel", _bool_only),
     # Scrolling
-    ("scroll_speed", "_scroll_speed", float),
-    ("scroll_enabled", "_scroll_enabled", bool),
+    Setting("scroll_speed", "_scroll_speed", float),
+    Setting("scroll_enabled", "_scroll_enabled", bool),
     # Power
-    ("power_limit", "_power_limit", _clamped(float, 0.4, 7.0)),
+    Setting("power_limit", "_power_limit", _clamped(float, 0.4, 7.0)),
+    # Streams: a Cube Lite's stream frame rate limit (a Cube Matrix has none).
+    Setting("lite_stream_fps", "_lite_stream_fps", _clamped(int, 1, 25),
+            published=lambda light: not light.is_cube_matrix),
 )
+
+# (published key, entity attribute, converter), as _restore_state reads them.
+_RESTORED_ATTRIBUTES = tuple((s.key, s.attr, s.convert) for s in SETTINGS)
+
+# What _restore_state restores itself: values that depend on each other or
+# on older versions' names ("brightness" and "is_on" are saved apart only,
+# extra_restore_state_data), and "external_display"
+# (light_lifecycle.async_added_to_hass).
+RESTORED_APART = frozenset({
+    "brightness", "is_on", "text_colors", "rgb_color", "mode", "matrix_mode",
+    "custom_draw_active", "clock_content", "effect_direction_own",
+    "device_orientation", "orientation", "external_display",
+})
+
+# Published attributes that are not restored from the state: what the light
+# or its lamp is (identity, model, connection, Matter), what follows from the
+# settings or shows now, and what is kept elsewhere (favourites and the
+# rotation in the integration's storage, the mount profile in the entry's
+# options).
+NOT_RESTORED = frozenset({
+    "_yeelight_cube_component", "light_entity_id", "ip_address",
+    "content_mode", "display_frozen", "clock_style", "last_command_error",
+    "matrix_own_versions", "matrix_modules", "matrix_module_list",
+    "matrix_columns", "native_effect_catalog_key", "connection", "matter",
+    "matrix_colors",
+    # Kept elsewhere.
+    "favourites", "rotation_intervals", "effect_rotation", "mount_profile",
+})
+
+
+def published_settings(light) -> dict:
+    """The settings (SETTINGS) as the light publishes them
+    (extra_state_attributes)."""
+    published = {}
+    for setting in SETTINGS:
+        if setting.published is not None and not setting.published(light):
+            continue
+        value = getattr(light, setting.attr)
+        published[setting.key] = setting.copy(value) if setting.copy else value
+    return published
 
 
 class StateRestoreMixin:
@@ -265,23 +337,32 @@ class StateRestoreMixin:
 
     def _restore_state(self, old_state) -> None:
         """Restore the display settings saved in the last state before a
-        Home Assistant restart (see _RESTORED_ATTRIBUTES)."""
+        Home Assistant restart (SETTINGS, then RESTORED_APART)."""
         attributes = old_state.attributes
-        _LOGGER.debug("[RESTORE] old_state=%s, attributes=%s", old_state.state, list(attributes))
+        _LOGGER.debug("[RESTORE] old_state=%s, attributes=%s", getattr(old_state, "state", None), list(attributes))
         for key, attr, convert in _RESTORED_ATTRIBUTES:
             raw = attributes.get(key)
             if raw is None:
                 continue
             try:
                 value = convert(raw)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 _LOGGER.debug("[RESTORE] [%s] Ignoring invalid %s=%r", self._ip, key, raw)
                 continue
             if value is not _INVALID:
                 setattr(self, attr, value)
 
-        if attributes.get("brightness") is not None:
-            restored_brightness = int(attributes["brightness"])
+        # On or off as it was: the state, else (the lamp was unreachable at
+        # the restart) the settings saved apart. A lamp turned off is not
+        # drawn on (pixel data turns it on); its Matter reports correct it.
+        power = getattr(old_state, "state", None)
+        if power in ("on", "off"):
+            self._is_on = power == "on"
+        elif isinstance(attributes.get("is_on"), bool):
+            self._is_on = attributes["is_on"]
+
+        restored_brightness = _int_or_none(attributes.get("brightness"))
+        if restored_brightness is not None:
             # Ensure brightness is at least 1 (Home Assistant minimum for ON lights)
             self._brightness = max(1, min(255, restored_brightness))
             # The lamp's own brightness is not known after a restart: the
@@ -292,19 +373,25 @@ class StateRestoreMixin:
                 self._ip, restored_brightness, self._brightness,
             )
 
-        if attributes.get("text_colors") is not None:
-            self._text_colors = [tuple(c) for c in attributes["text_colors"]]
+        # A malformed color is left out (one bad value must not stop the
+        # light from being added); none left: the default colors.
+        saved_colors = attributes.get("text_colors")
+        text_colors = [
+            rgb for rgb in map(_rgb_tuple, saved_colors) if rgb is not _INVALID
+        ] if isinstance(saved_colors, list) else []
+        if text_colors:
+            self._text_colors = text_colors
             self._sync_rgb_color()
         else:
             # Older states kept rgb_color (+ gradient_start / gradient_end)
-            rgb = attributes.get("rgb_color")
-            grad_start = attributes.get("gradient_start")
-            grad_end = attributes.get("gradient_end")
-            if rgb and grad_start and grad_end:
-                self._text_colors = [tuple(rgb), tuple(grad_end)]
+            rgb = _rgb_tuple(attributes.get("rgb_color"))
+            grad_start = _rgb_tuple(attributes.get("gradient_start"))
+            grad_end = _rgb_tuple(attributes.get("gradient_end"))
+            if _INVALID not in (rgb, grad_start, grad_end):
+                self._text_colors = [rgb, grad_end]
                 self._sync_rgb_color()
-            elif rgb:
-                self._text_colors = [tuple(rgb)]
+            elif rgb is not _INVALID:
+                self._text_colors = [rgb]
                 self._sync_rgb_color()
             else:
                 _LOGGER.warning(

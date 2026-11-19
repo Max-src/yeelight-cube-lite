@@ -253,7 +253,7 @@ While the lamp shows its **clock or a native effect**, the text is kept for when
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `text` | Yes | Text to display on the matrix |
+| `text` | Yes | Text to display on the matrix (at most 255 characters) |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -1553,8 +1553,8 @@ Apply real-time color effects to the lamp output.
 | `tint_strength` | No | 0-100 (default 0) | Tint overlay intensity |
 | `entity_id` | Yes | - | Target lamp entity |
 
-Fields you leave out are reset to their default, not kept: send every value
-you want to keep.
+Only the fields you send change: the others keep the value the lamp has
+(the defaults in the table are the values that change nothing).
 
 ```yaml
 action: yeelight_cube.set_preview_adjustments

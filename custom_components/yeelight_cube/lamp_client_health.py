@@ -150,25 +150,40 @@ class ConnectionHealthMixin:
             except OSError:
                 return False
             return True
+        if await self.probe_session():
+            return True
+        return await self.probe_tcp(timeout)
+
+    async def probe_session(self) -> bool:
+        """The answering probe's first step: whether the lamp itself answers
+        PROBE_COMMAND in its UDP session. False when it does not, or there
+        is no session to ask (UDP failed, a Cube Matrix): probe_tcp asks."""
         # A Cube Matrix's music connection answers nothing (and opening it
         # ends the lamp's own effect): it is asked over TCP, a read it
         # answers (get_prop).
+        if not self._udp_usable() or isinstance(self._udp, MusicChannel):
+            return False
+        try:
+            answer = await self._udp.request(*PROBE_COMMAND)
+        except UdpUnavailable:
+            answer = None
+        # Only a result is the lamp's answer: an error can come from its
+        # network chip alone (a quota), the lamp itself stuck. Taken as an
+        # answer, a stuck lamp passed for working again for a minute (its
+        # Power cycle sensor off, frames sent again). Asked over TCP then,
+        # where an error is no answer either (send_once).
+        if isinstance(answer, dict) and "result" in answer:
+            self._silent_since = 0.0
+            return True
+        return False
+
+    async def probe_tcp(self, timeout: float = CONNECT_TIMEOUT) -> bool:
+        """The answering probe over TCP (after probe_session): whether the
+        lamp accepts a connection within ``timeout`` and answers a command
+        on it."""
         matrix = isinstance(self._udp, MusicChannel)
-        if self._udp_usable() and not matrix:
-            try:
-                answer = await self._udp.request(*PROBE_COMMAND)
-            except UdpUnavailable:
-                answer = None
-            # Only a result is the lamp's answer: an error can come from its
-            # network chip alone (a quota), the lamp itself stuck. Taken as an
-            # answer, a stuck lamp passed for working again for a minute (its
-            # Power cycle sensor off, frames sent again). Asked over TCP then,
-            # where an error is no answer either (send_once).
-            if isinstance(answer, dict) and "result" in answer:
-                self._silent_since = 0.0
-                return True
-        # Over TCP from here: no frame re-sent alongside (a re-send would open
-        # a new session and stream in it while the lamp is asked over TCP).
+        # Over TCP from here: the pending re-send of the last frame is
+        # dropped (the next frame starts its own).
         self._cancel_frame_settle()
         try:
             await check_tcp(self._ip, self._port, timeout)

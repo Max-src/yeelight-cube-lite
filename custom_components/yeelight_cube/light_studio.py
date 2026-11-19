@@ -8,12 +8,20 @@ clock's colour or palette).
 
 In the palette color mode, an effect the lamp cannot show in the whole
 palette itself (lamp_studio.studio_runs), or a clock over one
-(clock_studio_runs), is drawn by the integration and sent in direct mode,
-like a drawing, STUDIO_FPS frames a second, over the LAN (no Matter needed).
-The light stays in the Native Effect or Clock mode (cards, rotation,
-favourites, restore see an effect or a clock); only how it reaches the lamp
-differs. A streamed clock is its background recolored, shown through its
-digits for the current time (clock_face), as the lamp's own clock does.
+(clock_studio_runs), is drawn by the integration and streamed, like a
+drawing. The light stays in the Native Effect or Clock mode (cards,
+rotation, favourites, restore see an effect or a clock); only how it
+reaches the lamp differs. A streamed clock is its background recolored,
+shown through its digits for the current time (clock_face), as the lamp's
+own clock does.
+
+Two routes (stream_routes), picked again before every frame:
+
+- a Cube Lite: direct mode over the LAN, paced (LITE_LAN_GAP, scaled by its
+  Stream frame rate limit; the last picture again after LITE_LAN_RESEND;
+  Skip Unchanged Stream Frames leaves the repeats out);
+- a Cube Matrix: its drawing over Matter (light_matrix), every render; over
+  the LAN while Matter is not available.
 
 One rule keeps the stream out of everything else's way: before each frame it
 checks it should still run (studio_streaming) and takes the lamp's lock only
@@ -48,6 +56,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 from .clock_face import clock_content, clock_digit_pixels, clock_text
 from .const import (
     CONF_KEEP_STREAMING_WHEN_OFF,
+    CONF_SKIP_UNCHANGED_FRAMES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
 )
@@ -59,8 +68,7 @@ from .effect_catalog import (
     clock_style_direct,
     clock_style_effect,
 )
-from .lamp_protocol import LAMP_FRAME_BUFFERS, encode_rgb_frame, partial_frame, trace_frame
-from .lamp_protocol import LAMP_ERRORS
+from .lamp_protocol import LAMP_ERRORS, encode_rgb_frame, trace_frame
 from .lamp_core import drawn_in_full, led_appearance, raw_colours
 from .lamp_renderers import (
     FIREWORKS_MODE,
@@ -80,12 +88,33 @@ from .lamp_studio import (
 from .light_color import hardware_brightness_for
 from .light_connection import _get_device_lock
 from .light_display import ACTIVATION_TIMING
+from .stream_routes import LanPacer, LanStreamRoute, MatterStreamRoute, StreamDiag
 
 _LOGGER = logging.getLogger(__name__)
 
 # One frame per render of the lamp's renderers: the lamp draws every 40 ms,
 # so a faster stream would only have frames it never shows.
 STUDIO_FRAME_SECONDS = 1 / STUDIO_FPS
+# A Cube Lite's LAN stream gets a frame when the picture changed, never
+# sooner than LITE_LAN_GAP after the last one, and the last one again after
+# LITE_LAN_RESEND without a change (direct mode is never left silent).
+# Measured 2026-11-17 on two Cube Lites, streams ended abruptly: frames 40 ms
+# apart left a lamp stuck about 1 time in 5 (two frames reaching its LED part
+# back to back cross the 1,024 bytes its serial link takes at once); 200 ms
+# apart, 0 times in 50. Every LAN frame is shown at once and in full. The
+# repeat stays under the 300 ms after which the lamp's network part sends
+# again, in one block, every frame its LED part has not confirmed (old
+# frames shown again; two or more cross the 1,024 bytes): with frames
+# 0.2-0.24 s apart that never happens mid-stream, only at a stream's end.
+LITE_LAN_GAP = 0.2
+LITE_LAN_RESEND = 0.2
+# The user's limit, per lamp (number "Stream frame rate limit", the light's
+# _lite_stream_fps; LITE_LAN_GAP is the gap at the default 5): new pictures at
+# most this many times a second. Below 5 the last picture still goes every LITE_LAN_RESEND; above
+# 5 frames come closer than the 0.2 s measured safe (the user's experiment).
+LITE_STREAM_FPS_DEFAULT = 5
+LITE_STREAM_FPS_MIN = 1
+LITE_STREAM_FPS_MAX = 25
 # After a frame could not be sent, the stream waits this long before the
 # next try (a lamp that went away is not asked 25 times a second).
 STUDIO_RETRY_SECONDS = 2.0
@@ -93,21 +122,6 @@ STUDIO_RETRY_SECONDS = 2.0
 # check unanswered), the stream looks again this often (s), not every frame:
 # a frame resumes within this long once it can.
 STUDIO_HOLD_SECONDS = 1.0
-# Effects streamed as their changed frames only, with no frame sent again
-# between them (an experiment, off: none). A Cube Lite left without frames
-# for more than about 0.8 s saves what it shows, and a stream's pauses are
-# when Cube Lites hang; the transport's keep-busy re-sends exist to avoid them.
-STREAM_CHANGES_ONLY_EFFECTS: frozenset[str] = frozenset()
-# Effects a Cube Lite is streamed as partial frames (lamp_protocol.
-# partial_frame): each frame only up to its last changed pixel, a single
-# pixel when none changed, so a frame still goes every render at a fraction
-# of the bytes. Off (none): filmed 2026-11-16, a Cube Lite taking partial
-# frames at 25 a second now and then shows, for a moment, an older full
-# picture it was sent (seconds old) -- invisible with full frames, where the
-# older picture is the one just before. update_leds itself keeps the pixels a
-# frame does not carry (checked one frame at a time).
-PARTIAL_FRAME_EFFECTS: frozenset[str] = frozenset()
-PARTIAL_FULL_FRAME_SECONDS = 2.0
 # A stream that ended on an error starts again after STUDIO_RETRY_SECONDS,
 # twice as long after each crash in a row, up to this long (s).
 STUDIO_RESTART_MOST = 60.0
@@ -115,12 +129,6 @@ STUDIO_RESTART_MOST = 60.0
 # stream's last frame sent while it is this recent (s); else their own
 # drawing of the effect.
 STREAM_PREVIEW_FRESH = 1.0
-# Normally every render is sent, the same as the last one or not. Falling
-# Blocks now sends changes only, at the owner's request, to compare hangs
-# with less traffic (including no transport keep-busy repeats). Other
-# effects retain the steady stream. The lab tied the Cube Lite's hang to its traffic
-# stopping and starting (pauses, ends: phases 7-13), never to a steady
-# stream; sending only the frames that changed made a still moment a pause.
 # A streamed Cube Lite is asked every this long (s) for an answer of its own
 # (LampClient.probe, set_scene keep): frames are never answered, so a lamp
 # that stopped answering mid-stream (its LAN part stuck, only a power cycle
@@ -133,15 +141,12 @@ STUDIO_PROBE_SECONDS = 30.0
 STUDIO_SILENT_PROBE_SECONDS = 5.0
 # Frames pause only after this many checks in a row went unanswered (about
 # STUDIO_PROBE_SECONDS + 2 x STUDIO_SILENT_PROBE_SECONDS); the frames go on
-# through a lost answer or two. A pause is the end of a stream, and lamp runs
-# showed stream ends are when a Cube Lite hangs (2026-11-15, phases 19-21:
-# every hang found at a stream's end, 10 of 57 ends; none during a stream,
-# 120 checks of this kind included): on the far lamp one answer in ~30 is
-# lost, and each lost one used to pause the stream and so risk a hang. A
-# lamp that really hangs gets frames meanwhile, which is harmless, and is
-# reported ~10 s later than with 1. (The morning's withdrawn change also had
-# this; its hang came at a drain of the lamp's commands, removed since.)
-# firmware/H41_STREAM_PLAN_2026-11-15.md in the lab repo.
+# through a lost answer or two. A pause is the end of a stream, and stream
+# ends are when a Cube Lite has hung (2026-11-15: every hang found at a
+# stream's end, 10 of 57 ends; none during a stream): on the far lamp one
+# answer in ~30 is lost, and each lost one used to pause the stream and so
+# risk a hang. A lamp that really hangs gets frames meanwhile, which is
+# harmless, and is reported ~10 s later than with 1.
 STUDIO_SILENT_AFTER = 3
 
 
@@ -206,6 +211,16 @@ class StudioStreamMixin:
         # Off, but still streaming, black (Keep Streaming When Off,
         # light_onoff): the effect's place is kept for when it is turned on.
         self._studio_standby = False
+        # A Cube Lite's stream frame rate limit (number "Stream frame rate limit").
+        self._lite_stream_fps = LITE_STREAM_FPS_DEFAULT
+
+    def _lite_lan_gap(self) -> float:
+        """The least time between two new pictures on a Cube Lite's LAN
+        stream: LITE_LAN_GAP at the default rate, scaled by its frame rate
+        limit."""
+        fps = getattr(self, "_lite_stream_fps", None) or LITE_STREAM_FPS_DEFAULT
+        fps = max(LITE_STREAM_FPS_MIN, min(LITE_STREAM_FPS_MAX, float(fps)))
+        return LITE_LAN_GAP * LITE_STREAM_FPS_DEFAULT / fps
 
     # ── What runs ──────────────────────────────────────────────────────
     def _clock_style(self) -> dict:
@@ -280,12 +295,14 @@ class StudioStreamMixin:
         palette, drawn in an executor (a renderer's first frame can replay
         its history, a tenth of a second or more on a slow host), then the
         stages every drawing gets last (the low-brightness correction, the
-        color accuracy, the power limit). Like the lamp's own effects it
-        takes no color adjustment."""
+        color accuracy, the power limit), in the same executor job
+        (_drawn_payload). Like the lamp's own effects it takes no color
+        adjustment."""
+        run = self.hass.async_add_executor_job
         if self.device_profile.streams_effects:
-            frame = await self.hass.async_add_executor_job(drawn_in_full, self._own_effect_frame, render)
+            frame, payload = await run(self._drawn_payload, self._own_effect_frame, render)
             self._studio_rendered = (frame, not self.device_profile.raw_colours)
-            return encode_rgb_frame(self._lamp_frame(self._brightness_stages(frame)))
+            return payload
         palette = [list(colour) for colour in self._text_colors or ()]
         if self._mode == MODE_CLOCK:
             style = self._clock_style()
@@ -304,8 +321,8 @@ class StudioStreamMixin:
                 )
             if not clock_studio_runs(effect, colour_mode, palette):
                 palette = []  # streamed in its own colours (LITE_STREAMED_EFFECTS)
-            frame = await self.hass.async_add_executor_job(
-                drawn_in_full, studio_clock_frame, effect, render,
+            frame, payload = await run(
+                self._drawn_payload, studio_clock_frame, effect, render,
                 self._native_effect_speed, self._chosen_effect_intensity(), palette, direct,
                 dt_util.now(), clock_content(self),
                 bool(self._native_clock_12_hour),
@@ -314,22 +331,29 @@ class StudioStreamMixin:
                 colours, self._studio_seed,
             )
             self._studio_rendered = (frame, True)
-            return encode_rgb_frame(self._lamp_frame(self._brightness_stages(frame)))
+            return payload
         if not studio_runs(self._native_effect, self._native_effect_color_mode, palette):
             # An effect the Cube Lite can't run itself, in its own colours
             # (raw: the lamp converts a stream's pixels).
-            frame = await self.hass.async_add_executor_job(drawn_in_full, self._own_effect_frame_raw, render)
+            frame, payload = await run(self._drawn_payload, self._own_effect_frame_raw, render)
             self._studio_rendered = (frame, False)
-            return encode_rgb_frame(self._lamp_frame(self._brightness_stages(frame)))
+            return payload
         # From the effect's very first render, as the lamp starts its own
         # (Building Blocks on an empty panel), not where a preview starts.
-        frame = await self.hass.async_add_executor_job(
-            drawn_in_full, studio_frame_at, self._native_effect, render,
+        frame, payload = await run(
+            self._drawn_payload, studio_frame_at, self._native_effect, render,
             self._native_effect_direction, self._native_effect_speed,
             self._device_orientation, self._chosen_effect_intensity(), palette, True,
         )
         self._studio_rendered = (frame, True)
-        return encode_rgb_frame(self._lamp_frame(self._brightness_stages(frame)))
+        return payload
+
+    def _drawn_payload(self, draw, *args) -> tuple[list, str]:
+        """In the executor: the frame ``draw(*args)`` draws (lamp order,
+        lamp_core.drawn_in_full), and that frame as update_leds takes it,
+        after the brightness stages and the power limit."""
+        frame = drawn_in_full(draw, *args)
+        return frame, encode_rgb_frame(self._lamp_frame(self._brightness_stages(frame)))
 
     def _own_effect_frame(self, render: int) -> list:
         """What a Cube Lite would show now for the selected effect or clock,
@@ -408,9 +432,7 @@ class StudioStreamMixin:
         is selected (each frame reads the settings): nothing to do."""
         if claim := getattr(self, "_claim_display", None):
             claim()
-        self._lamp_client.stream_changes_only = (
-            self._mode == MODE_NATIVE_EFFECT and self._native_effect in STREAM_CHANGES_ONLY_EFFECTS
-        )
+        self._lamp_client.stream_changes_only = self._skips_unchanged_frames()
         self._studio_last_sent = None
         over_matter = getattr(self, "matrix_streams_over_matter", None)
         matter = over_matter is not None and over_matter()
@@ -435,7 +457,7 @@ class StudioStreamMixin:
         loop = asyncio.get_running_loop()
         # Where it was (after a Freeze, or back from another display): on
         # from the next render.
-        self._studio_origin = loop.time() - (self._studio_last_render + 1) * STUDIO_FRAME_SECONDS
+        self._studio_resume_origin(loop.time())
         try:
             payload = await self._studio_payload(self._studio_render_at(loop.time()))
         except Exception:  # noqa: BLE001 -- the stream tries again
@@ -458,17 +480,17 @@ class StudioStreamMixin:
         self._native_effect_streamed()
         self._run_studio_loop("LAN")
 
+    def _studio_resume_origin(self, now: float) -> None:
+        """The stream's clock set so that a frame due at ``now`` (the event
+        loop's clock) shows the render after the last one shown."""
+        self._studio_origin = now - (self._studio_last_render + 1) * STUDIO_FRAME_SECONDS
+
     async def _start_matrix_stream(self) -> bool:
-        """A stream over Matter (light_matrix: a Cube Matrix's, a Cube
-        Lite's): its first frame as the lamp's drawing, then the stream.
-        False when Matter failed: the caller streams over the LAN."""
+        """A Cube Matrix's stream over Matter (light_matrix): its first
+        frame as the lamp's drawing, then the stream. False when Matter
+        failed: the caller streams over the LAN."""
         loop = asyncio.get_running_loop()
-        if not getattr(self, "is_cube_matrix", False):
-            # A Cube Lite may have run its own effect, or the LAN stream,
-            # since: its drawing is started again (setEffect), never a
-            # setData onto whatever it shows.
-            self._matrix_shown = None
-        self._studio_origin = loop.time() - (self._studio_last_render + 1) * STUDIO_FRAME_SECONDS
+        self._studio_resume_origin(loop.time())
         try:
             pixels = await self._matrix_stream_pixels(self._studio_render_at(loop.time()))
             await self._send_matrix_stream_frame(pixels)
@@ -506,24 +528,34 @@ class StudioStreamMixin:
             self.async_schedule_update_ha_state()
 
     # ── The stream ─────────────────────────────────────────────────────
+    def _studio_routes(self, loop) -> tuple:
+        """The stream's routes (stream_routes): over Matter (a Cube Matrix's
+        drawing, light_matrix: every render) and over the LAN. A lamp that
+        shows fewer frames a second over the LAN (device_profile.max_fps,
+        the Cube Matrix) is sent every n-th render there: the effect keeps
+        its speed. A Cube Lite's LAN frames are paced (LanPacer)."""
+        lan_step = STUDIO_FRAME_SECONDS * studio_stride(getattr(self.device_profile, "max_fps", None))
+        pacer = None if getattr(self, "is_cube_matrix", False) else LanPacer(LITE_LAN_RESEND)
+        return (
+            MatterStreamRoute(self, STUDIO_FRAME_SECONDS),
+            LanStreamRoute(self, lan_step, LAMP_ERRORS, loop.time, pacer),
+        )
+
     async def _studio_loop(self) -> None:
-        """A frame every STUDIO_FRAME_SECONDS while studio_streaming, never
-        while another command holds the lamp, and only over UDP. Each frame
-        is drawn before it is due, then sent when it is: the frames leave
-        evenly, each the next render."""
+        """A frame every route step while studio_streaming, never while
+        another command holds the lamp, and only over UDP or Matter. Each
+        frame is drawn before it is due, then sent when it is: the frames
+        leave evenly, each the next render."""
         loop = asyncio.get_running_loop()
         lock = _get_device_lock(self._ip)
         # From the first frame's moment (_start_studio_stream): the next is
         # the next render.
         due = self._studio_origin + self._studio_last_render * STUDIO_FRAME_SECONDS
         held = False  # frames were not sent (TCP, an error): direct mode again
-        # A lamp that shows fewer frames a second over the LAN
-        # (device_profile.max_fps, the Cube Matrix) is sent every n-th render
-        # there: the effect keeps its speed. Over Matter (a Cube Matrix's
-        # drawing, light_matrix) it takes every render.
-        lan_step = STUDIO_FRAME_SECONDS * studio_stride(getattr(self.device_profile, "max_fps", None))
         over_matter = getattr(self, "matrix_streams_over_matter", None)
-        # Except for Falling Blocks, the transport keeps pauses in frames busy
+        matter_route, lan_route = self._studio_routes(loop)
+        diag = StreamDiag(self._ip, _LOGGER, self.stream_report)
+        # The transport keeps pauses in frames busy while the stream runs
         # (LampClient.stream_running): a slow or failed render never leaves
         # a Cube Lite silent mid-stream.
         self._lamp_client.stream_running("studio", True)
@@ -532,163 +564,85 @@ class StudioStreamMixin:
         self._studio_started_at = time.time()  # stream_report
         standing_by = False
         last_sent = getattr(self, "_studio_last_sent", None)
-        # The frames the lamp was left with, one per buffer (partial
-        # frames, lamp_protocol.partial_frame): none known yet.
-        lamp_shows: tuple[bytes, ...] = ()
-        full_frame_at = 0.0
-        counts = dict(rendered=0, submitted=0, unchanged=0, locked=0, unavailable=0, errors=0)
-        max_render_ms = max_send_ms = 0.0
-        last_status = None
-        report_at = 0.0
         try:
             while self.studio_streaming():
-                matter = over_matter is not None and over_matter()
-                changes_only = (
-                    self._mode == MODE_NATIVE_EFFECT and self._native_effect in STREAM_CHANGES_ONLY_EFFECTS
-                    and self._is_on
-                )
-                self._lamp_client.stream_changes_only = changes_only
-                route = "Matter" if matter else "LAN"
-                status = (route, self._lamp_client.transport, self._lamp_client.is_connected(),
-                          getattr(self._lamp_client, "stream_silent", False), changes_only,
-                          self._studio_key)
-                if status != last_status or loop.time() >= report_at:
-                    _LOGGER.info(
-                        "[STREAM DIAG] [%s] route=%s transport=%s connected=%s silent=%s "
-                        "changes_only=%s counts=%s max_render_ms=%.1f max_send_ms=%.1f; %s",
-                        self._ip, *status[:5], counts, max_render_ms, max_send_ms, self.stream_report(),
-                    )
-                    last_status = status
-                    report_at = loop.time() + 30.0
-                step = STUDIO_FRAME_SECONDS if matter else lan_step
-                due += step
-                if loop.time() - due > step:
+                route = matter_route if over_matter is not None and over_matter() else lan_route
+                client = self._lamp_client
+                # Skip Unchanged Stream Frames: changed frames only, none sent
+                # again between them (not the black standby frames).
+                changes_only = self._skips_unchanged_frames() and self._is_on
+                # A Cube Lite paced over the LAN: the stream sends again itself
+                # (LITE_LAN_RESEND), not the transport every 40 ms.
+                client.stream_changes_only = changes_only or route.paced
+                diag.status(loop.time(), (
+                    route.name, client.transport, client.is_connected(),
+                    getattr(client, "stream_silent", False), changes_only, self._studio_key,
+                ))
+                due += route.step
+                if loop.time() - due > route.step:
                     due = loop.time()  # late (a busy host): no catching up
                 on = self._is_on
                 if not on:
                     # Off on standby: black frames, the effect held where it was.
                     standing_by = True
-                    payload = self._standby_pixels() if matter else self._standby_payload()
+                    payload = route.standby()
                     render = self._studio_last_render
                 else:
                     if standing_by:
                         # On again: from the frame after the last one shown.
                         standing_by = False
-                        self._studio_origin = due - (self._studio_last_render + 1) * STUDIO_FRAME_SECONDS
+                        self._studio_resume_origin(due)
                     render = self._studio_render_at(due)
                 draw_started = loop.time()
-                try:
-                    if not on:
-                        pass  # the black frame
-                    elif matter:
-                        payload = await self._matrix_stream_pixels(render)
-                    else:
-                        payload = await self._studio_payload(render)
-                except Exception:  # noqa: BLE001 -- a renderer's bug must not end the stream
-                    counts["errors"] += 1
-                    if not render_failed:
-                        render_failed = True
-                        _LOGGER.exception(
-                            "[STUDIO] [%s] Frame %d could not be drawn: the lamp keeps the last "
-                            "one, drawing is tried again", self._ip, render,
-                        )
-                    due = loop.time() + STUDIO_RETRY_SECONDS
-                    await asyncio.sleep(STUDIO_RETRY_SECONDS)
-                    continue
-                counts["rendered"] += 1
-                max_render_ms = max(max_render_ms, (loop.time() - draw_started) * 1000)
+                if on:
+                    try:
+                        payload = await route.draw(render)
+                    except Exception:  # noqa: BLE001 -- a renderer's bug must not end the stream
+                        diag.count("errors")
+                        if not render_failed:
+                            render_failed = True
+                            _LOGGER.exception(
+                                "[STUDIO] [%s] Frame %d could not be drawn: the lamp keeps the last "
+                                "one, drawing is tried again", self._ip, render,
+                            )
+                        due = loop.time() + STUDIO_RETRY_SECONDS
+                        await asyncio.sleep(STUDIO_RETRY_SECONDS)
+                        continue
+                diag.rendered(loop.time() - draw_started)
                 wait = due - loop.time()
                 if wait > 0:
                     await asyncio.sleep(wait)
                 if not self.studio_streaming():
                     break
                 if lock.locked():
-                    counts["locked"] += 1
+                    diag.count("locked")
                     continue  # another command goes first
+                # Free: taken at once (nothing runs in between).
                 async with lock:
-                    if not self.studio_streaming():
-                        break
-                    candidate = (route, self._studio_key, payload)
-                    if matter and getattr(self._lamp_client, "stream_silent", False):
-                        # A Cube Lite that left its last checks unanswered
-                        # (_stream_watchdog): its network part acknowledges
-                        # frames it cannot show. None until it answers; then
-                        # its drawing again in full (it may have restarted).
-                        counts["unavailable"] += 1
-                        held = True
-                        self._matrix_shown = None
-                        due = loop.time() + STUDIO_HOLD_SECONDS
-                        continue
-                    if matter:
-                        try:
-                            if (changes_only and not held and candidate == last_sent
-                                    and self._matrix_drawing_shown(0)):
-                                counts["unchanged"] += 1
-                                continue
-                            send_started = loop.time()
-                            await self._send_matrix_stream_frame(payload)
-                            max_send_ms = max(max_send_ms, (loop.time() - send_started) * 1000)
-                            counts["submitted"] += 1
-                            if on:
-                                self._publish_stream_frame()
-                            last_sent = candidate
-                            held = False
-                        except Exception as err:  # noqa: BLE001 -- tried again shortly
-                            counts["errors"] += 1
-                            _LOGGER.warning("[STREAM DIAG] [%s] Matter frame failed: %s; %s", self._ip, err, self.stream_report())
-                            held = True  # over the LAN, if it goes on there
-                            due = loop.time() + STUDIO_RETRY_SECONDS
-                        continue
-                    if self._lamp_client.transport != "udp" or not self._lamp_client.is_connected():
-                        counts["unavailable"] += 1
+                    if route.unavailable():
+                        diag.count("unavailable")
                         held = True
                         due = loop.time() + STUDIO_HOLD_SECONDS
                         continue
-                    if getattr(self._lamp_client, "stream_silent", False):
-                        # The lamp left its last check unanswered
-                        # (_stream_watchdog): no frames until it answers, then
-                        # direct mode again.
-                        counts["unavailable"] += 1
-                        held = True
-                        self._direct_mode_lost()
-                        due = loop.time() + STUDIO_HOLD_SECONDS
-                        continue
+                    candidate = (route.name, self._studio_key, payload)
                     try:
-                        trusted = self._direct_mode_trusted()
-                        if changes_only and not held and trusted and candidate == last_sent:
-                            counts["unchanged"] += 1
+                        skipped = await route.pace(candidate, last_sent, held, changes_only)
+                        if skipped is not None:
+                            diag.count(skipped)
                             continue
                         send_started = loop.time()
-                        if held or not trusted:
-                            await self.ensure_fx_ready()
-                            held = False
-                            lamp_shows = ()  # direct mode again: full frames
-                        sent = payload
-                        if self._partial_frames():
-                            if loop.time() - full_frame_at >= PARTIAL_FULL_FRAME_SECONDS:
-                                lamp_shows = ()  # every buffer in full again
-                            sent, shows = partial_frame(payload, lamp_shows)
-                            if not lamp_shows:
-                                full_frame_at = loop.time()
-                        else:
-                            shows = None
-                        before, lamp_shows = lamp_shows, ()  # unknown while it is sent
-                        await self._lamp_client.send_command_fast("update_leds", [sent])
-                        if shows is not None:
-                            lamp_shows = (*before, shows)[-LAMP_FRAME_BUFFERS:]
-                        max_send_ms = max(max_send_ms, (loop.time() - send_started) * 1000)
-                        counts["submitted"] += 1
-                        if sent is not payload:
-                            counts["partial"] = counts.get("partial", 0) + 1
-                        last_sent = candidate
-                        if on:
-                            self._publish_stream_frame()
-                    except LAMP_ERRORS as err:  # tried again shortly
-                        counts["errors"] += 1
-                        _LOGGER.warning("[STREAM DIAG] [%s] LAN frame failed (%s): %s; %s", self._ip, self._lamp_client.transport, err, self.stream_report())
+                        await route.send(payload, held)
+                    except route.errors as err:  # tried again shortly
+                        diag.failed(route.name, client.transport, err)
                         held = True
-                        self._direct_mode_lost()
+                        route.failed()
                         due = loop.time() + STUDIO_RETRY_SECONDS
+                        continue
+                    held = False
+                    diag.submitted(loop.time() - send_started)
+                    last_sent = candidate
+                    if on:
+                        self._publish_stream_frame()
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 -- restarted below
@@ -697,28 +651,48 @@ class StudioStreamMixin:
         finally:
             self._lamp_client.stream_changes_only = False
             self._studio_last_sent = None
-            _LOGGER.info(
-                "[STREAM DIAG] [%s] Stopped crashed=%s counts=%s max_render_ms=%.1f "
-                "max_send_ms=%.1f; %s", self._ip, crashed, counts, max_render_ms,
-                max_send_ms, self.stream_report(),
-            )
+            diag.stopped(crashed)
             self._lamp_client.stream_running("studio", False)
-            self._studio_standby = False
             _LOGGER.debug("[STUDIO] [%s] Stream stopped", self._ip)
-            if asyncio.current_task() is self._studio_task:
-                self._studio_task = None
+            if not crashed:
+                self._studio_stream_ended()
         if crashed:
-            # Still selected: the stream goes on after STUDIO_RETRY_SECONDS
-            # (a frame's error, not the selection, ended it), twice as long
-            # after each crash in a row, up to STUDIO_RESTART_MOST: a bug that
-            # ends every stream at once never restarts it in a tight loop.
-            crashes = self._studio_crashes
-            self._studio_crashes = crashes + 1
-            await asyncio.sleep(min(STUDIO_RESTART_MOST, STUDIO_RETRY_SECONDS * 2 ** crashes))
-            if self.studio_streaming() and self._studio_task is None:
-                self._run_studio_loop("LAN, after an error")
+            await self._restart_studio_loop()
         else:
             self._studio_crashes = 0
+
+    def _studio_stream_ended(self) -> None:
+        """The stream is over: standby off, and no task when it was this one."""
+        self._studio_standby = False
+        if asyncio.current_task() is self._studio_task:
+            self._studio_task = None
+
+    async def _restart_studio_loop(self) -> None:
+        """After a crash, while still selected: the stream goes on after
+        STUDIO_RETRY_SECONDS (a frame's error, not the selection, ended it),
+        twice as long after each crash in a row, up to STUDIO_RESTART_MOST:
+        a bug that ends every stream at once never restarts it in a tight
+        loop. Meanwhile this task stays the stream's (stop_studio_stream
+        cancels it, Keep Streaming When Off still holds: the standby stream
+        comes back black), and the stream goes on from the render after the
+        last one shown, not as far on as the wait."""
+        crashes = self._studio_crashes
+        self._studio_crashes = crashes + 1
+        restarted = False
+        try:
+            await asyncio.sleep(min(STUDIO_RESTART_MOST, STUDIO_RETRY_SECONDS * 2 ** crashes))
+            if asyncio.current_task() is self._studio_task:
+                self._studio_task = None
+            if self._studio_task is None and self.studio_streaming():
+                self._studio_resume_origin(asyncio.get_running_loop().time())
+                self._run_studio_loop("its route, after an error")
+                restarted = True
+        finally:
+            if not restarted:
+                if asyncio.current_task() is self._studio_task:
+                    self._studio_task = None
+                if self._studio_task is None:
+                    self._studio_standby = False
 
     # ── The stream's frames for the previews ───────────────────────────
     def _publish_stream_frame(self) -> None:
@@ -775,16 +749,6 @@ class StudioStreamMixin:
         listeners.add(listener)
         return lambda: listeners.discard(listener)
 
-    def _partial_frames(self) -> bool:
-        """Whether this stream goes as partial frames (PARTIAL_FRAME_EFFECTS:
-        a Cube Lite, over the LAN, showing one of them)."""
-        return (
-            self._is_on
-            and self._mode == MODE_NATIVE_EFFECT
-            and self._native_effect in PARTIAL_FRAME_EFFECTS
-            and not getattr(self, "is_cube_matrix", False)
-        )
-
     def _standby_payload(self) -> str:
         """A black frame, as update_leds takes it (the standby stream)."""
         return encode_rgb_frame(self._lamp_frame([(0, 0, 0)] * 100))
@@ -799,6 +763,20 @@ class StudioStreamMixin:
             and bool(entry.options.get(CONF_KEEP_STREAMING_WHEN_OFF, False))
             and not getattr(self, "is_cube_matrix", False)
             and task is not None and not task.done()
+        )
+
+    def _skips_unchanged_frames(self) -> bool:
+        """Skip Unchanged Stream Frames (a Cube Lite's switch): a frame the
+        same as the last one sent is not sent, not even as the keep-alive
+        repeat (LITE_LAN_RESEND). The lamp is then left without frames while
+        the picture holds still: a Cube Lite left so for more than about
+        0.8 s saves what it shows, and a stream's pauses are when Cube Lites
+        have hung (docs/STREAMING.md). Off by default."""
+        entry = getattr(self, "_config_entry", None)
+        return (
+            entry is not None
+            and bool(entry.options.get(CONF_SKIP_UNCHANGED_FRAMES, False))
+            and not getattr(self, "is_cube_matrix", False)
         )
 
     def _streams_changed(self) -> None:
@@ -820,9 +798,10 @@ class StudioStreamMixin:
         """While anything streams to a Cube Lite, ask it every
         STUDIO_PROBE_SECONDS for an answer of its own (frames are never
         answered: a lamp stuck mid-stream was not seen), every
-        STUDIO_SILENT_PROBE_SECONDS while it is silent. Under the lamp's lock,
-        so no frame goes with the check. Silent: stream_silent (the effect
-        stream pauses), the problem check runs (_stream_probe)."""
+        STUDIO_SILENT_PROBE_SECONDS while it is silent. Silent:
+        stream_silent (the effect stream pauses), the problem check runs
+        (_stream_probe). Not while the lamp is being brought back over the
+        LAN (light_link_recovery: that sweep asks it)."""
         matrix = self._lamp_client
         lock = _get_device_lock(self._ip)
         wait = STUDIO_PROBE_SECONDS
@@ -833,14 +812,15 @@ class StudioStreamMixin:
                 if not matrix.streams_running:
                     break
                 wait = STUDIO_PROBE_SECONDS
+                if getattr(self, "_link_recovery_running", False):
+                    continue
                 # Whatever the transport: a stuck lamp's UDP session fails
                 # and the stream falls back to TCP, holding its frames, while
                 # the lamp still accepts connections -- the connection's own
                 # check, which only connects, does not see it (2026-11-16).
                 # The probe asks the lamp itself, over TCP too (one command
                 # per check, far within its TCP quota).
-                async with lock:
-                    answered = await self._stream_probe(misses)
+                answered = await self._stream_probe(misses, lock)
                 misses = 0 if answered else misses + 1
                 # Frames go on through a lost answer or two (STUDIO_SILENT_AFTER).
                 matrix.stream_silent = misses >= STUDIO_SILENT_AFTER
@@ -876,20 +856,47 @@ class StudioStreamMixin:
         except Exception:  # noqa: BLE001 -- only for a log line
             return "(no stream report)"
 
-    async def _stream_probe(self, misses: int = 0) -> bool:
+    async def _probe_streamed_lamp(self, lock=None) -> bool:
+        """Whether the lamp itself answers (LampClient.probe, answering):
+        asked in its UDP session under the lamp's ``lock`` (no frame goes
+        with the question), then, unanswered, over TCP without the lock, so
+        the frames go on meanwhile."""
+        client = self._lamp_client
+        session = getattr(client, "probe_session", None)
+        tcp = getattr(client, "probe_tcp", None)
+        if session is None or tcp is None:
+            # A transport that asks in one step.
+            if lock is None:
+                return await client.probe(answering=True)
+            async with lock:
+                return await client.probe(answering=True)
+        if lock is None:
+            answered = await session()
+        else:
+            async with lock:
+                answered = await session()
+        return answered or await tcp()
+
+    async def _stream_probe(self, misses: int = 0, lock=None) -> bool:
         """Whether the streamed lamp itself still answers (STUDIO_PROBE_SECONDS),
-        after ``misses`` checks unanswered in a row. Unanswered: logged (INFO
+        after ``misses`` checks unanswered in a row (_probe_streamed_lamp:
+        only its UDP question holds ``lock``). Unanswered: logged (INFO
         while frames go on, a WARNING once when they pause:
         STUDIO_SILENT_AFTER), and the problem check runs now (a lamp that
         accepts connections but answers nothing for a minute is reported
         stuck: issues.lamp_problems)."""
         probe_started = time.monotonic()
         try:
-            answered = await self._lamp_client.probe(answering=True)
+            answered = await self._probe_streamed_lamp(lock)
         except LAMP_ERRORS as err:  # taken as unanswered
             _LOGGER.debug("[STUDIO] [%s] Probe failed: %s", self._ip, err)
             answered = False
-        _LOGGER.info(
+        verdict = None
+        if not answered and (check := getattr(self, "matter_controller_check", None)):
+            # Asked over Matter too (light_matrix): whether the lamp's LED
+            # part answers there, for the log below.
+            verdict = await check()
+        _LOGGER.debug(
             "[STREAM DIAG] [%s] Probe answered=%s transport=%s elapsed_ms=%.1f misses_before=%d; %s",
             self._ip, answered, self._lamp_client.transport,
             (time.monotonic() - probe_started) * 1000, misses, self.stream_report(),
@@ -911,7 +918,12 @@ class StudioStreamMixin:
             self._stream_silence_logged = True
             _LOGGER.warning(
                 "[STUDIO] [%s] The streamed lamp stopped answering: frames paused until it does "
-                "(a lamp that stays silent needs a power cycle). %s", self._ip, self.stream_report(),
+                "(a lamp that stays silent needs a power cycle)%s. %s", self._ip,
+                {
+                    "stuck": "; over Matter its network part says the LED part does not answer",
+                    "no answer": "; its network part does not answer over Matter either (restarting?)",
+                }.get(verdict, ""),
+                self.stream_report(),
             )
         if self.hass is not None and (check := getattr(self, "_async_check_problems", None)):
             check()

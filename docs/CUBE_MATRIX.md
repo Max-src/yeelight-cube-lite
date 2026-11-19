@@ -49,7 +49,7 @@ What the integration does with each:
 | The lamp's 50 effects (13 of the app, 37 more built in) | the lamp's own (LAN) | **the lamp's own (Matter)** | streamed, about 5 frames a second |
 | Other effects, animations | the lamp's own (animations as a GIF uploaded over Matter) | streamed over Matter, 25 frames a second | streamed |
 | Clock | the lamp's own (LAN) | the lamp's own, styles 1–14 (Matter) | streamed |
-| Text, pixel art, drawings | frames over UDP | the lamp's drawing (Matter); scrolling text as frames | frames over music mode |
+| Text, pixel art, drawings | frames in direct mode over the LAN (UDP) | the lamp's drawing (Matter); scrolling text moves it | frames over music mode |
 | Microphone effects, Music Flow, buttons, power-on setting | yes | not offered | not offered |
 
 **After a factory reset** (to leave the demo mode, for example) the lamp loses its Matter pairing: share it to Home
@@ -68,7 +68,7 @@ Wi-Fi MAC: a lamp is never paired twice on one server). The same applies to a Cu
 | Clock styles 1–14 (the lamp's own backgrounds) in the Default color mode, in a time zone of whole hours, the lamp mounted right or down | **the lamp's own clock**, time from the Internet | streamed |
 | Other clock styles, palettes over a background, the lamp mounted left or up | streamed | streamed |
 | Text, pixel art, drawings, gradients, images | **the lamp's drawing**, changed in place | frames over the LAN |
-| Scrolling text | frames over the LAN | frames over the LAN |
+| Scrolling text | **the lamp's drawing**, its pixels changed at each step | frames over the LAN |
 | Brightness, on/off, colour | LAN | LAN |
 | Microphone effects, Music Flow, power-on behaviour, the Cube Lite's buttons | not offered (no microphone; no such settings) | not offered |
 
@@ -315,10 +315,9 @@ modules) and the preview card hides the missing columns.
   effect, so commands like brightness and on/off, and the connection check, go over plain TCP while it is closed.
 - An effect the lamp shows itself is saved as its effect (as a tap in the Yeelight app does) and comes back after a
   power cut, unless the demo runs.
-- **Settings a Cube Matrix has** (with Matter): **Power-on behavior** (Always on / Always off, its Matter
-  `StartUpOnOff`; set to off, Home Assistant does not switch it back on after a power cut) and **Drawing animation**
-  (Static, Scroll, Breathe, Flash, Reveal) with **Drawing animation speed**: the lamp animates a drawing it shows
-  (text, pixel art…) itself; a change applies at once to the one shown. Scroll and Reveal run upwards.
+- **A setting a Cube Matrix has** (with Matter): **Power-on behavior** (Always on / Always off, its Matter
+  `StartUpOnOff`; set to off, Home Assistant does not switch it back on after a power cut). What Home Assistant shows
+  (text, pixel art…) goes as a still drawing: a new picture replaces the pixels, with no transition.
 - Not exposed yet: the lamp's music modes (they need an audio source), the sleep timer (`set_scene auto_delay_off`),
   the button playlist and the follower counter.
 - The firmware shows as the Yeelight app shows it (`1.12.92`; SSDP gives only `92`). A firmware older than 1.11.57

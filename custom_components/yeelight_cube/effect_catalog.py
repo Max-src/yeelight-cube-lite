@@ -501,11 +501,6 @@ for _clock_mode, (_handover_name, _direct_name) in CLOCK_FORM_TWINS.items():
     }
     _next_clock_style_id += 1
 
-# Every clock style beyond the lamp's 10 built-ins is experimental.
-EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset(
-    style_id for style_id in NATIVE_CLOCK_STYLES if style_id > 10
-)
-
 # The lamp's stored GIF, as an effect: its name, offered like the official
 # effects (it plays over LAN whatever the lamp holds: an animation of ours, or
 # the Yeelight app's last one). Sent as effect 71, as the Yeelight app plays
@@ -671,6 +666,7 @@ for _name, _spec in {**MATRIX_VERSION_EFFECTS, **STREAMED_EFFECTS}.items():
         "name": _name, "mixer": _spec["mode"], "background": _name,
     }
     _next_clock_style_id += 1
+# Every clock style beyond the lamp's 10 built-ins is experimental.
 EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset(
     style_id for style_id in NATIVE_CLOCK_STYLES if style_id > 10
 )

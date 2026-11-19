@@ -10,7 +10,6 @@ import {
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { CollectionStore, collectionSensor } from "./user-collections.js";
-import { getTargetEntities } from "./service-call-utils.js";
 import "./collection-gallery.js";
 import "./yc-swatches.js";
 import {
@@ -101,13 +100,13 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   // sensor and the lamp's colors (they decide the active palette).
   _hassInputs(hass) {
     const sensor = collectionSensor(hass, this.config, "palettes");
-    return [this.config, sensor ? hass?.states?.[sensor] : undefined, this._lampTextColors()];
+    return [this.config, sensor ? hass?.states?.[sensor] : undefined, this._lampTextColors(hass)];
   }
 
-  // The first target lamp's text colors (applying a palette sets them).
-  _lampTextColors() {
-    const entity = getTargetEntities(this.config)[0];
-    return this._hass?.states?.[entity]?.attributes?.text_colors;
+  // The card's main lamp's text colors (applying a palette sets them): the
+  // first configured lamp Home Assistant has, as every card shows.
+  _lampTextColors(hass = this._hass) {
+    return hass?.states?.[this._primaryEntity(hass)]?.attributes?.text_colors;
   }
 
   // The palette the lamps show: the one whose colors are their text colors.

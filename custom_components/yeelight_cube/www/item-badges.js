@@ -5,7 +5,7 @@
 // colored like the card's buttons (their look: gallery-display-utils.js
 // matrixPreviewStyles).
 import { html, nothing } from "./lib/lit-all.js";
-import { NATIVE_COLOR_MODES } from "./clock-preview-utils.js";
+import { NATIVE_COLOR_MODES } from "./color-mode-names.js";
 
 /** What an item is: { icon, title, emoji? }. The emoji (text-only places: a
  * dropdown, text buttons) only for what sets an item apart. */

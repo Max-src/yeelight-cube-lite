@@ -59,13 +59,16 @@ class LinkRecoveryMixin:
     async def _async_recover_link(self) -> bool:
         """One sweep (link_recovery.realign) under the lamp's lock, so nothing
         else reaches the lamp meanwhile; answered: the lamp's content again
-        once it restarted. Whether it answered."""
+        once it restarted. Whether it answered. While the sweep runs,
+        operations on the lamp fail at once instead of waiting for it
+        (_link_recovery_running, light_connection._execute_hardware_op)."""
         _LOGGER.warning(
             "[RECOVERY] [%s] The lamp is stuck: trying to bring it back over the LAN (try %s of %s)",
             self._ip, self._link_recovery_tries, LINK_RECOVERY_TRIES,
         )
         if cancel := getattr(self._lamp_client, "_cancel_frame_settle", None):
             cancel()  # no frame sent again during the sweep
+        self._link_recovery_running = True
         try:
             async with _get_device_lock(self._ip):
                 size = await realign(self._ip, LAN_PORT)
@@ -79,6 +82,8 @@ class LinkRecoveryMixin:
             self._link_recovery_tries -= 1
             self._link_recovery_at = time.monotonic() - LINK_RECOVERY_RETRY + LINK_RECOVERY_UNREACHABLE_RETRY
             return False
+        finally:
+            self._link_recovery_running = False
         if size is None:
             _LOGGER.warning(
                 "[RECOVERY] [%s] The lamp did not answer: it needs a power cycle", self._ip,

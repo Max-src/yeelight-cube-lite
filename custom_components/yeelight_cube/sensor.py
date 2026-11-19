@@ -257,7 +257,6 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._listen_to_light("power")
-        await super().async_will_remove_from_hass()
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:

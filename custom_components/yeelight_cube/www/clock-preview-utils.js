@@ -33,6 +33,7 @@ import {
   isLampRendered,
 } from "./lamp-renderers.js";
 import { flipMatrixVertical, lampTurnsClock } from "./matrix-view.js";
+import { missStillValid } from "./sensor-lookup.js";
 import { shownColumns, withSpotColours } from "./matrix-modules.js";
 import { effectFamilyOfName } from "./effect-families.js";
 import {
@@ -44,33 +45,11 @@ import {
 
 export { canonicalClockStyleName };
 
-// The lamp's color-mode palette presets (mirrors effect_catalog.py CLOCK_COLOR_MODES).
-// Selecting one forces the outer command id so compatible effects re-map their
-// palette; "normal" keeps each effect's own colors. Which effects respond is
-// verified on hardware (previews are adjusted per effect separately).
-export const CLOCK_COLOR_MODES = [
-  { value: "normal", label: "Default", icon: "mdi:palette-outline" },
-  { value: "bw", label: "Black & White", icon: "mdi:invert-colors" },
-  { value: "red_blue", label: "Vivid", icon: "mdi:palette-swatch" },
-  {
-    value: "white_orange",
-    label: "Retro Orange",
-    icon: "mdi:palette-swatch",
-  },
-  { value: "blue_yellow", label: "Tropical", icon: "mdi:palette-swatch" },
-  {
-    value: "purple_orange",
-    label: "Violet & Gold",
-    icon: "mdi:palette-swatch",
-  },
-];
-// The Clock and Native Effects cards' color modes (effect_catalog.py
-// NATIVE_COLOR_MODES): the lamp's presets and Palette, the lamp's palette
-// (its text_colors).
-export const NATIVE_COLOR_MODES = [
-  ...CLOCK_COLOR_MODES,
-  { value: "palette", label: "Palette", icon: "mdi:palette" },
-];
+// The lamp's color-mode palette presets (effect_catalog.py CLOCK_COLOR_MODES)
+// and the cards' color modes (NATIVE_COLOR_MODES): color-mode-names.js.
+import { CLOCK_COLOR_MODES, NATIVE_COLOR_MODES } from "./color-mode-names.js";
+
+export { CLOCK_COLOR_MODES, NATIVE_COLOR_MODES };
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  PREVIEW ORIENTATION — READ THIS BEFORE RENDERING ANY PREVIEW             ║
@@ -98,16 +77,21 @@ const NO_FONT = Object.freeze({ fontMap: null, metrics: null });
  * Home Assistant replaces `hass.states` on every state change anywhere, so
  * scanning all entities each time is costly. The sensor's entity id is kept
  * in `cache` (the previous result): later lookups read that one entity, and
- * only rescan when it disappears or changes. Returns the new cache; the font
- * is `cache.font`.
+ * only rescan when it disappears or changes. Without it, a rescan waits for
+ * `entities` (hass.entities, the entity registry) to change, or a while.
+ * Returns the new cache; the font is `cache.font`.
  */
-export function lookupNativeClockFont(states, cache) {
+export function lookupNativeClockFont(states, cache, entities = null) {
   if (!states) return { entityId: null, state: null, states: null, font: NO_FONT };
   if (
     cache &&
     (cache.entityId
       ? states[cache.entityId] === cache.state
-      : cache.states === states)
+      : cache.states === states ||
+        // Without the sensor, the next scan of every entity waits for a new
+        // entity or a while (Home Assistant pushes new states several times
+        // a second; sensor-lookup.js missStillValid).
+        missStillValid(cache.miss, { entities }))
   )
     return cache;
   let entityId = cache?.entityId || null;
@@ -127,8 +111,9 @@ export function lookupNativeClockFont(states, cache) {
   return {
     entityId,
     state,
-    // Without a sensor, remember which states object was scanned.
+    // Without a sensor, remember which states object was scanned, and when.
     states: entityId ? null : states,
+    miss: entityId ? null : { entities, at: Date.now() },
     font: attributes
       ? {
           fontMap: attributes.font_maps.native,
@@ -463,7 +448,7 @@ export const clockPreviewEffect = (mixer) => CLOCK_MIXER_EFFECTS[mixer];
 /** Whether the style of `attrs` runs its background as itself under the clock
  * overlay (effect_catalog.py clock_style_direct): its own `direct`, else null (by its
  * background, lampClockSettings). */
-export function clockStyleDirect(attrs) {
+function clockStyleDirect(attrs) {
   const id = attrs.clock_style_id;
   const style =
     (typeof id === "number" && _CLOCK_STYLE_BY_ID.get(id)) ||

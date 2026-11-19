@@ -74,16 +74,21 @@ class LampPowerTests(unittest.TestCase):
                     if before == BLACK:
                         self.assertEqual(BLACK, after)
 
+    def test_the_limited_frame_comes_with_its_estimate(self):
+        # One estimate per frame sent (light_color._lamp_frame).
+        for limit in (lamp_power.NO_LIMIT_W, 5.0, 2.0):
+            with self.subTest(limit=limit):
+                frame, power = lamp_power.limited_frame(PIGLET, limit, 80)
+                self.assertEqual(lamp_power.limit_frame_power(PIGLET, limit, 80), frame)
+                self.assertAlmostEqual(lamp_power.estimated_power(frame, 80), power)
+
     def test_the_hardware_brightness_counts_towards_the_limit(self):
         limited = lamp_power.limit_frame_power(PIGLET, 2.0, 60)
         self.assertLessEqual(lamp_power.estimated_power(limited, 60), 2.0)
 
     def test_the_light_limits_what_it_sends_and_records_the_estimate(self):
         lamp_frame = _load_standalone_functions(
-            LIGHT_SOURCE, {"_lamp_frame"}, {
-                "limit_frame_power": lamp_power.limit_frame_power,
-                "estimated_power": lamp_power.estimated_power,
-            },
+            LIGHT_SOURCE, {"_lamp_frame"}, {"limited_frame": lamp_power.limited_frame},
         )["_lamp_frame"]
         # A Cube Lite: its frames go out in lamp order (device_profile.to_wire).
         light = SimpleNamespace(

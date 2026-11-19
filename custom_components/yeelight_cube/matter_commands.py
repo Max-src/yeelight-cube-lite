@@ -25,7 +25,6 @@ from .matter_link import (
 
 _LOGGER = logging.getLogger(__name__)
 
-BASIC_CONFIG_CLUSTER = _vendor(0xFC01)
 CUBE_CONTROL_CLUSTER = _vendor(0xFC02)
 EFFECTS_CLUSTER = _vendor(0xFC05)
 

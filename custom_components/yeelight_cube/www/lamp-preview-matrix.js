@@ -3,12 +3,8 @@
 // Mixed into YeelightCubeLampPreviewCard.
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { rgbToCss } from "./color-utils.js";
-import { createVisibilityTracker, createRafLoop } from "./matrix-animator.js";
-import {
-  LAMP_EFFECTS,
-  RENDER_SECONDS,
-  isLampRendered,
-} from "./lamp-renderers.js";
+import { AnimatedPreview, PreviewClock } from "./preview-animation.js";
+import { LAMP_EFFECTS, isLampRendered } from "./lamp-renderers.js";
 import {
   clockStyleEffect,
   clockPhase,
@@ -21,7 +17,7 @@ import { nativeEffectLampFrame } from "./native-effect-card-utils.js";
 import { matrixFrame } from "./matrix-frame.js";
 import { withSpotColours } from "./matrix-modules.js";
 import { contextGrid, previewContext } from "./preview-context.js";
-import { acquireStreamFrames } from "./stream-frames.js";
+import { nativeEffectCatalog } from "./native-effect-catalog.js";
 import {
   isVerticalMount,
   matrixView,
@@ -49,11 +45,12 @@ function orientedLayout(orientation) {
 }
 
 // The lamp's effect as the Native Effects card lists it (its catalogue item:
-// the directions it offers), else as the renderers know it.
-function lampEffectItem(attributes, name) {
-  const listed = Array.isArray(attributes?.native_effect_catalog)
-    ? attributes.native_effect_catalog.find((item) => item?.name === name)
-    : null;
+// the directions it offers), else as the renderers know it (until the
+// catalogue arrives: the next frames read it).
+function lampEffectItem(hass, entityId, name) {
+  const listed = nativeEffectCatalog(hass, entityId)?.find(
+    (item) => item?.name === name,
+  );
   return listed ?? { name, directions: LAMP_EFFECTS[name]?.directions ?? [] };
 }
 
@@ -63,8 +60,11 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // native-effect animation loop renders identically to the normal path.
   // A brightness slider being dragged (or not yet confirmed by the lamp)
   // wins over the lamp's reported value, so the preview follows the slider.
-  _matrixColorsToGridColors(matrixColors, stateObj) {
-    const previewBoost = this._lampSliders.previewScale(stateObj?.attributes);
+  _matrixColorsToGridColors(
+    matrixColors,
+    stateObj,
+    previewBoost = this._lampSliders.previewScale(stateObj?.attributes),
+  ) {
     return matrixColors.map((c) => {
       let px = c;
       if (!Array.isArray(px) || px.length !== 3) px = [0, 0, 0];
@@ -89,37 +89,105 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     return this._lampDots;
   }
 
-  // Observe the card so animations idle while it is scrolled off screen. Paired
-  // with the tab-hidden pause inside createRafLoop.
-  _ensureVisibilityTracker() {
-    if (this._visTracker) return;
-    this._visTracker = createVisibilityTracker(this, {
-      onChange: (onScreen) => {
-        this._onScreen = onScreen;
+  // The matrix's animation (preview-animation.js): one loop for the clock and
+  // the native effect (the lamp shows one at a time), idle while the card is
+  // scrolled off screen or the tab hidden.
+  _previewAnimation() {
+    return (this._animation ||= new AnimatedPreview(this, {
+      onFrame: (due) => this._animationFrame(due),
+      // A clock with a still background: the colon's blink and the minutes
+      // only (500 ms); an effect, ~10 fps; the lamp's own picture only looks
+      // for its stream (250 ms). Re-evaluated each frame.
+      minIntervalMs: () =>
+        this._animationMode === "native"
+          ? 100
+          : this._animationMode === "matrix"
+            ? 250
+            : this._clockAnimInterval(),
+      // Streamed frames come 25 a second, an effect the lamp's renderers
+      // draw renders 25 times a second: each is painted.
+      smoothWhen: () => {
+        if (this._streamedFrame()) return true;
+        const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
+        if (!attrs || this._animationMode === "matrix") return false;
+        return this._animationMode === "native"
+          ? isLampRendered(attrs.native_effect)
+          : clockUsesLampRenderer(attrs);
       },
-    });
-    this._onScreen = this._visTracker.onScreen;
-    this._visTracker.connect();
+      // Back on screen: what the lamp shows now, at once.
+      onShown: () => this._animationFrame(),
+    }));
+  }
+
+  _animationFrame(due = true) {
+    if (this._animationMode === "native") this._nativeAnimFrame(due);
+    else if (this._animationMode === "clock") this._clockAnimFrame(due);
+    else if (this._animationMode === "matrix") this._matrixAnimFrame();
+  }
+
+  /** Whether the matrix animates `mode` ("native", "clock", "matrix": the
+   * lamp's own picture, followed on its stream while it streams). */
+  _animating(mode) {
+    return this._animationMode === mode && !!this._animation?.wanted;
+  }
+
+  _startAnimation(mode) {
+    if (this._animating(mode)) return;
+    if (this._animationMode && this._animationMode !== mode)
+      this._stopAnimation(this._animationMode);
+    this._animationMode = mode;
+    this._animationFrame(); // draw the first frame immediately
+    // The first frame may have found the mode over (and stopped).
+    if (this._animationMode === mode) this._previewAnimation().start();
+  }
+
+  _stopAnimation(mode) {
+    if (this._animationMode !== mode) return;
+    this._animationMode = null;
+    this._animation?.stop();
+    this._setInstantDots(false);
+    this._showingStream = false;
+  }
+
+  // The lamp's own picture (Matrix, a text...): matrix_colors comes at most
+  // once a second while a text scrolls, its stream (stream-frames.js) has
+  // every step. Shown while it is fresh; then matrix_colors again.
+  _startMatrixAnimation() {
+    this._startAnimation("matrix");
+  }
+
+  _stopMatrixAnimation() {
+    this._stopAnimation("matrix");
+  }
+
+  _matrixAnimFrame() {
+    if (this._animation?.onScreen === false) return;
+    const st = this._hass?.states?.[this._primaryEntity()];
+    const mode = st?.attributes.content_mode;
+    if (!st || st.state !== "on" || mode === "Native Effect" || mode === "Clock") {
+      this._stopMatrixAnimation();
+      return;
+    }
+    const dots = this._getLampDots();
+    if (!dots || dots.length !== 100) return; // matrix not rendered yet
+    const streamed = this._streamedFrame();
+    if (streamed) {
+      this._showingStream = true;
+      this._paintStreamed(streamed, st, dots);
+      return;
+    }
+    // The stream ended: the lamp's reported picture.
+    if (this._showingStream) {
+      this._showingStream = false;
+      this._setInstantDots(false);
+      this._animation?.forgetPaint();
+      this._paintStaticPreview(st);
+    }
   }
 
   // Begin the client-side animation for Native Effect mode.
   _startNativeAnimation() {
-    this._ensureVisibilityTracker();
-    if (!this._nativeLoop) {
-      this._nativeLoop = createRafLoop((now, due) => this._nativeAnimFrame(due), {
-        minIntervalMs: 100, // ~10 fps
-        // Streamed frames come 25 a second: each is painted.
-        smoothWhen: () =>
-          !!this._streamSubscription?.latest() ||
-          isLampRendered(
-            this._hass?.states?.[this._primaryEntity()]?.attributes
-              ?.native_effect,
-          ),
-      });
-    }
-    if (this._nativeLoop.running) return;
-    this._nativeAnimFrame(); // draw the first frame immediately
-    this._nativeLoop.start();
+    this._startAnimation("native");
   }
 
   // The dots fade to a new color over 0.2 s, which suits a picture changing.
@@ -133,39 +201,29 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   }
 
   // The frame the lamp's stream sent last (stream-frames.js), while it
-  // streams; null: the preview draws the effect itself.
+  // streams and the card is on screen; null: the preview draws the effect
+  // itself.
   _streamedFrame() {
-    const entityId = this._primaryEntity();
-    const connection = this._hass?.connection;
-    if (!connection || !entityId) return null;
-    const current = this._streamSubscription;
-    if (!current || current.entityId !== entityId || current.connection !== connection) {
-      current?.release();
-      this._streamSubscription = {
-        entityId,
-        connection,
-        ...acquireStreamFrames(connection, entityId),
-      };
-    }
-    return this._streamSubscription.latest();
+    return (
+      this._animation?.streamed(this._hass?.connection, this._primaryEntity()) ??
+      null
+    );
   }
 
-  // Neither loop shows the lamp any more: its streamed frames are no longer
-  // needed.
-  _releaseStreamFrames() {
-    if (this._nativeLoop?.running || this._clockLoop?.running) return;
-    this._streamSubscription?.release();
-    this._streamSubscription = null;
+  // Paint a streamed frame, unless the same frame at the same brightness is
+  // on the same dots already (frames come 25 a second, the display refreshes
+  // faster).
+  _paintStreamed(streamed, st, dots) {
+    this._setInstantDots(true);
+    const scale = this._lampSliders.previewScale(st.attributes);
+    if (this._animation?.samePaint(streamed, scale, dots)) return;
+    this._updateMatrixColors(this._matrixColorsToGridColors(streamed, st, scale), st);
   }
 
   _stopNativeAnimation() {
-    if (this._nativeLoop) this._nativeLoop.stop();
-    this._releaseStreamFrames();
-    this._setInstantDots(false);
+    this._stopAnimation("native");
     this._nativeAnimKey = null;
-    this._nativeAnimStartedAt = null;
-    this._nativeFrozenSeconds = null;
-    this._paintedRender = null;
+    this._nativeClock?.reset();
   }
 
   // Begin the client-side clock animation. Solid/gradient styles only need a
@@ -173,20 +231,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // mixer is a native effect animate that effect, so they tick at 100 ms. The
   // interval is re-evaluated each frame, so a style change adapts the rate.
   _startClockAnimation() {
-    this._ensureVisibilityTracker();
-    if (!this._clockLoop) {
-      this._clockLoop = createRafLoop((now, due) => this._clockAnimFrame(due), {
-        minIntervalMs: () => this._clockAnimInterval(),
-        smoothWhen: () => {
-          if (this._streamSubscription?.latest()) return true;
-          const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
-          return !!attrs && clockUsesLampRenderer(attrs);
-        },
-      });
-    }
-    if (this._clockLoop.running) return;
-    this._clockAnimFrame(); // draw the first frame immediately
-    this._clockLoop.start();
+    this._startAnimation("clock");
   }
 
   _clockAnimInterval() {
@@ -195,26 +240,12 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   }
 
   _stopClockAnimation() {
-    if (this._clockLoop) this._clockLoop.stop();
-    this._releaseStreamFrames();
-    this._setInstantDots(false);
-    this._clockAnimStartedAt = null;
-    this._frozenBackgroundSeconds = null;
-    this._paintedRender = null;
-  }
-
-  // due = false: a tick between the interval's. A preview's clock crosses a
-  // render every 40 ms and the display refreshes more often: the frame already
-  // painted stays.
-  _sameRender(seconds, due) {
-    const render = Math.floor(seconds / RENDER_SECONDS);
-    if (!due && render === this._paintedRender) return true;
-    this._paintedRender = render;
-    return false;
+    this._stopAnimation("clock");
+    this._clockTime?.reset();
   }
 
   _clockAnimFrame(due = true) {
-    if (!this._onScreen) return;
+    if (this._animation?.onScreen === false) return;
     const st = this._hass?.states?.[this._primaryEntity()];
     if (!st || st.state !== "on" || st.attributes.content_mode !== "Clock") {
       this._stopClockAnimation();
@@ -225,28 +256,20 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     // A streamed clock: the frame the lamp was sent.
     const streamed = this._streamedFrame();
     if (streamed) {
-      this._setInstantDots(true);
-      this._updateMatrixColors(this._matrixColorsToGridColors(streamed, st), st);
+      this._paintStreamed(streamed, st, dots);
       return;
     }
     this._setInstantDots(clockUsesLampRenderer(st.attributes));
 
-    const now = performance.now();
-    if (this._clockAnimStartedAt == null) this._clockAnimStartedAt = now;
     // While frozen, hold the background effect on the frame the lamp holds;
     // the digits/colon (rendered from real time in renderClockFrame) still
     // advance. Resume seamlessly from the held frame.
-    const frozen = st.attributes.display_frozen === true;
-    if (frozen) {
-      if (this._frozenBackgroundSeconds == null)
-        this._frozenBackgroundSeconds = (now - this._clockAnimStartedAt) / 1000;
-    } else if (this._frozenBackgroundSeconds != null) {
-      this._clockAnimStartedAt = now - this._frozenBackgroundSeconds * 1000;
-      this._frozenBackgroundSeconds = null;
-    }
-    const seconds =
-      this._frozenBackgroundSeconds ?? (now - this._clockAnimStartedAt) / 1000;
-    if (this._sameRender(seconds, due)) return;
+    const seconds = (this._clockTime ||= new PreviewClock()).advance(
+      st.attributes.display_frozen === true,
+    );
+    // A tick between the interval's: the frame already painted stays while
+    // the lamp's render is the same (the display refreshes faster).
+    if (this._animation?.sameRender(seconds, due)) return;
     const speed = clockSpeed(st.attributes);
     const { fontMap, metrics } = this._getNativeClockFont();
     // As the lamp draws it: its mount profile may turn the digits
@@ -264,12 +287,16 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   _getNativeClockFont() {
     const states = this._hass?.states;
     if (!states) return { fontMap: null, metrics: null };
-    this._nativeFontCache = lookupNativeClockFont(states, this._nativeFontCache);
+    this._nativeFontCache = lookupNativeClockFont(
+      states,
+      this._nativeFontCache,
+      this._hass.entities,
+    );
     return this._nativeFontCache.font;
   }
 
   _nativeAnimFrame(due = true) {
-    if (!this._onScreen) return;
+    if (this._animation?.onScreen === false) return;
     const st = this._hass?.states?.[this._primaryEntity()];
     if (
       !st ||
@@ -285,8 +312,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     // A streamed effect: the frame the lamp was sent.
     const streamed = this._streamedFrame();
     if (streamed) {
-      this._setInstantDots(true);
-      this._updateMatrixColors(this._matrixColorsToGridColors(streamed, st), st);
+      this._paintStreamed(streamed, st, dots);
       return;
     }
     const effect = st.attributes.native_effect || "Ribbon";
@@ -296,32 +322,23 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     // modules...), as every effect preview reads them.
     const context = previewContext(st.attributes);
     const { orientation } = context;
-    const now = performance.now();
+    const clock = (this._nativeClock ||= new PreviewClock());
     const animationKey = `${effect}\u0000${dir}\u0000${orientation}`;
     if (animationKey !== this._nativeAnimKey) {
       this._nativeAnimKey = animationKey;
-      this._nativeAnimStartedAt = now;
-      this._nativeFrozenSeconds = null;
+      clock.reset();
     }
     // While frozen, hold the frame the lamp is holding; resume seamlessly.
-    const frozen = st.attributes.display_frozen === true;
-    if (frozen) {
-      if (this._nativeFrozenSeconds == null)
-        this._nativeFrozenSeconds = (now - this._nativeAnimStartedAt) / 1000;
-    } else if (this._nativeFrozenSeconds != null) {
-      this._nativeAnimStartedAt = now - this._nativeFrozenSeconds * 1000;
-      this._nativeFrozenSeconds = null;
-    }
-    const seconds =
-      this._nativeFrozenSeconds ?? (now - this._nativeAnimStartedAt) / 1000;
-    if (this._sameRender(seconds, due)) return;
+    const seconds = clock.advance(st.attributes.display_frozen === true);
+    if (this._animation?.sameRender(seconds, due)) return;
     // The frame the Native Effects card draws (nativeEffectLampFrame), in
     // lamp order (row 0 = physical bottom), like every frame painted here:
     // _paintDots turns it the way the viewer sees it, once. The lamp's
     // mount profile does not turn it (the sent direction is compensated).
     // On the columns the lamp shows (a Cube Matrix with fewer blocks), as
     // its stream is drawn.
-    const raw = nativeEffectLampFrame(lampEffectItem(st.attributes, effect), context, seconds);
+    const item = lampEffectItem(this._hass, this._primaryEntity(), effect);
+    const raw = nativeEffectLampFrame(item, context, seconds);
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
   }

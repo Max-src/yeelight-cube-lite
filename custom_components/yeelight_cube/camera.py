@@ -259,13 +259,21 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     @callback
     def async_refresh_preview(self) -> None:
         """The lamp shows something new: drop the image and give the frontend
-        a new token, so a viewer fetches it. Rendered on demand only
-        (async_camera_image): nobody watching costs nothing, and a fetch
-        always draws the lamp's latest frame."""
+        a new address (entity_picture), so a viewer fetches it. Rendered on
+        demand only (async_camera_image): nobody watching costs nothing, and
+        a fetch always draws the lamp's latest frame."""
         self._cached_image = None
         self._image_generation += 1
-        self.async_update_token()
         self.async_write_ha_state()
+
+    @property
+    def entity_picture(self) -> str:
+        """The image's address with the frame it shows: each new frame is a
+        new address. The access token is not replaced per frame: Home
+        Assistant accepts only its last two, so during a fast scroll a viewer
+        fetching with the one before was refused (403); Home Assistant
+        renews it itself every few minutes."""
+        return f"{super().entity_picture}&frame={self._image_generation}"
 
     # ── Image serving ──────────────────────────────────────────────────
     async def handle_async_mjpeg_stream(self, request):

@@ -1,5 +1,4 @@
-"""A Cube Matrix's settings over Matter: power-on behaviour, drawing
-animation, its modules, its demo loop, and its own content refused or
+"""A Cube Matrix's settings over Matter: power-on behaviour, its modules, its demo loop, and its own content refused or
 tried again.
 """
 from __future__ import annotations
@@ -14,11 +13,7 @@ from .const import (
 )
 from .device_profile import TOPOLOGY_NAMES, TOPOLOGY_SLOTS, profile_for
 from .input_error import InputError
-from .matrix_effects import (
-    DRAWING_EFFECT,
-    DRAWING_MIXERS,
-)
-from .matter_commands import CUBE_CONTROL_CLUSTER, EFFECTS_CLUSTER
+from .matter_commands import CUBE_CONTROL_CLUSTER
 from .matter_link import START_UP_ON_OFF
 from .music_channel import tcp_request
 from .light_matrix import (
@@ -46,39 +41,9 @@ class MatrixSettingsMixin:
             raise MatrixSettingUnavailable("power_on_needs_matter")
         await self._matter_commands.async_write(START_UP_ON_OFF, 1 if value == "on" else 0)
         self._matrix_power_on = value
+        self._notify("matrix_power_on")
         if self.hass is not None:
             self.async_write_ha_state()
-
-    async def async_set_matrix_drawing_animation(self, mixer: int) -> None:
-        """The Drawing animation select (DRAWING_MIXERS): what the lamp does
-        with a drawing it shows (static, scroll, breathe, flash, reveal);
-        changed live on the one it shows, else used for the next."""
-        if mixer not in DRAWING_MIXERS:
-            raise ValueError(f"Unsupported drawing animation: {mixer}")
-        self._matrix_drawing_mixer = mixer
-        await self.async_matrix_drawing_changed()
-
-    async def async_matrix_drawing_changed(self) -> None:
-        """The drawing animation or its speed changed: sent live to a drawing
-        the lamp shows, in the Yeelight app's order (setMixer, then the
-        direction and the speed). Every FC05 command restarts the animation."""
-        shown = self._matrix_shown
-        if shown is None or (shown[1].get("effect") or {}).get("effectId") != DRAWING_EFFECT:
-            return
-        if not self.matrix_draws_over_matter():
-            return
-        channel = self._matter_commands
-        self._matrix_command_at = time.monotonic()
-        await channel.async_command(EFFECTS_CLUSTER, "setMixer", {"mixer": int(self._matrix_drawing_mixer)})
-        if self._matrix_drawing_mixer in (2, 5):
-            await channel.async_command(
-                EFFECTS_CLUSTER, "setDirection", {"direction": int(self._matrix_drawing_direction)},
-            )
-        await channel.async_command(EFFECTS_CLUSTER, "setRate", {"rate": int(self._matrix_drawing_speed)})
-        self._matrix_command_at = time.monotonic()
-        params = dict(shown[1]["effect"]["effectParams"][0])
-        params.update(mixer=int(self._matrix_drawing_mixer), speed=int(self._matrix_drawing_speed))
-        self._matrix_shown = (shown[0], {**shown[1], "effect": {**shown[1]["effect"], "effectParams": [params]}})
 
     def _matrix_modules_changed(self, topology) -> None:
         """The lamp's module list changed (set in the Yeelight app, reported
@@ -191,16 +156,8 @@ class MatrixSettingsMixin:
         lamp itself, or streamed over Matter. Whether it did."""
         if not self._matrix_native_refused:
             return False
-        if self.is_cube_matrix and not self.matrix_matter_ready():
+        if not self.is_cube_matrix or not self.matrix_matter_ready():
             return False
-        if not self.is_cube_matrix:
-            # A Cube Lite's stream over Matter (light_matrix): its own check,
-            # the refusal aside.
-            self._matrix_native_refused = False
-            ready = self.lite_streams_over_matter()
-            self._matrix_native_refused = True
-            if not ready:
-                return False
         waited = time.monotonic() - self._matrix_refused_at
         if waited < (MATTER_RETRY_LEAST if link_back else self._matrix_retry_after):
             return False
@@ -215,13 +172,13 @@ class MatrixSettingsMixin:
     def _matrix_matter_changed(self) -> None:
         """Matter became available or not (the link, the server, the demo
         loop): what is selected is shown again the way it now can be."""
-        if not self.is_cube_matrix or not self._is_on or self.hass is None:
-            return
-        native = self.matrix_native_command() is not None
+        if not self._is_on or self.hass is None or not self.is_cube_matrix:
+            return  # a Cube Lite shows everything over the LAN
         if self._mode in (MODE_NATIVE_EFFECT, MODE_CLOCK):
+            native = self.matrix_native_command() is not None
             if native == (self._matrix_shown is not None):
                 return
-        elif self.matrix_draws_over_matter() == (self._matrix_shown is not None):
+        elif self.draws_over_matter() == (self._matrix_shown is not None):
             return
         self._matrix_shown = None
         self._create_tracked_task(

@@ -9,6 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ig
 from .const import CONF_IP
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity
+from .light_display import MAX_TEXT_LENGTH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
         
         # Text input constraints
         self._attr_native_min = 0
-        self._attr_native_max = 100  # Reasonable max length for scrolling text
+        self._attr_native_max = MAX_TEXT_LENGTH  # its state is the text
         self._attr_pattern = None  # Allow any characters
         self._attr_mode = "text"  # Use text input mode
     

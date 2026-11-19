@@ -144,17 +144,6 @@ export const StorageUtils = {
     return StorageManager.save(STORAGE_KEYS.RECENT_COLORS, colors);
   },
 
-  // Image palette storage (array of hex strings)
-  loadImagePalette() {
-    return StorageManager.load(STORAGE_KEYS.IMAGE_PALETTE, [], (data) =>
-      Array.isArray(data),
-    );
-  },
-
-  saveImagePalette(palette) {
-    return StorageManager.save(STORAGE_KEYS.IMAGE_PALETTE, palette);
-  },
-
   // Tool visibility storage (object mapping tool names to booleans)
   // Tools / actions hidden in this browser by former versions ({name:
   // false}); configs keep them in hidden_tools / hidden_actions now.

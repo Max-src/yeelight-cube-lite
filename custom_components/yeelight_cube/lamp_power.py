@@ -53,14 +53,22 @@ def limit_frame_power(frame, max_watts: float, hardware_brightness: float = 100)
     """
     if max_watts >= NO_LIMIT_W:
         return frame
-    if estimated_power(frame, hardware_brightness) <= max_watts:
-        return frame
+    return limited_frame(frame, max_watts, hardware_brightness)[0]
+
+
+def limited_frame(frame, max_watts: float, hardware_brightness: float = 100):
+    """limit_frame_power's frame and its estimated draw (W), each frame's
+    estimate computed once."""
+    power = estimated_power(frame, hardware_brightness)
+    if max_watts >= NO_LIMIT_W or power <= max_watts:
+        return frame, power
     panel_watts = min(max(max_watts - BASE_W, 0.0), SPAN_W * 0.999)
     target_drive = -SPAN_W * math.log(1 - panel_watts / SPAN_W)
     factor = target_drive / panel_drive(frame, hardware_brightness)
     # Both terms of the drive scale with the pixel values, and rounding down
     # keeps the result within the limit.
-    return [tuple(int(channel * factor) for channel in rgb[:3]) for rgb in frame]
+    scaled = [tuple(int(channel * factor) for channel in rgb[:3]) for rgb in frame]
+    return scaled, estimated_power(scaled, hardware_brightness)
 
 
 class EnergyMeter:

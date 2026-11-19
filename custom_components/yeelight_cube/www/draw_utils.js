@@ -1,4 +1,5 @@
 import { hexToRgb as parseHex } from "./color-utils.js";
+import { rgbToHsv as hsvOfChannels } from "./color-adjustments.js";
 import { BLACK_THRESHOLD, OFF_COLOR, MATRIX_SIZE } from "./draw_card_const.js";
 
 // --- Create empty (all-black) matrix ---
@@ -32,38 +33,8 @@ export function hexToRgbOrBlack(hex) {
   return parseHex(hex) ?? [0, 0, 0];
 }
 
-/**
- * RGB to HSV conversion (shared helper).
- */
-function rgbToHsv([r, g, b]) {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-  const max = Math.max(r, g, b),
-    min = Math.min(r, g, b);
-  let h,
-    s,
-    v = max;
-  const d = max - min;
-  s = max === 0 ? 0 : d / max;
-  if (max === min) {
-    h = 0;
-  } else {
-    switch (max) {
-      case r:
-        h = (g - b) / d + (g < b ? 6 : 0);
-        break;
-      case g:
-        h = (b - r) / d + 2;
-        break;
-      case b:
-        h = (r - g) / d + 4;
-        break;
-    }
-    h /= 6;
-  }
-  return [h, s, v];
-}
+/** [h, s, v] (0-1) of an [r, g, b] (0-255): color-adjustments.js's. */
+const rgbToHsv = ([r, g, b]) => hsvOfChannels(r / 255, g / 255, b / 255);
 
 /**
  * K-means clustering on RGB data for color diversity.

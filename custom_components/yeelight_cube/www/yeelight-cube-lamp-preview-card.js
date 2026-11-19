@@ -133,13 +133,11 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     });
     this._effectDebounceTimer = null;
     this._nativeAnimKey = null;
-    this._nativeAnimStartedAt = null;
-    // Animation loops + visibility (shared matrix-animator): pause when the tab
-    // is hidden or the card is scrolled off screen, and reuse the dot NodeList.
-    this._nativeLoop = null;
-    this._clockLoop = null;
-    this._visTracker = null;
-    this._onScreen = true;
+    // The matrix's animation (preview-animation.js, lamp-preview-matrix.js):
+    // paused when the tab is hidden or the card is scrolled off screen; the
+    // dot NodeList is reused.
+    this._animation = null;
+    this._animationMode = null;
     this._lampDots = null;
 
     // What the last lamp update showed (see set hass).
@@ -334,17 +332,26 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   // Start/stop the client-side animations to match the current mode. When the
   // dots are new (a new configuration), a loop that was already running paints
   // them right away instead of waiting for its next tick.
-  _syncAnimations(isNativeAnimating, isClockAnimating, repaint) {
+  _syncAnimations(isNativeAnimating, isClockAnimating, repaint, isMatrixAnimating = false) {
     if (isNativeAnimating) {
-      const running = this._nativeLoop?.running;
+      const running = this._animating("native");
       this._startNativeAnimation();
-      if (running && repaint) this._nativeAnimFrame();
+      if (running && repaint) {
+        this._animation?.forgetPaint();
+        this._nativeAnimFrame();
+      }
     } else this._stopNativeAnimation();
     if (isClockAnimating) {
-      const running = this._clockLoop?.running;
+      const running = this._animating("clock");
       this._startClockAnimation();
-      if (running && repaint) this._clockAnimFrame();
+      if (running && repaint) {
+        this._animation?.forgetPaint();
+        this._clockAnimFrame();
+      }
     } else this._stopClockAnimation();
+    // The lamp's own picture: its stream followed while it streams.
+    if (isMatrixAnimating) this._startMatrixAnimation();
+    else this._stopMatrixAnimation();
   }
 
   // After each update: paint the dots (change-only) unless an animation owns
@@ -364,10 +371,11 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const isNativeAnimating = preview && on && mode === "Native Effect";
     const isClockAnimating = preview && on && mode === "Clock";
     this._lastPreviewOrientation = deviceOrientation(stateObj.attributes);
+    const isMatrixAnimating = preview && on && !isNativeAnimating && !isClockAnimating;
     if (preview && !isNativeAnimating && !isClockAnimating)
       this._paintStaticPreview(stateObj);
     this._syncActions();
-    this._syncAnimations(isNativeAnimating, isClockAnimating, freshDots);
+    this._syncAnimations(isNativeAnimating, isClockAnimating, freshDots, isMatrixAnimating);
   }
 
   // Paint the lamp's matrix_colors on the dots (change-only), at the dragged
@@ -380,11 +388,19 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       return;
     // Blank matrix: no data yet, or the lamp draws the matrix (Music
     // Flow), whose frames the backend can't read back.
+    const dots = this._getLampDots();
+    // While the lamp streams its picture (a scrolling text), its last
+    // streamed frame: matrix_colors lags behind (at most once a second).
+    const streamed = this._animating("matrix") && this._streamedFrame();
+    if (streamed && dots.length === 100) {
+      this._animation?.forgetPaint();
+      this._paintStreamed(streamed, stateObj, dots);
+      return;
+    }
     const matrixColors = stateObj.attributes.matrix_colors?.length
       ? stateObj.attributes.matrix_colors
       : Array(100).fill(null);
     const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
-    const dots = this._getLampDots();
     if (dots.length === gridColors.length)
       this._paintDots(
         gridColors,
@@ -597,12 +613,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     return this._lastTemplate;
   }
 
-  // The card stylesheet wrapped in a <style> element, as an HTML string (for
-  // callers that embed a static snapshot next to _generateMatrixHtml).
-  _getStyles() {
-    return `<style>${LAMP_PREVIEW_CSS}</style>`;
-  }
-
   connectedCallback() {
     super.connectedCallback();
     // Reattached after a disconnect (dashboard edit mode, view switch): the
@@ -634,10 +644,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._stopNativeAnimation();
     this._stopClockAnimation();
     // Disconnect the off-screen visibility observer.
-    if (this._visTracker) {
-      this._visTracker.disconnect();
-      this._visTracker = null;
-    }
+    this._animation?.disconnect();
+    this._animation = null;
     this._lampDots = null;
 
     this._effectDebounceTimer = null;

@@ -357,14 +357,16 @@ export function createSliderHandlers({
       document.addEventListener(type, releasePointer, true);
   };
   // Follow a mouse / touch drag on the document: `move` for each movement,
-  // `onEnd` on release. Destroy() also detaches a drag still in progress.
+  // `onEnd` on release, or when the browser cancels the touch (a system
+  // gesture, a call...): else the page would stay unscrollable and the next
+  // swipe would still drag. Destroy() also detaches a drag still in progress.
+  const DRAG_ENDS = ["mouseup", "touchend", "touchcancel", "pointercancel"];
   const followDrag = (move, onEnd) => {
     dragCleanup?.();
     const detach = () => {
       document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", end);
       document.removeEventListener("touchmove", move);
-      document.removeEventListener("touchend", end);
+      for (const type of DRAG_ENDS) document.removeEventListener(type, end);
       if (dragCleanup === detach) dragCleanup = null;
     };
     const end = () => {
@@ -373,9 +375,8 @@ export function createSliderHandlers({
     };
     dragCleanup = detach;
     document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", end);
     document.addEventListener("touchmove", move, { passive: false });
-    document.addEventListener("touchend", end);
+    for (const type of DRAG_ENDS) document.addEventListener(type, end);
   };
 
   // The style's visuals for a value (1-100): live drag and external updates.
@@ -555,13 +556,6 @@ const sliderLayoutStyles = `
   .brightness-slider-container {
     text-align: center;
   }
-  .brightness-label {
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 10px;
-    color: var(--primary-text-color);
-    text-align: left;
-  }
   .brightness-slider-wrapper,
   .brightness-bar-wrapper,
   .brightness-matrix-wrapper {
@@ -584,13 +578,6 @@ const sliderLayoutStyles = `
   }
   .brightness-value-slider {
     flex-shrink: 0;
-  }
-  .brightness-percentage-standalone {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--primary-text-color);
-    text-align: center;
-    padding: 8px 0;
   }
   .brightness-value {
     font-size: 12px;

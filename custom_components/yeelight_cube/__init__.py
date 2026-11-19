@@ -237,6 +237,32 @@ async def _async_serve_card_files(hass: HomeAssistant) -> None:
 
             real_root = os.path.realpath(www_path)
 
+            def _asset_file(rel: str) -> str | None:
+                """www/<rel> as a file path, or None: not a file inside www/
+                (the path-traversal guard)."""
+                real_file = os.path.realpath(os.path.join(real_root, rel))
+                if (
+                    real_file != real_root
+                    and not real_file.startswith(real_root + os.sep)
+                ) or not os.path.isfile(real_file):
+                    return None
+                return real_file
+
+            def _asset_files() -> dict[str, str]:
+                """Every file in www/, by the path a request names."""
+                files = {}
+                for folder, _dirs, names in os.walk(real_root):
+                    for name in names:
+                        rel = os.path.relpath(os.path.join(folder, name), real_root)
+                        if (real_file := _asset_file(rel)) is not None:
+                            files[rel.replace(os.sep, "/")] = real_file
+                return files
+
+            # Listed once, in the executor: a request never touches the disk
+            # in the event loop to find its file. A file added since (cards
+            # copied without a restart) is looked up in the executor.
+            asset_files = await hass.async_add_executor_job(_asset_files)
+
             # Explicit extension -> Content-Type map for the asset types we
             # serve.  Used to force a correct module MIME even if the stdlib
             # mimetypes DB is incomplete on the host.
@@ -256,13 +282,12 @@ async def _async_serve_card_files(hass: HomeAssistant) -> None:
                 resilient to a transient backend outage, plus a
                 guaranteed-correct Content-Type for ES modules."""
                 rel = request.match_info.get("filename", "")
-                real_file = os.path.realpath(os.path.join(real_root, rel))
-                # Path-traversal guard: resolved path must stay inside www/.
-                if (
-                    real_file != real_root
-                    and not real_file.startswith(real_root + os.sep)
-                ) or not os.path.isfile(real_file):
-                    raise web.HTTPNotFound()
+                real_file = asset_files.get(rel)
+                if real_file is None:
+                    real_file = await hass.async_add_executor_job(_asset_file, rel)
+                    if real_file is None:
+                        raise web.HTTPNotFound()
+                    asset_files[rel] = real_file
                 ext = os.path.splitext(real_file)[1].lower()
                 headers = {"Cache-Control": _CACHE_CONTROL}
                 ctype = _CONTENT_TYPES.get(ext)
@@ -821,6 +846,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime = getattr(entry, "runtime_data", None)
     ip_address = runtime.active_ip if runtime is not None else entry.data[CONF_IP]
 
+    # Unload platforms (removes entities tied to this entry, including sensors
+    # if this entry was the one that created them).
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "binary_sensor", "number", "button", "camera", "event"])
+    if not unload_ok:
+        # Still loaded: its lamp keeps its place for the services and its lock.
+        return False
+
     # Clean up module-level state in light.py (entity registry + device locks)
     # so stale references don't persist across integration reloads.
     # Import lazily to avoid circular import (light.py imports from __init__).
@@ -830,10 +862,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Remove device from managed list
     conflict_prevention = get_conflict_prevention(hass)
     conflict_prevention.remove_managed_device(ip_address)
-    
-    # Unload platforms (removes entities tied to this entry, including sensors
-    # if this entry was the one that created them).
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "binary_sensor", "number", "button", "camera", "event"])
 
     # Home Assistant drops entry.runtime_data once the entry is unloaded.
 

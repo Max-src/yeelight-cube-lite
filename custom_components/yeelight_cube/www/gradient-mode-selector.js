@@ -198,6 +198,9 @@ export const ModeSelectorMixin = (Base) => class extends Base {
     if (!this._isPreviewSelectorActive()) return;
 
     this._previewEventListenerRegistered = true;
+    // The lamp whose previews it follows (another one: subscribed again,
+    // _hassReceived).
+    this._previewEventsEntity = this._primaryEntity();
 
     this._unsubscribePreviewEvents = gradientPreviewStore(
       this._hass.connection,

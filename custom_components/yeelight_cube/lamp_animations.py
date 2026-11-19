@@ -226,9 +226,25 @@ def fit_colours(frames) -> list:
     if len(counts) <= 256:
         return frames
     kept = sorted(counts, key=lambda colour: (-counts[colour], colour))[:256]
+    others = [colour for colour in counts if colour not in set(kept)]
     nearest = {colour: colour for colour in kept}
-    for colour in counts:
-        if colour not in nearest:
+    try:
+        import numpy as np  # noqa: PLC0415 -- Home Assistant's own dependency
+    except ImportError:  # pragma: no cover -- without numpy: the same, slower
+        np = None
+    if np is not None and others:
+        # The same choice as below (squared distance, the first kept colour
+        # on a tie), thousands of colours at once: a streamed effect in a
+        # palette can have that many, and this runs within a lamp's lock.
+        table = np.asarray(kept, dtype=np.int32)
+        rest = np.asarray(others, dtype=np.int32)
+        for start in range(0, len(rest), 1024):
+            chunk = rest[start:start + 1024]
+            distances = ((chunk[:, None, :] - table[None, :, :]) ** 2).sum(axis=2)
+            for colour, index in zip(others[start:start + 1024], distances.argmin(axis=1)):
+                nearest[colour] = kept[int(index)]
+    else:
+        for colour in others:
             nearest[colour] = min(
                 kept, key=lambda other: sum((a - b) ** 2 for a, b in zip(colour, other)),
             )

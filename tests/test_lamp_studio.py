@@ -564,11 +564,15 @@ STREAM_NAMES = {
     "_chosen_effect_intensity", "_start_studio_stream", "_native_effect_streamed",
     "_studio_loop", "stop_studio_stream", "_clock_style", "studio_clock_frame",
     "_run_studio_loop", "_start_matrix_stream", "_stream_probe",
-    "_streams_changed", "_stream_watchdog", "stream_report", "_partial_frames",
-    "_publish_stream_frame", "_preview_shows_drive", "streamed_preview_frame",
+    "_streams_changed", "_stream_watchdog", "stream_report", "_probe_streamed_lamp",
+    "_publish_stream_frame", "_preview_shows_drive", "streamed_preview_frame", "_lite_lan_gap",
+    "_skips_unchanged_frames", "_drawn_payload", "_studio_routes", "_studio_resume_origin",
+    "_studio_stream_ended", "_restart_studio_loop",
 }
 CLOCK_FACE = import_pure_module("clock_face")
-PROTOCOL_PARTIAL_FRAME = import_pure_module("lamp_protocol").partial_frame
+LAMP_ERRORS = import_pure_module("lamp_protocol").LAMP_ERRORS
+# The stream's routes, pacing and log lines (stream_routes.py).
+STREAM_ROUTES = import_pure_module("stream_routes")
 # A clock style over Fire.
 FIRE_CLOCK = next(
     style_id for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
@@ -597,14 +601,15 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 "drawn_in_full": LAMP_CORE_FULL,
                 "_get_device_lock": lambda ip: self.lock,
                 "ACTIVATION_TIMING": activation_timing(),
-                "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05, "STUDIO_HOLD_SECONDS": 0.01,
-                "STREAM_CHANGES_ONLY_EFFECTS": frozenset(),
+                "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05, "STUDIO_HOLD_SECONDS": 0.01, "LITE_LAN_GAP": 0.0, "LITE_LAN_RESEND": 0.0, "LITE_STREAM_FPS_DEFAULT": 5, "LITE_STREAM_FPS_MIN": 1, "LITE_STREAM_FPS_MAX": 25,
+                "CONF_SKIP_UNCHANGED_FRAMES": "skip_unchanged_frames",
                 # The previews' frames (test_stream_preview.py).
                 "STREAM_PREVIEW_FRESH": 1.0, "led_appearance": lambda rgb: tuple(rgb),
                 "LAMP_RENDERED_EFFECTS": frozenset(),
-                # Partial frames (test_partial_frames.py): off here, every frame in full.
-                "PARTIAL_FRAME_EFFECTS": frozenset(), "PARTIAL_FULL_FRAME_SECONDS": 2.0, "LAMP_FRAME_BUFFERS": 2,
-                "partial_frame": PROTOCOL_PARTIAL_FRAME,
+                "LAMP_ERRORS": LAMP_ERRORS,
+                **{name: getattr(STREAM_ROUTES, name) for name in (
+                    "LanPacer", "LanStreamRoute", "MatterStreamRoute", "StreamDiag",
+                )},
                 "STUDIO_PROBE_SECONDS": 0.05, "STUDIO_SILENT_PROBE_SECONDS": 0.05, "STUDIO_RESTART_MOST": 0.2,
                 "STUDIO_SILENT_AFTER": 3,
                 # A Cube Lite: every render is sent (device_profile.max_fps None).
@@ -775,6 +780,48 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         probes = self.sent.count(("probe", True))
         await self.run_for(0.12)
         self.assertEqual(probes, self.sent.count(("probe", True)))
+
+    async def test_only_the_session_question_holds_the_lamp(self):
+        # The UDP question holds the lamp's lock (no frame goes with it); the
+        # TCP question, the Matter check and the problem check run without
+        # it, so frames are not held for seconds meanwhile.
+        lock = self.lock = asyncio.Lock()
+        seen = []
+        client = self.light._lamp_client
+
+        async def session():
+            seen.append(("session", lock.locked()))
+            return False
+
+        async def tcp():
+            seen.append(("tcp", lock.locked()))
+            return False
+
+        async def matter_check():
+            seen.append(("matter", lock.locked()))
+            return "stuck"
+
+        client.probe_session, client.probe_tcp = session, tcp
+        self.light.matter_controller_check = matter_check
+        self.light._async_check_problems = lambda: seen.append(("problems", lock.locked()))
+        self.stream_running("scroll", True)
+        await self.run_for(0.08)
+        self.stream_running("scroll", False)
+        await self.run_for(0.06)
+        self.assertEqual(
+            [("session", True), ("tcp", False), ("matter", False), ("problems", False)], seen[:4],
+        )
+
+    async def test_no_check_while_the_lamp_is_being_brought_back(self):
+        # light_link_recovery's sweep asks the lamp itself.
+        self.light._link_recovery_running = True
+        self.stream_running("scroll", True)
+        await self.run_for(0.12)
+        self.assertNotIn(("probe", True), self.sent)
+        self.light._link_recovery_running = False
+        await self.run_for(0.08)
+        self.assertIn(("probe", True), self.sent)
+        self.stream_running("scroll", False)
 
     async def test_a_cube_matrix_has_its_own_lan_check(self):
         self.light.is_cube_matrix = True

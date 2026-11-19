@@ -197,18 +197,12 @@ class MatrixSettingSelect(CubeSettingSelect):
 
 
 # A Cube Matrix's own settings (light_matrix): its power-on behaviour
-# (Matter StartUpOnOff) and the animation of a drawing it shows.
+# (Matter StartUpOnOff).
 MATRIX_SELECTS = (
     SettingSelect(
         "matrix_power_on", "_matrix_power_on", {"on": "Always on", "off": "Always off"}, "on",
         "async_set_matrix_power_on", "matrix_power_on",
         translation_key="power_on_state", category=EntityCategory.CONFIG,
-    ),
-    SettingSelect(
-        "drawing_animation", "_matrix_drawing_mixer",
-        {0: "Static", 2: "Scroll", 3: "Breathe", 4: "Flash", 5: "Reveal"}, 0,
-        "async_set_matrix_drawing_animation", "matrix_drawing_animation",
-        translation_key="drawing_animation",
     ),
 )
 
@@ -227,8 +221,11 @@ async def async_setup_entry(
     if light_entity is None:
         return False
 
-    # The matrix transition effect of an earlier version (transitions removed).
-    remove_retired_entities(hass, "select", [f"{light_entity.unique_id}_transition_select"])
+    # Retired selects: the matrix transition effect of an earlier version, and
+    # a Cube Matrix's drawing animation (drawings are always still).
+    remove_retired_entities(hass, "select", [
+        f"{light_entity.unique_id}_{suffix}" for suffix in ("transition_select", "drawing_animation")
+    ])
     if not light_entity.device_profile.native_effects:
         # A Cube Matrix entry made before models were told apart had them.
         remove_retired_entities(hass, "select", [

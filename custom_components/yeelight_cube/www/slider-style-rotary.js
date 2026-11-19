@@ -221,10 +221,6 @@ export default {
     background: none;
     box-shadow: none;
   }
-  .rotary-style-dial .rotary-label {
-    font-size: 14px;
-    color: var(--secondary-text-color);
-  }
   .rotary-style-dial .rotary-value {
     font-size: clamp(16px, 18cqi, 28px);
     font-weight: 700;
@@ -274,12 +270,6 @@ export default {
     align-items: center;
     gap: 4px;
     pointer-events: none;
-  }
-  .rotary-label {
-    font-size: 16px;
-    font-weight: 500;
-    color: var(--secondary-text-color);
-    text-align: center;
   }
   .rotary-value {
     font-size: clamp(16px, 15cqi, 24px);

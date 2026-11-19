@@ -278,11 +278,20 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   }
 
   _hassReceived(hass, previous) {
-    if (previous?.connection !== hass?.connection) {
+    // A new connection, or another lamp shown (the first one configured
+    // came back, or went): the previews are the new one's.
+    const lampChanged =
+      this._previewEventListenerRegistered &&
+      this._previewEventsEntity !== this._primaryEntity(hass);
+    if (previous?.connection !== hass?.connection || lampChanged) {
       this._unsubscribePreviewEvents?.();
       this._unsubscribePreviewEvents = null;
       this._previewEventListenerRegistered = false;
       this._previewContext = (this._previewContext || 0) + 1;
+    }
+    if (lampChanged && hass && this.isConnected) {
+      this._ensurePreviews();
+      return;
     }
 
     // Re-establish preview event subscription if lost (connectedCallback may
@@ -361,7 +370,12 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       attrs.full_panel,
       attrs.custom_text,
       valueKey(attrs.text_colors),
-      valueKey(attrs.matrix_colors),
+      // The lamp's 100 colors change at every step of a scrolling text: read
+      // only by the angle matrix's text preview and the preview gallery.
+      this.config?.matrix_rotary_text_preview === true ||
+      this._isPreviewSelectorActive()
+        ? valueKey(attrs.matrix_colors)
+        : undefined,
     ];
   }
 

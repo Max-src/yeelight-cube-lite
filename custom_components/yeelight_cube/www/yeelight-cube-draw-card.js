@@ -271,7 +271,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       hass?.themes,
       previewOnly({ config: cfg, _hass: hass }),
       cfg.show_lamp_palette !== false ? lamp?.text_colors : undefined,
-      cfg.show_lamp_colors !== false ? lamp?.matrix_colors : undefined,
+      // Not the lamp's 100 colors (they change at every step of a
+      // scrolling text): the colors the Lamp Colors section shows.
+      cfg.show_lamp_colors !== false
+        ? this._lampColorsKey(lamp?.matrix_colors)
+        : undefined,
       // The drawing area (until one is chosen) and the gallery's default
       // orientation ("lamp") follow the lamp's orientation.
       lamp?.device_orientation,
@@ -358,23 +362,25 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   }
 
   // The official pixel arts, once (pixel-art-utils loadBuiltinPixelArts):
-  // the gallery shows them when they arrive.
+  // the gallery shows them when they arrive. A failed request is not sent
+  // again on every update: loadBuiltinPixelArts gives the same failure until
+  // its retry delay is over, and that one is not waited on again.
   _loadBuiltinPixelArts(hass) {
     if (this._builtinPixelArts || this._builtinPixelArtsLoading) return;
-    this._builtinPixelArtsLoading = loadBuiltinPixelArts(hass)
+    const request = loadBuiltinPixelArts(hass);
+    if (request === this._builtinPixelArtsFailed) return;
+    this._builtinPixelArtsLoading = request
       .then((arts) => {
         this._builtinPixelArts = arts;
         this._schedulePixelArtRender();
       })
-      .catch((error) => console.warn("[draw-card] Official pixel arts unavailable:", error))
+      .catch((error) => {
+        this._builtinPixelArtsFailed = request;
+        console.warn("[draw-card] Official pixel arts unavailable:", error);
+      })
       .finally(() => {
         this._builtinPixelArtsLoading = null;
       });
-  }
-
-  _matrixColorCount() {
-    // Count pixels that are not null and not black
-    return this.matrix.filter((c) => c && c.toLowerCase() !== "#000000").length;
   }
 
   setConfig(config) {
@@ -753,10 +759,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     return cardShell(this, content);
   }
 
-  _selectTool(tool) {
-    this.toolManager.selectTool(tool);
-  }
-
   _onColorPicker(e) {
     this._selectColor(normalizeHex(e.target.value));
   }
@@ -771,23 +773,21 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     const stateObj = this.hass.states[this._primaryEntity()];
     if (!stateObj || !Array.isArray(stateObj.attributes.text_colors)) return [];
     // Convert [[r,g,b], ...] to hex strings
-    return stateObj.attributes.text_colors.map((rgb) => {
-      if (!Array.isArray(rgb) || rgb.length !== 3) return "#ffffff";
-      return "#" + rgb.map((x) => x.toString(16).padStart(2, "0")).join("");
-    });
+    return stateObj.attributes.text_colors.map((rgb) =>
+      Array.isArray(rgb) && rgb.length === 3 ? rgbToHex(rgb) : "#ffffff",
+    );
   }
 
   /**
    * Extract diverse colors from the lamp's actual displayed matrix.
    * Uses K-means clustering for color diversity. Reads matrix_colors from the light entity.
    */
-  _getLampMatrixColors() {
-    if (!this.hass || !this._primaryEntity()) return { palette: [], weights: null };
-    const stateObj = this.hass.states[this._primaryEntity()];
-    if (!stateObj || !Array.isArray(stateObj.attributes.matrix_colors))
-      return { palette: [], weights: null };
+  _getLampMatrixColors(
+    matrixColors = this.hass?.states?.[this._primaryEntity()]?.attributes
+      ?.matrix_colors,
+  ) {
+    if (!Array.isArray(matrixColors)) return { palette: [], weights: null };
     // K-means is expensive; memoise by the attribute's reference identity.
-    const matrixColors = stateObj.attributes.matrix_colors;
     if (this._lampMatrixColorsRef !== matrixColors) {
       this._lampMatrixColorsRef = matrixColors;
       this._lampMatrixColorsCache = extractDiversePaletteWithWeights(
@@ -796,6 +796,18 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       );
     }
     return this._lampMatrixColorsCache;
+  }
+
+  /** What the Lamp Colors section shows of `matrixColors`, as a string: its
+   * colors, and their weights where the layout sizes by them (stripes,
+   * treemap). The same while a scrolling text only moves. */
+  _lampColorsKey(matrixColors) {
+    const { palette, weights } = this._getLampMatrixColors(matrixColors);
+    const layout = this.config?.swatch_layout || "row";
+    const weighted = layout === "stripes" || layout === "treemap";
+    return palette
+      .map((color) => (weighted ? `${color}:${weights?.get(color)}` : color))
+      .join(",");
   }
 
   /**
@@ -855,39 +867,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     notifyUnreported(this, err, message);
   }
 
-  _saveRecentPalette() {
-    this._savePalette(this.recentColors, "Recent Colors");
-  }
-
-  _saveImagePalette() {
-    this._savePalette(this._getCurrentColors().palette, "Drawing Colors");
-  }
-
-  _saveLampColorsPalette() {
-    this._savePalette(this._getLampMatrixColors().palette, "Lamp Colors");
-  }
-
-  _toggleEraser() {
-    this.eraserMode = !this.eraserMode;
-    this.pencilMode = false;
-    this.areaFillMode = false;
-    this.fillAllMode = false;
-    this.previewFillArea = new Set();
-    this.requestUpdate();
-  }
-
-  _erasePixel(e, idx) {
-    this.matrixOperations.erasePixel(e, idx);
-  }
-
-  _fillAll() {
-    this.matrixOperations.fillAll();
-  }
-
-  _toggleFillAll() {
-    this.matrixOperations.toggleFillAll();
-  }
-
   _onMatrixMouseOver(idx) {
     this.matrixOperations.onMatrixMouseOver(idx);
   }
@@ -898,10 +877,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   _onMatrixClick(idx) {
     this.matrixOperations.onMatrixClick(idx);
-  }
-
-  _clearMatrix() {
-    this.matrixOperations.clearMatrix();
   }
 
   _setPixel(idx) {

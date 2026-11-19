@@ -910,6 +910,23 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIsNone(device._music_flow_restore_power)
         self.assertEqual({"persist": 1, "entities": 1, "preview": 1}, calls)
 
+    def test_every_restored_setting_is_saved(self):
+        # Each setting restored after a restart or a reload is one the light
+        # publishes (and saves apart while unreachable); its value comes back.
+        restore = module("light_restore")
+        profiles = module("device_profile")
+        lite = make_light(_lite_stream_fps=12)
+        matrix = make_light(profile=profiles.profile_for("CubeMatrix"))
+        keys = {key for key, _attr, _convert in restore._RESTORED_ATTRIBUTES}
+        for light, expected in ((lite, keys), (matrix, keys - {"lite_stream_fps"})):
+            saved = light.extra_restore_state_data.as_dict()
+            self.assertLessEqual(expected, set(light.extra_state_attributes))
+            self.assertLessEqual(expected, set(saved))
+        state = types.SimpleNamespace(state="on", attributes=lite.extra_state_attributes)
+        fresh = make_light()
+        fresh._restore_state(state)
+        self.assertEqual(12, fresh._lite_stream_fps)
+
     def test_music_flow_runtime_state_is_persisted_after_storage_ready(self):
         # Published, saved and restored: Music Flow and the power to go back
         # to after it, read once the shared storage is loaded.

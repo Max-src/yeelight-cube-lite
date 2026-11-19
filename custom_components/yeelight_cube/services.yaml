@@ -273,7 +273,7 @@ set_custom_text:
     While the lamp shows its clock or a native effect, the text is kept for when it shows text again (the clock and its rotation go on); to show it over the clock, call save_state first and restore_state after.
   fields:
     text:
-      description: Text to display on the cube matrix
+      description: Text to display on the cube matrix (at most 255 characters)
       example: "HELLO"
       required: true
       selector:

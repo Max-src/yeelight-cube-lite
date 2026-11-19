@@ -14,7 +14,6 @@ module.exports = async (t) => {
     ).prototype;
     // The card's own methods (the main lamp...) under the test's fields.
     const makeCard = (content_mode) => Object.setPrototypeOf({
-      _onScreen: true,
       config: { entity: "light.a" },
       _hass: {
         states: {
@@ -28,11 +27,7 @@ module.exports = async (t) => {
       _updateMatrixColors() {},
       _matrixColorsToGridColors: (x) => x,
       _getNativeClockFont: () => ({ fontMap: null, metrics: null }),
-      _clockAnimStartedAt: null,
-      _frozenBackgroundSeconds: null,
       _nativeAnimKey: null,
-      _nativeAnimStartedAt: null,
-      _nativeFrozenSeconds: null,
     }, proto);
 
     // Native effect loop: phase advances, then holds once frozen.
@@ -43,17 +38,19 @@ module.exports = async (t) => {
     let performanceNow = 1000;
     const realNow = performance.now.bind(performance);
     performance.now = () => performanceNow;
+    // The card's clock (preview-animation.js PreviewClock): its seconds.
+    const seconds = () => card._nativeClock.elapsed;
     proto._nativeAnimFrame.call(card);
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
-    const animatedPhase = card._nativeFrozenSeconds;
+    const animatedPhase = seconds();
     card._hass.states["light.a"].attributes.display_frozen = true;
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
-    const frozenPhase = card._nativeFrozenSeconds;
+    const frozenPhase = seconds();
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
-    const heldPhase = card._nativeFrozenSeconds;
+    const heldPhase = seconds();
     card._hass.states["light.a"].attributes.display_frozen = false;
     performanceNow += 1000;
     proto._nativeAnimFrame.call(card);
@@ -61,10 +58,13 @@ module.exports = async (t) => {
     proto._nativeAnimFrame.call(card);
     performance.now = realNow;
     return {
-      animated: animatedPhase === null, // not frozen yet -> no held phase
-      frozen: typeof frozenPhase === "number",
+      animated: animatedPhase === 1,
+      // Frozen: the moment it was frozen, held there.
+      frozen: frozenPhase === 1,
       held: heldPhase === frozenPhase,
-      resumed: card._nativeFrozenSeconds === null,
+      // Resumed from the held moment, without a jump (a frame later, a
+      // frame's time on).
+      resumed: seconds() === 3,
     };
   });
   assert.ok(lampResult.animated, "lamp native loop animates when not frozen");
@@ -74,7 +74,46 @@ module.exports = async (t) => {
     "lamp native loop holds that frame while frozen",
   );
   assert.ok(lampResult.resumed, "lamp native loop resumes after unfreeze");
+  // The lamp's own picture (a scrolling text): its stream while it streams
+  // (every step), then matrix_colors again.
+  const matrixResult = await page.evaluate(async () => {
+    const proto = customElements.get(
+      "yeelight-cube-lamp-preview-card",
+    ).prototype;
+    let frame = [[9, 9, 9]];
+    const painted = [];
+    const card = Object.setPrototypeOf({
+      config: { entity: "light.a" },
+      _hass: {
+        connection: {},
+        states: { "light.a": { state: "on", attributes: { content_mode: "Text" } } },
+      },
+      _animation: {
+        onScreen: true,
+        streamed: () => frame,
+        samePaint: () => false,
+        forgetPaint() {},
+      },
+      _lampSliders: { previewScale: () => 1 },
+      _getLampDots: () => new Array(100).fill({}),
+      _setInstantDots() {},
+      _matrixColorsToGridColors: (colors) => colors,
+      _updateMatrixColors: (colors) => painted.push(colors),
+      _paintStaticPreview: () => painted.push("static"),
+    }, proto);
+    card._animationMode = "matrix";
+    proto._matrixAnimFrame.call(card);
+    frame = null;
+    proto._matrixAnimFrame.call(card);
+    proto._matrixAnimFrame.call(card);
+    return painted;
+  });
+  assert.deepEqual(
+    matrixResult,
+    [[[9, 9, 9]], "static"],
+    "the lamp's picture follows its stream, then its reported colors once",
+  );
   console.log(
-    "PASS lamp-preview loops hold the frozen background and resume seamlessly",
+    "PASS lamp-preview loops hold the frozen background and resume seamlessly; the lamp's picture follows its stream",
   );
 };
