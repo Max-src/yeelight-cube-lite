@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-11-21
 
 ### Added
 - **Cube Matrix chains of 5 to 8 modules.** Everything Home Assistant draws (streamed effects, the clock, text,
