@@ -78,19 +78,29 @@ class MatrixFollowMixin:
                 self._async_check_problems()
         elif name == "rotation":
             lan = self._matrix_lan_rotation()
-            if lan is not None and lan != value:
-                # Home Assistant's Matter client keeps the value last reported
-                # to it; a write is not reported back, so after a restart it
-                # read 0 while the lamp ran 3 (2026-11-11): the lamp's own
-                # answer (read over the LAN at setup, kept up to date) wins.
-                _LOGGER.debug(
-                    "[MATRIX] [%s] Rotation %s from Matter, %s from the lamp: the lamp's kept",
-                    self._ip, value, lan,
+            if lan is None and self.hass is not None and self._matter is not None:
+                # Its LAN not read at setup: the server's copy can be old (a
+                # rotation written over Matter is not reported back), and
+                # following it would write that old one to the lamp. The
+                # lamp's own, read now, is followed instead.
+                self._create_tracked_task(
+                    self._matrix_read_rotation(),
+                    name=f"yeelight_cube_matrix_read_rotation_{self._ip}",
                 )
-                if self._matter is not None:
-                    self._matter.values["rotation"] = lan
-                value = lan
-            self._matrix_rotated(value, start=True)
+            else:
+                if lan is not None and lan != value:
+                    # Home Assistant's Matter client keeps the value last reported
+                    # to it; a write is not reported back, so after a restart it
+                    # read 0 while the lamp ran 3 (2026-11-11): the lamp's own
+                    # answer (read over the LAN at setup, kept up to date) wins.
+                    _LOGGER.debug(
+                        "[MATRIX] [%s] Rotation %s from Matter, %s from the lamp: the lamp's kept",
+                        self._ip, value, lan,
+                    )
+                    if self._matter is not None:
+                        self._matter.values["rotation"] = lan
+                    value = lan
+                self._matrix_rotated(value, start=True)
         elif name == "topology":
             # The lamp's own answer over the LAN (read at setup) wins; when
             # its LAN could not be read (stuck, 2026-11-14), Matter's module
@@ -120,6 +130,25 @@ class MatrixFollowMixin:
             self._matrix_modules_changed(value)
             if self.hass is not None:
                 self.async_write_ha_state()
+
+    async def _matrix_read_rotation(self) -> None:
+        """The rotation read from the lamp over Matter (its LAN not read at
+        setup), followed as one read at setup. Unread, the Device Orientation
+        Home Assistant kept stays: the server's copy can be one Home Assistant
+        wrote over since."""
+        link = self._matter
+        if link is None:
+            return
+        value = await link.async_read_live("rotation")
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 3:
+            _LOGGER.info(
+                "[MATRIX] [%s] Rotation not read from the lamp: Device Orientation %s kept",
+                self._ip, self._device_orientation,
+            )
+            return
+        self._matrix_rotated(value, start=True)
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     def _matrix_power_on_reported(self, value) -> None:
         """The lamp's StartUpOnOff, as it reports it: the Power-on behavior

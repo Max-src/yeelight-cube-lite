@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **A Cube Matrix's power supply side after a restart.** When the lamp's LAN did not answer as Home Assistant started,
+  the side was taken from the Matter server's copy, which can be older than the one Home Assistant last wrote: that
+  older side was shown and written back to the lamp. It is now read from the lamp itself, as the modules are; if it
+  cannot be read, the side Home Assistant kept stays.
+
 ## [2.0.0] - 2026-11-21
 
 ### Added

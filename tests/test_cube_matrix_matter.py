@@ -952,6 +952,34 @@ class RestartRotationTests(unittest.TestCase):
         MATRIX_FOLLOW.MatrixFollowMixin._matrix_lamp_restarted(light)
         self.assertNotIn(("orientation", "up"), light.log)
 
+    def lan_unread(self, live):
+        """A Home Assistant start with the lamp's LAN stuck: the server's
+        copy is 0 (right), from before Home Assistant wrote 3 (up)."""
+        light = self.light()
+        light._lamp_client.capabilities = {}
+        light._lamp_client.profile = dataclasses.replace(light._lamp_client.profile, rotation=None)
+
+        class Link:
+            values = {"rotation": 0}
+
+            async def async_read_live(self, name):
+                return live if name == "rotation" else None
+
+        light._matter = Link()
+        light.async_write_ha_state = lambda: None
+        light._on_matrix_report("rotation", 0, True)
+        return light
+
+    def test_after_a_restart_the_lamp_s_own_rotation_is_followed(self):
+        light = self.lan_unread(3)
+        self.assertEqual(3, light._lamp_client.profile.rotation)
+        self.assertFalse([e for e in light.log if e[0] in ("orientation", "write")])
+
+    def test_unread_the_server_s_old_copy_is_never_written_to_the_lamp(self):
+        light = self.lan_unread(None)
+        self.assertFalse([e for e in light.log if e[0] in ("orientation", "write")])
+        self.assertEqual("up", light._device_orientation)
+
     def test_our_music_connection_is_closed_before_the_rotation_is_written(self):
         source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_matter*.py")))
         write = source.split("async def _sync_lamp_rotation", 1)[1]
