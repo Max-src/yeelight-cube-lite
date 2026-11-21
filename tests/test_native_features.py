@@ -411,7 +411,23 @@ class NativeFeatureTests(unittest.TestCase):
         # The cards draw theirs meanwhile.
         node = NodeRun(script, cases)
         render = NATIVE_PREVIEW["render_native_effect"]
+        # Both sides start from no timeline and replay in full: the timelines
+        # other tests left (replayed within the time limit, so as far as the
+        # host's speed let them) would otherwise lead here to a frame another
+        # way than the cards' fresh ones, and a slow host can tell them apart.
+        timelines["_EFFECT_TIMELINES"].clear()
+        full_replay = timelines["replays_in_full"].__globals__["full_replay"]
         expected_frames = []
+        with full_replay():
+            self._render_expected(cases, timelines, render, expected_frames)
+        mismatched = [
+            case for case, expected, actual in zip(cases, expected_frames, node.result(), strict=True)
+            if expected != actual
+        ]
+        self.assertEqual([], mismatched[:20], f"{len(mismatched)} of {len(cases)} frames differ")
+
+    @staticmethod
+    def _render_expected(cases, timelines, render, expected_frames):
         for case in cases:
             effect, phase, direction, override, mode = case
             if effect in timelines["LAMP_RENDERED_EFFECTS"]:
@@ -422,11 +438,6 @@ class NativeFeatureTests(unittest.TestCase):
                         timeline.first_shown() + int(phase / (0.25 + 50 / 55.0) / 0.04), True
                     )
             expected_frames.append([list(pixel) for pixel in render(*case)])
-        mismatched = [
-            case for case, expected, actual in zip(cases, expected_frames, node.result(), strict=True)
-            if expected != actual
-        ]
-        self.assertEqual([], mismatched[:20], f"{len(mismatched)} of {len(cases)} frames differ")
 
     def test_clock_uses_lamp_clock_apply_mode(self):
         self.assertEqual(40, CONSTANTS["NATIVE_CLOCK_EFFECT_ID"])
