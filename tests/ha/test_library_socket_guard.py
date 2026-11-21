@@ -13,7 +13,15 @@ from custom_components.yeelight_cube.lamp_client import LampClient
 from custom_components.yeelight_cube.lamp_client_bulb import _GuardedBulb
 
 # A local port only (Home Assistant's test plugin blocks sockets otherwise).
+# The mark alone depends on the order of the plugins' setup hooks (Home
+# Assistant's can block sockets again after it): socket_enabled, a fixture,
+# turns them on after every setup hook.
 pytestmark = pytest.mark.enable_socket
+
+
+@pytest.fixture(autouse=True)
+def _sockets_on(socket_enabled):
+    yield
 
 
 @pytest.fixture
