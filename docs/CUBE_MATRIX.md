@@ -1,5 +1,7 @@
 # Yeelight Cube Matrix support
 
+<img src="../images/yeelight-cube-matrix.jpg" alt="Yeelight Cube Matrix with Matrix, Panel and Spot modules" width="420">
+
 > **Not the Cube Lite.** This page is about the original **Yeelight Cube** ("Cube Smart Lamp": a base and a chain of
 > 1 to 8 modules: Matrix, Panel and Spot), which answers on the LAN as `model: CubeMatrix`. The cards, services and
 > entities in the [README](../README.md) work on both lamps; this page covers what differs on a Cube Matrix.

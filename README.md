@@ -1,6 +1,11 @@
 # Yeelight Cube for Home Assistant (Cube Lite and Cube Matrix)
 
-<img src="images/yeelight-cube-light.png" alt="Yeelight Cube Smart Lamp Lite" width="320">
+<table>
+  <tr>
+    <td align="center" valign="bottom"><img src="images/yeelight-cube-light.png" alt="Yeelight Cube Smart Lamp Lite" width="300"><br><b>Cube Lite</b></td>
+    <td align="center" valign="bottom"><img src="images/yeelight-cube-matrix.jpg" alt="Yeelight Cube Matrix with Matrix, Panel and Spot modules" width="380"><br><b>Cube Matrix</b> (<a href="#cube-matrix">what differs</a>)</td>
+  </tr>
+</table>
 
 A Home Assistant custom integration for two Yeelight Cube lamps:
 
@@ -35,7 +40,7 @@ These overviews use generated screenshots of the actual cards with example data.
 
 ## Table of Contents
 
-**[`Cards at a glance`](#see-what-you-can-build)** · **[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Matter & buttons (optional)`](#matter-optional)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Requirements`](#requirements)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
+**[`Cards at a glance`](#see-what-you-can-build)** · **[`Features`](#features)** · **[`Cube Matrix`](#cube-matrix)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Matter & buttons (optional)`](#matter-optional)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Requirements`](#requirements)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
 
 ---
 
@@ -58,16 +63,20 @@ Normal display controls use **LAN Control**; **Matter is an optional extra**.
 
 <a id="cube-matrix"></a>
 
-> **Yeelight Cube Matrix** (the original Yeelight Cube, a base and a chain of 1 to 8 modules, LAN model `CubeMatrix`)
-> is supported too: text, drawings, colours, gradients, every native effect, animation and clock style, on every
-> module of the chain. Its modules (Matrix, Panel, Spot, in the order they are fitted) are set from the Preview
-> card's [Modules section](#matrix-modules); the previews and cameras draw each module as it looks. It is a very different lamp: it has
-> **no LAN command for its effects, clock or drawings** — only Matter starts them. So for a Cube Matrix, **Matter is
-> not optional if you want smooth effects**: shared to Home Assistant's Matter integration, it runs its own 50 effects (Fireworks included),
-> its clock and drawings itself; everything else (and everything without Matter, or while its demo mode runs) is drawn
-> by Home Assistant and streamed: as the lamp's drawing over Matter at 25 frames a second, or without Matter over the
-> LAN at about 5. No microphone effects, Music Flow or power-on
-> behaviour on it. Side-by-side comparison: [docs/CUBE_MATRIX.md](docs/CUBE_MATRIX.md#cube-lite-and-cube-matrix-compared).
+### Using a Cube Matrix
+
+Everything in this README works on a **Yeelight Cube Matrix** too (the original Yeelight Cube, LAN model
+`CubeMatrix`): every card, service and entity, on every module of its chain. Three things differ:
+
+1. **Tell the integration which modules are fitted.** Matrix, Panel and Spot, in chain order from the base, in the
+   Preview card's [Modules section](#matrix-modules). The previews and cameras then draw each module as it looks.
+2. **Share it to Home Assistant's Matter integration.** Matter is optional on a Cube Lite but not on a Cube Matrix:
+   it has no LAN command for its effects, clock or drawings. With Matter it runs its own 50 effects, clock and
+   drawings, and what Home Assistant draws is streamed at 25 frames a second; without Matter, everything is streamed
+   over the LAN at about 5. How to share it: [Matter setup](#matter-optional).
+3. **No microphone**, so no microphone effects or Music Flow.
+
+The full guide, with a side-by-side comparison of the two lamps: **[docs/CUBE_MATRIX.md](docs/CUBE_MATRIX.md)**.
 
 ---
 
