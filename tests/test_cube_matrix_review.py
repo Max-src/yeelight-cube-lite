@@ -385,6 +385,19 @@ class ClockAndSpeedTests(unittest.TestCase):
         asyncio.run(light.matrix_send_brightness(20))
         self.assertEqual("set_bright", [entry for entry in light.log if entry[0] == "set_bright"][-1][0])
 
+    def test_it_is_switched_off_over_matter(self):
+        # 2026-11-20: the lamp's LAN read no command; set_power off was lost,
+        # the lamp stayed lit while Home Assistant showed it off.
+        import asyncio
+        light = self.FakeLight()
+        asyncio.run(light.matrix_send_power(False))
+        self.assertEqual((6, "Off"), [entry for entry in light.log if entry[0] == "matter"][-1][1:3])
+        self.assertFalse([entry for entry in light.log if entry[0] == "set_power"])
+        # Matter refused: over the LAN.
+        light = self.FakeLight(refuse=True)
+        asyncio.run(light.matrix_send_power(False))
+        self.assertIn(("set_power", ["off"], True), light.log)
+
     def test_sunrise_and_sunset_at_speed_0_is_still(self):
         params = EFFECTS.engine_payload(18, 0)["effect"]["effectParams"][0]
         self.assertEqual(0, params["speed"])
@@ -789,7 +802,9 @@ class TurnOnAgainTests(unittest.TestCase):
         self.assertIsNotNone(light._matrix_shown)
         with instant_sleeps():
             run(light._internal_turn_off())
-        self.assertIn(("set_power", ["off"], True), light.log)
+        # Off over Matter (On/Off), never depending on the lamp's LAN.
+        self.assertIn((6, "Off"), [entry[1:3] for entry in light.log if entry[0] == "matter"])
+        self.assertNotIn(("set_power", ["off"], True), light.log)
         self.assertIsNone(light._matrix_shown)
         light._is_on = True
         run(light._activate_matrix_content())

@@ -814,6 +814,52 @@ class ModuleListTests(unittest.TestCase):
         self.assertEqual(20, profile.columns)
         self.assertEqual({"type": "spot", "column": 10}, profile.layout[2])
 
+    def test_blocks_taken_off_the_list_are_left_black(self):
+        # Filmed 2026-11-20: a block the lamp no longer lists keeps its last
+        # picture. Switched off while still listed, then the shorter list:
+        # black. Switched on again afterwards, its content drawn again.
+        light = FakeLight()
+        light._is_on = True
+        with mock.patch.object(MATRIX_SETTINGS, "MODULES_BLANK_SETTLE", 0):
+            run(light.async_set_matrix_modules(["matrix", "matrix", "spot", "matrix"]))
+            light.log.clear()
+            run(light.async_set_matrix_modules(["matrix", "panel", "spot"]))
+        matter = [entry[1:3] for entry in light.log if entry and entry[0] == "matter"]
+        self.assertEqual([(6, "Off"), (COMMANDS.CUBE_CONTROL_CLUSTER, "updateTopology"), (6, "On")], matter[:3])
+        self.assertEqual((2, 1, 3), light.device_profile.module_types)
+        # As many blocks and Spots or more: nothing switched.
+        light.log.clear()
+        with mock.patch.object(MATRIX_SETTINGS, "MODULES_BLANK_SETTLE", 0):
+            run(light.async_set_matrix_modules(["matrix", "matrix", "spot", "matrix"]))
+        self.assertNotIn(6, [entry[1] for entry in light.log if entry and entry[0] == "matter"])
+        # Off in Home Assistant: blacked, and left off.
+        light._is_on = False
+        light.log.clear()
+        with mock.patch.object(MATRIX_SETTINGS, "MODULES_BLANK_SETTLE", 0):
+            run(light.async_set_matrix_modules(["matrix"]))
+        matter = [entry[1:3] for entry in light.log if entry and entry[0] == "matter"]
+        self.assertEqual([(6, "Off"), (COMMANDS.CUBE_CONTROL_CLUSTER, "updateTopology")], matter)
+
+    def test_a_spot_taken_off_the_list_is_left_dark(self):
+        # 2026-11-21: matrix, panel, spot -> matrix, panel left the Spot lit:
+        # the lamp drops the Spots' output when none is listed, and the
+        # blocks' count had not changed, so nothing was switched off first.
+        light = FakeLight()
+        light._is_on = True
+        with mock.patch.object(MATRIX_SETTINGS, "MODULES_BLANK_SETTLE", 0):
+            run(light.async_set_matrix_modules(["matrix", "panel", "spot"]))
+            light.log.clear()
+            run(light.async_set_matrix_modules(["matrix", "panel"]))
+        matter = [entry[1:3] for entry in light.log if entry and entry[0] == "matter"]
+        self.assertEqual([(6, "Off"), (COMMANDS.CUBE_CONTROL_CLUSTER, "updateTopology"), (6, "On")], matter[:3])
+        # A Spot moved, none taken off: nothing switched.
+        light.log.clear()
+        with mock.patch.object(MATRIX_SETTINGS, "MODULES_BLANK_SETTLE", 0):
+            run(light.async_set_matrix_modules(["matrix", "spot"]))
+            light.log.clear()
+            run(light.async_set_matrix_modules(["spot", "matrix"]))
+        self.assertNotIn(6, [entry[1] for entry in light.log if entry and entry[0] == "matter"])
+
     def test_matter_s_list_is_taken_at_link_when_the_lan_could_not_be_read(self):
         # 2026-11-14: HA restarted while the lamp's LAN was stuck: setup read
         # no layout and the default 4 Matrix modules stayed, though Matter
@@ -827,9 +873,26 @@ class ModuleListTests(unittest.TestCase):
         light._on_matrix_report("topology", [2, 2, 3, 2, 0, 0, 0, 0], True)
         self.assertEqual((2, 2, 2, 2), light.device_profile.module_types)
 
+    def test_the_lamp_s_own_list_wins_over_the_server_s_copy(self):
+        # 2026-11-21: the server's copy (2,1,3) was a list of the night before;
+        # the lamp, read over Matter, had 2,2,1,3,2.
+        light = FakeLight()
+
+        class Link:
+            values = {"topology": [2, 1, 3, 0, 0, 0, 0, 0]}
+
+            async def async_read_live(self, name):
+                return [2, 2, 1, 3, 2, 0, 0, 0] if name == "topology" else None
+
+        light._matter = Link()
+        light._on_matrix_report("topology", [2, 1, 3, 0, 0, 0, 0, 0], True)
+        self.assertEqual((2, 1, 3), light.device_profile.module_types)
+        run(light._matrix_read_modules())
+        self.assertEqual((2, 2, 1, 3, 2), light.device_profile.module_types)
+
     def test_a_list_it_cannot_take_is_refused_before_anything_is_sent(self):
         light = FakeLight()
-        for modules in ([], ["matrix"] * 7, ["matrix", "lamp"]):
+        for modules in ([], ["matrix"] * 9, ["matrix", "lamp"]):
             with self.subTest(modules=modules), self.assertRaises(Exception):
                 run(light.async_set_matrix_modules(modules))
         light._matter = types.SimpleNamespace(linked=False, values={})

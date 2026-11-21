@@ -3,7 +3,14 @@
 // official app's pixel arts. (A single reorder move: singleMove in
 // user-collections.js.)
 import { VISIBILITY_KEYS, visibleItems } from "./visible-items.js";
-import { flipIndexVertical } from "./matrix-view.js";
+import {
+  MATRIX_COLS,
+  MATRIX_ROWS,
+  MAX_MATRIX_COLS,
+  flipIndexIn,
+  flipIndexVertical,
+  frameWidth,
+} from "./matrix-view.js";
 import { hexToRgbOrBlack } from "./draw_utils.js";
 
 // The official app's pixel arts (yeelight_cube/builtin_pixel_arts: name,
@@ -137,31 +144,70 @@ export function expandPixelArt(art) {
 /**
  * Where a stored pixel lands on screen: positions count rows from the
  * lamp's bottom row (0-19 is the bottom), the matrix previews and the
- * drawing grid from the top. The one conversion of every pixel-art view.
+ * drawing grid from the top. The one conversion of every pixel-art view
+ * (a 20-column art: pixelArtCells for any width).
  */
 export const pixelArtDisplayIndex = flipIndexVertical;
 
+/** The columns a pixel art was drawn on: its `width` (a longer Cube Matrix's,
+ * up to 40), else 20 (every art saved before, the official ones). Its
+ * positions are row * width + column. */
+export function pixelArtWidth(art) {
+  const width = Number(art?.width);
+  return Number.isInteger(width) && width > MATRIX_COLS && width <= MAX_MATRIX_COLS
+    ? width
+    : MATRIX_COLS;
+}
+
 /**
- * The drawing grid (100 hex colors, top row first) as pixel-art pixels: one
- * { position, color } per pixel, positions in lamp order (the inverse of
- * pixelArtDisplayIndex). What the Draw card saves and sends.
+ * A pixel art's pixels on a grid `width` columns wide (top row first): [{
+ * index, color }], its own width by default. An art narrower than the grid
+ * is placed from column 0, a wider one cropped to it; positions out of the
+ * art's frame are left out.
+ */
+export function pixelArtCells(art, width = pixelArtWidth(art)) {
+  const from = pixelArtWidth(art);
+  const cells = [];
+  for (const { position, color } of expandPixelArt(art)) {
+    if (!Number.isInteger(position) || position < 0 || position >= from * MATRIX_ROWS) continue;
+    const row = Math.floor(position / from);
+    const column = position % from;
+    if (column >= width) continue;
+    cells.push({ index: (MATRIX_ROWS - 1 - row) * width + column, color });
+  }
+  return cells;
+}
+
+/**
+ * The drawing grid (hex colors, top row first: 100, or width x 5 for a
+ * longer Cube Matrix, matrix-view.js frameWidth) as pixel-art pixels: one
+ * { position, color } per pixel, positions in lamp order (row * width +
+ * column, the inverse of pixelArtDisplayIndex). What the Draw card saves and
+ * sends, with the width when it is not 20 (drawingWidth).
  */
 export function drawingPixels(matrix) {
+  const width = frameWidth(matrix);
   return matrix.map((hex, index) => ({
-    position: pixelArtDisplayIndex(index),
+    position: flipIndexIn(index, width),
     color: hexToRgbOrBlack(hex),
   }));
 }
 
+/** The `width` field a drawing is saved and sent with: {} for 20 columns
+ * (as every art before), else { width }. */
+export function drawingWidth(matrix) {
+  const width = frameWidth(matrix);
+  return width === MATRIX_COLS ? {} : { width };
+}
+
 /**
- * A pixel art as the 100 colors of the 20x5 matrix, top row first (unset
- * pixels black): the colorData of matrix previews (gallery, Arrange).
+ * A pixel art as the colors of its matrix (20 x 5, or its own width x 5),
+ * top row first (unset pixels black): the colorData of matrix previews
+ * (gallery, Arrange). `width`: on a grid that wide instead (pixelArtCells).
  */
-export function pixelArtColorData(art) {
-  const colors = Array.from({ length: 100 }, () => [0, 0, 0]);
-  for (const { position, color } of expandPixelArt(art)) {
-    if (Number.isInteger(position) && position >= 0 && position < 100 && Array.isArray(color))
-      colors[pixelArtDisplayIndex(position)] = color;
-  }
+export function pixelArtColorData(art, width = pixelArtWidth(art)) {
+  const colors = Array.from({ length: width * MATRIX_ROWS }, () => [0, 0, 0]);
+  for (const { index, color } of pixelArtCells(art, width))
+    if (Array.isArray(color)) colors[index] = color;
   return colors;
 }

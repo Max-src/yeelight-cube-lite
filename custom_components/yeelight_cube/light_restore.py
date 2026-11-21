@@ -43,7 +43,7 @@ from .effect_catalog import (
 from .color_adjustments import active_adjustments
 from .layout import FONT_MAPS
 from .light_display import MAX_TEXT_LENGTH
-from .pixel_art_storage import expand_pixels, group_pixels
+from .pixel_art_storage import expand_pixels, group_pixels, pixels_at_width
 from .storage import async_schedule_save
 
 _LOGGER = logging.getLogger(__name__)
@@ -298,6 +298,8 @@ class StateRestoreMixin:
         entry = {
             "pixels": group_pixels(self._custom_pixels),
             "name": self._active_pixel_art_name,
+            # Positions are row * width + column of the lamp's frame then.
+            "width": self.frame_width,
         }
         key = self._music_flow_runtime_storage_key()
         if store.get(key) == entry:
@@ -314,7 +316,9 @@ class StateRestoreMixin:
         saved = store.get(self._music_flow_runtime_storage_key()) if store else None
         if not isinstance(saved, dict) or not isinstance(saved.get("pixels"), list):
             return
-        self._custom_pixels = expand_pixels(saved["pixels"])
+        # Saved at another frame width (a Cube Matrix's modules changed;
+        # none saved: 20): placed again from column 0.
+        self._custom_pixels = pixels_at_width(expand_pixels(saved["pixels"]), saved.get("width"), self.frame_width)
         if isinstance(saved.get("name"), str):
             self._active_pixel_art_name = saved["name"]
         _LOGGER.debug(

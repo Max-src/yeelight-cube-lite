@@ -65,6 +65,7 @@ class DisplayImageServiceTests(unittest.IsolatedAsyncioTestCase):
                 "HomeAssistantError": RuntimeError,
                 "_resolve_entities": lambda *args: targets,
                 "image_to_matrix": decode,
+                "image_pixels": image_utils.image_pixels,
                 "hass": SimpleNamespace(async_add_executor_job=run_in_executor),
                 "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *coros: [c.close() for c in coros]): _schedule(*(apply(lamp) for lamp in lamps)),
                 "_LOGGER": Mock(),
@@ -86,7 +87,7 @@ class DisplayImageServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_unusable_image_is_reported_to_the_caller(self):
         call = SimpleNamespace(data={"image_b64": "!!"})
         with self.assertRaisesRegex(RuntimeError, "not a supported image|not valid"):
-            await self.handler([object()], image_utils.image_to_matrix)(call)
+            await self.handler([SimpleNamespace(frame_width=20)], image_utils.image_to_matrix)(call)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from .lamp_protocol import is_connection_error
 from .name_utils import normalize_display_name
 from .light import _ENTITY_REGISTRY
 from .light_rotation import MAX_FAVOURITE_NAME, MAX_FAVOURITES
+from .device_profile import MAX_COLS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,11 +84,16 @@ FAVOURITE_LIST_SCHEMA = vol.All(
     [FAVOURITE_SCHEMA], vol.Length(max=MAX_FAVOURITES)
 )
 PIXEL_ART_ORIENTATION_SCHEMA = vol.In(PIXEL_ART_ORIENTATIONS)
+# A pixel art's (or drawing's) width in columns: its positions are
+# row * width + column (pixel_art_storage). 20 when not given; up to a Cube
+# Matrix of TOPOLOGY_SLOTS modules' 40.
+PIXEL_ART_WIDTH_SCHEMA = vol.All(vol.Coerce(int), vol.Range(min=1, max=MAX_COLS))
 PIXEL_ART_SCHEMA = vol.Schema(
     {
         vol.Optional("name"): OPTIONAL_NAME_SCHEMA,
         vol.Required("pixels"): PIXEL_LIST_SCHEMA,
         vol.Optional("orientation"): PIXEL_ART_ORIENTATION_SCHEMA,
+        vol.Optional("width"): PIXEL_ART_WIDTH_SCHEMA,
     },
     extra=vol.REMOVE_EXTRA,
 )

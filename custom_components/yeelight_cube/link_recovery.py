@@ -27,19 +27,27 @@ _LOGGER = logging.getLogger(__name__)
 
 REALIGN_METHOD = "req_ota"
 REALIGN_PARAMS = [1, 1]
-# The offset grows in steps of about 115 bytes (one millisecond of the
-# link), plus a few.
-OFFSET_STEP = 115
-OFFSET_STEPS = range(1, 9)
-OFFSET_SPREAD = (0, 1, 2, 3, -1, -2, -3)
+# The offset grows in steps of 115.2 bytes (one millisecond of the link),
+# plus a few, nearest first. Only up to 4 steps: a longer command is not read
+# whole (the lamp's re-send of it overwrites its start), and each command
+# also lands on twice and three times its size through those re-sends, so
+# these 28 reach as many offsets as 8 steps would.
+OFFSET_STEP = 115.2
+OFFSET_STEPS = range(1, 5)
+OFFSET_SPREAD = (0, 1, -1, 2, -2, 3, -3)
 LONGEST_LINK_FRAME = 1023
 # Seconds an attempt waits for the lamp's answer (the network part resends
 # an unanswered command 3 times, 300 ms apart: one of them may be read).
 ANSWER_WAIT = 1.3
 CONNECT_TIMEOUT = 3.0
-# Commands per TCP connection: the lamp takes about 30 a minute from one
-# connection (54 a minute in all); at ANSWER_WAIT apart, 20 stay well within.
-COMMANDS_PER_CONNECTION = 20
+# Commands per TCP connection: the lamp refuses a connection's commands from
+# about its 30th (2026-11-16 18:39). The whole sweep fits on one connection:
+# a command read late is answered on the connection that sent it.
+COMMANDS_PER_CONNECTION = 29
+# Seconds the answers are still counted after the first one: the same answer
+# three times (the lamp's re-sends, each read) means the link is still
+# offset; once, that it is aligned again.
+ANSWER_COPIES_WAIT = 1.0
 # Ids under 24 keep link_size exact (one byte in the link's header).
 FIRST_ID, LAST_ID = 5, 23
 
@@ -76,7 +84,7 @@ def candidate_sizes() -> list[int]:
     sizes = []
     for step in OFFSET_STEPS:
         for spread in OFFSET_SPREAD:
-            size = OFFSET_STEP * step + spread
+            size = round(OFFSET_STEP * step) + spread
             if smallest <= size <= LONGEST_LINK_FRAME and size not in sizes:
                 sizes.append(size)
     return sizes
@@ -95,12 +103,14 @@ async def realign(ip: str, port: int, *, answer_wait: float = ANSWER_WAIT) -> in
     command_id = FIRST_ID
     connection = None
     sent = 0
+    sizes_by_id: dict[int, int] = {}  # the last size sent with each id
     try:
         for size in candidate_sizes():
             line = padded_line(command_id, size)
-            command_id = FIRST_ID if command_id >= LAST_ID else command_id + 1
             if line is None:
                 continue
+            sizes_by_id[command_id] = size
+            command_id = FIRST_ID if command_id >= LAST_ID else command_id + 1
             for attempt in (1, 2):
                 # A fresh connection every COMMANDS_PER_CONNECTION commands:
                 # past its quota the network part refuses a connection's
@@ -117,8 +127,16 @@ async def realign(ip: str, port: int, *, answer_wait: float = ANSWER_WAIT) -> in
                     writer.write((line + "\r\n").encode("latin-1"))
                     await writer.drain()
                     sent += 1
-                    if await _answered(reader, answer_wait):
-                        return size
+                    answered_id = await _answered(reader, answer_wait)
+                    if answered_id is not None:
+                        # Possibly an earlier command, read late.
+                        hit = sizes_by_id.get(answered_id, size)
+                        copies = 1 + await _copies(reader, answered_id, min(answer_wait, ANSWER_COPIES_WAIT))
+                        _LOGGER.info(
+                            "[RECOVERY] [%s] Answered at %s bytes (id %s, last sent %s bytes), %s time%s",
+                            ip, hit, answered_id, size, copies, "" if copies == 1 else "s",
+                        )
+                        return hit
                     break
                 except OSError:
                     _close(connection)
@@ -135,23 +153,46 @@ def _close(connection) -> None:
         connection[1].close()
 
 
-async def _answered(reader: asyncio.StreamReader, wait: float) -> bool:
-    """Whether the lamp answers a command with a result within ``wait``
-    seconds: only an aligned command is (an error can be the network part's
-    own, a quota)."""
+async def _answered(reader: asyncio.StreamReader, wait: float) -> int | None:
+    """The id of a command the lamp answers with a result within ``wait``
+    seconds, or None: only an aligned command is answered (an error can be
+    the network part's own, a quota)."""
     loop = asyncio.get_running_loop()
     end = loop.time() + wait
     while (left := end - loop.time()) > 0:
         try:
             line = await asyncio.wait_for(reader.readline(), left)
         except asyncio.TimeoutError:
-            return False
+            return None
         if not line:
-            return False
+            # The lamp closed the connection: the caller opens a new one and
+            # sends the same size again (else every later size is lost).
+            raise ConnectionResetError("the lamp closed the connection")
         try:
             answer = json.loads(line.decode("latin-1"))
         except ValueError:
             continue
         if isinstance(answer, dict) and "result" in answer:
-            return True
-    return False
+            return answer.get("id", -1)
+    return None
+
+
+async def _copies(reader: asyncio.StreamReader, answered_id: int, wait: float) -> int:
+    """More answers to ``answered_id`` within ``wait`` seconds (for the log)."""
+    copies = 0
+    loop = asyncio.get_running_loop()
+    end = loop.time() + wait
+    while (left := end - loop.time()) > 0:
+        try:
+            line = await asyncio.wait_for(reader.readline(), left)
+        except (asyncio.TimeoutError, OSError):
+            break
+        if not line:
+            break
+        try:
+            answer = json.loads(line.decode("latin-1"))
+        except ValueError:
+            continue
+        if isinstance(answer, dict) and answer.get("id") == answered_id and "result" in answer:
+            copies += 1
+    return copies

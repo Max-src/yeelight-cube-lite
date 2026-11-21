@@ -23,6 +23,7 @@ class DrawingRestoreTests(unittest.TestCase):
             LIGHT_SOURCE, {"_remember_drawing", "_restore_drawing"}, {
                 "group_pixels": pixel_art_storage.group_pixels,
                 "expand_pixels": pixel_art_storage.expand_pixels,
+                "pixels_at_width": pixel_art_storage.pixels_at_width,
                 "async_schedule_save": self.save, "_LOGGER": Mock(),
             },
         )
@@ -35,11 +36,22 @@ class DrawingRestoreTests(unittest.TestCase):
             "_custom_draw_active": False, "_active_pixel_art_name": None,
             "_device_store": lambda name: self.domain_data.setdefault(name, {}),
             "_music_flow_runtime_storage_key": lambda: "entry-1",
+            "frame_width": 20,
             **state,
         })
         for name in ("_remember_drawing", "_restore_drawing"):
             setattr(light, name, self.fns[name].__get__(light))
         return light
+
+    def test_a_drawing_saved_at_another_width_keeps_its_place(self):
+        # A Cube Matrix that went from 4 modules (20 columns) to 5 (25): the
+        # drawing saved at 20 comes back at the same row and column.
+        before = self.light(_custom_pixels=[{"position": 3 * 20 + 7, "color": [9, 9, 9]}],
+                            _custom_draw_active=True)
+        before._remember_drawing()
+        after = self.light(_custom_draw_active=True, frame_width=25)
+        after._restore_drawing()
+        self.assertEqual([3 * 25 + 7], [pixel["position"] for pixel in after._custom_pixels])
 
     def test_a_restart_brings_back_the_drawing(self):
         before = self.light(_custom_pixels=PIGLET, _custom_draw_active=True,

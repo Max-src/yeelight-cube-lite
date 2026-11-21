@@ -2,7 +2,9 @@
 // preview (lamp preview, galleries, drawing grid, clock and effect previews)
 // turns a frame into what it shows. Mirrored by matrix_view.py (the cameras).
 //
-// Frames are 100 pixels, row-major, in one of two orders:
+// Frames are `width` x 5 pixels, row-major (width 20: 100 pixels; a Cube
+// Matrix of more than 4 modules: 5 columns a module, frameWidth), in one of
+// two orders:
 //   - lamp order: row 0 = the lamp's bottom row (matrix_colors, pixel-art
 //     positions, renderClockFrame / renderNativeEffect);
 //   - top-first: row 0 = the top row, as a screen draws (gallery colorData,
@@ -15,7 +17,7 @@
 // _flip_position) and the lamp's own content is not, so a frame of what the lamp
 // shows is turned a half turn for those mounts to read as the viewer sees it.
 //
-// A view is landscape (20 columns x 5 rows) or vertical (5 x 20): the
+// A view is landscape (width columns x 5 rows) or vertical (5 x width): the
 // top-first frame turned a quarter turn clockwise, its left end on top
 // (how the official app draws its vertical pixel arts).
 
@@ -24,6 +26,31 @@ export const MATRIX_ROWS = 5;
 export const MATRIX_SIZE = MATRIX_COLS * MATRIX_ROWS;
 // A vertical view at the same pixel size is this many times narrower.
 export const VERTICAL_SCALE = MATRIX_COLS / MATRIX_ROWS;
+// The widest frame: 8 modules of 5 columns (device_profile.MAX_COLS).
+export const MAX_MATRIX_COLS = 40;
+
+/** The width (columns) of a frame of `length` pixels (or of a frame): 20,
+ * or a longer Cube Matrix's (width x 5 pixels, up to MAX_MATRIX_COLS). */
+export function frameWidth(frame) {
+  const length = typeof frame === "number" ? frame : frame?.length ?? 0;
+  const width = length / MATRIX_ROWS;
+  return Number.isInteger(width) && width > MATRIX_COLS && width <= MAX_MATRIX_COLS
+    ? width
+    : MATRIX_COLS;
+}
+
+/** The width of a lamp's frames from its attributes: max(20, matrix_columns)
+ * (device_profile.width). */
+export function lampWidth(attributes) {
+  const columns = Number(attributes?.matrix_columns);
+  return Number.isInteger(columns) && columns > MATRIX_COLS
+    ? Math.min(MAX_MATRIX_COLS, columns)
+    : MATRIX_COLS;
+}
+
+/** How many times narrower a vertical view of a frame `width` wide is at
+ * the same pixel size. */
+export const verticalScale = (width = MATRIX_COLS) => width / MATRIX_ROWS;
 
 const DEFAULT_ORIENTATION = "right";
 const VERTICAL_MOUNTS = new Set(["down", "up"]);
@@ -91,7 +118,7 @@ export function withPendingMount(attributes, pending) {
 
 
 /** Reverse the row order of a row-major frame (lamp order <-> top-first). */
-export function flipMatrixVertical(pixels, cols = MATRIX_COLS, rows = MATRIX_ROWS) {
+export function flipMatrixVertical(pixels, cols = frameWidth(pixels), rows = MATRIX_ROWS) {
   const out = new Array(pixels.length);
   for (let r = 0; r < rows; r++) {
     const src = (rows - 1 - r) * cols;
@@ -102,10 +129,13 @@ export function flipMatrixVertical(pixels, cols = MATRIX_COLS, rows = MATRIX_ROW
 }
 
 /** The top-first index of a lamp-order index (and back: the map is its own
- * inverse). */
-export function flipIndexVertical(index) {
-  const row = Math.floor(index / MATRIX_COLS);
-  return (MATRIX_ROWS - 1 - row) * MATRIX_COLS + (index % MATRIX_COLS);
+ * inverse), in a frame 20 wide (flipIndexIn: another width). */
+export const flipIndexVertical = (index) => flipIndexIn(index, MATRIX_COLS);
+
+/** flipIndexVertical in a frame `width` wide. */
+export function flipIndexIn(index, width) {
+  const row = Math.floor(index / width);
+  return (MATRIX_ROWS - 1 - row) * width + (index % width);
 }
 
 /**
@@ -120,46 +150,51 @@ export function viewerFrame(lampOrderFrame, orientation) {
 const views = new Map();
 
 /**
- * The geometry of a landscape or vertical view: its columns and rows, and
- * for each displayed cell (row-major) the top-first index it shows
- * (`source`), and the reverse (`target`).
+ * The geometry of a landscape or vertical view of a frame `width` columns
+ * wide (20 by default): its columns and rows, its `width`, and for each
+ * displayed cell (row-major) the top-first index it shows (`source`), and
+ * the reverse (`target`).
  */
-export function matrixView(vertical = false) {
-  const key = !!vertical;
+export function matrixView(vertical = false, width = MATRIX_COLS) {
+  const tall = !!vertical;
+  const panel = frameWidth(width * MATRIX_ROWS);
+  const key = `${tall ? 1 : 0}:${panel}`;
   let view = views.get(key);
   if (!view) {
-    const cols = key ? MATRIX_ROWS : MATRIX_COLS;
-    const rows = key ? MATRIX_COLS : MATRIX_ROWS;
-    const source = new Array(MATRIX_SIZE);
-    const target = new Array(MATRIX_SIZE);
+    const cols = tall ? MATRIX_ROWS : panel;
+    const rows = tall ? panel : MATRIX_ROWS;
+    const size = panel * MATRIX_ROWS;
+    const source = new Array(size);
+    const target = new Array(size);
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const display = row * cols + col;
         // Vertical: display row r is matrix column r, display column c the
         // matrix row c counted from the bottom (the bottom edge on the left).
-        const index = key ? (MATRIX_ROWS - 1 - col) * MATRIX_COLS + row : display;
+        const index = tall ? (MATRIX_ROWS - 1 - col) * panel + row : display;
         source[display] = index;
         target[index] = display;
       }
     }
-    view = Object.freeze({ vertical: key, cols, rows, source, target });
+    view = Object.freeze({ vertical: tall, cols, rows, width: panel, source, target });
     views.set(key, view);
   }
   return view;
 }
 
 /** A top-first frame in the display order of a view (as a grid lists its
- * cells). Landscape returns the frame itself. */
+ * cells; its width follows its length, frameWidth). Landscape returns the
+ * frame itself. */
 export function toDisplayOrder(frame, vertical = false) {
   if (!vertical) return frame;
-  const { source } = matrixView(true);
+  const { source } = matrixView(true, frameWidth(frame));
   return source.map((index) => frame[index]);
 }
 
 /** The top-first frame of cells listed in a view's display order. */
 export function fromDisplayOrder(cells, vertical = false) {
   if (!vertical) return cells;
-  const { target } = matrixView(true);
+  const { target } = matrixView(true, frameWidth(cells));
   return target.map((display) => cells[display]);
 }
 

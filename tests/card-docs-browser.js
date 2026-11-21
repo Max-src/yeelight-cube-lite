@@ -254,6 +254,35 @@ window.cardDocs = {
         },
       },
     };
+    // A Cube Matrix (options.matrix: its modules from the base): its module
+    // list and a rainbow along all its columns, drawn on it.
+    if (options.matrix && !options.offline) {
+      const modules = options.matrix;
+      const width = Math.max(20, 5 * modules.length);
+      Object.assign(card.hass.states["light.documentation_only"].attributes, {
+        friendly_name: "Demo Cube Matrix",
+        content_mode: options.contentMode || "Custom Draw",
+        matrix_module_list: modules,
+        matrix_modules: modules.map((type, index) => ({ type, column: 5 * index })),
+        matrix_columns: 5 * modules.length,
+        matrix_colors: Array.from({ length: width * 5 }, (_, index) => {
+          const column = index % width;
+          const row = Math.floor(index / width);
+          const light = 0.45 + (0.55 * row) / 4;
+          const hue = (column / width) * 6;
+          const part = hue - Math.floor(hue);
+          const rgb = [
+            [1, part, 0],
+            [1 - part, 1, 0],
+            [0, 1, part],
+            [0, 1 - part, 1],
+            [part, 0, 1],
+            [1, 0, 1 - part],
+          ][Math.floor(hue) % 6];
+          return rgb.map((channel) => Math.round(channel * light * 255));
+        }),
+      });
+    }
     if (card._controls) card._controls.favourites = favourites;
     // Draw: a drawing on the canvas (the first pixel art, highlighted in
     // its gallery as the one being drawn).
@@ -289,6 +318,8 @@ window.cardDocs = {
       this.captureSelector = '#card-docs [data-docs-capture="true"]';
       return;
     }
+    // The Lamp Preview's Modules section, open (a Cube Matrix).
+    if (options.openModules) card._modulesOpen = true;
     this.container.append(card);
     card._controls?.notify();
     await card.updateComplete;

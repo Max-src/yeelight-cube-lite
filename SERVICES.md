@@ -386,7 +386,7 @@ Push pixel art to the lamp, and manage the saved pixel art collection.
 
 ### `apply_custom_pixels`
 
-Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20×5 grid (20 columns, 5 rows). Positions are numbered 0-99, left-to-right then bottom-to-top (position 0 = bottom-left, position 99 = top-right).
+Display a pixel art frame on the lamp. A Cube Lite has 100 pixels arranged in a 20×5 grid (20 columns, 5 rows). Positions are numbered 0-99, left-to-right then bottom-to-top (position 0 = bottom-left, position 99 = top-right). A Cube Matrix of 5 to 8 modules is 5 columns a module wide (25 to 40): give `width` and number the positions `row * width + column`. Art narrower than the lamp starts at the base; wider art is cropped.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1262,12 +1262,16 @@ data:
 Tell a **Cube Matrix** which modules it has, in chain order from the base, as the Yeelight app's
 **module splicing** does (the same Matter command). The lamp cannot detect its modules: the list must name them as
 they are fitted. The lamp keeps it through power cuts, lays its own effects and clock out for it, and Home Assistant
-follows (what is shown is drawn again for the new layout). Needs the lamp linked to a Matter server that delivers the
+follows (what is shown is drawn again for the new layout). A block left off the list is no longer driven: it
+stays dark except for **one green light in its corner**, which the lamp itself puts on the first LED after the
+listed ones (nothing Home Assistant sends reaches it; list the block to remove it). A Spot left off the list
+keeps its last colour. When the new list drives fewer blocks or fewer Spots, the lamp is switched off for about 1.5 s first, so the blocks and Spots taken off are left dark instead of keeping
+their last picture, then switched on again if it was on. Needs the lamp linked to a Matter server that delivers the
 Yeelight commands (`matrix_modules_need_matter` otherwise); a Cube Lite has no modules (`matrix_modules_not_matrix`).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `modules` | Yes | 1 to 6 of `matrix` (5 x 5), `spot`, `panel`, from the base |
+| `modules` | Yes | 1 to 8 of `matrix` (5 x 5), `spot`, `panel`, from the base (the Yeelight app offers 6; the lamp takes 8) |
 | `entity_id` | Yes | The Cube Matrix's light entity |
 
 ```yaml
@@ -1281,7 +1285,7 @@ What Home Assistant draws follows the modules: each module covers 5 columns of t
 lamp with 3 modules shows 15 (effects run on them, text is laid out and scrolled in them, the streamed clock fits
 them). A **Spot** takes a module's place: it is one light, the colour of the 5 columns it covers (as bright as their
 brightest pixel), so what moves along the lamp passes through it. The
-light's `matrix_modules` and `matrix_columns` attributes describe the layout, and the lamp preview card draws it. The **Cube Matrix Modules card** sets the modules and the power supply's side on a dashboard, as the app's module page does (`matrix_module_list` lists every module by name).
+light's `matrix_modules` and `matrix_columns` attributes describe the layout, and the lamp preview card draws it. The Preview card's [**Modules** section](README.md#matrix-modules) sets the modules on a dashboard, as the app's module page does, its Device Orientation row the power supply's side (`matrix_module_list` lists every module by name).
 
 ---
 

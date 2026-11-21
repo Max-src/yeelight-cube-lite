@@ -6,17 +6,18 @@ from PIL import Image
 from .input_error import InputError
 
 # display_image limits. The image is decoded in full before being shrunk to
-# 20x5, so an oversized (or deliberately crafted) image could use a lot of
+# the lamp's frame (20x5, up to 40x5 for a long Cube Matrix), so an oversized (or deliberately crafted) image could use a lot of
 # memory and CPU: refuse it before decoding.
 MAX_IMAGE_B64_LENGTH = 4_000_000  # base64 characters, about a 3 MB file
-# 2048x2048 is far more than a 20x5 target needs and keeps one decode to
+# 2048x2048 is far more than a 40x5 target needs and keeps one decode to
 # about 16 MB (RGBA), even with several calls at once.
 MAX_IMAGE_PIXELS = 2048 * 2048
 
 
 def image_to_matrix(image_b64: str, width: int = 20, height: int = 5):
     """
-    Convert a base64-encoded image to a list of RGB tuples for a 20x5 matrix.
+    Convert a base64-encoded image to a list of RGB tuples for a ``width`` x
+    ``height`` matrix, row by row from the top.
 
     Raises InputError (a ValueError) when the data is not a usable image: too long, not
     base64, an unknown format, or more than MAX_IMAGE_PIXELS pixels.
@@ -52,3 +53,11 @@ def image_to_matrix(image_b64: str, width: int = 20, height: int = 5):
     # (getdata() is deprecated: removed in Pillow 14).
     data = image.tobytes()
     return [tuple(data[pos : pos + 3]) for pos in range(0, width * height * 3, 3)]
+
+
+def image_pixels(matrix, width: int = 20) -> list:
+    """image_to_matrix's rows (from the top, ``width`` each) as a drawing's
+    pixels in lamp order (row 0 at the bottom: ``row * width + column``)."""
+    rows = [matrix[start:start + width] for start in range(0, len(matrix), width)]
+    flipped = [color for row in reversed(rows) for color in row]
+    return [{"position": pos, "color": color} for pos, color in enumerate(flipped)]

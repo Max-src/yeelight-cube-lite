@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import MODE_NATIVE_EFFECT
+from .const import LITE_STREAM_FPS_DEFAULT, MODE_NATIVE_EFFECT
 from .effect_catalog import INTENSITY_RANGE, LAMP_ANIMATION_EFFECTS, SPEED_RANGE
 from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
@@ -169,7 +169,7 @@ PREVIEW_ADJUSTMENTS = (
 # render; not on a Cube Matrix (its streams go over Matter).
 LITE_NUMBERS = (
     SettingNumber(
-        "stream_fps_limit", "_lite_stream_fps", 1, 25, 1, 5,
+        "stream_fps_limit", "_lite_stream_fps", 1, 25, 1, LITE_STREAM_FPS_DEFAULT,
         unit="fps", translation_key="stream_fps_limit", category=EntityCategory.CONFIG,
     ),
 )

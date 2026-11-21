@@ -1015,8 +1015,8 @@ function commandSettings(mode, commandId, direction, rate, word, more = [], sent
     coloured,
   };
   if (coloured && more.length) settings.colours = [rgb(word), ...more.map(rgb)];
-  // A lamp showing fewer columns (a Cube Matrix with fewer blocks): the
-  // segment its effects are drawn on.
+  // A lamp showing fewer or more columns (a Cube Matrix of other than 4
+  // modules): the segment its effects are drawn on.
   const length = segmentLengthFor(columns);
   if (length !== LENGTH) settings.length = length;
   return settings;

@@ -106,6 +106,12 @@ CONF_KEEP_STREAMING_WHEN_OFF = "keep_streaming_when_off"
 # LAN stream), not even as the stream's keep-alive repeat; the Stream frame
 # rate limit still applies to the frames that change.
 CONF_SKIP_UNCHANGED_FRAMES = "skip_unchanged_frames"
+# A Cube Lite's Stream frame rate limit when the user has not set one (number.py,
+# light_studio): frames a second on the lamp. Tested on two Cube Lites over
+# the night of 2026-11-20: 2 and 3 a second, 12 lamp-hours (3 with and without
+# Skip Unchanged Stream Frames), no hang; 5 a second,
+# each lamp hung within 100 minutes.
+LITE_STREAM_FPS_DEFAULT = 2
 # The lamp's own playlist (effect id, custom id per slot), saved while Buttons
 # as remote keeps an all-black one on the lamp (light_matter.py); written back
 # when it is turned off.
@@ -131,8 +137,9 @@ DEVICE_ORIENTATION_TO_FLIP = {
 }
 
 # When full_panel is on, the text is replaced by this single sentinel character
-# whose glyph covers the entire 5x20 display (all 100 pixels), so every render
-# mode can treat it as one "giant letter" with no special-case branch.
+# whose glyph covers the entire display (every pixel of the lamp's frame:
+# 20 x 5, or 5 columns a module of a longer Cube Matrix), so every render mode
+# can treat it as one "giant letter" with no special-case branch.
 PANEL_FULL_CHAR = "\uFFFF"
 
 # Default device models that should be handled by this component

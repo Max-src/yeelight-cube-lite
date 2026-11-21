@@ -30,7 +30,7 @@ from .const import (
 )
 from .lamp_client import LampClient
 from .entity import cube_device_info
-from .pixel_art_storage import expand_pixels
+from .pixel_art_storage import expand_pixels, pixels_at_width
 from .light_color import ColorPipelineMixin
 from .light_native import NativeModesMixin
 from .light_music_flow import MusicFlowMixin
@@ -211,7 +211,7 @@ class YeelightCubeLight(
     _attr_should_poll = False
 
     # Published for the cards but not stored in the recorder's history: large
-    # (the 100 matrix colors), frequently changing (rotation status), or
+    # (the matrix colors, 100 or more), frequently changing (rotation status), or
     # configuration with no use as history.
     _unrecorded_attributes = frozenset({
         "matrix_colors",
@@ -346,13 +346,17 @@ class YeelightCubeLight(
         task.add_done_callback(self._background_tasks.discard)
         return task
 
-    async def show_pixel_art(self, name: str | None, pixels: list, bypass_lock: bool = False) -> None:
+    async def show_pixel_art(
+        self, name: str | None, pixels: list, bypass_lock: bool = False, width: int | None = None,
+    ) -> None:
         """Show a pixel art (saved, stored grouped, or built-in, flat) as the
         lamp's drawing, named ``name`` (None: a drawing that is not one of
         the pixel arts); the pixel art and mode selects follow. Used by the
         apply_pixel_art and apply_custom_pixels actions and the Pixel Art
-        select."""
-        self._custom_pixels = expand_pixels(pixels)
+        select. ``width``: the art's (its positions are ``row * width +
+        column``; None: 20, pixel_art_storage.PIXEL_ART_WIDTH): placed on the
+        lamp's frame from column 0, cropped to it (pixels_at_width)."""
+        self._custom_pixels = pixels_at_width(expand_pixels(pixels), width, self._panel_width())
         self._enter_mode("Custom Draw", matrix_mode="Custom Draw", custom_draw=True)
         self._active_pixel_art_name = name
         if not self._custom_text:

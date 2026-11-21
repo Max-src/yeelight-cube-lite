@@ -20,6 +20,7 @@ import {
   isLampRendered,
 } from "./lamp-renderers.js";
 import { ANIMATION_EFFECTS, animationFrame, isAnimation } from "./lamp-animation-frames.js";
+import { frameWidthFor } from "./lamp-core.js";
 import {
   effectOffersColorMode,
   studioPalette,
@@ -136,7 +137,9 @@ export function effectSupportsFreeze(name) {
 // (DEFAULT_PREVIEW_SPEED when omitted). `orientation`: how the lamp is mounted,
 // which the direction sent is turned for. `intensity`: the one chosen (null:
 // the effect's own). `columns`: the columns the lamp shows, which its effects
-// are drawn on (a Cube Matrix's matrix_columns; null: all 20, a Cube Lite).
+// are drawn on (a Cube Matrix's matrix_columns; null: all 20, a Cube Lite);
+// more than 20: the frame is as wide as them (lamp-core.js frameWidthFor), an
+// animation from column 0, the rest black.
 // The cards read all of these from one preview context
 // (native-effect-card-utils.js nativeEffectLampFrame).
 export function renderNativeEffect(
@@ -186,8 +189,9 @@ export function renderNativeEffect(
       pace,
       adjustments,
       recolored?.length ? recolored : null,
+      columns,
     );
-  if (!isLampRendered(effect)) return renderGradient(phase, direction);
+  if (!isLampRendered(effect)) return renderGradient(phase, direction, columns);
   return lampEffectFrame(
     lampSettings(effect, direction, rate, colorOverride, colorMode, orientation, intensity, palette, columns),
     seconds,
@@ -195,11 +199,13 @@ export function renderNativeEffect(
 }
 
 // A moving gradient for slot 71: its picture cannot be read from the lamp.
-function renderGradient(phase, direction) {
+// Across 20 columns, or a wider lamp's `columns`.
+function renderGradient(phase, direction, columns = null) {
+  const width = frameWidthFor(columns);
   const pixels = [];
   for (let row = 0; row < PREVIEW_ROWS; row++) {
-    for (let col = 0; col < PREVIEW_COLS; col++) {
-      const x = col / (PREVIEW_COLS - 1);
+    for (let col = 0; col < width; col++) {
+      const x = col / (width - 1);
       const y = row / (PREVIEW_ROWS - 1);
       const along =
         direction === "Down" ? 1 - y

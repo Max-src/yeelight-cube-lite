@@ -134,6 +134,8 @@ export const ACTION_BUTTON_LABELS = {
   freeze: "Freeze display",
   refresh: "Refresh",
   power: "Power",
+  // The Lamp Preview card's: a Cube Matrix's Modules section.
+  modules: "Modules (Cube Matrix)",
 };
 
 // The ordered, de-duplicated list of visible action keys. No `action_buttons`
@@ -164,6 +166,7 @@ export function lampActionConfig(config = {}) {
     result.action_buttons = [
       ...(config.show_force_refresh_button !== false ? ["refresh"] : []),
       ...(config.show_power_toggle !== false ? ["power"] : []),
+      "modules",
     ];
   }
   delete result.show_force_refresh_button;

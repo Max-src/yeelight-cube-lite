@@ -12,7 +12,7 @@ integration behaves the same way.
 
 | Lamp | Route |
 |---|---|
-| Cube Lite | **LAN UDP session, `update_leds` in direct mode, paced**: a frame when the picture changed, never sooner than 0.2 s after the last one (`LITE_LAN_GAP`, scaled by the lamp's Stream frame rate limit), the last one again after 0.2 s without a change (`LITE_LAN_RESEND`, left out with Skip Unchanged Stream Frames); held while only TCP works |
+| Cube Lite | **LAN UDP session, `update_leds` in direct mode, paced**: a frame when the picture changed, on a schedule 0.2 s apart (`LITE_LAN_GAP`, scaled by the lamp's Stream frame rate limit; `stream_routes.LanPacer`: the limit is met exactly over time, two frames in a row at most one 40 ms render closer than the gap), at a limit of 5 and under exactly that many frames a second: the new picture, else the last one again (left out with Skip Unchanged Stream Frames), never a new picture right after a repeat; held while only TCP works |
 | Cube Matrix | **Matter**: its drawing effect (`setEffect`, effect 36) then each frame's pixels with `setData`, every render (25 a second); the LAN music connection (about 5 frames a second) while Matter is not available |
 
 Every route sends the **same frame** (`_studio_payload`: the same renderers,
@@ -49,12 +49,25 @@ before every frame.
   happens only at a stream's end, not at every delay on the network.
 - So a Cube Lite gets as few frames as the effect needs: Falling Blocks only
   when a piece moves, Lava Lamp about 5 a second.
-- **Each Cube Lite's Stream frame rate limit** (a number, 1-25, default 5;
-  `light_studio._lite_lan_gap`, `LITE_LAN_GAP` being the gap at 5) sets the
-  most new pictures a second. Below 5, the last picture still goes every
-  `LITE_LAN_RESEND` between new ones (the lamp is never quiet for 300 ms).
-  Above 5, frames come closer than the 0.2 s measured safe: smoother, with a
-  higher chance of a stuck lamp (about 1 stream end in 5 at 25).
+- **Each Cube Lite's Stream frame rate limit** (a number, 1-25, default 2,
+  `const.LITE_STREAM_FPS_DEFAULT`; `light_studio._lite_lan_gap`,
+  `LITE_LAN_GAP` being the gap at `LITE_LAN_GAP_FPS` = 5) sets the frames a
+  second. At 5 and below the lamp gets exactly that many: the new picture,
+  else the last one again on the same beat (until 21 Nov 2026 the last
+  picture also went every 0.2 s between new ones, so every limit under 5 was
+  5 frames a second on the lamp). Above 5, frames come closer than the 0.2 s
+  measured safe: smoother, with a higher chance of a stuck lamp (about 1
+  stream end in 5 at 25).
+- **Why 2 by default (night of 20-21 Nov 2026, two Cube Lites, filmed):**
+  2 and 3 frames a second (Skip Unchanged Stream Frames on), 2 hours on each
+  lamp at each rate, then 3 a second with it off (the last picture repeated
+  on the beat), 2 hours on each: no hang, no camera freeze, no network-part
+  restart. The repeats are not the risk; the rate is.
+  5 frames a second (skip off): each lamp's LED part froze within 100
+  minutes (after 66 and 91 minutes), and bringing it back over the LAN
+  failed both times: only a power cycle helped. Fast pings (25 a second)
+  showed no network trouble before the freeze. Earlier, about 19 lamp-hours
+  at 1 a second: no hang.
 - **Skip Unchanged Stream Frames** (a Cube Lite's switch, off by default;
   `light_studio._skips_unchanged_frames`): a frame the same as the last one
   sent is not sent, not even as the `LITE_LAN_RESEND` repeat; new pictures

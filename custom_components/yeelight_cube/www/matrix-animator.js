@@ -19,7 +19,8 @@
 //   • matrixSurface        — one canvas over a preview's grid, for the tiles of a
 //                            gallery that change 25 times a second.
 
-import { fromDisplayOrder, matrixView } from "./matrix-view.js";
+import { frameWidth, fromDisplayOrder, matrixView } from "./matrix-view.js";
+import { moduleCells, paintModuleCells } from "./matrix-modules.js";
 
 // Every refresh of a 60 Hz display, over twice the lamp's 25 renders a second;
 // faster displays are not followed.
@@ -234,9 +235,11 @@ class MatrixSurface {
     this.last = null;
   }
 
-  // A frame's index -> its pixel in the image: the cell the view puts it in.
+  // A frame's index -> its pixel in the image: the cell the view puts it in
+  // (as wide as the grid's cells say: 100, or a longer Cube Matrix's).
   layout() {
-    const view = matrixView(this.grid.dataset.vertical === "true");
+    const cells = [...this.grid.children].filter((child) => child.tagName !== "SPAN").length;
+    const view = matrixView(this.grid.dataset.vertical === "true", frameWidth(cells));
     if (view === this.view) return;
     this.view = view;
     this.canvas.width = view.cols;
@@ -296,8 +299,8 @@ class MatrixSurface {
     this.last = { frame, scale, hideBlack, shadow };
     const { grid, holder } = this;
     // A Cube Matrix's modules (matrix-modules.js moduleGrid): its cells are
-    // placed one by one (a spot one light over its area), few enough to
-    // paint themselves.
+    // placed one by one (a spot or a panel one face over its area), few
+    // enough to paint themselves.
     if (grid.dataset.modules === "true") {
       // The same grid laid out again for the modules: no canvas over it.
       if (holder.isConnected) {
@@ -369,9 +372,11 @@ MatrixSurface.prototype.paintCells = function paintCells() {
   const { frame, scale, hideBlack, shadow } = this.last;
   const listed = [...this.grid.children].filter((child) => child.tagName !== "SPAN");
   const cells = this.grid.dataset.vertical === "true" ? fromDisplayOrder(listed, true) : listed;
+  // Its spots and panels: one face each, whatever hideBlack says.
+  const faces = moduleCells(listed);
   for (let index = 0; index < cells.length; index += 1) {
     const cell = cells[index];
-    if (!cell) continue;
+    if (!cell || cell._module) continue;
     const pixel = frame[index] || BLACK;
     const [red, green, blue] = scale === 1
       ? pixel
@@ -380,4 +385,5 @@ MatrixSurface.prototype.paintCells = function paintCells() {
     paintCellBackground(cell, hidden ? "transparent" : `rgb(${red},${green},${blue})`);
     paintCellBoxShadow(cell, hidden || !shadow ? "" : shadow);
   }
+  paintModuleCells(faces, frame, { scale, shadow });
 };

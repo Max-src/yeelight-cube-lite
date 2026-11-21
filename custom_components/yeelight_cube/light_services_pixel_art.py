@@ -14,7 +14,12 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_arts
 from .const import DOMAIN
 from .name_utils import normalize_display_name
-from .pixel_art_storage import PIXEL_ART_HORIZONTAL, expand_pixels, stored_pixel_art
+from .pixel_art_storage import (
+    PIXEL_ART_HORIZONTAL,
+    expand_pixels,
+    pixel_art_width,
+    stored_pixel_art,
+)
 from .light import _entity_id_or_list
 from .errors import invalid
 from .storage import async_collection_changed, collection
@@ -24,6 +29,7 @@ from .light_services_common import (
     PIXEL_LIST_SCHEMA,
     PIXEL_ART_LIST_SCHEMA,
     PIXEL_ART_ORIENTATION_SCHEMA,
+    PIXEL_ART_WIDTH_SCHEMA,
     _check_collection_size,
     _resolve_entities,
     _locate_item,
@@ -58,6 +64,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
                 ),
                 art["pixels"],
                 art.get("orientation"),
+                art.get("width"),
             )
             for index, art in enumerate(pixel_arts)
         ]
@@ -95,7 +102,10 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             if not (isinstance(art, dict) and "pixels" in art and isinstance(art["pixels"], list) and len(art["pixels"]) > 0):
                 connection.send_error(msg["id"], "no_pixels", f"No valid pixels for idx {idx}")
                 return
-            connection.send_result(msg["id"], {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])})
+            connection.send_result(msg["id"], {
+                "name": art.get("name", "Unnamed"), "pixels": art.get("pixels", []),
+                "width": pixel_art_width(art),
+            })
         except (KeyError, TypeError) as e:  # a malformed message or stored pixel art
             _LOGGER.error("[pixelart-debug] Exception in ws_get_pixel_art_v2: %s", e)
 
@@ -123,6 +133,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             normalize_display_name(service_call.data.get("name") or default_name, default_name),
             service_call.data.get("pixels"),
             service_call.data.get("orientation"),
+            service_call.data.get("width"),
         )
         pixel_arts.append(art)
         await async_collection_changed(hass, "pixel_arts")
@@ -195,9 +206,10 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         if not (isinstance(art, dict) and isinstance(art.get("pixels"), list) and art["pixels"]):
             raise invalid("pixel_art_empty", name=name)
         pixels = art["pixels"]
+        width = pixel_art_width(art)
 
         async def _apply_one(target_entity):
-            await target_entity.show_pixel_art(name, pixels)
+            await target_entity.show_pixel_art(name, pixels, width=width)
             _LOGGER.debug("[pixelart-backend] Applied pixel art '%s' to %s.", name, target_entity.ip)
 
         run_on_lamps("APPLY_PIXEL_ART", targets, _apply_one)
@@ -215,9 +227,11 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         # in its gallery), so the Pixel Art select and save/restore_state
         # follow; none: a drawing of its own, the select is cleared.
         name = service_call.data.get("name") or None
+        # Their width (positions row * width + column), 20 when not given.
+        width = service_call.data.get("width")
 
         async def _apply_one(target_entity):
-            await target_entity.show_pixel_art(name, pixels, bypass_lock=bypass_lock)
+            await target_entity.show_pixel_art(name, pixels, bypass_lock=bypass_lock, width=width)
 
         run_on_lamps("APPLY_CUSTOM_PIXELS", targets, _apply_one)
 
@@ -235,6 +249,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         return {
             "name": art.get("name", "Unnamed"),
             "orientation": art.get("orientation", PIXEL_ART_HORIZONTAL),
+            "width": pixel_art_width(art),
             "pixels": pixels,
         }
 
@@ -257,6 +272,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             vol.Required("pixels"): PIXEL_LIST_SCHEMA,
             vol.Optional("name"): NAME_SCHEMA,
             vol.Optional("orientation"): PIXEL_ART_ORIENTATION_SCHEMA,
+            vol.Optional("width"): PIXEL_ART_WIDTH_SCHEMA,
         }, extra=vol.ALLOW_EXTRA)
     )
 
@@ -298,8 +314,9 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         "apply_custom_pixels",
         handle_apply_custom_pixels,
         schema=vol.Schema({
-            vol.Required("pixels", description="Array of {position, color} entries for the 20x5 matrix (position 0-99 or a list of positions, color [R, G, B]); missing positions stay black"): PIXEL_LIST_SCHEMA,
+            vol.Required("pixels", description="Array of {position, color} entries (position row * width + column, row 0 at the bottom: 0-99 on the 20x5 matrix; or a list of positions, color [R, G, B]); missing positions stay black"): PIXEL_LIST_SCHEMA,
             vol.Optional("name"): vol.Any(None, cv.string),
+            vol.Optional("width", description="The drawing's width in columns (default 20; a Cube Matrix of more than 4 modules: 5 a module)"): PIXEL_ART_WIDTH_SCHEMA,
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )

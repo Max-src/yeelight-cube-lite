@@ -1,7 +1,14 @@
 import { BLACK_THRESHOLD } from "./matrix-const.js";
-import { fromDisplayOrder, toDisplayOrder } from "./matrix-view.js";
+import { MATRIX_COLS, frameWidth, fromDisplayOrder, toDisplayOrder } from "./matrix-view.js";
 import { frameLength, matrixFrame } from "./matrix-frame.js";
-import { placeStyle, withSpotColours } from "./matrix-modules.js";
+import {
+  fitLampFrame,
+  modulePreviewRadius,
+  placeAttributes,
+  placeLook,
+  placeStyle,
+  withSpotColours,
+} from "./matrix-modules.js";
 import { contextGrid } from "./preview-context.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
 
@@ -17,6 +24,7 @@ const lengthFor = (options) =>
   frameLength({
     vertical: !!options.vertical,
     proportional: options.proportionalSpacing !== false,
+    panel: options.context?.width,
   });
 
 /**
@@ -58,7 +66,9 @@ export function matrixPixelShadow(options) {
  * What a matrix preview shows and how (renderMatrixPreview's markup and the
  * gallery's matrixTemplate, gallery-layouts.js): its cells in display order
  * and its inline styles.
- * @param {Array} colorData - the 100 colors, top row first (5 rows x 20)
+ * @param {Array} colorData - the colors, top row first (5 rows of 20, or of
+ *   a longer Cube Matrix's width: matrix-view.js frameWidth; with a context,
+ *   fitted to its lamp's width, matrix-modules.js fitLampFrame)
  * @param {Object} options - the look: bgColor, pixelStyle ("square",
  *   "circle", "rounded"), pixelGap, previewSize (width in px, or 100% with
  *   forceAspectRatio), padding (default pixelGap x 2), radius (the frame's
@@ -88,15 +98,22 @@ export function matrixPreviewLayout(colorData, options = {}) {
   } = options;
   // A Cube Matrix's modules (matrix-modules.js): the columns they cover at
   // the same pixel size (a narrower frame, centred), each spot one light.
+  // A longer one (5 modules or more): its frame as wide as a 20-column one,
+  // its pixels smaller.
   const { context } = options;
   const modules = context ? contextGrid(context, vertical) : null;
-  if (context) colorData = withSpotColours(colorData, context.lamp, context.frame);
+  if (context) {
+    colorData = fitLampFrame(colorData || [], context.lamp, context.frame);
+    colorData = withSpotColours(colorData, context.lamp, context.frame);
+  }
+  const panel = context ? context.width : frameWidth(colorData || []);
   const fullWidth = options.forceAspectRatio ? "100%" : previewSize;
+  const shown = modules ? modules.columns : panel;
   const width =
-    modules && !vertical
+    modules && !vertical && shown < MATRIX_COLS
       ? typeof fullWidth === "number"
-        ? (fullWidth * modules.columns) / 20
-        : `calc(${fullWidth} * ${modules.columns} / 20)`
+        ? (fullWidth * shown) / MATRIX_COLS
+        : `calc(${fullWidth} * ${shown} / ${MATRIX_COLS})`
       : fullWidth;
   // The shared frame (matrix-frame.js): previewSize px wide, or 100% with
   // forceAspectRatio; the height follows (square cells, aspect-ratio 1/1).
@@ -105,6 +122,7 @@ export function matrixPreviewLayout(colorData, options = {}) {
     vertical,
     fitHeight,
     cols: modules ? modules.cols : options.cols,
+    panel,
     gap: pixelGap,
     padding,
     radius,
@@ -117,6 +135,8 @@ export function matrixPreviewLayout(colorData, options = {}) {
   const centred = frame.view.vertical || modules ? "margin-inline:auto;" : "";
   return {
     cells: toDisplayOrder(colorData || [], vertical),
+    // The frame top-first (a spot's or a panel's look reads its pixels).
+    frame: colorData || [],
     // Each cell's place on a Cube Matrix's grid (undefined: the whole frame).
     places: modules ? toDisplayOrder(modules.place, vertical) : [],
     cellOptions: options,
@@ -125,17 +145,31 @@ export function matrixPreviewLayout(colorData, options = {}) {
     wrapperStyle: frame.wrapperStyle + centred,
     gridStyle:
       frame.gridStyle +
-      `--yc-px-radius:${cellRadius};${proportionalSpacing ? "" : centred}`,
+      `--yc-px-radius:${cellRadius};` +
+      (modules ? `--yc-module-radius:${modulePreviewRadius(pixelStyle)};` : "") +
+      (proportionalSpacing ? "" : centred),
   };
 }
 
 /** A preview cell's inline style: its color and shadow (matrixCellLook) and
- * its place on a Cube Matrix's grid (placeStyle). The markup of
- * renderMatrixPreview and of the gallery's matrixTemplate. */
+ * its place on a Cube Matrix's grid (placeStyle), a spot's or a panel's
+ * face (matrix-modules.js placeLook: shown whatever ignoreBlackPixels says,
+ * as the module is there). The markup of renderMatrixPreview and of the
+ * gallery's matrixTemplate. */
 export function matrixCellStyle(layout, index) {
-  const look = matrixCellLook(layout.cells[index], layout.cellOptions);
-  return `background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}${placeStyle(layout.places[index])}`;
+  const place = layout.places[index];
+  const look = place?.module
+    ? placeLook(place, layout.frame, matrixPixelShadow(layout.cellOptions))
+    : matrixCellLook(layout.cells[index], layout.cellOptions);
+  const shadow = place?.module ? look.boxShadow : look.shadow;
+  return `background:${look.background};${shadow ? `box-shadow:${shadow};` : ""}${placeStyle(place)}`;
 }
+
+/** A preview cell's module (a spot's or a panel's place, matrix-modules.js
+ * moduleGrid) or null: its data-module and data-pixels, which the painters
+ * read (moduleCells). */
+export const matrixCellModule = (layout, index) =>
+  layout.places[index]?.module ? layout.places[index] : null;
 
 /**
  * The cells of a matrix preview grid (a .gallery-matrix-preview, or any grid
@@ -159,7 +193,7 @@ export function matrixPreviewCells(grid) {
 export function renderMatrixPreview(colorData, options = {}) {
   const layout = matrixPreviewLayout(colorData, options);
   const grid = `<div class="gallery-matrix-preview"${layout.vertical ? ' data-vertical="true"' : ""}${layout.places.length ? ' data-modules="true"' : ""} style="${layout.gridStyle}">${layout.cells
-    .map((_, index) => `<div style="${matrixCellStyle(layout, index)}"></div>`)
+    .map((_, index) => `<div${placeAttributes(layout.places[index])} style="${matrixCellStyle(layout, index)}"></div>`)
     .join("")}</div>`;
   return layout.proportionalSpacing
     ? `<div style="${layout.wrapperStyle}">${grid}</div>`

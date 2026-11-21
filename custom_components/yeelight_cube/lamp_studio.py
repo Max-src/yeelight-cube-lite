@@ -302,17 +302,32 @@ _NEIGHBOURS = ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1,
 _SIDES = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
 
-def _around(index: int, offsets):
-    row, col = divmod(index, COLS)
+def _around(index: int, offsets, width: int = COLS):
+    row, col = divmod(index, width)
     for d_row, d_col in offsets:
         r, c = row + d_row, col + d_col
-        if 0 <= r < ROWS and 0 <= c < COLS:
-            yield r * COLS + c
+        if 0 <= r < ROWS and 0 <= c < width:
+            yield r * width + c
 
 
-# _around of every pixel, by pixel.
-_NEAR = tuple(tuple(_around(index, _NEIGHBOURS)) for index in range(LENGTH))
-_SIDE = tuple(tuple(_around(index, _SIDES)) for index in range(LENGTH))
+# _around of every pixel, by pixel, by frame width (20, or a longer Cube
+# Matrix's columns): (near, side).
+_AROUND: dict[int, tuple] = {}
+
+
+def _neighbours(width: int) -> tuple:
+    tables = _AROUND.get(width)
+    if tables is None:
+        tables = _AROUND[width] = (
+            tuple(tuple(_around(index, _NEIGHBOURS, width)) for index in range(width * ROWS)),
+            tuple(tuple(_around(index, _SIDES, width)) for index in range(width * ROWS)),
+        )
+    return tables
+
+
+def _width_of(frame) -> int:
+    """A lamp-order frame's width (its stride): 20, or a longer one's."""
+    return max(COLS, len(frame) // ROWS)
 
 
 def track_step(state, frame, floor: int):
@@ -321,15 +336,20 @@ def track_step(state, frame, floor: int):
     many objects appeared so far). A pixel belongs to an object while it is
     at least ``floor`` bright."""
     labels_before, levels_before, count = state
+    size = len(frame)
+    if len(labels_before) != size:
+        # The first frame of another width (_EMPTY is 20 wide): none before.
+        labels_before, levels_before = [-1] * size, [0] * size
+    near_of, side_of = _neighbours(_width_of(frame))
     levels = list(map(max, frame))
     lit = [level >= floor for level in levels]
     labels = [before if on and before >= 0 else -1 for on, before in zip(lit, labels_before)]
-    moved = [False] * LENGTH
-    for index in range(LENGTH):
+    moved = [False] * size
+    for index in range(size):
         if not lit[index] or labels[index] >= 0:
             continue
         best, brightest = -1, -1
-        for near in _NEAR[index]:
+        for near in near_of[index]:
             if (
                 labels_before[near] >= 0
                 and levels[near] < levels_before[near]
@@ -339,7 +359,7 @@ def track_step(state, frame, floor: int):
         if best >= 0:
             labels[index] = labels_before[best]
             moved[index] = True
-    for index in range(LENGTH):
+    for index in range(size):
         if not lit[index] or labels[index] >= 0:
             continue
         group, waiting = [], [index]
@@ -347,13 +367,13 @@ def track_step(state, frame, floor: int):
         while waiting:
             pixel = waiting.pop()
             group.append(pixel)
-            for near in _SIDE[pixel]:
+            for near in side_of[pixel]:
                 if lit[near] and labels[near] == -1:
                     labels[near] = -2
                     waiting.append(near)
         group.sort()
         joined = next(
-            (labels[near] for pixel in group for near in _SIDE[pixel] if moved[near]),
+            (labels[near] for pixel in group for near in side_of[pixel] if moved[near]),
             -1,
         )
         if joined < 0:
@@ -374,22 +394,27 @@ _LEVEL_AROUND = (2, 1)
 _LEVEL_SMOOTHING = 3
 
 
-def _level_boxes() -> tuple:
-    """By pixel: (the pixels around it, as one itemgetter; how many)."""
+def _level_boxes(width: int = COLS) -> tuple:
+    """By pixel of a frame ``width`` wide: (the pixels around it, as one
+    itemgetter; how many)."""
+    boxes = _LEVEL_BOXES.get(width)
+    if boxes is not None:
+        return boxes
     across, down = _LEVEL_AROUND
     out = []
-    for index in range(LENGTH):
-        row, col = divmod(index, COLS)
+    for index in range(width * ROWS):
+        row, col = divmod(index, width)
         box = [
-            r * COLS + c
+            r * width + c
             for r in range(max(0, row - down), min(ROWS, row + down + 1))
-            for c in range(max(0, col - across), min(COLS, col + across + 1))
+            for c in range(max(0, col - across), min(width, col + across + 1))
         ]
         out.append((itemgetter(*box), len(box)))
-    return tuple(out)
+    boxes = _LEVEL_BOXES[width] = tuple(out)
+    return boxes
 
 
-_LEVEL_BOXES = _level_boxes()
+_LEVEL_BOXES: dict[int, tuple] = {}
 
 
 def level_step(state, frame):
@@ -397,8 +422,8 @@ def level_step(state, frame):
     frame's own): per pixel, the mean brightness around it (_LEVEL_AROUND),
     moved part of the way from the previous (_LEVEL_SMOOTHING)."""
     levels = list(map(max, frame))
-    around = [sum(box(levels)) // count for box, count in _LEVEL_BOXES]
-    if state is None:
+    around = [sum(box(levels)) // count for box, count in _level_boxes(_width_of(frame))]
+    if state is None or len(state) != len(around):
         return around
     return [before + ((now - before) >> _LEVEL_SMOOTHING) for before, now in zip(state, around)]
 
@@ -544,7 +569,7 @@ def _hue_offset(hue: int, start: int, knots) -> int:
 
 
 def recolour(frame, look, palette, followed=None) -> list[tuple[int, int, int]]:
-    """``frame`` (100 pixels, lamp order, the effect's own) in the palette's
+    """``frame`` (lamp order, any width, the effect's own) in the palette's
     colors by ``look`` (STUDIO_LOOKS); ``followed``: what its look followed
     (StudioTrack): each pixel's object for "object", its followed brightness
     for "level". An empty palette leaves it black."""
@@ -641,7 +666,8 @@ def studio_frame_at(
     colors, the user's direction, speed, mount and intensity) in the
     palette's colors. Lamp order, the colors sent. ``from_start``: render 0
     is the effect's very first (the stream), else its first shown (_Source).
-    On the ``columns`` the lamp shows (None: all 20)."""
+    On the ``columns`` the lamp shows (None: all 20; more than 20: a frame as
+    wide, lamp_core.frame_width_for)."""
     source = _Source(effect, direction, speed, orientation, intensity, from_start, columns)
     look = studio_look(effect)
     followed = None

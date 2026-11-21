@@ -3,9 +3,11 @@ light's stream sends (light_studio.add_stream_preview_listener), for the
 cards' live previews, so they show exactly what the lamp was sent rather
 than their own drawing of the effect (its own start and random seeds).
 
-Each event is ``{"frame": <base64 of 100 R, G, B bytes>}``: lamp order (row 0
-at the bottom), in the colours a preview shows (light_studio.
-_publish_stream_frame), before the preview's brightness boost.
+Each event is ``{"frame": <base64 of width x 5 R, G, B bytes>}``: the lamp's
+frame (device_profile.width: 20, or 5 a module of a Cube Matrix of more than
+4 modules, so 100 to 200 pixels), in lamp order (row 0 at the bottom), in
+the colours a preview shows (light_studio._publish_stream_frame), before the
+preview's brightness boost.
 """
 from __future__ import annotations
 

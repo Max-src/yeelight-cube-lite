@@ -346,6 +346,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
     _actionCommands: { reset() {} },
     _commands: new CardCommandController(),
     _actions: { configure() {} },
+    _modules: { clear() {} },
     _hass: {
       states: { "light.a": { attributes: {} }, "light.b": { attributes: {} } },
       callService(...args) {

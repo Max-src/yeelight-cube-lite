@@ -147,7 +147,8 @@ class MatterLinkTests(unittest.TestCase):
         self.assertEqual((2, LAMP_MAC), (self.link.node_id, self.link.mac))
         # The state when linked: reported as initial.
         self.assertIn(("effect", 71, True), self.reports)
-        self.assertEqual(len(LINK.REPORTED), len(self.client.subscriptions))
+        # Each value, and the node read anew.
+        self.assertEqual(len(LINK.REPORTED) + 1, len(self.client.subscriptions))
         self.assertFalse(self.link.refresh(LAMP_IP, None))  # unchanged
         self.client.push(2, LINK.EFFECT, 34)
         self.assertEqual(("effect", 34, False), self.reports[-1])
@@ -158,6 +159,47 @@ class MatterLinkTests(unittest.TestCase):
         self.assertFalse(self.link.linked)
         self.assertEqual({}, self.client.subscriptions)
         self.assertIsNone(self.link.summary())
+
+    def test_a_value_is_read_from_the_lamp_not_the_server_s_copy(self):
+        # 2026-11-21: after a restart the server's copy held a module list of
+        # the night before (a list written over Matter is not reported back);
+        # read_attribute asked the lamp: 2,2,1,3,2.
+        self.link.refresh(LAMP_IP, None)
+        reads = []
+
+        async def read_attribute(node_id, path):
+            reads.append((node_id, path))
+            return {path: [2, 2, 1, 3, 2, 0, 0, 0]}
+
+        self.client.read_attribute = read_attribute
+        value = asyncio.run(self.link.async_read_live("topology"))
+        self.assertEqual([2, 2, 1, 3, 2, 0, 0, 0], value)
+        self.assertEqual([(2, LINK.TOPOLOGY)], reads)
+        self.assertEqual(value, self.link.values["topology"])
+
+        async def fails(node_id, path):
+            raise RuntimeError("no answer")
+
+        self.client.read_attribute = fails
+        self.assertIsNone(asyncio.run(self.link.async_read_live("topology")))
+        self.assertEqual(value, self.link.values["topology"])  # kept
+        self.assertIsNone(asyncio.run(self.link.async_read_live("not_reported")))
+
+    def test_a_node_read_anew_reports_what_changed_restart_first(self):
+        # 2026-11-20: after 31 min unplugged the server interviewed the lamp
+        # again (node_updated, no attribute reports): its restart went unseen.
+        self.link.refresh(LAMP_IP, None)
+        self.client.push(2, LINK.REBOOT_COUNT, 60)
+        self.reports.clear()
+        attributes = {**CUBE_ATTRIBUTES, LINK.EFFECT: 42, LINK.REBOOT_COUNT: 61}
+        callback = self.client.subscriptions[(2, None)]
+        callback(types.SimpleNamespace(value="attribute_updated"), None)  # not this one
+        callback(types.SimpleNamespace(value="node_updated"), node(2, attributes))
+        self.assertEqual([("reboot_count", 61, False), ("effect", 42, False)], self.reports)
+        self.assertEqual(61, self.link.values["reboot_count"])
+        # The same node again: nothing changed.
+        callback(types.SimpleNamespace(value="node_updated"), node(2, attributes))
+        self.assertEqual(2, len(self.reports))
 
     def test_a_node_left_behind_by_a_factory_reset_is_not_linked(self):
         # The reset erased the lamp's pairing: its old node stays listed with

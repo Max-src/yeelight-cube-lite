@@ -37,7 +37,7 @@ class ClockPreviewTests(unittest.TestCase):
         # (lamp_studio.py).
         namespace.update(_load_standalone_functions(
             (ROOT / "clock_face.py").read_text(encoding="utf-8"),
-            {"clock_content", "clock_text", "clock_digit_pixels"}, dict(namespace),
+            {"clock_content", "clock_text", "clock_digit_pixels", "clock_geometry"}, dict(namespace),
         ))
         studio = runpy.run_path(str(ROOT / "lamp_studio.py"))
         namespace.update({name: studio[name] for name in (
@@ -45,7 +45,8 @@ class ClockPreviewTests(unittest.TestCase):
         )})
         methods = _load_standalone_functions(
             (ROOT / "camera.py").read_text(encoding="utf-8"),
-            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed", "_chosen_intensity", "_columns", "_state"}, namespace,
+            {"_get_clock_preview", "_clock_background_seconds", "_preview_speed", "_chosen_intensity", "_columns",
+             "_width", "_clock_geometry", "_state"}, namespace,
         )
         self.render = methods["_get_clock_preview"]
         self.camera = SimpleNamespace(
@@ -56,7 +57,7 @@ class ClockPreviewTests(unittest.TestCase):
             _clock_preview_started_at=0.0,
             _preview_lock=threading.Lock(),
         )
-        for name in ("_clock_background_seconds", "_preview_speed", "_columns", "_state"):
+        for name in ("_clock_background_seconds", "_preview_speed", "_columns", "_width", "_clock_geometry", "_state"):
             setattr(self.camera, name, lambda state=None, method=methods[name]: method(self.camera, state))
 
     @slow

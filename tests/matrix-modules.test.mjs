@@ -93,21 +93,31 @@ test("a preview grid is the lamp's modules: their columns, a spot one cell over 
   assert.deepEqual([flat.cols, flat.rows, flat.columns], [10, 5, 10]);
   assert.equal(flat.place.filter(Boolean).length, 26); // 25 pixels and the spot
   assert.deepEqual(flat.place[0], { column: 1, row: 1, span: 1, spot: false });
-  assert.deepEqual(flat.place[2 * 20 + 7], { column: 6, row: 1, span: 5, spot: true });
+  assert.deepEqual(flat.place[2 * 20 + 7], {
+    column: 6, row: 1, span: 5, spot: true, module: "spot", pixels: [2 * 20 + 7],
+  });
   assert.equal(flat.place[10], null); // past the modules
   assert.equal(flat.place[5], null); // the spot's area, but its middle
   assert.equal(placeStyle(null), "display:none;");
-  assert.match(placeStyle(flat.place[47]), /grid-column:6 \/ span 5;grid-row:1 \/ span 5;border-radius:50%/);
+  assert.equal(
+    placeStyle(flat.place[47]),
+    "grid-column:6 / span 5;grid-row:1 / span 5;aspect-ratio:1/1;border-radius:var(--yc-module-radius,0);",
+  );
+  assert.equal(placeStyle(flat.place[0]), "grid-column:1;grid-row:1;");
   assert.equal(placeStyle(undefined), "");
   // Standing: 5 wide, 10 tall, the base end on top.
   const standing = moduleGrid({ ...MATRIX_SPOT, device_orientation: "down" }, true);
   assert.deepEqual([standing.cols, standing.rows], [5, 10]);
-  assert.deepEqual(standing.place[2 * 20 + 7], { column: 1, row: 6, span: 5, spot: true });
+  assert.deepEqual(standing.place[2 * 20 + 7], {
+    column: 1, row: 6, span: 5, spot: true, module: "spot", pixels: [2 * 20 + 7],
+  });
   // Upside down (left): the viewer sees the modules at the right end.
   const turned = moduleGrid({ ...MATRIX_SPOT, device_orientation: "left" }, false);
   assert.equal(turned.place[0], null);
   assert.deepEqual(turned.place[19], { column: 10, row: 1, span: 1, spot: false });
-  assert.deepEqual(turned.place[2 * 20 + 12], { column: 1, row: 1, span: 5, spot: true });
+  assert.deepEqual(turned.place[2 * 20 + 12], {
+    column: 1, row: 1, span: 5, spot: true, module: "spot", pixels: [2 * 20 + 12],
+  });
   assert.notEqual(moduleKey(MATRIX_SPOT), moduleKey(SPOT_THIRD));
 });
 
@@ -132,4 +142,137 @@ test("a shared preview is laid out as the lamp's modules", async () => {
   assert.match(layout.gridStyle, /grid-template-columns:repeat\(10,1fr\)/);
   assert.match(layout.wrapperStyle, /width: 100px;/);
   assert.equal(layout.places.filter(Boolean).length, 26);
+});
+
+// The owner's lamp (filmed 2026-11-21): three Matrix modules, the spot, the
+// panel at the end of the chain.
+const OWNER = {
+  matrix_columns: 25,
+  matrix_modules: [
+    { type: "matrix", column: 0 },
+    { type: "matrix", column: 5 },
+    { type: "matrix", column: 10 },
+    { type: "spot", column: 15 },
+    { type: "panel", column: 20 },
+  ],
+  device_orientation: "right",
+};
+
+test("a panel is one cell over its area, naming its 25 pixels as shown, whatever the mount", async () => {
+  const { moduleGrid, placeAttributes, placeStyle } = await import("../custom_components/yeelight_cube/www/matrix-modules.js");
+  const flat = moduleGrid(OWNER, false);
+  const panel = flat.place[2 * 25 + 22];
+  assert.deepEqual([panel.column, panel.row, panel.span, panel.module], [21, 1, 5, "panel"]);
+  // Row by row: frame row r, columns 20-24.
+  assert.deepEqual(panel.pixels, Array.from({ length: 25 }, (_, at) => Math.floor(at / 5) * 25 + 20 + (at % 5)));
+  assert.equal(flat.place.filter(Boolean).length, 15 * 5 + 2);
+  assert.match(placeStyle(panel), /span 5;.*background-blend-mode:lighten;/);
+  assert.equal(placeAttributes(panel), ` data-module="panel" data-pixels="${panel.pixels.join(",")}"`);
+  assert.equal(placeAttributes(flat.place[0]), "");
+  // Standing (down): turned a quarter turn clockwise, the base end on top:
+  // the panel the last 5 rows, the frame's bottom row its left column.
+  const standing = moduleGrid({ ...OWNER, device_orientation: "down" }, true);
+  const upright = standing.place[2 * 25 + 22];
+  assert.deepEqual([upright.column, upright.row], [1, 21]);
+  assert.equal(upright.pixels[0], 4 * 25 + 20); // top left: bottom row, column 20
+  assert.equal(upright.pixels[4], 20); // top right: top row, column 20
+  assert.equal(upright.pixels[20], 4 * 25 + 24);
+  // Upside down (left): the viewer frame turned a half turn, the panel at
+  // its start.
+  const turned = moduleGrid({ ...OWNER, device_orientation: "left" }, false);
+  const flipped = turned.place[2 * 25 + 2];
+  assert.equal(flipped.module, "panel");
+  assert.deepEqual([flipped.column, flipped.row], [1, 1]);
+  assert.deepEqual(flipped.pixels.slice(0, 5), [0, 1, 2, 3, 4]);
+  // Four Matrix modules: the whole frame, as a Cube Lite's (no grid).
+  const four = { matrix_columns: 20, matrix_modules: [0, 5, 10, 15].map((column) => ({ type: "matrix", column })) };
+  assert.equal(moduleGrid(four, false), null);
+});
+
+test("a spot and a panel look like the real ones", async () => {
+  const { moduleLook } = await import("../custom_components/yeelight_cube/www/matrix-modules.js");
+  // Unlit spot: a dark lens in its bezel ring on the face.
+  const off = moduleLook("spot", [[0, 0, 0]]);
+  assert.match(off.background, /^radial-gradient\(circle closest-side,#09090a 57%/);
+  assert.match(off.background, /#4a4a50 85%/); // the ring
+  // Lit: nearly white at the centre, its colour at the lens's rim (60% of
+  // the module), a halo onto the bezel.
+  const lit = moduleLook("spot", [[255, 0, 255]]);
+  assert.match(lit.background, /^radial-gradient\(circle closest-side,rgb\(255,217,255\) 0%/);
+  assert.match(lit.background, /rgb\(255,0,255\) 59%,rgba\(255,0,255,0\) 61.5%/);
+  assert.match(lit.background, /rgba\(255,0,255,0.75\) 58%/);
+  // A dim one: its colour, hardly whiter.
+  assert.match(moduleLook("spot", [[40, 0, 0]]).background, /^radial-gradient\(circle closest-side,rgb\(44,5,5\) 0%/);
+  // Panel: unlit, one dark face; lit, a blotch per lit pixel over a haze.
+  const black = Array.from({ length: 25 }, () => [0, 0, 0]);
+  assert.equal(moduleLook("panel", black).background, "rgb(17,17,19)");
+  const one = black.slice();
+  one[12] = [200, 100, 0];
+  const twinkle = moduleLook("panel", one).background;
+  assert.equal((twinkle.match(/radial-gradient/g) || []).length, 1);
+  assert.match(twinkle, /^radial-gradient\(30% 30% at 50% 50%,rgb\(200,100,0\) 0%/);
+  assert.match(twinkle, /,rgb\(17,17,19\)$/); // a haze too faint to show: the face
+  const full = moduleLook("panel", Array.from({ length: 25 }, () => [0, 200, 200])).background;
+  assert.equal((full.match(/radial-gradient/g) || []).length, 25);
+  assert.match(full, /,rgb\(0,150,150\)$/);
+  // The frame line; the pixel shadow around the face (and inside a panel).
+  assert.equal(moduleLook("spot", [[0, 0, 0]]).boxShadow, "inset 0 0 0 1px rgba(255,255,255,0.08)");
+  assert.equal(
+    moduleLook("panel", black, "0 0 2px #0008").boxShadow,
+    "inset 0 0 0 1px rgba(255,255,255,0.14),inset 0 0 2px #0008,0 0 2px #0008",
+  );
+});
+
+test("shared previews and painters draw the spot and panel faces", async () => {
+  const { matrixPreviewLayout, matrixCellStyle, renderMatrixPreview } =
+    await import("../custom_components/yeelight_cube/www/gallery-display-utils.js");
+  const { previewContext } = await import("../custom_components/yeelight_cube/www/preview-context.js");
+  const { moduleCells, paintModuleCells } = await import("../custom_components/yeelight_cube/www/matrix-modules.js");
+  const frame = Array.from({ length: 125 }, (_, index) => ((index % 25) >= 15 ? [0, 0, 255] : [255, 0, 0]));
+  const options = { previewSize: 250, pixelStyle: "circle", pixelBoxShadow: true, context: previewContext(OWNER) };
+  const layout = matrixPreviewLayout(frame, options);
+  assert.match(layout.gridStyle, /--yc-module-radius:12%;/);
+  assert.match(matrixPreviewLayout(frame, { ...options, pixelStyle: "square" }).gridStyle, /--yc-module-radius:0;/);
+  // A Cube Lite: no module radius, its cells as before.
+  const lite = matrixPreviewLayout(Array(100).fill([255, 0, 0]), { previewSize: 200 });
+  assert.doesNotMatch(lite.gridStyle, /--yc-module-radius/);
+  assert.equal(matrixCellStyle(lite, 0), "background:rgb(255, 0, 0);");
+  const spot = matrixCellStyle(layout, 2 * 25 + 17);
+  assert.match(spot, /^background:radial-gradient\(circle closest-side,rgb\(217,217,255\) 0%/);
+  assert.match(spot, /box-shadow:inset 0 0 0 1px [^;]*,0 0 [^;]+ #0008;/);
+  const panel = matrixCellStyle(layout, 2 * 25 + 22);
+  assert.equal((panel.match(/radial-gradient\(30% 30%/g) || []).length, 25);
+  assert.match(panel, /background-blend-mode:lighten;/);
+  // Ignored black pixels: the faces still show (the modules are there).
+  const dark = matrixPreviewLayout(Array(125).fill([0, 0, 0]), { ...options, ignoreBlackPixels: true });
+  assert.match(matrixCellStyle(dark, 2 * 25 + 22), /^background:rgb\(17,17,19\);/);
+  assert.match(matrixCellStyle(dark, 0), /^background:transparent;/);
+  const markup = renderMatrixPreview(frame, options);
+  assert.equal((markup.match(/data-module="spot" data-pixels="67"/g) || []).length, 1);
+  assert.equal((markup.match(/data-module="panel"/g) || []).length, 1);
+  // A painter's cells: the faces painted from the frame's pixels they name,
+  // change-only.
+  const cell = (dataset) => {
+    const writes = [];
+    return {
+      dataset,
+      writes,
+      style: {
+        set background(value) { writes.push(value); },
+        set boxShadow(value) { writes.push(value); },
+      },
+    };
+  };
+  const cells = [cell({}), cell({ module: "spot", pixels: "67" }), cell({ module: "panel", pixels: "70,71" })];
+  const faces = moduleCells(cells);
+  assert.deepEqual(faces, cells.slice(1));
+  assert.equal(cells[0]._module, undefined);
+  paintModuleCells(faces, frame, { shadow: "" });
+  assert.match(cells[1].writes[0], /rgb\(217,217,255\) 0%/);
+  assert.equal(cells[1].writes.length, 2);
+  paintModuleCells(faces, frame, { shadow: "" });
+  assert.equal(cells[1].writes.length, 2); // the same picture: no write
+  paintModuleCells(faces, frame, { scale: 0.5 }); // shadow left as it is
+  assert.equal(cells[1].writes.length, 3);
+  assert.match(cells[1].writes[2], /rgb\(0,0,128\) 59%/);
 });

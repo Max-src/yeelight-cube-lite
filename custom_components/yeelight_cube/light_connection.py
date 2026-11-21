@@ -557,11 +557,16 @@ class ConnectionMixin:
                 )
                 stream = getattr(self, "_studio_task", None)
                 streaming = getattr(self, "studio_streaming", None)
-                if silent_mode and stream is not None and not stream.done() and streaming and streaming():
+                if (
+                    silent_mode and stream is not None and not stream.done() and streaming and streaming()
+                    and not getattr(self._lamp_client, "stream_silent", False)
+                ):
                     # A streamed effect or clock sends frames: not silent.
                     # Its own check asks the lamp (light_studio._stream_watchdog;
                     # a Cube Matrix's LAN, LampClient._recover_udp), so no
-                    # ping here mid-stream.
+                    # ping here mid-stream. Once that check paused the frames
+                    # (the lamp left it unanswered) the probes go on here: a
+                    # lamp switched off at the wall is published unavailable.
                     silent_mode = False
                 last_success = self._lamp_client.last_success_time
                 time_since_success = time.time() - last_success if last_success > 0 else 999

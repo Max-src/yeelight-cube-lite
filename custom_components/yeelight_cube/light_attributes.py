@@ -211,10 +211,12 @@ class AttributesMixin:
             "effect_direction_own": True,
             # A Cube Matrix: the effects it draws its own way (matrix_effects).
             **({"matrix_own_versions": dict(MATRIX_OWN_VERSIONS)} if self.is_cube_matrix else {}),
-            # A Cube Matrix's modules from its base (device_profile.layout):
-            # blocks with the frame's first column each shows, spots with the
-            # columns they sit between; and how many columns it shows. The
-            # lamp preview card draws them. matrix_module_list: every module
+            # A Cube Matrix's modules from its base (device_profile.layout,
+            # every one, up to TOPOLOGY_SLOTS): blocks with the frame's first
+            # column each shows, spots with the 5 columns whose colour they
+            # show; and how many columns it shows (more than 20 for one of 5
+            # to 8 modules: the cards draw max(20, matrix_columns) columns,
+            # matrix_colors that wide). The lamp preview card draws them. matrix_module_list: every module
             # by name, as set_matrix_modules takes it (the Modules card).
             **({"matrix_modules": self.device_profile.layout,
                 "matrix_module_list": self.device_profile.module_names,
@@ -228,7 +230,7 @@ class AttributesMixin:
             "device_orientation": self._device_orientation,
             # The lamp's Matter node and what it reports (light_matter.py);
             # None without one.
-            "matter": self._matter_summary(),
+            "matter": self._matrix_published_summary(self._matter_summary()),
             # The lamp shows a button's or another app's content (Matter,
             # light_matter._accept_external_display): kept across a restart.
             "external_display": self._external_display,
@@ -265,7 +267,9 @@ class AttributesMixin:
         return {"key": native_effect_catalog_key(*args), "catalog": _native_effect_catalog(*args)}
 
     def _published_matrix_colors(self) -> list:
-        """What the lamp shows right now, as 100 RGB tuples (matrix_colors).
+        """What the lamp shows right now, as RGB tuples in lamp order
+        (matrix_colors): device_profile.pixels of them (100, or 5 a column of
+        a Cube Matrix of more than 4 modules).
 
         Not simply the last frame the plugin drew: _base_matrix_colors is only
         refreshed when the plugin draws, so it still holds old content (e.g.

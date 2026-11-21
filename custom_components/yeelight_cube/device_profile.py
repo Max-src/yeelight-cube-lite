@@ -38,8 +38,10 @@ Two models answer this integration on the LAN, each with its own software:
   filmed lying base-left at 0 and standing on the base at 3) is the light's
   Device Orientation, which lays every picture out for it.
 
-Frames are drawn in lamp order on a 20 x 5 panel for both; ``to_wire`` turns
-one into what the model's ``update_leds`` takes.
+Frames are drawn in lamp order on a panel ``width`` columns wide and 5 high:
+20 for a Cube Lite and for a Cube Matrix of up to 4 modules, 5 a module for a
+longer Cube Matrix (up to TOPOLOGY_SLOTS modules). ``to_wire`` turns one into
+what the model's ``update_leds`` takes.
 """
 
 from __future__ import annotations
@@ -49,13 +51,14 @@ from dataclasses import dataclass, field
 CUBELITE = "cubelite"
 CUBEMATRIX = "cubematrix"
 
-# The panel every frame is drawn on (lamp order: index = row * COLS + column,
-# row 0 at the bottom, column 0 at the base / power side).
+# The panel frames are drawn on (lamp order: index = row * width + column,
+# row 0 at the bottom, column 0 at the base / power side): COLS wide for a
+# Cube Lite and a Cube Matrix of up to 4 modules (DeviceProfile.width).
 COLS, ROWS = 20, 5
 MODULE_SIZE = 5  # a Cube Matrix module is 5 x 5 pixels
 
-# cube_topology: the module types in chain order from the base, up to 6
-# slots, then zeros (CubeControlCubeType in the Yeelight app: 0 none,
+# cube_topology: the module types in chain order from the base, up to
+# TOPOLOGY_SLOTS, then zeros (CubeControlCubeType in the Yeelight app: 0 none,
 # 1 panel, 2 matrix, 3 spot). The lamp (1.12.92, set_segment_rgb and
 # update_leds) gives a type-3 slot 5 LEDs and any other non-zero slot 25 (a
 # 5 x 5 block); strip_lenth is their sum. The lamp filmed 2026-11-08 reports
@@ -70,7 +73,12 @@ TOPOLOGY_SPOT = 3
 TOPOLOGY_NAMES = {TOPOLOGY_PANEL: "panel", TOPOLOGY_MATRIX: "matrix", TOPOLOGY_SPOT: "spot"}
 BLOCK_LEDS = MODULE_SIZE * MODULE_SIZE
 SPOT_LEDS = 5
-TOPOLOGY_SLOTS = 6
+# Modules a Cube Matrix takes: the Yeelight app offers 6, the lamp keeps 8
+# (its list has 8 slots, read back at every start; 7 and 8 written over
+# Matter and read back, 2026-11-21).
+TOPOLOGY_SLOTS = 8
+# The widest panel: 5 columns a module.
+MAX_COLS = MODULE_SIZE * TOPOLOGY_SLOTS
 # The module list a Cube Matrix leaves the factory with (4 panels, 2 spots),
 # before its modules are set in the Yeelight app: its rotation then is the
 # factory's too (3), whatever way it is mounted.
@@ -210,26 +218,38 @@ class DeviceProfile:
     def columns(self) -> int:
         """The frame's columns the lamp covers: 5 a module, whatever its kind
         (a spot takes a block's place in the chain and lights for its 5
-        columns), up to the 20 of the panel every frame is drawn on (a Cube
-        Lite: 20). Effects, text and the streamed clock fit them
-        (lamp_renderers.lamp_settings' columns, light_render, clock_face)."""
-        if self.key != CUBEMATRIX:
+        columns); a Cube Lite: 20. A Cube Matrix still on the factory list
+        (4 blocks, then 2 spot slots not fitted): its 4 blocks' 20. Effects,
+        text and the streamed clock fit them (lamp_renderers.lamp_settings'
+        columns, light_render, clock_face)."""
+        if self.key != CUBEMATRIX or self.factory_modules:
             return COLS
-        return min(COLS, MODULE_SIZE * len(self.chain))
+        return min(MAX_COLS, MODULE_SIZE * len(self.chain))
+
+    @property
+    def width(self) -> int:
+        """The columns of the panel this lamp's frames are drawn on (the
+        stride of lamp order): 20, or a longer Cube Matrix's columns."""
+        return max(COLS, self.columns)
+
+    @property
+    def pixels(self) -> int:
+        """A frame's pixels (width x 5)."""
+        return self.width * ROWS
 
     @property
     def layout(self) -> list[dict]:
         """The lamp's modules in chain order from the base, for the previews
         (the light's matrix_modules attribute): each its type and the
         frame's first column of the 5 it covers (a spot: one light, the
-        colour of those 5 columns, to_wire). Those past the 20 x 5 panel are
-        left out. Empty for a Cube Lite."""
+        colour of those 5 columns, to_wire). Those past the columns shown (a
+        factory list's spot slots) are left out. Empty for a Cube Lite."""
         chain = self.chain
         kinds = self.module_types or (TOPOLOGY_MATRIX,) * len(chain)
         out = []
         for index, kind in enumerate(kinds[:len(chain)]):
             column = index * MODULE_SIZE
-            if column >= COLS:
+            if column >= self.columns:
                 break
             out.append({"type": TOPOLOGY_NAMES.get(kind, "matrix"), "column": column})
         return out
@@ -238,8 +258,8 @@ class DeviceProfile:
     def module_names(self) -> list[str]:
         """Every module the lamp lists, in chain order from the base, by name
         (the set_matrix_modules names; the light's matrix_module_list
-        attribute, the Cube Matrix Modules card): those layout leaves out
-        (blocks past the frame's last column) too. Empty for a Cube Lite."""
+        attribute, the cards' Modules section): those layout leaves out
+        (spot slots past the frame's last column) too. Empty for a Cube Lite."""
         if self.key != CUBEMATRIX:
             return []
         return [TOPOLOGY_NAMES.get(kind, "matrix")
@@ -264,11 +284,13 @@ class DeviceProfile:
         if self.key != CUBEMATRIX:
             return frame
         black = (0, 0, 0)
+        width, shown = self.width, self.columns
         wire = []
         column = 0
         for leds in self.chain:
-            if column >= COLS:
-                # A module beyond the 20 x 5 panel: dark.
+            if column >= shown:
+                # A module past the columns shown (a factory list's spot
+                # slots, not fitted): dark.
                 wire.extend([black] * leds)
                 continue
             if leds != BLOCK_LEDS:
@@ -276,14 +298,14 @@ class DeviceProfile:
                 # other four light nothing) in a block's place: the colour of
                 # its 5 columns, so what moves along the lamp passes through
                 # it.
-                wire.append(_spot_colour(frame, column))
+                wire.append(_spot_colour(frame, column, width))
                 wire.extend([black] * (leds - 1))
                 column += MODULE_SIZE
                 continue
             # A block: its 5 columns, each bottom to top (the wiring).
             for _ in range(MODULE_SIZE):
                 for row in range(ROWS):
-                    index = row * COLS + column
+                    index = row * width + column
                     wire.append(frame[index] if index < len(frame) else black)
                 column += 1
         wire.extend([black] * max(0, self.wire_length - len(wire)))
@@ -318,13 +340,13 @@ CUBE_LITE_PROFILE = DeviceProfile(
 )
 
 
-def _spot_colour(frame, column: int) -> tuple:
-    """A spot's colour: the 5 columns it covers from ``column`` as one light,
-    their average colour as bright as their brightest pixel, so a dot passing
-    through lights it fully and a field shows its blend; black when they
-    are."""
-    pixels = [frame[row * COLS + side] for side in range(column, min(COLS, column + MODULE_SIZE))
-              for row in range(ROWS) if row * COLS + side < len(frame)]
+def _spot_colour(frame, column: int, width: int = COLS) -> tuple:
+    """A spot's colour: the 5 columns it covers from ``column`` (of a panel
+    ``width`` wide) as one light, their average colour as bright as their
+    brightest pixel, so a dot passing through lights it fully and a field
+    shows its blend; black when they are."""
+    pixels = [frame[row * width + side] for side in range(column, min(width, column + MODULE_SIZE))
+              for row in range(ROWS) if row * width + side < len(frame)]
     peak = max((max(pixel[:3]) for pixel in pixels), default=0)
     if not peak:
         return (0, 0, 0)
@@ -374,8 +396,8 @@ def cube_matrix_profile(support=(), topology=None, strip_length=None, rotation=N
     """A Cube Matrix's profile from its support: list and get_prop answers.
 
     The slots follow cube_topology (25 LEDs a block, 5 a type-3 slot, as the
-    lamp counts them); the blocks shown are those that fit the 20 x 5
-    panel. Without a topology: strip_lenth's 25-LED blocks, else 4. The lamp
+    lamp counts them), up to TOPOLOGY_SLOTS. Without a topology: strip_lenth's
+    25-LED blocks, else 4. The lamp
     filmed 2026-11-08 reports "1,1,1,1,3,3" and 110: 4 blocks, then two
     5-LED slots not fitted (docs/CUBE_MATRIX.md)."""
     entries = parse_topology(topology)[:TOPOLOGY_SLOTS]
@@ -386,10 +408,10 @@ def cube_matrix_profile(support=(), topology=None, strip_length=None, rotation=N
     if entries:
         slots = tuple(SPOT_LEDS if kind == TOPOLOGY_SPOT else BLOCK_LEDS for kind in entries)
     else:
-        blocks = min(COLS // MODULE_SIZE, max(1, length // BLOCK_LEDS)) if length else COLS // MODULE_SIZE
+        blocks = min(TOPOLOGY_SLOTS, max(1, length // BLOCK_LEDS)) if length else COLS // MODULE_SIZE
         slots = (BLOCK_LEDS,) * blocks
-    # The blocks (5 x 5 pixels) among them, those on the 20 x 5 panel.
-    modules = min(COLS // MODULE_SIZE, sum(1 for leds in slots if leds == BLOCK_LEDS))
+    # The blocks (5 x 5 pixels) among them.
+    modules = sum(1 for leds in slots if leds == BLOCK_LEDS)
     return DeviceProfile(
         key=CUBEMATRIX, name="Cube Matrix",
         native_effects=False, lamp_settings=False, matter=False, microphone=False,

@@ -156,10 +156,10 @@ def magic_hues(render: int, rate: int, width: int, height: int) -> list:
     return hues
 
 
-def magic_cells(render: int, rate: int) -> list:
-    """The converter's input at ``render``, on the 20 x 5 box, by logical
-    cell (row x 20 + column)."""
-    return [hue_colour(hue) for hue in magic_hues(render, rate, COLS, ROWS)]
+def magic_cells(render: int, rate: int, width: int = COLS) -> list:
+    """The converter's input at ``render``, on the ``width`` x 5 box (20, or
+    a longer Cube Matrix's columns), by logical cell (row x width + column)."""
+    return [hue_colour(hue) for hue in magic_hues(render, rate, width, ROWS)]
 
 
 def magic_init(settings) -> dict:

@@ -5,16 +5,18 @@
 // and its gap, padding, corners, background and shadow, so every preview
 // keeps the same look whatever the lamp's orientation.
 import { previewLength } from "./preview-appearance.js";
-import { matrixView, VERTICAL_SCALE } from "./matrix-view.js";
+import { MATRIX_COLS, matrixView, verticalScale, VERTICAL_SCALE } from "./matrix-view.js";
 
 /**
  * A preview's CSS length for a design value (px at the 350px reference
  * width): proportional to the preview's width (previewLength), or plain
  * pixels. A vertical preview is VERTICAL_SCALE times narrower, so its
- * values scale up to keep the landscape look.
+ * values scale up to keep the landscape look. A wider lamp's frame (`panel`
+ * columns, more than 20: a Cube Matrix of 5 modules or more) is as wide as
+ * a 20-column one, its pixels smaller: its lengths shrink with them.
  */
-export function frameLength({ vertical = false, proportional = true } = {}) {
-  const scale = vertical ? VERTICAL_SCALE : 1;
+export function frameLength({ vertical = false, proportional = true, panel = MATRIX_COLS } = {}) {
+  const scale = vertical ? VERTICAL_SCALE : MATRIX_COLS / Math.max(MATRIX_COLS, panel);
   return (value) =>
     proportional ? previewLength(value * scale) : `${value}px`;
 }
@@ -37,7 +39,11 @@ const narrowed = (width, by) =>
  *                at the same pixel size (VERTICAL_SCALE² with fitHeight: as
  *                tall as the landscape one, for fixed-height places)
  *   vertical, fitHeight
- *   cols         landscape columns (default 20; fewer for a crop of the frame)
+ *   cols         landscape columns (default the frame's; fewer for a crop of it)
+ *   panel        the frame's columns (default 20; a Cube Matrix of 5 modules
+ *                or more: 5 a module, matrix-view.js lampWidth): the frame
+ *                stays `width` wide, its pixels smaller, and a vertical one
+ *                panel / 5 times narrower
  *   gap, padding (default gap x 2), radius (corners, default 4): design px
  *   background, shadow (the frame's drop shadow)
  *   proportional lengths follow the preview's width (default), else px
@@ -51,6 +57,7 @@ export function matrixFrame({
   vertical = false,
   fitHeight = false,
   cols,
+  panel = MATRIX_COLS,
   gap = 1,
   padding = gap * 2,
   radius = 4,
@@ -58,12 +65,12 @@ export function matrixFrame({
   shadow = false,
   proportional = true,
 } = {}) {
-  const view = matrixView(vertical);
-  const length = frameLength({ vertical: view.vertical, proportional });
+  const view = matrixView(vertical, panel);
+  const length = frameLength({ vertical: view.vertical, proportional, panel: view.width });
   const narrow = view.vertical
     ? fitHeight
-      ? VERTICAL_SCALE ** 2
-      : VERTICAL_SCALE
+      ? verticalScale(view.width) ** 2
+      : verticalScale(view.width)
     : 1;
   const size = `width: ${narrowed(width, narrow)};`;
   return {

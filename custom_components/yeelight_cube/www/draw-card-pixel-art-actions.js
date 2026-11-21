@@ -5,10 +5,9 @@
 // Mixed into YeelightCubeDrawCard.
 import { notifyUnreported } from "./notify-utils.js";
 import { createEmptyMatrix } from "./draw_utils.js";
-import { expandPixelArt, pixelArtDisplayIndex } from "./pixel-art-utils.js";
+import { pixelArtCells } from "./pixel-art-utils.js";
 import { rgbToHex } from "./color-utils.js";
 import { isVerticalArt } from "./matrix-view.js";
-import { MATRIX_SIZE } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
 export const PixelArtActionsMixin = (Base) => class extends Base {
@@ -131,20 +130,18 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       const previous = this.matrix;
       this._pushMatrixHistory();
 
-      // Start with black matrix (same as image upload)
-      this.matrix = createEmptyMatrix();
+      // Start with black matrix (same as image upload), as wide as the
+      // lamp (_drawWidth: 20, or a longer Cube Matrix's).
+      const width = this._drawWidth?.() ?? 20;
+      this.matrix = createEmptyMatrix(width);
 
       // Stored rows count from the lamp's bottom row, the drawing's from
-      // the top: the same placement as every preview (pixelArtDisplayIndex).
-      for (const { position, color } of expandPixelArt(pixelArt)) {
-        if (
-          Number.isInteger(position) &&
-          position >= 0 &&
-          position < MATRIX_SIZE &&
-          Array.isArray(color) &&
-          color.length >= 3
-        ) {
-          this.matrix[pixelArtDisplayIndex(position)] = rgbToHex(color);
+      // the top: the same placement as every preview (pixelArtCells). An art
+      // of another width (20 columns: every one saved before) is placed from
+      // column 0, or cropped.
+      for (const { index, color } of pixelArtCells(pixelArt, width)) {
+        if (Array.isArray(color) && color.length >= 3) {
+          this.matrix[index] = rgbToHex(color);
           placed++;
         }
       }

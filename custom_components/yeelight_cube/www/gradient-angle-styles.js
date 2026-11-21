@@ -169,18 +169,18 @@ export const AngleStylesMixin = (Base) => class extends Base {
     `;
   }
 
-  /** The panel's 20 x 5 pixels showing the gradient at the angle (or the
-   * lamp's text preview). */
+  /** The panel's pixels (20 x 5, or a longer Cube Matrix's width x 5)
+   * showing the gradient at the angle (or the lamp's text preview). */
   _angleMatrix(visualAngle, isHeaderMode) {
     const mpColors = this._getCurrentTextColors();
     const baseMpSz = this._getRotarySize();
     // The text the lamp shows (option), else the gradient at the angle
-    // (always while the angle is dragged): 100 colors, top row first.
+    // (always while the angle is dragged): the lamp's frame, top row first.
     const colors =
       (this.config.matrix_rotary_text_preview === true &&
         !this._gate.held("angle-drag") &&
         this._matrixTextPreviewColors()) ||
-      this._angleGradientPixelColors(mpColors, visualAngle, 5, 20);
+      this._angleGradientPixelColors(mpColors, visualAngle, 5, this._matrixPreviewWidth?.() ?? 20);
     // Its own appearance (matrix_rotary_*: the resolved appearance,
     // preview-appearance.js), drawn as every preview (gallery-layouts.js
     // matrixTemplate, matrix-frame.js).

@@ -264,12 +264,13 @@ function roseStep(state, settings, clockMs) {
 }
 
 // ── Slot 56: Violet interference ──────────────────────────────────────
+// A segment of more than 28 rows reads the sine table round again.
 function carouselInit(settings) {
   const [width, height] = effectGeometry(settings);
   const angles = new Uint8Array(width * height);
   for (let row = 0; row < height; row += 1)
     for (let column = 0; column < width; column += 1)
-      angles[row * width + column] = Math.trunc((SIN8[144 + 4 * row] * (column - 8)) / 4);
+      angles[row * width + column] = Math.trunc((SIN8[(144 + 4 * row) & 255] * (column - 8)) / 4);
   return { direction: settings.direction, table: gradientTable(56), angles, ...buffers(settings) };
 }
 

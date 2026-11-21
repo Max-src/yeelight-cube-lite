@@ -248,13 +248,15 @@ def rose_step(state, settings, clock_ms, render) -> bytes:
 
 
 # ── Slot 56: Violet interference ────────────────────────────────────────
+# A segment of more than 28 rows (a Cube Matrix of 6 to 8 modules) reads the
+# sine table round again.
 def carousel_init(settings) -> dict:
     width, height = effect_geometry(settings)
     return {
         "direction": settings["direction"],
         "cells": _cells(_gradient_table(56)),
         "angles": [
-            int(SIN8[144 + 4 * row] * (column - 8) / 4) & 255
+            int(SIN8[(144 + 4 * row) & 255] * (column - 8) / 4) & 255
             for row in range(height)
             for column in range(width)
         ],

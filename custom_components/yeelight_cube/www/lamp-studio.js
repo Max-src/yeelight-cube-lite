@@ -180,33 +180,43 @@ const NEIGHBOURS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1]
   [-2, 0], [2, 0], [0, -2], [0, 2]];
 const SIDES = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
-function around(index, offsets) {
-  const row = Math.floor(index / COLS);
-  const col = index % COLS;
+function around(index, offsets, width = COLS) {
+  const row = Math.floor(index / width);
+  const col = index % width;
   const out = [];
   for (const [dRow, dCol] of offsets) {
     const r = row + dRow;
     const c = col + dCol;
-    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) out.push(r * COLS + c);
+    if (r >= 0 && r < ROWS && c >= 0 && c < width) out.push(r * width + c);
   }
   return out;
 }
+
+/** A lamp-order frame's width (its stride): 20, or a longer one's. */
+const widthOf = (frame) => Math.max(COLS, Math.floor(frame.length / ROWS));
 
 /** The objects of `frame` after `state` ([labels, levels, count]); a pixel
  * belongs to one while it is at least `floor` bright. */
 export function trackStep([labelsBefore, levelsBefore, countBefore], frame, floor) {
   let count = countBefore;
+  const size = frame.length;
+  const width = widthOf(frame);
+  if (labelsBefore.length !== size) {
+    // The first frame of another width (EMPTY is 20 wide): none before.
+    labelsBefore = new Array(size).fill(-1);
+    levelsBefore = new Array(size).fill(0);
+  }
   const levels = frame.map((pixel) => Math.max(pixel[0], pixel[1], pixel[2]));
   const lit = levels.map((level) => level >= floor);
-  const labels = new Array(LENGTH).fill(-1);
-  for (let index = 0; index < LENGTH; index++)
+  const labels = new Array(size).fill(-1);
+  for (let index = 0; index < size; index++)
     if (lit[index] && labelsBefore[index] >= 0) labels[index] = labelsBefore[index];
-  const moved = new Array(LENGTH).fill(false);
-  for (let index = 0; index < LENGTH; index++) {
+  const moved = new Array(size).fill(false);
+  for (let index = 0; index < size; index++) {
     if (!lit[index] || labels[index] >= 0) continue;
     let best = -1;
     let brightest = -1;
-    for (const near of around(index, NEIGHBOURS))
+    for (const near of around(index, NEIGHBOURS, width))
       if (
         labelsBefore[near] >= 0 &&
         levels[near] < levelsBefore[near] &&
@@ -220,7 +230,7 @@ export function trackStep([labelsBefore, levelsBefore, countBefore], frame, floo
       moved[index] = true;
     }
   }
-  for (let index = 0; index < LENGTH; index++) {
+  for (let index = 0; index < size; index++) {
     if (!lit[index] || labels[index] >= 0) continue;
     const group = [];
     const waiting = [index];
@@ -228,7 +238,7 @@ export function trackStep([labelsBefore, levelsBefore, countBefore], frame, floo
     while (waiting.length) {
       const pixel = waiting.pop();
       group.push(pixel);
-      for (const near of around(pixel, SIDES))
+      for (const near of around(pixel, SIDES, width))
         if (lit[near] && labels[near] === -1) {
           labels[near] = -2;
           waiting.push(near);
@@ -237,7 +247,7 @@ export function trackStep([labelsBefore, levelsBefore, countBefore], frame, floo
     group.sort((a, b) => a - b);
     let joined = -1;
     search: for (const pixel of group)
-      for (const near of around(pixel, SIDES))
+      for (const near of around(pixel, SIDES, width))
         if (moved[near]) {
           joined = labels[near];
           break search;
@@ -262,20 +272,21 @@ const LEVEL_SMOOTHING = 3;
 export function levelStep(state, frame) {
   const levels = frame.map((pixel) => Math.max(pixel[0], pixel[1], pixel[2]));
   const [across, down] = LEVEL_AROUND;
+  const width = widthOf(frame);
   const around = [];
-  for (let index = 0; index < LENGTH; index++) {
-    const row = Math.floor(index / COLS);
-    const col = index % COLS;
+  for (let index = 0; index < width * ROWS; index++) {
+    const row = Math.floor(index / width);
+    const col = index % width;
     let total = 0;
     let count = 0;
     for (let r = Math.max(0, row - down); r < Math.min(ROWS, row + down + 1); r++)
-      for (let c = Math.max(0, col - across); c < Math.min(COLS, col + across + 1); c++) {
-        total += levels[r * COLS + c];
+      for (let c = Math.max(0, col - across); c < Math.min(width, col + across + 1); c++) {
+        total += levels[r * width + c];
         count++;
       }
     around.push(Math.floor(total / count));
   }
-  if (!state) return around;
+  if (!state || state.length !== around.length) return around;
   return state.map((before, index) => before + ((around[index] - before) >> LEVEL_SMOOTHING));
 }
 

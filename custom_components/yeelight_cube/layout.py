@@ -347,6 +347,14 @@ FONT_METRICS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def glyph_cells(glyph_positions: List[int]) -> List[tuple]:
+    """A glyph's (row, column) cells. Glyphs (FONT_MAPS) and the pixel-art
+    presets are kept as ``row * TOTAL_COLUMNS + column`` whatever the panel
+    they are drawn on (a Cube Matrix of more than 4 modules is wider): they
+    are placed on it cell by cell."""
+    return [divmod(position, TOTAL_COLUMNS) for position in glyph_positions]
+
+
 def char_advance(font: str, letter: str, glyph_positions: List[int]) -> int:
     """Columns the cursor advances after drawing ``letter`` in ``font``.
 

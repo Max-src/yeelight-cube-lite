@@ -30,11 +30,13 @@ import {
   deviceOrientation,
   fromDisplayOrder,
   isVerticalArt,
+  frameWidth,
   isVerticalMount,
+  lampWidth,
   matrixView,
   viewerFrame,
 } from "./matrix-view.js";
-import { shownColumns, shownMask } from "./matrix-modules.js";
+import { fitFrame, shownColumns, shownMask } from "./matrix-modules.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
 import { notifyUnreported } from "./notify-utils.js";
@@ -51,6 +53,7 @@ import {
   builtinArtKey,
   defaultPixelArtOrientation,
   drawingPixels,
+  drawingWidth,
   loadBuiltinPixelArts,
   matchesPixelArtOrientation,
   pixelArtColorData,
@@ -289,8 +292,28 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
    * They stay drawable (a pixel art keeps them), marked absent. */
   _absentPixels() {
     const lamp = this._hass?.states?.[this._primaryEntity(this._hass)]?.attributes;
-    if (shownColumns(lamp) >= 20) return null;
+    if (shownColumns(lamp) >= lampWidth(lamp)) return null;
     return viewerFrame(shownMask(lamp), deviceOrientation(lamp)).map((shown) => !shown);
+  }
+
+  /** The drawing's columns: the lamp's frame width (20, or a Cube Matrix of
+   * 5 modules or more: 5 a module, matrix-view.js lampWidth). */
+  _drawWidth() {
+    return lampWidth(this._hass?.states?.[this._primaryEntity(this._hass)]?.attributes);
+  }
+
+  /** The drawing on the lamp's width: one drawn for another (a Cube Lite's
+   * 20 columns, kept in this browser) placed from column 0, or cropped.
+   * Written to the browser only when it is drawn on again. */
+  _fitDrawing() {
+    const width = this._drawWidth();
+    if (Array.isArray(this.matrix) && frameWidth(this.matrix) !== width)
+      this.matrix = fitFrame(this.matrix, width, { blank: OFF_COLOR });
+  }
+
+  willUpdate(changed) {
+    super.willUpdate?.(changed);
+    this._fitDrawing();
   }
 
   /** The orientation the pixel-art gallery shows: the one picked in its
@@ -340,7 +363,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   /** The drawing area's geometry (matrix-view.js): its columns and rows and
    * the pixel each cell shows. */
   _drawingView() {
-    return matrixView(this._drawingVertical());
+    return matrixView(this._drawingVertical(), this._drawWidth());
   }
 
   /** Show the drawing landscape or vertical (remembered in this browser). */
@@ -537,18 +560,21 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   _pixelArtGalleryItems(arts) {
     const builtins = this._builtinPixelArts || null;
     const source = this._galleryItemsSource;
+    // On the lamp's width, as the drawing is (_fitDrawing).
+    const width = this._drawWidth();
     if (
       source?.arts !== arts ||
       source?.builtins !== builtins ||
-      source?.config !== this.config
+      source?.config !== this.config ||
+      source?.width !== width
     ) {
-      this._galleryItemsSource = { arts, builtins, config: this.config };
+      this._galleryItemsSource = { arts, builtins, config: this.config, width };
       // Each art's picture as a key, to find the one on the canvas (the
       // user's own first).
       this._artByPicture = new Map();
       const item = (art, key, extra) => {
         const name = art?.name || "Unnamed";
-        const colorData = pixelArtColorData(art);
+        const colorData = pixelArtColorData(art, width);
         const picture = colorData.map((color) => rgbToHex(color)).join(",");
         if (!this._artByPicture.has(picture)) this._artByPicture.set(picture, key);
         return {
@@ -885,10 +911,13 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   async _savePixelArt() {
     if (!this.hass) return;
-    // Saved with the area's view: a vertical drawing is shown standing up.
+    // Saved with the area's view: a vertical drawing is shown standing up;
+    // and its width when it is not 20 (a Cube Matrix of 5 modules or more).
+    this._fitDrawing();
     await this.callGlobalService("save_pixel_art", {
       pixels: drawingPixels(this.matrix),
       orientation: artOrientation(this._drawingVertical()),
+      ...drawingWidth(this.matrix),
     });
     // Update pixel art sensor entity
     await this._refreshEntity(this.config?.pixelart_sensor);
@@ -910,10 +939,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
    */
   async _sendToLamp({ latestOnly = false, name } = {}) {
     if (!this.hass) return;
+    this._fitDrawing();
     const pixels = drawingPixels(this.matrix);
     const sent = await this.callServiceOnTargetEntities(
       "apply_custom_pixels",
-      name ? { pixels, name } : { pixels },
+      { pixels, ...(name ? { name } : {}), ...drawingWidth(this.matrix) },
       latestOnly ? { coalesce: "send-matrix" } : {},
     );
     if (latestOnly) return sent;

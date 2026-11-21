@@ -132,7 +132,7 @@ export function renderModeControlSettings(
       change(key, event.target.checked),
     );
   const actionKeys =
-    noun === "lamp" ? ["refresh", "power"] : ACTION_BUTTON_KEYS;
+    noun === "lamp" ? ["refresh", "power", "modules"] : ACTION_BUTTON_KEYS;
   if (area === "actions")
     return html`${toggle(
       "Show Actions",

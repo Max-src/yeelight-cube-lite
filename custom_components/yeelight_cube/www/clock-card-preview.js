@@ -26,9 +26,11 @@ import {
   renderMatrixPreview,
 } from "./gallery-display-utils.js";
 
-// The blank frame a current-style preview is built with (then painted).
+// The blank frame a current-style preview is built with (then painted;
+// fitted to a longer Cube Matrix's width by renderMatrixPreview's context).
 const BLANK_FRAME = Array.from({ length: MATRIX_SIZE }, () => [0, 0, 0]);
 import { PreviewVisibility } from "./preview-visibility.js";
+import { moduleCells, paintModuleCells } from "./matrix-modules.js";
 import { previewContext } from "./preview-context.js";
 import { clockPresetKey } from "./clock-preset-utils.js";
 
@@ -243,6 +245,8 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     el._pixelShadow = matrixPixelShadow(options);
     el.innerHTML = renderMatrixPreview(BLANK_FRAME, options);
     el._cells = matrixPreviewCells(el.querySelector(".gallery-matrix-preview"));
+    // A Cube Matrix's spots and panels: one face each (matrix-modules.js).
+    el._faces = moduleCells(el._cells);
     return el._cells;
   }
 
@@ -297,10 +301,12 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       // Its cells read again only for a new grid or layout.
       if (el._cellsGrid !== matrix || el._cellsVertical !== vertical) {
         const found = matrixPreviewCells(matrix);
-        if (found.length !== 100) return;
+        // A frame's cells: 100, or a longer Cube Matrix's width x 5.
+        if (found.length < MATRIX_SIZE || found.length % 5) return;
         el._cellsGrid = matrix;
         el._cellsVertical = vertical;
         el._cells = found;
+        el._faces = moduleCells(found);
       }
       // Each time: the card's settings change on the same grid.
       el._ignoreBlack = this._galleryIgnoreBlack();
@@ -320,9 +326,11 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       if (grid?.classList.contains("matrix-surface"))
         matrixSurface(grid).paint(BLANK_FRAME);
       for (let i = 0; i < cells.length; i++) {
+        if (cells[i]._module) continue;
         paintCellBackground(cells[i], "#000");
         paintCellBoxShadow(cells[i], "");
       }
+      paintModuleCells(el._faces || [], [], { shadow: el._pixelShadow || "" });
       return;
     }
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
@@ -364,8 +372,13 @@ export const ClockPreviewMixin = (Base) => class extends Base {
       // ghost outlines linger where digits/colons used to be.
       const sh = isOff && el._ignoreBlack ? "" : el._pixelShadow || "";
       const cell = cells[i];
+      if (cell._module) continue;
       paintCellBackground(cell, bg);
       paintCellBoxShadow(cell, sh);
     }
+    paintModuleCells(el._faces || [], frame, {
+      scale: brightnessScale,
+      shadow: el._pixelShadow || "",
+    });
   }
 };

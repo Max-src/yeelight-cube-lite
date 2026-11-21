@@ -12,6 +12,7 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .errors import invalid
+from .pixel_art_storage import pixel_art_width
 from .light_matrix import MatrixSettingUnavailable
 from .const import (
     CONF_IP,
@@ -402,7 +403,7 @@ class YeelightCubePixelArtSelect(CubeSelect):
         if not art or not isinstance(art.get("pixels"), list) or not art["pixels"]:
             _LOGGER.error("[PIXEL ART SELECT] Pixel art '%s' not found or empty", option)
             return
-        await self._light_entity.show_pixel_art(option, art["pixels"])
+        await self._light_entity.show_pixel_art(option, art["pixels"], width=pixel_art_width(art))
         _LOGGER.debug("[PIXEL ART SELECT] Applied pixel art '%s' to %s", option, self._ip)
 
     @callback

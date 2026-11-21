@@ -97,10 +97,29 @@ class MatrixFollowMixin:
             # list is the layout: else the default 4 Matrix modules stayed.
             if "cube_topology" not in (getattr(self._lamp_client, "capabilities", None) or {}):
                 self._matrix_modules_changed(value)
+                # The server's copy can be old (a list written over Matter is
+                # not reported back): the lamp's own list, read now, wins.
+                if self.hass is not None and self._matter is not None:
+                    self._create_tracked_task(
+                        self._matrix_read_modules(),
+                        name=f"yeelight_cube_matrix_read_modules_{self._ip}",
+                    )
         elif name == "start_up_on_off":
             self._matrix_power_on_reported(value)
         if self.hass is not None:
             self.async_write_ha_state()
+
+    async def _matrix_read_modules(self) -> None:
+        """The module list read from the lamp over Matter (its LAN not read
+        at setup): laid out again when it differs from the server's copy."""
+        link = self._matter
+        if link is None:
+            return
+        value = await link.async_read_live("topology")
+        if isinstance(value, (list, tuple)):
+            self._matrix_modules_changed(value)
+            if self.hass is not None:
+                self.async_write_ha_state()
 
     def _matrix_power_on_reported(self, value) -> None:
         """The lamp's StartUpOnOff, as it reports it: the Power-on behavior

@@ -115,14 +115,42 @@ class CubeMatrixTests(unittest.TestCase):
         self.assertEqual((20, []), (PROFILE["CUBE_LITE_PROFILE"].columns, PROFILE["CUBE_LITE_PROFILE"].layout))
 
     def test_the_module_names_list_every_module(self):
-        # The Modules card's list: every module by name, in chain order,
-        # those past the frame's 20 columns too (layout leaves them out).
+        # The Modules card's list: every module by name, in chain order.
         profile = PROFILE["profile_for"]("CubeMatrix", (), "2,2,3,2,0,0,0,0,", "80", "0")
         self.assertEqual(["matrix", "matrix", "spot", "matrix"], profile.module_names)
         six = PROFILE["profile_for"]("CubeMatrix", (), "2,2,2,2,1,3", "155")
         self.assertEqual(["matrix", "matrix", "matrix", "matrix", "panel", "spot"], six.module_names)
-        self.assertEqual(4, len(six.layout))  # the 20 columns' modules
+        self.assertEqual(6, len(six.layout))
         self.assertEqual([], PROFILE["CUBE_LITE_PROFILE"].module_names)
+        # The factory list: 4 blocks, then 2 spot slots not fitted: 20 columns.
+        factory = PROFILE["profile_for"]("CubeMatrix", (), "1,1,1,1,3,3,0,0,", "110")
+        self.assertEqual((20, 20, 4), (factory.columns, factory.width, len(factory.layout)))
+
+    def test_a_long_chain_is_drawn_on_a_panel_as_wide_as_its_modules(self):
+        # 2026-11-21: matrix x3, spot, panel (the owner's lamp, 105 LEDs): the
+        # panel was dark whenever Home Assistant drew, its columns past 20.
+        five = PROFILE["profile_for"]("CubeMatrix", (), "2,2,2,3,1,0,0,0,", "105")
+        self.assertEqual((25, 25, 125), (five.columns, five.width, five.pixels))
+        self.assertEqual([0, 5, 10, 15, 20], [module["column"] for module in five.layout])
+        frame = [(column, row, 9) for row in range(5) for column in range(25)]
+        wire = five.to_wire(frame)
+        self.assertEqual(105, len(wire))
+        # The panel (5th module): its 5 columns, each bottom to top.
+        self.assertEqual([(20 + i // 5, i % 5, 9) for i in range(25)], wire[80:105])
+        # The spot: one light, the colour of columns 15-19.
+        self.assertNotEqual((0, 0, 0), wire[75])
+        self.assertEqual([(0, 0, 0)] * 4, wire[76:80])
+        self.assertEqual(4 * 25 + 1, len(five.drawing_pixels(wire)))
+        # The most the lamp takes: 8 modules, 40 columns; the 9th is dropped.
+        eight = PROFILE["profile_for"]("CubeMatrix", (), "2,1,3,2,2,3,1,2,", "160")
+        self.assertEqual((40, 40, 8), (eight.columns, eight.width, len(eight.layout)))
+        nine = PROFILE["profile_for"]("CubeMatrix", (), "2,2,2,2,2,2,2,2,2", "225")
+        self.assertEqual(8, len(nine.module_names))
+        self.assertEqual(8 * 25, len(nine.drawing_pixels(nine.to_wire([(1, 2, 3)] * nine.pixels))))
+        # Four modules or fewer: the 20-wide panel as before.
+        self.assertEqual((15, 20), (PROFILE["profile_for"]("CubeMatrix", (), "2,3,2", "55").columns,
+                                    PROFILE["profile_for"]("CubeMatrix", (), "2,3,2", "55").width))
+        self.assertEqual(20, PROFILE["CUBE_LITE_PROFILE"].width)
 
     def test_a_spot_slot_takes_five_leds_where_it_is_in_the_chain(self):
         # The lamp (1.12.92, set_segment_rgb / update_leds): a type-3 slot is 5

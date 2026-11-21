@@ -344,7 +344,10 @@ class OnOffMixin:
             self._lamp_client.close_fast_socket()
             if note_power := getattr(self, "_expect_lamp_power", None):
                 note_power(False)
-            await self._lamp_client.send_raw_command("set_power", ["off"])
+            if getattr(self, "is_cube_matrix", False):
+                await self.matrix_send_power(False)
+            else:
+                await self._lamp_client.send_raw_command("set_power", ["off"])
             # Powered off: its brightness is set again on the way back.
             self._forget_hardware_brightness()
             # A Cube Matrix: its effect is sent in full on the way back (a

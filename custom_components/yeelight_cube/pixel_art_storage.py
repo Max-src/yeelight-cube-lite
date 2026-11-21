@@ -10,21 +10,66 @@ Older storage used the flat form, or a grouped form keyed ``"positions"``
 A pixel art may carry an ``orientation`` (PIXEL_ART_ORIENTATIONS): vertical
 ones are drawn for a lamp standing on its end (the cards show them so);
 absent means horizontal.
+
+A pixel art's positions are ``row * width + column`` (row 0 at the bottom,
+column 0 at the lamp's base side). Its ``width`` is stored with it when it is
+not PIXEL_ART_WIDTH (20, every art made before longer Cube Matrix lamps, the
+built-in ones too): one drawn on a Cube Matrix of more than 4 modules can be
+as wide as that lamp (5 columns a module). Shown on a lamp (pixels_at_width),
+an art is placed from column 0, the columns past it black, and cropped to the
+lamp's frame when it is wider.
 """
+
+# The width of a pixel art that names none (every one made before longer
+# Cube Matrix lamps, the built-in ones).
+PIXEL_ART_WIDTH = 20
 
 PIXEL_ART_HORIZONTAL = "horizontal"
 PIXEL_ART_VERTICAL = "vertical"
 PIXEL_ART_ORIENTATIONS = (PIXEL_ART_HORIZONTAL, PIXEL_ART_VERTICAL)
 
 
-def stored_pixel_art(name: str, pixels: list, orientation: str | None = None) -> dict:
+def stored_pixel_art(
+    name: str, pixels: list, orientation: str | None = None, width: int | None = None,
+) -> dict:
     """A pixel art as the collection stores it: its name, its pixels grouped
-    by color (group_pixels) and its orientation (a vertical one only, so
-    every older horizontal art reads the same)."""
+    by color (group_pixels), its orientation (a vertical one only, so
+    every older horizontal art reads the same) and its width (one other
+    than PIXEL_ART_WIDTH only, likewise)."""
     art = {"name": name, "pixels": group_pixels(pixels)}
     if orientation and orientation != PIXEL_ART_HORIZONTAL:
         art["orientation"] = orientation
+    if width and int(width) != PIXEL_ART_WIDTH:
+        art["width"] = int(width)
     return art
+
+
+def pixel_art_width(art) -> int:
+    """A stored pixel art's width (PIXEL_ART_WIDTH when it names none)."""
+    try:
+        width = int((art or {}).get("width") or PIXEL_ART_WIDTH)
+    except (TypeError, ValueError, AttributeError):
+        return PIXEL_ART_WIDTH
+    return width if width > 0 else PIXEL_ART_WIDTH
+
+
+def pixels_at_width(pixels: list, width: int | None, frame_width: int, rows: int = 5) -> list:
+    """Flat pixels (``row * width + column``) placed on a frame
+    ``frame_width`` columns wide: from column 0, cropped to the frame (a
+    column past it, or a row past ``rows``, is left out). Unchanged when
+    both widths are the same (the renderer then checks each position)."""
+    width = int(width or PIXEL_ART_WIDTH)
+    if width == frame_width:
+        return pixels
+    placed = []
+    for pixel in pixels:
+        position = pixel.get("position") if isinstance(pixel, dict) else None
+        if not isinstance(position, int) or position < 0:
+            continue
+        row, col = divmod(position, width)
+        if row < rows and col < frame_width:
+            placed.append({**pixel, "position": row * frame_width + col})
+    return placed
 
 
 def group_pixels(pixels: list) -> list:

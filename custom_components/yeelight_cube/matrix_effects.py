@@ -363,8 +363,8 @@ def clock_payload(
     })
 
 
-# A drawing's pixels at most: 6 modules of 25.
-MAX_DRAWING_PIXELS = 150
+# A drawing's pixels at most: the most modules a Cube Matrix takes, 25 each.
+MAX_DRAWING_PIXELS = 25 * 8
 
 
 def drawing_data(pixels) -> bytes:

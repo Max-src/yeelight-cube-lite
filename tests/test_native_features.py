@@ -1358,8 +1358,11 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("CLOCK_MIXER_EFFECTS", CLOCK_CARD_SOURCE)
         self.assertIn("lampClockSettings(", CLOCK_CARD_SOURCE)
         self.assertIn("effectFrame[index]", CLOCK_CARD_SOURCE)
-        self.assertIn("const at = turned ? (4 - row) * COLS + (columns - 1 - col) : row * COLS + col;", CLOCK_CARD_SOURCE)
-        self.assertIn("clockDigitTargets(at, digitFlags, columns * 5)", CLOCK_CARD_SOURCE)
+        # Turned: a half turn across the blocks' columns (clockColumns), on
+        # the frame's stride (20, or a longer Cube Matrix's width).
+        self.assertIn("const column = strip[turned ? stripWidth - 1 - col : col];", CLOCK_CARD_SOURCE)
+        self.assertIn("const at = (turned ? 4 - row : row) * width + column;", CLOCK_CARD_SOURCE)
+        self.assertIn("clockDigitTargets(at, digitFlags, columns * 5, width)", CLOCK_CARD_SOURCE)
         self.assertIn("colonVisible", CLOCK_CARD_SOURCE)
 
     def test_clock_style_sends_and_previews_mixer_direction(self):

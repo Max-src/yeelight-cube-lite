@@ -2,6 +2,9 @@
 // Centralized storage management with consistent error handling
 
 import {
+  GRID_COLS,
+  GRID_MAX_COLS,
+  GRID_ROWS,
   MATRIX_SIZE,
   OFF_COLOR,
   LS_TOOL_VISIBILITY,
@@ -54,6 +57,17 @@ class StorageManager {
   }
 }
 
+/** Whether stored data is a drawing: GRID_ROWS rows of 20 to 40 colors. */
+export function isDrawing(data) {
+  if (!Array.isArray(data) || data.length % GRID_ROWS) return false;
+  const width = data.length / GRID_ROWS;
+  return (
+    width >= GRID_COLS &&
+    width <= GRID_MAX_COLS &&
+    data.every((color) => typeof color === "string")
+  );
+}
+
 const MATRIX_SAVE_DELAY_MS = 300;
 let pendingMatrix = null;
 let matrixSaveTimer = null;
@@ -78,14 +92,16 @@ globalThis.document?.addEventListener?.("visibilitychange", () => {
  * Specific storage functions for different data types
  */
 export const StorageUtils = {
-  // Matrix storage (100-element array)
+  // Matrix storage (the drawing's colors: 20 x 5, or width x 5 for a Cube
+  // Matrix of 5 modules or more, up to 40 columns). Anything else (another
+  // size, not colors) is dropped for an empty drawing.
   loadMatrix() {
     // A drawing still waiting to be written is the latest one.
     if (pendingMatrix) return [...pendingMatrix];
     return StorageManager.load(
       STORAGE_KEYS.MATRIX,
       Array(MATRIX_SIZE).fill(OFF_COLOR),
-      (data) => Array.isArray(data) && data.length === MATRIX_SIZE,
+      isDrawing,
     );
   },
 

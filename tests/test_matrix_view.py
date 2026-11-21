@@ -669,5 +669,150 @@ class CameraRenderOnDemandTests(unittest.TestCase):
         self.assertIsNone(camera._cached_image)
 
 
+class WideMatrixCameraTests(unittest.TestCase):
+    """A Cube Matrix of 5 to 8 modules: the image shows every module."""
+
+    PROFILES = import_pure_module("device_profile")
+
+    def wide_light(self, topology, **attrs):
+        profile = self.PROFILES.cube_matrix_profile(topology=topology)
+        return light_state(device_profile=profile, **attrs)
+
+    def test_views_and_frames_follow_the_frames_width(self):
+        self.assertEqual([20, 25, 30, 40, 20, 20], [VIEW.frame_width(n) for n in (100, 125, 150, 200, 205, 75)])
+        frame = list(range(150))
+        self.assertEqual(frame[120:], VIEW.viewer_frame(frame, "right")[:30])
+        self.assertEqual(VIEW.viewer_frame(frame, "right")[::-1], VIEW.viewer_frame(frame, "up"))
+        self.assertEqual((5, 30), VIEW.view_size(True, 30))
+        self.assertEqual(150, len({VIEW.display_cell(index, True, 30) for index in range(150)}))
+        # 20-column content on 30 columns: from column 0, the rest black.
+        fitted = VIEW.fit_frame(list(range(100)), 30, blank=None)
+        self.assertEqual(list(range(20)) + [None] * 10, fitted[:30])
+        # 40 columns on 25: cropped.
+        self.assertEqual(list(range(40, 65)), VIEW.fit_frame(list(range(200)), 25)[25:50])
+
+    def test_the_image_is_as_wide_as_the_lamp(self):
+        module = camera_module()
+        for topology, width in (("2,2,2,2,1", 25), ("2,1,2,2,2,2", 30), ("2,2,2,2,2,2,2,1", 40)):
+            light = self.wide_light(topology, _mode="Solid Color",
+                                    _base_matrix_colors=[(255, 0, 0)] * (width * 5))
+            camera = camera_of(light, square=True)
+            colors = camera._get_matrix_colors()
+            self.assertEqual(width * 5, len(colors), topology)
+            image = Image.open(io.BytesIO(camera._render_matrix(*camera._view_frame()))).convert("RGBA")
+            self.assertEqual((1227 + (width - 20) * module.CELL_SIZE, 372), image.size, topology)
+            # Its last column lit.
+            left, top, right, bottom = module._views_for(False, width, False)[1][width - 1]
+            self.assertEqual(255, image.getpixel(((left + right) // 2, (top + bottom) // 2))[0])
+        # Vertical, standing on the option: 5 columns by 30 rows.
+        follows = import_pure_module("const").CONF_CAMERA_FOLLOWS_ORIENTATION
+        camera = camera_of(self.wide_light("2,1,2,2,2,2", _device_orientation="up"), {follows: True})
+        image = Image.open(io.BytesIO(camera._render_matrix(*camera._view_frame())))
+        self.assertEqual((372, 1227 + 10 * module.CELL_SIZE), image.size)
+        # A 20-column picture on a longer lamp: from column 0, the rest dark.
+        light = self.wide_light("2,2,2,2,2,2", _mode="Solid Color", _base_matrix_colors=[(9, 9, 9)] * 100)
+        colors = camera_of(light)._get_matrix_colors()
+        self.assertEqual(150, len(colors))
+        self.assertTrue(any(colors[29 * 0 + 19]))
+        self.assertFalse(any(colors[25]))
+
+    def face_box(self, first, last, width=25, vertical=False):
+        """The image box a module covers: the rectangles of top-first pixels
+        ``first`` (its top left in the frame) to ``last`` (bottom right)."""
+        rects = camera_module()._views_for(vertical, width, False)[1]
+        area = [rects[row * width + column] for row in range(first // width, last // width + 1)
+                for column in range(first % width, last % width + 1)]
+        return (min(rect[0] for rect in area), min(rect[1] for rect in area),
+                max(rect[2] for rect in area), max(rect[3] for rect in area))
+
+    def test_a_spot_is_a_lens_in_its_bezel(self):
+        # Matrix x3, a spot, a panel (the owner's, filmed 2026-11-21): the
+        # spot's 25 cells one face, its lens lit in their colour.
+        light = self.wide_light("2,2,2,3,1", _mode="Solid Color")
+        frame = [(0, 0, 0)] * 125
+        frame[2 * 25 + 16] = (0, 200, 0)
+        for square in (True, False):
+            camera = camera_of(light, square=square)
+            image = Image.open(io.BytesIO(camera._render_matrix(frame, False, False))).convert("RGBA")
+            left, top, right, bottom = self.face_box(15, 4 * 25 + 19)
+            size = right - left
+            x, y = (left + right) // 2, (top + bottom) // 2
+            # Whiter at the centre, its colour towards the lens's rim (60%
+            # of the module wide).
+            red, green, blue, _ = image.getpixel((x, y))
+            self.assertEqual(200, max(red, green, blue) if green < 200 else 200)
+            self.assertGreater(green, red)
+            self.assertGreater(red, 60)
+            self.assertEqual((0, 200, 0), image.getpixel((x + round(size * 0.27), y))[:3])
+            # Outside the lens: the halo on the bezel, dimmer, still green.
+            halo = image.getpixel((x + round(size * 0.33), y))
+            self.assertTrue(30 < halo[1] < 200 and halo[0] < 40, halo)
+            # The face: dark grey, square on the square camera, rounded on
+            # the round one (its corner the frame's black).
+            face = image.getpixel((left + size // 20, top + size // 2))[:3]
+            self.assertTrue(25 <= min(face) and max(face) <= 60, face)
+            corner = image.getpixel((left, top))[:3]
+            self.assertEqual(square, corner != (0, 0, 0), corner)
+        # Unlit: a dark lens inside the lighter ring.
+        image = Image.open(io.BytesIO(camera._render_matrix([(0, 0, 0)] * 125, False, False))).convert("RGB")
+        self.assertLess(max(image.getpixel((x, y))), 15)
+        ring = max(max(image.getpixel((x + offset, y))) for offset in range(round(size * 0.40), round(size * 0.45)))
+        self.assertGreater(ring, 60)
+
+    def test_a_panel_is_one_diffusing_face(self):
+        light = self.wide_light("2,2,2,3,1", _mode="Solid Color")
+        camera = camera_of(light)
+        left, top, right, bottom = self.face_box(20, 4 * 25 + 24)
+        size = right - left
+        # Unlit: one dark face, no dots.
+        image = Image.open(io.BytesIO(camera._render_matrix([(0, 0, 0)] * 125, False, False))).convert("RGB")
+        self.assertEqual((17, 17, 19), image.getpixel(((left + right) // 2, (top + bottom) // 2)))
+        # One colour: the whole face that colour edge to edge (the gaps
+        # between the pixels too).
+        frame = [(255, 0, 0) if index % 25 < 20 else (0, 120, 255) for index in range(125)]
+        image = Image.open(io.BytesIO(camera._render_matrix(frame, False, False))).convert("RGB")
+        gap = self.face_box(20, 20)[2] + 2  # between its first two pixels
+        for point in ((left + size // 2, top + size // 2), (gap, top + size // 2), (left + size // 10, bottom - size // 10)):
+            self.assertEqual((0, 120, 255), image.getpixel(point), point)
+        # Left half red, right half blue: they melt into each other.
+        frame = [(255, 0, 0) if index % 25 < 22 else (0, 0, 255) for index in range(125)]
+        image = Image.open(io.BytesIO(camera._render_matrix(frame, False, False))).convert("RGB")
+        middle = image.getpixel((left + round(size * 0.55), top + size // 2))
+        self.assertTrue(middle[0] > 80 and middle[2] > 80, middle)
+        # One lit pixel: a soft blotch, brightest where it is, over a haze.
+        frame = [(0, 0, 0)] * 125
+        frame[2 * 25 + 22] = (230, 90, 255)
+        image = Image.open(io.BytesIO(camera._render_matrix(frame, False, False))).convert("RGB")
+        centre = image.getpixel(((left + right) // 2, (top + bottom) // 2))
+        edge = image.getpixel((left + size // 10, top + size // 10))
+        self.assertGreater(centre[2], 150)
+        self.assertTrue(17 <= edge[2] < 60, edge)
+        # Standing (down, on the option): the panel the last 5 rows, its
+        # colours turned with the picture: the frame's top row on its right.
+        follows = import_pure_module("const").CONF_CAMERA_FOLLOWS_ORIENTATION
+        camera = camera_of(self.wide_light("2,2,2,3,1", _device_orientation="down"), {follows: True})
+        frame = [(255, 255, 0) if index // 25 == 0 else (0, 0, 0) for index in range(125)]
+        image = Image.open(io.BytesIO(camera._render_matrix(frame, True, False))).convert("RGB")
+        left, top, right, bottom = self.face_box(20, 4 * 25 + 24, vertical=True)
+        size = right - left
+        self.assertEqual(size, bottom - top)
+        on_right = image.getpixel((right - size // 10, (top + bottom) // 2))
+        on_left = image.getpixel((left + size // 10, (top + bottom) // 2))
+        self.assertGreater(on_right[0], 200)
+        self.assertLess(on_left[0], on_right[0] / 2)
+
+    def test_the_clock_covers_the_blocks_never_a_spot(self):
+        with patch.object(camera_module(), "dt_util", types.SimpleNamespace(
+                now=lambda: datetime(2026, 11, 21, 12, 34, 56))):
+            five = camera_of(self.wide_light("2,2,2,3,1", _mode="Clock"))._get_clock_preview()
+            self.assertEqual(125, len(five))
+            columns = {index % 25 for index in lit(five)}
+            self.assertFalse(columns & set(range(15, 20)), sorted(columns))
+            self.assertTrue(columns & set(range(20, 25)), sorted(columns))
+            # Four blocks, no spot: the Cube Lite's clock.
+            four = camera_of(self.wide_light("2,1,2,2", _mode="Clock"))._get_clock_preview()
+            self.assertEqual(camera_of(light_state(_mode="Clock"))._get_clock_preview(), four)
+
+
 if __name__ == "__main__":
     unittest.main()

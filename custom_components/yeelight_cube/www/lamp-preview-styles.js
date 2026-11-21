@@ -2,6 +2,8 @@
 // shape and shadow come from --lamp-dot-radius / --lamp-dot-shadow, set on
 // the matrix grid (lamp-preview-matrix.js, _matrixGeometry).
 import { exportImportButtonStyles } from "./action-button-utils.js";
+import { deleteButtonStyles, deleteButtonPositionStyles } from "./delete-button-styles.js";
+import { matrixModulesEditorStyles } from "./matrix-modules-editor.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { orientationControlStyles } from "./orientation-control-utils.js";
 import { sliderControlStyles } from "./slider-control-utils.js";
@@ -31,14 +33,6 @@ export const LAMP_PREVIEW_CSS = `
         display: grid;
         position: relative;
       }
-      /* A Cube Matrix's missing columns (fewer than 4 modules) and its
-         spots, one light over the 5 x 5 area each covers (matrix-modules.js). */
-      .lamp-dot.lamp-dot-spot {
-        border-radius: 50%;
-        width: 90%;
-        height: 90%;
-        outline: 2px solid #ffffff55;
-      }
       .lamp-dot {
         width: 100%;
         height: 100%;
@@ -52,6 +46,16 @@ export const LAMP_PREVIEW_CSS = `
         box-sizing: border-box;
         display: block;
       }
+      /* A Cube Matrix's spots and panels: one face over the 5 x 5 area each
+         covers, its picture painted inline (matrix-modules.js moduleLook),
+         its corners those of the pixel style (--yc-module-radius). */
+      .lamp-dot.lamp-dot-module {
+        border-radius: var(--yc-module-radius, 0);
+        transition: none;
+      }
+      .lamp-dot.lamp-dot-module[data-module="panel"] {
+        background-blend-mode: lighten;
+      }
       .lamp-dots-instant .lamp-dot {
         transition: none;
       }
@@ -61,6 +65,10 @@ export const LAMP_PREVIEW_CSS = `
         background: transparent !important;
       }
       ${orientationControlStyles}
+      /* A Cube Matrix's Modules section (matrix-modules-editor.js). */
+      ${deleteButtonStyles}
+      ${deleteButtonPositionStyles}
+      ${matrixModulesEditorStyles}
       .force-refresh-btn {
         cursor: pointer;
       }

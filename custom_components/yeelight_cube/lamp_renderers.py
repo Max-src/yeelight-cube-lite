@@ -13,8 +13,9 @@ Fireworks, with its own older timeline.
 
 What a renderer here shares with the lamp, and what it cannot:
 
-- The renderer draws a strip of N = 100 logical pixels. The lamp's pixel
-  mapper places them on the panel by the mapped direction,
+- The renderer draws a strip of N = 100 logical pixels (5 a column the lamp
+  shows: fewer or more on a Cube Matrix, lamp_core.segment_length_for). The
+  lamp's pixel mapper places them on the panel by the mapped direction,
   DIRECTION_TABLE[profile][sent] (mount_profile.py). The integration sends
   directions compensated to profile 2 (light_native.lamp_direction), so a
   preview always maps as on profile 2.
@@ -376,7 +377,8 @@ def lamp_frame_bytes(settings, render: int) -> bytes:
 
 
 def renderer_frame(settings, render: int) -> list:
-    """Render ``render`` of a command: 100 (r, g, b) of LED drive, lamp order."""
+    """Render ``render`` of a command: 100 (r, g, b) of LED drive, lamp order
+    (a longer segment's: lamp_core.frame_width columns of 5)."""
     return frame_pixels(lamp_frame_bytes(settings, render))
 
 
@@ -705,7 +707,8 @@ def render_fireworks(seconds: float, rate: int, direction: int,
                      profile: int = REFERENCE_PROFILE, length: int = LENGTH) -> list:
     """The 20 x 5 frame (lamp order) Fireworks shows ``seconds`` after it
     was applied, at ``rate`` (0-255) and the lamp's ``direction`` (0-3), on
-    a segment of ``length`` pixels (its first columns)."""
+    a segment of ``length`` pixels (its first columns; a longer one: a
+    frame as wide, lamp_core.frame_width)."""
     rate = max(0, min(255, int(rate)))
     render = max(0, int(seconds / RENDER_SECONDS))
     with _FIREWORKS_LOCK:
@@ -915,7 +918,7 @@ def _command_settings(
     """The fields a renderer reads, from what a command sends: ``word``, the
     first colour word sent (None: no color key), ``more`` the others,
     ``intensity`` the one sent (None: the preset row's), ``columns`` the
-    columns the lamp shows (None: all 20)."""
+    columns the lamp shows (None: all 20; up to lamp_core.MAX_COLS)."""
     selector, row_intensity, *_ = PRESET_ROWS[command_id]
     intensity = row_intensity if intensity is None else intensity
     coloured = word is not None
@@ -930,8 +933,8 @@ def _command_settings(
     }
     if coloured and more:
         settings["colours"] = [_rgb(word), *(_rgb(other) for other in more)]
-    # A lamp showing fewer columns (a Cube Matrix with fewer blocks): the
-    # segment its effects are drawn on.
+    # A lamp showing fewer or more columns (a Cube Matrix of other than 4
+    # modules): the segment its effects are drawn on.
     length = segment_length_for(columns)
     if length != LENGTH:
         settings["length"] = length
@@ -964,7 +967,8 @@ def lamp_settings(
     the palette color mode streams is drawn by lamp_studio from the normal
     mode's settings.) ``columns``: the columns the lamp shows, which its
     effects are drawn on (a Cube Matrix's device_profile.columns; None: all
-    20, a Cube Lite)."""
+    20, a Cube Lite). More than 20: the frames are as wide as them
+    (lamp_core.frame_width_for)."""
     spec = ALL_NATIVE_EFFECTS[effect]
     preset = (
         CLOCK_COLOR_MODES.get(color_mode)
@@ -1016,7 +1020,7 @@ def lamp_settings(
 
 def lamp_effect_frame(settings, seconds: float) -> list:
     """What a command shows ``seconds`` into a preview: 100 (r, g, b) of LED
-    drive, lamp order. A preview starts at Timeline.first_shown; Fireworks has
+    drive, lamp order (a longer segment's: frame_width columns of 5). A preview starts at Timeline.first_shown; Fireworks has
     its own timeline, and its flare from the first render."""
     if settings["mode"] == FIREWORKS_MODE:
         return render_fireworks(

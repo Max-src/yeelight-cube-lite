@@ -1,7 +1,8 @@
 /**
  * What the lamp's built-in renderers share. Mirrors lamp_core.py
  * exactly (its header explains the flat data: logical strips and grids, panels
- * and lamp frames are 300 bytes, r, g, b by pixel). The renderers live in
+ * and lamp frames are 300 bytes, r, g, b by pixel; a longer Cube Matrix's
+ * frames are as wide as its columns: frameWidth). The renderers live in
  * lamp-effects-<family>.js.
  */
 import { RENDER_MS, RENDER_SECONDS } from "./lamp-timing.js";
@@ -9,6 +10,8 @@ import { RENDER_MS, RENDER_SECONDS } from "./lamp-timing.js";
 export const LENGTH = 100;
 export const COLS = 20;
 export const ROWS = 5;
+// The widest segment: a Cube Matrix of 8 modules (device_profile.MAX_COLS).
+export const MAX_COLS = 40;
 export { RENDER_MS, RENDER_SECONDS };
 // mount_profile.py DIRECTION_TABLE: drawn = TABLE[profile][sent].
 export const DIRECTION_TABLE = [
@@ -596,14 +599,23 @@ export function effectiveDirection(settings) {
 // as the lamp's own do on a shorter one, so what moves stops at the last
 // column shown. The columns are passed to whatever makes the settings
 // (lampSettings, lampClockSettings: `columns`), which carry the segment on
-// (settings.length); nothing is kept between calls.
+// (settings.length); nothing is kept between calls. A Cube Matrix of more
+// than 4 modules shows more than 20 columns: its segment is longer, and its
+// frames as wide as it (frameWidth).
 
-/** The pixels of a segment of `columns` columns (1 to 20, else 100: a
+/** The pixels of a segment of `columns` columns (1 to MAX_COLS, else 100: a
  * Cube Lite). */
 export function segmentLengthFor(columns) {
   const value = Math.trunc(Number(columns));
-  return value >= 1 && value <= COLS ? value * ROWS : LENGTH;
+  return value >= 1 && value <= MAX_COLS ? value * ROWS : LENGTH;
 }
+
+/** The columns of the frame a segment of `length` pixels is shown on (the
+ * stride of lamp order): 20, or its own columns when it has more. */
+export const frameWidth = (length = LENGTH) => Math.max(COLS, Math.ceil(length / ROWS));
+
+/** The frame width of a lamp showing `columns` columns (null: 20). */
+export const frameWidthFor = (columns) => frameWidth(segmentLengthFor(columns));
 
 /** The segment a renderer's settings are for (lampSettings sets it). */
 export const settingsLength = (settings) => settings.length ?? LENGTH;
@@ -648,9 +660,10 @@ export function panelIndex(pixel, length, direction, profile) {
   return index < length ? index : null;
 }
 
-/** A panel buffer index (column-major) as the frame index (row-major). */
-export function frameIndex(bufferIndex) {
-  return (bufferIndex % ROWS) * COLS + Math.floor(bufferIndex / ROWS);
+/** A panel buffer index (column-major) as the frame index (row-major) on a
+ * frame `width` wide. */
+export function frameIndex(bufferIndex, width = COLS) {
+  return (bufferIndex % ROWS) * width + Math.floor(bufferIndex / ROWS);
 }
 
 // Lamp-order byte -> panel byte, by segment length (a shorter one: its
@@ -659,10 +672,11 @@ const frameOrders = new Map();
 function frameOrder(length) {
   let order = frameOrders.get(length);
   if (!order) {
-    order = new Uint16Array(3 * LENGTH).fill(3 * length);
+    const width = frameWidth(length);
+    order = new Uint16Array(3 * width * ROWS).fill(3 * length);
     for (let pixel = 0; pixel < length; pixel += 1)
       for (let channel = 0; channel < 3; channel += 1)
-        order[3 * frameIndex(pixel) + channel] = 3 * pixel + channel;
+        order[3 * frameIndex(pixel, width) + channel] = 3 * pixel + channel;
     frameOrders.set(length, order);
   }
   return order;
@@ -673,7 +687,7 @@ const placements = new Map();
 
 /** Logical pixel -> panel index, for every pixel of a segment of `length`. */
 export function pixelMap(direction, profile = REFERENCE_PROFILE, length = LENGTH) {
-  const key = (direction * 4 + profile) * 128 + length;
+  const key = (direction * 4 + profile) * 1024 + length;
   let out = pixelMaps.get(key);
   if (!out) {
     out = Uint16Array.from({ length }, (_, pixel) =>
@@ -688,7 +702,7 @@ export function pixelMap(direction, profile = REFERENCE_PROFILE, length = LENGTH
  * segment as long as the strip). */
 export function placeStrip(strip, direction, out = new Uint8Array(strip.length), profile = REFERENCE_PROFILE) {
   const length = Math.floor(strip.length / 3);
-  const key = (direction * 4 + profile) * 128 + length;
+  const key = (direction * 4 + profile) * 1024 + length;
   let order = placements.get(key);
   if (!order) {
     order = new Uint16Array(3 * length);
@@ -717,32 +731,35 @@ export function readBack(work, direction, out = new Uint8Array(work.length), pro
 }
 
 /** A panel as a lamp frame (20 x 5, a shorter segment's panel in its first
- * columns, the rest black). */
+ * columns, the rest black; a longer one: as wide as its columns, frameWidth). */
 export function panelToFrame(panel) {
-  const frame = new Uint8Array(3 * LENGTH);
   const length = Math.floor(panel.length / 3);
   if (length === LENGTH) {
+    const frame = new Uint8Array(3 * LENGTH);
     for (let at = 0; at < 3 * LENGTH; at += 1) frame[at] = panel[FRAME_ORDER[at]];
     return frame;
   }
   const order = frameOrder(length);
-  for (let at = 0; at < 3 * LENGTH; at += 1) frame[at] = panel[order[at]] ?? 0;
+  const frame = new Uint8Array(order.length);
+  for (let at = 0; at < order.length; at += 1) frame[at] = panel[order[at]] ?? 0;
   return frame;
 }
 
 /** A flat frame as [r, g, b] pixels. */
 export function framePixels(frame) {
-  const pixels = new Array(LENGTH);
-  for (let pixel = 0, at = 0; pixel < LENGTH; pixel += 1, at += 3)
+  const count = Math.floor(frame.length / 3);
+  const pixels = new Array(count);
+  for (let pixel = 0, at = 0; pixel < count; pixel += 1, at += 3)
     pixels[pixel] = [frame[at], frame[at + 1], frame[at + 2]];
   return pixels;
 }
 
 export function stripFrame(draws, direction, profile = REFERENCE_PROFILE, length = LENGTH) {
-  const frame = Array.from({ length: LENGTH }, () => [0, 0, 0]);
+  const width = frameWidth(length);
+  const frame = Array.from({ length: width * ROWS }, () => [0, 0, 0]);
   for (const [pixel, red, green, blue] of draws) {
     const index = panelIndex(pixel, length, direction, profile);
-    if (index !== null) frame[frameIndex(index)] = [red, green, blue];
+    if (index !== null) frame[frameIndex(index, width)] = [red, green, blue];
   }
   return frame;
 }
@@ -770,14 +787,15 @@ export function flagsIndex(pixel, length, flags) {
 }
 
 /** The pixel writer and the mapper on any flags: the indices written. */
-/** Where the lamp draws the clock digits' pixel at frame `index` (lamp order)
- * on the flags its clock runs with (lamp_core.py clock_digit_targets). */
-export function clockDigitTargets(index, flags, length = LENGTH) {
+/** Where the lamp draws the clock digits' pixel at frame `index` (lamp order,
+ * a frame `width` wide) on the flags its clock runs with (lamp_core.py
+ * clock_digit_targets). */
+export function clockDigitTargets(index, flags, length = LENGTH, width = COLS) {
   if (flags === HANDOVER_FLAGS) return [index];
-  const row = Math.floor(index / COLS);
-  const pixel = (index % COLS) * ROWS + row;
+  const row = Math.floor(index / width);
+  const pixel = (index % width) * ROWS + row;
   if (pixel >= length || (flags & 0x08 && pixel >= Math.floor(length / 2))) return [];
-  return flaggedTargets(pixel, length, 0, flags).map(frameIndex);
+  return flaggedTargets(pixel, length, 0, flags).map((target) => frameIndex(target, width));
 }
 
 export function flaggedTargets(pixel, length, mapped, flags) {

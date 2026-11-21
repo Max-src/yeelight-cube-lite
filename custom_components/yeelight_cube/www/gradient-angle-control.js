@@ -11,6 +11,7 @@ import {
   MATRIX_SIZE,
   deviceOrientation,
   flipMatrixVertical,
+  lampWidth,
   viewerFrame,
 } from "./matrix-view.js";
 
@@ -685,8 +686,9 @@ export const AngleControlMixin = (Base) => class extends AngleStylesMixin(Base) 
   }
 
   /**
-   * The matrix rotary's text preview: its 100 colors as the viewer sees the
-   * lamp, top row first (matrix-view.js), or null without data. The lamp's
+   * The matrix rotary's text preview: its colors (100, or a longer Cube
+   * Matrix's width x 5) as the viewer sees the lamp, top row first
+   * (matrix-view.js), or null without data. The lamp's
    * own matrix_colors while it shows them (the same source as the Lamp
    * Preview card: instant updates), turned for its mount; else (off, a
    * built-in mode, no data yet) the current mode's preview_gradient_modes
@@ -698,7 +700,19 @@ export const AngleControlMixin = (Base) => class extends AngleStylesMixin(Base) 
     const matrixColors = stateObj?.attributes?.matrix_colors;
     if (stateObj?.state === "on" && matrixColors?.length >= MATRIX_SIZE)
       return viewerFrame(matrixColors, deviceOrientation(stateObj.attributes));
-    const preview = this._previewCache()?.data?.previews?.[this._getCurrentMode()];
-    return preview?.length >= MATRIX_SIZE ? flipMatrixVertical(preview) : null;
+    const data = this._previewCache()?.data;
+    const preview = data?.previews?.[this._getCurrentMode()];
+    if (!(preview?.length >= MATRIX_SIZE)) return null;
+    // As wide as the backend drew it (its event's cols).
+    return Number.isInteger(data.cols) && data.cols * 5 === preview.length
+      ? flipMatrixVertical(preview, data.cols)
+      : flipMatrixVertical(preview);
+  }
+
+  /** The columns of the lamp's frames (20, or a Cube Matrix of 5 modules or
+   * more: matrix-view.js lampWidth): the matrix rotary's. */
+  _matrixPreviewWidth() {
+    const entityId = this._primaryEntity();
+    return lampWidth(entityId ? this._hass?.states?.[entityId]?.attributes : null);
   }
 };

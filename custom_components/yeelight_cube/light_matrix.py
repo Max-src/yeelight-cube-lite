@@ -53,10 +53,11 @@ from .effect_catalog import (
     PALETTE_COLOR_MODE,
     effect_direction_value,
 )
-from .device_profile import CUBEMATRIX
+from .device_profile import CUBEMATRIX, TOPOLOGY_SLOTS
 from .lamp_core import drawn_in_full, raw_colours
 from .lamp_renderers import palette_fits, palette_words
 from .lamp_studio import studio_render
+from .light_render import fit_frame
 from .native_effect_preview import effect_supports_color_override
 from .light_color import hardware_brightness_for
 from .matrix_effects import (
@@ -164,6 +165,7 @@ def matrix_effect_name(running: int) -> str | None:
 # The lamp's brightness over Matter: Level Control on its light's endpoint
 # (matter_link.LEVEL), 1-254 for set_bright's 1-100 %.
 LEVEL_CONTROL_CLUSTER = 0x0008
+ON_OFF_CLUSTER = 0x0006
 LEVEL_ENDPOINT = 1
 
 
@@ -227,6 +229,19 @@ class MatrixMixin:
         self._matrix_restart_seen = False
         # While a clock is frozen: its digits drawn again as they change.
         self._matrix_freeze_task = None
+
+    def _matrix_published_summary(self, summary: dict | None) -> dict | None:
+        """The light's `matter` attribute with the module list the lamp has
+        now (device_profile, TOPOLOGY_SLOTS entries, zeros after the last):
+        the Matter server's copy keeps the list last reported to it, and a
+        list written over Matter (set_matrix_modules) is not reported back
+        (2026-11-21: the attribute still showed the old list)."""
+        if not summary or "topology" not in summary or not self.is_cube_matrix:
+            return summary
+        types = [int(kind) for kind in self.device_profile.module_types]
+        if types:
+            summary["topology"] = (types + [0] * TOPOLOGY_SLOTS)[:TOPOLOGY_SLOTS]
+        return summary
 
     # ── What the lamp can show itself ───────────────────────────────────
     @property
@@ -469,6 +484,27 @@ class MatrixMixin:
                 _LOGGER.debug("[MATRIX] [%s] Brightness over Matter failed: %s", self._ip, err)
         await self._lamp_client.send_raw_command("set_bright", [level], udp=udp)
 
+    async def matrix_send_power(self, on: bool) -> None:
+        """A Cube Matrix switched on or off: over Matter when a server
+        delivers its commands (On/Off, as the Yeelight app), so it never
+        depends on the lamp's LAN; over the LAN only would leave it lit
+        while HA shows it off when the LAN has stopped reading commands
+        (2026-11-20). Else, or when that fails, set_power over the LAN. Its
+        report of the change is not a change by the lamp itself."""
+        if note_power := getattr(self, "_expect_lamp_power", None):
+            note_power(on)
+        if self.matrix_brightness_over_matter():
+            try:
+                self._matrix_command_at = time.monotonic()
+                await self._matter_commands.async_command(
+                    ON_OFF_CLUSTER, "On" if on else "Off", {}, endpoint_id=LEVEL_ENDPOINT,
+                )
+                self._matrix_command_at = time.monotonic()
+                return
+            except Exception as err:  # noqa: BLE001 -- the LAN is tried next
+                _LOGGER.debug("[MATRIX] [%s] Power over Matter failed: %s", self._ip, err)
+        await self._lamp_client.send_raw_command("set_power", ["on" if on else "off"])
+
     async def _send_matrix_command(self, name: str, payload: dict) -> bool:
         """Show ``payload`` over Matter; False (and streamed from now on,
         until the next activation) when it could not be sent. Only the speed
@@ -635,7 +671,7 @@ class MatrixMixin:
 
     def _standby_pixels(self) -> list:
         """A black frame as the drawing's pixels (the standby stream)."""
-        return self.device_profile.drawing_pixels(self._lamp_frame([(0, 0, 0)] * 100))
+        return self.device_profile.drawing_pixels(self._lamp_frame([(0, 0, 0)] * self.device_profile.pixels))
 
     async def _send_matrix_stream_frame(self, pixels) -> None:
         """A frame of the stream (under the lamp's lock): the drawing's new
@@ -719,7 +755,7 @@ class MatrixMixin:
             for camera in self._camera_entities or ():
                 frame = camera.simulated_lamp_frame()
                 if frame is not None:
-                    return list(frame)
+                    return fit_frame(frame, self._panel_width())
         seconds = max(0.0, time.monotonic() - self._matrix_command_at)
         return self._own_effect_frame(studio_render(seconds))
 

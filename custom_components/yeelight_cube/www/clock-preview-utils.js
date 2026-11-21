@@ -34,7 +34,7 @@ import {
 } from "./lamp-renderers.js";
 import { flipMatrixVertical, lampTurnsClock } from "./matrix-view.js";
 import { missStillValid } from "./sensor-lookup.js";
-import { shownColumns, withSpotColours } from "./matrix-modules.js";
+import { clockColumns, lampWidth, shownColumns, withSpotColours } from "./matrix-modules.js";
 import { effectFamilyOfName } from "./effect-families.js";
 import {
   FORMERLY_NUMBERED_EFFECT_NAMES,
@@ -545,7 +545,8 @@ function _clockGradientColor(palette, factor) {
   ];
 }
 
-function _clockPixelColor(styleId, charIndex, col) {
+// The style's colours run along the frame (`last`: its last column).
+function _clockPixelColor(styleId, charIndex, col, last = 19) {
   const fixed = {
     2: [0, 221, 255],
     4: [255, 255, 255],
@@ -593,12 +594,15 @@ function _clockPixelColor(styleId, charIndex, col) {
       [230, 248, 255],
     ],
   };
-  return _clockGradientColor(palettes[styleId] || [[255, 238, 0]], col / 19);
+  return _clockGradientColor(palettes[styleId] || [[255, 238, 0]], col / last);
 }
 
 /**
- * Render one clock frame as 100 [r,g,b] pixels (row-major, row 0 = top).
- * Mirrors _get_clock_preview() in camera.py, including colon blink.
+ * Render one clock frame as [r,g,b] pixels in lamp order (row-major, row 0
+ * = the lamp's bottom row): 100, or a longer Cube Matrix's width x 5
+ * (matrix-view.js lampWidth). Mirrors _get_clock_preview() in camera.py,
+ * including colon blink. The digits go on the lamp's 5 x 5 blocks only,
+ * centred across them, never on a spot (matrix-modules.js clockColumns).
  *
  * `attrs` fields used: clock_style_id, clock_style (name), clock_content,
  * clock_show_date, clock_12_hour, clock_colon_blink,
@@ -612,7 +616,9 @@ function _clockPixelColor(styleId, charIndex, col) {
  * at `speed` when given.
  */
 export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = null) {
+  // The glyphs' data is laid out 20 wide (row * 20 + column).
   const COLS = 20;
+  const width = lampWidth(attrs);
   const now = new Date();
 
   // 3-way clock content (byte 0): time | time_date (alternate) | date.
@@ -724,7 +730,11 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   // On a mount profile that turns the clock, the lamp lays the text out a
   // half turn round; the background stays where it is on the panel.
   const turned = lampTurnsClock(attrs);
-  const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
+  const matrix = Array.from({ length: width * 5 }, () => [0, 0, 0]);
+  // The columns the digits go on (the blocks', a spot's skipped), as one
+  // strip they are centred across.
+  const strip = clockColumns(attrs);
+  const stripWidth = strip.length;
   const chars = [...text];
   const font = fontMap || _CLOCK_FONT;
   const glyphs = chars.map((c) => font[c] || _CLOCK_FONT[c] || []);
@@ -733,18 +743,18 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
   );
   // Total drawn width = sum of advances minus the trailing gap of the last glyph.
   let totalWidth = Math.max(0, advances.reduce((a, b) => a + b, 0) - 1);
-  // Wider than the columns shown: the gaps either side of the separator close.
-  for (let i = 0; i < chars.length && totalWidth > columns; i++) {
+  // Wider than the strip: the gaps either side of the separator close.
+  for (let i = 0; i < chars.length && totalWidth > stripWidth; i++) {
     if ((chars[i] === ":" || chars[i] === ".") && i > 0 && advances[i - 1] > 1) {
       advances[i - 1] -= 1;
       totalWidth -= 1;
-      if (totalWidth > columns && advances[i] > 1) {
+      if (totalWidth > stripWidth && advances[i] > 1) {
         advances[i] -= 1;
         totalWidth -= 1;
       }
     }
   }
-  let offset = Math.max(0, Math.floor((columns - totalWidth) / 2));
+  let offset = Math.max(0, Math.floor((stripWidth - totalWidth) / 2));
 
   for (let i = 0; i < chars.length; i++) {
     const advance = advances[i];
@@ -755,19 +765,20 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0, speed = nul
     for (const pos of glyphs[i]) {
       const col = (pos % COLS) + offset;
       const row = Math.floor(pos / COLS);
-      if (col >= 0 && col < columns && row >= 0 && row < 5) {
+      if (col >= 0 && col < stripWidth && row >= 0 && row < 5) {
         // Where the lamp draws it: a background started directly may turn or
         // mirror the digits (clockDigitFlags); turned, a half turn within the
-        // columns shown.
-        const at = turned ? (4 - row) * COLS + (columns - 1 - col) : row * COLS + col;
-        for (const index of clockDigitTargets(at, digitFlags, columns * 5)) {
+        // strip; then on the strip's frame column.
+        const column = strip[turned ? stripWidth - 1 - col : col];
+        const at = (turned ? 4 - row : row) * width + column;
+        for (const index of clockDigitTargets(at, digitFlags, columns * 5, width)) {
           matrix[index] = effectFrame
-            ? effectFrame[index]
+            ? effectFrame[index] ?? [0, 0, 0]
             : soloBwFallback
               ? [255, 255, 255]
               : flatOverride
                 ? flatOverride
-                : _clockPixelColor(styleId, i, col);
+                : _clockPixelColor(styleId, i, strip[col], width - 1);
         }
       }
     }

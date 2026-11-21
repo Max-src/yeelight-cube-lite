@@ -1,5 +1,6 @@
-// The Cube Matrix Modules card's model (no Lit: the Node tests load it): a
-// lamp's module list and power supply side as the card shows and edits them,
+// The Cube Matrix modules model (no Lit: the Node tests load it): a
+// lamp's module list and power supply side as the Modules section
+// (matrix-modules-editor.js) shows and edits them,
 // and what saving a draft sends (set_matrix_modules, set_device_orientation).
 
 // The module types, as set_matrix_modules names them, in the card's order
@@ -12,7 +13,7 @@ export const MODULE_TYPES = Object.freeze([
 const TYPES = new Set(MODULE_TYPES.map((entry) => entry.type));
 
 // How many modules a lamp takes (device_profile.TOPOLOGY_SLOTS).
-export const MAX_MODULES = 6;
+export const MAX_MODULES = 8;
 
 // The side the power supply is on, as the Yeelight app lists them, and the
 // Device Orientation each is (device_profile.MATRIX_ROTATION_ORIENTATIONS):

@@ -122,10 +122,10 @@ export function magicHues(render, rate, width, height, out = new Int32Array(widt
   return out;
 }
 
-/** The converter's input at `render`, on the 20 x 5 box, by logical cell (row x
- * 20 + column). */
-export function magicCells(render, rate) {
-  return Array.from(magicHues(render, rate, COLS, ROWS), hueColour);
+/** The converter's input at `render`, on the `width` x 5 box (20, or a longer
+ * Cube Matrix's columns), by logical cell (row x width + column). */
+export function magicCells(render, rate, width = COLS) {
+  return Array.from(magicHues(render, rate, width, ROWS), hueColour);
 }
 
 function magicInit(settings) {

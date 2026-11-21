@@ -16,7 +16,7 @@ built-in modes (light_actions_native.py) and the diagnostics actions
 from __future__ import annotations
 
 from dataclasses import dataclass
-from .clock_face import clock_content
+from .clock_face import clock_content, clock_geometry
 from .const import MATRIX_DISPLAY_MODES
 from .light_actions_diagnostics import DiagnosticActionsMixin
 from .light_actions_display import DisplayActionsMixin
@@ -54,6 +54,13 @@ class PreviewState:
     clock_color_mode: str
     lamp_turns_clock: bool
     columns: int | None
+    # The frame's stride (device_profile.width: 20, or 5 a module of a Cube
+    # Matrix of more than 4 modules): frames are width x 5.
+    width: int = 20
+    # Where the clock's digits go (clock_face.clock_geometry: columns, width
+    # and the blocks' columns, a Spot's left out): clock_digit_pixels'
+    # keyword arguments.
+    clock_geometry: dict | None = None
 
 
 class ActionsMixin(DisplayActionsMixin, NativeActionsMixin, DiagnosticActionsMixin):
@@ -160,6 +167,12 @@ class ActionsMixin(DisplayActionsMixin, NativeActionsMixin, DiagnosticActionsMix
     def angle(self) -> float:
         return self._angle
 
+    @property
+    def frame_width(self) -> int:
+        """The columns of the lamp's frames (device_profile.width: 20, or 5
+        a module of a Cube Matrix of more than 4 modules)."""
+        return self._panel_width()
+
     def preview_state(self) -> PreviewState:
         """What the preview cameras draw from (camera.py), read at once: one
         frame never mixes two states of the light."""
@@ -190,6 +203,8 @@ class ActionsMixin(DisplayActionsMixin, NativeActionsMixin, DiagnosticActionsMix
             clock_color_mode=self._native_clock_color_mode,
             lamp_turns_clock=self.lamp_turns_clock,
             columns=self.device_profile.columns,
+            width=self.device_profile.width,
+            clock_geometry=clock_geometry(self.device_profile),
         )
 
     def setting(self, attr: str, default=None):

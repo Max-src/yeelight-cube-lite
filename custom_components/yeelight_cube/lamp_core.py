@@ -8,9 +8,10 @@ changes in place), r, g, b by pixel:
 
 - a logical strip or grid: pixel r * W + c of the segment geometry W x H;
 - a panel: the lamp's buffer, column-major, by index p (what step returns);
-- a lamp frame: row-major, row 0 = the bottom (what the integration uses).
+- a lamp frame: row-major, row 0 = the bottom (what the integration uses),
+  ``frame_width(N)`` pixels a row: 20, or a longer Cube Matrix's columns.
 
-The segment is always the lamp's full 100 pixels, on mount profile 2 (see
+The segment is the lamp's full 100 pixels (a Cube Matrix: 5 a column shown), on mount profile 2 (see
 lamp_renderers.py), at brightness 255, where the pixel writer stores what
 it is given: the lamp's partial-segment, mixer and dimming paths do not
 apply here. lamp_renderers.py explains LED drive against screen colors.
@@ -37,6 +38,8 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
 LENGTH = 100
 COLS = 20
 ROWS = 5
+# The widest segment: a Cube Matrix of 8 modules (device_profile.MAX_COLS).
+MAX_COLS = 40
 # The lamp's render cadence: two 10 ms ticks per pass, a render every 40 ms.
 RENDER_SECONDS = 0.040
 RENDER_MS = 40
@@ -500,14 +503,29 @@ def replays_in_full() -> bool:
 # that segment as the lamp's own do on a shorter one (the mapper and its
 # segment test take its length), so what moves stops at the last column
 # shown, not 5 columns past it. The settings carry it (lamp_renderers.
-# lamp_settings' ``columns``; settings_length reads it).
+# lamp_settings' ``columns``; settings_length reads it). A Cube Matrix of
+# more than 4 modules shows more than 20 columns: its segment is longer, and
+# its frames as wide as it (frame_width).
 def segment_length_for(columns) -> int:
-    """The pixels of a segment of ``columns`` columns (1 to 20, else 100)."""
+    """The pixels of a segment of ``columns`` columns (1 to MAX_COLS, else
+    100)."""
     try:
         columns = int(columns)
     except (TypeError, ValueError):
         return LENGTH
-    return columns * ROWS if 1 <= columns <= COLS else LENGTH
+    return columns * ROWS if 1 <= columns <= MAX_COLS else LENGTH
+
+
+def frame_width(length: int = LENGTH) -> int:
+    """The columns of the frame a segment of ``length`` pixels is shown on
+    (the stride of lamp order): 20, or its own columns when it has more
+    (device_profile.DeviceProfile.width)."""
+    return max(COLS, -(-int(length) // ROWS))
+
+
+def frame_width_for(columns) -> int:
+    """The frame width of a lamp showing ``columns`` columns (None: 20)."""
+    return frame_width(segment_length_for(columns))
 
 
 def settings_length(settings) -> int:
@@ -870,11 +888,11 @@ def panel_index(pixel: int, length: int, direction: int, profile: int) -> int | 
     return index if index < length else None
 
 
-def frame_index(buffer_index: int) -> int:
+def frame_index(buffer_index: int, width: int = COLS) -> int:
     """A panel buffer index (column-major, bottom first) as the integration's
-    frame index (row-major, row 0 = the bottom)."""
+    frame index (row-major, row 0 = the bottom) on a frame ``width`` wide."""
     column, row = divmod(buffer_index, ROWS)
-    return row * COLS + column
+    return row * width + column
 
 
 _FRAME_ORDERS: dict[int, tuple] = {}  # by segment length: lamp-order byte -> panel byte
@@ -892,14 +910,16 @@ def _picker(order):
 
 
 def _frame_order(length: int) -> tuple:
-    """Lamp-order byte -> panel byte for a segment of ``length`` pixels (a
-    shorter one: its columns first, the rest pointing past it: black)."""
+    """Lamp-order byte -> panel byte for a segment of ``length`` pixels, on
+    its frame (frame_width; a shorter one: its columns first, the rest
+    pointing past it: black)."""
     order = _FRAME_ORDERS.get(length)
     if order is None:
-        table = [3 * length] * (3 * LENGTH)
+        width = frame_width(length)
+        table = [3 * length] * (3 * width * ROWS)
         for pixel in range(length):
             for channel in range(3):
-                table[3 * frame_index(pixel) + channel] = 3 * pixel + channel
+                table[3 * frame_index(pixel, width) + channel] = 3 * pixel + channel
         order = _FRAME_ORDERS[length] = tuple(table)
     return order
 
@@ -943,12 +963,13 @@ def read_back(work, direction: int, profile: int = REFERENCE_PROFILE) -> bytes:
 
 def panel_to_frame(panel) -> bytes:
     """A panel as a lamp frame (20 x 5, a shorter segment's panel in its
-    first columns, the rest black)."""
+    first columns, the rest black; a longer one: as wide as its columns,
+    frame_width)."""
     length = len(panel) // 3
     pick = _FRAME_PICKERS.get(length)
     if pick is None:
         pick = _FRAME_PICKERS[length] = _picker(_frame_order(length))
-    if length == LENGTH:
+    if length == frame_width(length) * ROWS:
         return bytes(pick(panel))
     return bytes(pick(bytes(panel) + bytes(3)))
 
@@ -961,12 +982,13 @@ def frame_pixels(frame) -> list:
 def strip_frame(draws, direction: int, profile: int = REFERENCE_PROFILE, length: int = LENGTH) -> list:
     """The frame a renderer's pixel writes draw (logical index, r, g, b,
     in order: a later write wins) after its clear to black, on a segment of
-    ``length``."""
-    frame = [(0, 0, 0)] * LENGTH
+    ``length`` (its frame: frame_width)."""
+    width = frame_width(length)
+    frame = [(0, 0, 0)] * (width * ROWS)
     for pixel, red, green, blue in draws:
         index = panel_index(pixel, length, direction, profile)
         if index is not None:
-            frame[frame_index(index)] = (red, green, blue)
+            frame[frame_index(index, width)] = (red, green, blue)
     return frame
 
 
@@ -984,19 +1006,19 @@ def read_back_flags(mode: int, mapped: int, mixer: int = 0) -> int:
     return flags | 0x42 if mode == 51 else flags
 
 
-def clock_digit_targets(index: int, flags: int, length: int = LENGTH) -> list:
+def clock_digit_targets(index: int, flags: int, length: int = LENGTH, width: int = COLS) -> list:
     """Where the lamp draws the clock digits' pixel at frame ``index`` (lamp
-    order) on the flags its clock runs with: the writer turns them like any
-    pixel, and on the mirror bit draws only the first half of the strip (and
-    its mirror), on a segment of ``length`` (the columns shown). On the
-    clock's own 0x05: where it is."""
+    order, a frame ``width`` wide) on the flags its clock runs with: the
+    writer turns them like any pixel, and on the mirror bit draws only the
+    first half of the strip (and its mirror), on a segment of ``length``
+    (the columns shown). On the clock's own 0x05: where it is."""
     if flags == HANDOVER_FLAGS:
         return [index]
-    row, column = divmod(index, COLS)
+    row, column = divmod(index, width)
     pixel = column * ROWS + row
     if pixel >= length or flags & 0x08 and pixel >= length // 2:
         return []
-    return [frame_index(target) for target in flagged_targets(pixel, length, 0, flags)]
+    return [frame_index(target, width) for target in flagged_targets(pixel, length, 0, flags)]
 
 
 def flags_index(pixel: int, length: int, flags: int) -> int:

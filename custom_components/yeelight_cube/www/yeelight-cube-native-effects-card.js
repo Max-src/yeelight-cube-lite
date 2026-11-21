@@ -1022,7 +1022,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   // The lamp's effects by name (once per catalogue).
   _catalogue(attrs) {
     const list = attrs.native_effect_catalog;
-    if (this.__catalogue?.list !== list)
+    // No catalogue yet (it comes over the websocket): an empty map.
+    if (!this.__catalogue || this.__catalogue.list !== list)
       this.__catalogue = {
         list,
         byName: new Map(list?.map((item) => [item.name, item])),

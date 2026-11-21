@@ -25,9 +25,17 @@ LINK_RECOVERY_RETRY = 600.0
 # The wait after a try that could not even connect (s): the lamp was off the
 # network (seen 2026-11-16 18:27), which no try can mend.
 LINK_RECOVERY_UNREACHABLE_RETRY = 60.0
+# Such tries given back per stuck episode; after that one counts as a try: a
+# lamp that stays off the network was swept every minute until it was power
+# cycled (2026-11-20 13:19-13:26, "try 1 of 3" each time).
+LINK_RECOVERY_UNREACHABLE_FREE = 3
 # Seconds after the lamp answered the sweep before its content is drawn
 # again: its restart comes about 18 s after the answer.
 LINK_RECOVERY_RESTART_WAIT = 25.0
+# A sweep started at once by the stream's Matter check (_link_recovery_now)
+# comes at least this long after the one before: a lamp the sweep could not
+# bring back is left to the problem check's tries.
+LINK_RECOVERY_NOW_SPACING = 300.0
 
 
 class LinkRecoveryMixin:
@@ -40,6 +48,7 @@ class LinkRecoveryMixin:
         the episode."""
         if "lamp_not_responding" not in problems:
             self._link_recovery_tries = 0
+            self._link_recovery_misses = 0
             return
         if getattr(self, "is_cube_matrix", False) or self.hass is None:
             return
@@ -56,13 +65,37 @@ class LinkRecoveryMixin:
             self._async_recover_link(), name=f"yeelight_cube_link_recovery_{self._ip}",
         )
 
+    def _link_recovery_now(self) -> bool:
+        """A sweep at once, without waiting for the problem check to report
+        the lamp stuck (a minute of silence): the stream's Matter check found
+        its LED part silent (light_studio._stream_recover_now), and the sweep
+        works only before the lamp's network part restarts, 1.5 to 2.5
+        minutes after (2026-11-16 and 20). Not while one runs, nor within
+        LINK_RECOVERY_NOW_SPACING of the one before. Whether it started."""
+        if getattr(self, "is_cube_matrix", False) or self.hass is None:
+            return False
+        task = getattr(self, "_link_recovery_task", None)
+        if task is not None and not task.done():
+            return False
+        last = getattr(self, "_link_recovery_at", float("-inf"))
+        if time.monotonic() - last < LINK_RECOVERY_NOW_SPACING:
+            return False
+        self._link_recovery_tries = getattr(self, "_link_recovery_tries", 0) + 1
+        self._link_recovery_at = time.monotonic()
+        self._link_recovery_task = self._create_tracked_task(
+            self._async_recover_link(), name=f"yeelight_cube_link_recovery_{self._ip}",
+        )
+        return True
+
     async def _async_recover_link(self) -> bool:
         """One sweep (link_recovery.realign) under the lamp's lock, so nothing
         else reaches the lamp meanwhile; answered: the lamp's content again
         once it restarted. Whether it answered. While the sweep runs,
         operations on the lamp fail at once instead of waiting for it
         (_link_recovery_running, light_connection._execute_hardware_op)."""
-        _LOGGER.warning(
+        # Once per try: again after a try given back (unreachable) at INFO.
+        _LOGGER.log(
+            logging.INFO if getattr(self, "_link_recovery_misses", 0) else logging.WARNING,
             "[RECOVERY] [%s] The lamp is stuck: trying to bring it back over the LAN (try %s of %s)",
             self._ip, self._link_recovery_tries, LINK_RECOVERY_TRIES,
         )
@@ -74,7 +107,16 @@ class LinkRecoveryMixin:
                 size = await realign(self._ip, LAN_PORT)
         except (asyncio.TimeoutError, *LAMP_ERRORS) as err:
             # Off the network (it accepts no connection): no try spent, tried
-            # again once LINK_RECOVERY_UNREACHABLE_RETRY has passed.
+            # again once LINK_RECOVERY_UNREACHABLE_RETRY has passed, up to
+            # LINK_RECOVERY_UNREACHABLE_FREE times an episode.
+            misses = getattr(self, "_link_recovery_misses", 0) + 1
+            self._link_recovery_misses = misses
+            if misses > LINK_RECOVERY_UNREACHABLE_FREE:
+                _LOGGER.info(
+                    "[RECOVERY] [%s] Could not reach the lamp (%s): tried again in %.0f s",
+                    self._ip, type(err).__name__, LINK_RECOVERY_RETRY,
+                )
+                return False
             _LOGGER.info(
                 "[RECOVERY] [%s] Could not reach the lamp (%s): tried again in %.0f s",
                 self._ip, type(err).__name__, LINK_RECOVERY_UNREACHABLE_RETRY,

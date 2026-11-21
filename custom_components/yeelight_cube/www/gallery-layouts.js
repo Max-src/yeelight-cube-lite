@@ -13,7 +13,7 @@
 //   select(key), navigate(delta), setIndex(index), setPage(value),
 //   itemControls(item) (rename / delete of editable items, or nothing).
 import { html, nothing, unsafeHTML } from "./lib/lit-all.js";
-import { matrixCellStyle, matrixPreviewLayout } from "./gallery-display-utils.js";
+import { matrixCellModule, matrixCellStyle, matrixPreviewLayout } from "./gallery-display-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
 import { itemEmojis, itemIcons, itemIconsTemplate } from "./item-badges.js";
 import { renderCarousel } from "./carousel-utils.js";
@@ -37,7 +37,16 @@ export function matrixTemplate(colorData = [], options = {}) {
     data-vertical=${layout.vertical ? "true" : nothing}
     data-modules=${layout.places.length ? "true" : nothing}
     style=${layout.gridStyle}
-  >${layout.cells.map((_, index) => html`<div style=${matrixCellStyle(layout, index)}></div>`)}</div>`;
+  >${layout.cells.map((_, index) => {
+    // A spot's or a panel's cell names the pixels it shows (the painters'
+    // moduleCells, matrix-modules.js).
+    const module = matrixCellModule(layout, index);
+    return html`<div
+      data-module=${module ? module.module : nothing}
+      data-pixels=${module ? module.pixels.join(",") : nothing}
+      style=${matrixCellStyle(layout, index)}
+    ></div>`;
+  })}</div>`;
   return layout.proportionalSpacing
     ? html`<div style=${layout.wrapperStyle}>${grid}</div>`
     : grid;

@@ -1,13 +1,17 @@
 import { resolvePreviewAppearance } from "./preview-appearance.js";
 
 import { escapeHtml } from "./html-escape-utils.js";
-import { deviceOrientation } from "./matrix-view.js";
+import { deviceOrientation, toDisplayOrder, viewerFrame } from "./matrix-view.js";
+import { placeAttributes, placeLook, placeStyle, withSpotColours } from "./matrix-modules.js";
+import { contextGrid, previewContext } from "./preview-context.js";
 import "./mode-controls-ui.js";
 import {
   ModeControlsController,
+  actionButtonOrder,
   lampActionConfig,
 } from "./mode-controls-controller.js";
 import { CardCommandController } from "./card-command-controller.js";
+import { modeActionOptions } from "./action-button-utils.js";
 import { orientationOptions, nextOrientation, orientationControlModel } from "./orientation-control-utils.js";
 import { renderOrientationControls } from "./orientation-control-ui.js";
 
@@ -42,6 +46,8 @@ import {
 import { LAMP_PREVIEW_CSS } from "./lamp-preview-styles.js";
 import { AdjustmentControlsMixin } from "./lamp-preview-adjustments.js";
 import { MatrixPreviewMixin } from "./lamp-preview-matrix.js";
+import { MatrixModulesEditor } from "./matrix-modules-editor.js";
+import { isCubeMatrix } from "./matrix-modules-card-utils.js";
 
 
 // ================================================
@@ -119,7 +125,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       );
     this._actions = new ModeControlsController({
       kind: "lamp",
-      actionKeys: ["refresh", "power"],
+      actionKeys: ["refresh", "power", "modules"],
       items: () => [],
       current: () => null,
       on: () => this._hass?.states?.[this._primaryEntity()]?.state === "on",
@@ -130,7 +136,27 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
         ),
       command,
       refresh: () => command("force_refresh"),
+      // A Cube Matrix's Modules button: opens its Modules section.
+      extraActions: () =>
+        this._modulesShown()
+          ? [
+              {
+                key: "modules",
+                label: "Modules",
+                icon: "mdi:puzzle-outline",
+                selected: this._modulesOpen,
+                onClick: () => {
+                  this._modulesOpen = !this._modulesOpen;
+                  this._refresh();
+                },
+              },
+            ]
+          : [],
     });
+    // The Modules section (matrix-modules-editor.js): closed until its
+    // button opens it; its draft until saved.
+    this._modules = new MatrixModulesEditor(this);
+    this._modulesOpen = false;
     this._effectDebounceTimer = null;
     this._nativeAnimKey = null;
     // The matrix's animation (preview-animation.js, lamp-preview-matrix.js):
@@ -216,6 +242,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._orientationPending = null;
     this._orientationError = null;
     clearTimeout(this._orientationTimer);
+    this._modules.clear();
     // Unset options keep their defaults where they are read (the shared
     // slider config, the matrix geometry, the appearance resolver).
     this.config = resolvePreviewAppearance(
@@ -260,6 +287,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       // Matrix, Clock and Native Effect are drawn by different loops: a
       // switch must update the preview even when nothing else changed.
       contentMode: attrs?.content_mode ?? seen.contentMode,
+      // The Modules section's lamp (its modules, the power supply's side).
+      modules: MatrixModulesEditor.inputs(entity).join(" "),
     };
     // Adjustments the lamp now reports (or replaced: another dashboard) are
     // no longer shown locally. While others wait for the lamp's echo, only
@@ -273,7 +302,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       this._seen.state !== seen.state ||
       this._seen.brightness !== seen.brightness ||
       this._seen.matrix !== seen.matrix ||
-      this._seen.contentMode !== seen.contentMode
+      this._seen.contentMode !== seen.contentMode ||
+      this._seen.modules !== seen.modules
     )
       this._refresh();
   }
@@ -392,14 +422,15 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     // While the lamp streams its picture (a scrolling text), its last
     // streamed frame: matrix_colors lags behind (at most once a second).
     const streamed = this._animating("matrix") && this._streamedFrame();
-    if (streamed && dots.length === 100) {
+    const pixels = this._framePixels(stateObj);
+    if (streamed && dots.length === pixels) {
       this._animation?.forgetPaint();
       this._paintStreamed(streamed, stateObj, dots);
       return;
     }
     const matrixColors = stateObj.attributes.matrix_colors?.length
       ? stateObj.attributes.matrix_colors
-      : Array(100).fill(null);
+      : Array(pixels).fill(null);
     const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
     if (dots.length === gridColors.length)
       this._paintDots(
@@ -414,13 +445,28 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   _generateMatrixHtml(gridColors, stateObj) {
     const { layout, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);
+    // A Cube Matrix's modules (as _paintModules places the dots), a spot's
+    // or a panel's dot one face (matrix-modules.js).
+    const context = previewContext(stateObj?.attributes);
+    const grid = contextGrid(context, layout.tall);
+    const places = grid ? toDisplayOrder(grid.place, layout.tall) : [];
+    const viewer = grid
+      ? viewerFrame(withSpotColours(gridColors, context.lamp, "lamp"), context.orientation)
+      : null;
     const pixels = layout
       .display(gridColors)
-      .map((color) => {
+      .map((color, index) => {
+        const place = places[index];
+        if (place?.module) {
+          const look = placeLook(place, viewer, this._moduleShadow || "");
+          return `<div class="lamp-dot lamp-dot-module"${placeAttributes(place)} style="${escapeHtml(
+            `background:${look.background};box-shadow:${look.boxShadow};${placeStyle(place)}`,
+          )}"></div>`;
+        }
         const { isEmpty, displayColor } = this._dotAppearance(color || "#000000");
         return `<div class="lamp-dot${
           isEmpty ? " lamp-dot-empty" : ""
-        }" style="background: ${escapeHtml(displayColor)};"></div>`;
+        }" style="background: ${escapeHtml(displayColor)};${escapeHtml(placeStyle(place))}"></div>`;
       })
       .join("");
     return `<div style="${escapeHtml(outerStyle)}"><div class="lamp-preview-css" style="${escapeHtml(gridStyle)}">${pixels}</div></div>`;
@@ -437,24 +483,32 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     ];
   }
 
+  // The orientation row's options: shown in the Modules section while it
+  // is open when the card hides it (it is the power supply's side).
+  _orientationConfig() {
+    return this.config.show_device_orientation === false
+      ? { ...this.config, show_device_orientation: true }
+      : this.config;
+  }
+
   // What the row shows, as a comparable key (re-render only on change).
   _orientationKey(stateObj) {
     const [current, unavailable] = this._orientationState(stateObj);
     return `${JSON.stringify(
-      orientationControlModel(this.config, current, unavailable),
+      orientationControlModel(this._orientationConfig(), current, unavailable),
     )}\u0000${this._orientationError || ""}`;
   }
 
-  _orientationTemplate(stateObj) {
+  _orientationTemplate(stateObj, caption = "") {
     const [current, unavailable] = this._orientationState(stateObj);
     this._renderedOrientationKey = this._orientationKey(stateObj);
     const error = this._orientationError
       ? html`<div class="orientation-error" role="alert">${this._orientationError}</div>`
       : nothing;
     return html`<div class="orientation-controls">
-      ${renderOrientationControls(this.config, current, unavailable, (event) =>
+      ${renderOrientationControls(this._orientationConfig(), current, unavailable, (event) =>
         this.handleOrientationControl(event),
-      )}${error}
+      caption)}${error}
     </div>`;
   }
 
@@ -580,9 +634,36 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
         area="actions"
         .model=${this._actions}
       ></yeelight-mode-controls
-      >${this.config.show_device_orientation !== false
+      >${this._modulesTemplate(stateObj)}${this.config.show_device_orientation !== false
         ? this._orientationTemplate(stateObj)
         : nothing}${slider ? unsafeHTML(slider) : nothing}`;
+  }
+
+  // Whether the card offers the Modules section: a Cube Matrix (it
+  // publishes its modules), its button in the Actions row (the editor's
+  // Actions & Order list adds or removes it).
+  _modulesShown(stateObj = this._hass?.states?.[this._primaryEntity()]) {
+    return (
+      this.config.show_actions !== false &&
+      actionButtonOrder(this.config, ["refresh", "power", "modules"]).includes("modules") &&
+      this.config.show_lamp_control !== false &&
+      isCubeMatrix(stateObj?.attributes)
+    );
+  }
+
+  // The Modules section, while open: the draft chain, the add buttons, Reset
+  // and Save. The power supply's side is the Device Orientation row; with the
+  // card's row hidden, the section shows it.
+  _modulesTemplate(stateObj) {
+    if (!this._modulesOpen || !this._modulesShown(stateObj)) return nothing;
+    return this._modules.render(this._hass, this._primaryEntity(), {
+      config: this.config,
+      buttons: modeActionOptions(this.config),
+      orientation:
+        this.config.show_device_orientation === false
+          ? this._orientationTemplate(stateObj, "Lamp mounted")
+          : null,
+    });
   }
 
   render() {
@@ -637,6 +718,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     clearTimeout(this._orientationTimer);
+    this._modules.clear();
     // Clear all stored debounce/timeout timers
     clearTimeout(this._effectDebounceTimer);
 

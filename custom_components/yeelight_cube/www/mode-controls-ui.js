@@ -39,6 +39,7 @@ import {
 } from "./mode-controls-controller.js";
 import { defineOnce } from "./card-registration.js";
 import { previewContext } from "./preview-context.js";
+import { moduleCells, paintModuleCells } from "./matrix-modules.js";
 import {
   createRafLoop,
   createVisibilityTracker,
@@ -145,13 +146,18 @@ class YeelightModeControls extends LitElement {
 
   _collectPreviewTargets() {
     return [...this.shadowRoot.querySelectorAll("[data-preview]")].map(
-      (node) => ({
-        key: node.dataset.preview,
-        smooth: !!this.model.adapter.smooth?.(node.dataset.preview),
-        colorMode: node.dataset.colorMode || undefined,
-        color: node.dataset.color ? JSON.parse(node.dataset.color) : undefined,
-        cells: matrixPreviewCells(node.querySelector(".gallery-matrix-preview")),
-      }),
+      (node) => {
+        const cells = matrixPreviewCells(node.querySelector(".gallery-matrix-preview"));
+        return {
+          key: node.dataset.preview,
+          smooth: !!this.model.adapter.smooth?.(node.dataset.preview),
+          colorMode: node.dataset.colorMode || undefined,
+          color: node.dataset.color ? JSON.parse(node.dataset.color) : undefined,
+          cells,
+          // A Cube Matrix's spots and panels: one face each (matrix-modules.js).
+          faces: moduleCells(cells),
+        };
+      },
     );
   }
 
@@ -178,6 +184,7 @@ class YeelightModeControls extends LitElement {
         target.color,
       );
       target.cells.forEach((cell, index) => {
+        if (cell._module) return;
         const rgb = pixels?.[index] || [0, 0, 0];
         const off = !rgb.some(Boolean);
         // Change-only write (tracked on the node, not via style read-back,
@@ -187,6 +194,8 @@ class YeelightModeControls extends LitElement {
           off && transparentOff ? "transparent" : `rgb(${rgb.join(",")})`,
         );
       });
+      // Their shadow stays the markup's (matrixCellStyle).
+      paintModuleCells(target.faces, pixels);
     }
   }
 
@@ -422,13 +431,25 @@ class YeelightModeControls extends LitElement {
             },
           ),
       };
-      return html` ${config.show_actions !== false &&
-      actionButtonOrder(config, adapter.actionKeys).length
+      // A card's own buttons (the Lamp Preview's Modules), {key, label,
+      // icon, selected, onClick}: in the order and list of its actionKeys
+      // like the shared ones; a key the card offers none for (Modules on a
+      // Cube Lite) shows nothing.
+      for (const { key, label, icon, selected, onClick } of adapter.extraActions?.() || [])
+        buttons[key] = () =>
+          this._button(label, icon, onClick, {
+            compact: true,
+            selected,
+            dataMode: key,
+            disabled: false,
+          });
+      const shown = actionButtonOrder(config, adapter.actionKeys).filter(
+        (key) => buttons[key],
+      );
+      return html` ${config.show_actions !== false && shown.length
         ? html`<div class="actions">
             ${renderActionRow(
-              html`${actionButtonOrder(config, adapter.actionKeys).map((key) =>
-                buttons[key]?.(),
-              )}`,
+              html`${shown.map((key) => buttons[key]())}`,
               modeActionOptions(config),
             )}
           </div>`

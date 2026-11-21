@@ -8,11 +8,18 @@
 // modules (a Cube Matrix's columns and spots, its grid: matrix-modules.js)
 // and the effect's settings as the lamp reports them (speed, intensity,
 // palette, color mode...). A Cube Lite, or no lamp at all, is all 20 columns
-// and no spot.
+// and no spot; a Cube Matrix of more than 4 modules is wider (5 columns a
+// module, up to 40: its frames are `width` x 5).
 import { chosenIntensity, chosenSpeed } from "./lamp-settings.js";
 import { adjustmentsOf } from "./color-adjustments.js";
 import { moduleGrid, moduleKey, shownColumns, spotsOf } from "./matrix-modules.js";
-import { MATRIX_ROWS, deviceOrientation, isUpsideDownMount, isVerticalMount } from "./matrix-view.js";
+import {
+  MATRIX_ROWS,
+  deviceOrientation,
+  isUpsideDownMount,
+  isVerticalMount,
+  lampWidth,
+} from "./matrix-view.js";
 
 // Contexts by attributes object, then by options: Home Assistant gives a
 // new attributes object for each state, so the same one always means the
@@ -30,10 +37,11 @@ const NO_ATTRIBUTES = Object.freeze({});
  *
  * Fields: attrs (as given), lamp (the attributes with the orientation shown:
  * what matrix-modules.js reads), orientation, vertical (standing on its
- * end), upsideDown, frame, columns (the columns the lamp shows, 1-20),
- * length (the pixels its effects are drawn on), modules (matrix_modules or
- * null), spots, grid (matrix-modules.js moduleGrid for `vertical`, null for
- * the whole 20 x 5 frame), moduleKey, speed and intensity (as chosen,
+ * end), upsideDown, frame, columns (the columns the lamp shows, 1-40),
+ * width (its frames' columns: max(20, columns)), length (the pixels its
+ * effects are drawn on: columns x 5), modules (matrix_modules or null),
+ * spots, grid (matrix-modules.js moduleGrid for `vertical`, null for the
+ * whole frame), moduleKey, speed and intensity (as chosen,
  * 0-255), direction, color, colorMode, palette, stored, layout,
  * adjustments.
  */
@@ -64,6 +72,7 @@ function buildContext(attrs, pendingOrientation, frame) {
     upsideDown: isUpsideDownMount(orientation),
     frame,
     columns,
+    width: lampWidth(attrs),
     length: columns * MATRIX_ROWS,
     modules: Array.isArray(attrs.matrix_modules) ? attrs.matrix_modules : null,
     spots: spotsOf(attrs),

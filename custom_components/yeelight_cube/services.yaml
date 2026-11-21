@@ -313,14 +313,23 @@ set_text_colors:
 
 apply_custom_pixels:
   name: Apply Custom Pixels
-  description: Display a pixel art frame on the 20x5 matrix. Positions run 0-99 left-to-right then bottom-to-top; missing positions stay black.
+  description: "Display a pixel art frame on the matrix. Positions run left-to-right then bottom-to-top (row * width + column: 0-99 on the 20x5 matrix); missing positions stay black."
   fields:
     pixels:
-      description: Array of entries with position and color. position is a single index (0-99) or a list of indexes; color is [R, G, B].
+      description: "Array of entries with position and color. position is a single index (row * width + column: 0-99 on the 20x5 matrix) or a list of indexes; color is [R, G, B]."
       example: '[{"position": 49, "color": [255, 255, 0]}, {"position": [0, 1, 2], "color": [0, 128, 255]}]'
       required: true
       selector:
         object:
+    width:
+      description: "The drawing's width in columns: its positions are row * width + column (default 20; a Cube Matrix of more than 4 modules can take 5 columns a module, up to 40)."
+      example: 30
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 40
+          mode: box
     name:
       description: The name of the pixel art these pixels are, if any, so the Pixel Art select shows it. Without it the select is cleared.
       example: "Cat"
@@ -784,11 +793,20 @@ save_pixel_art:
   description: Save a drawing as a named pixel art in the shared collection for later reuse.
   fields:
     pixels:
-      description: Array of entries with position and color; position is an index (0-99) or a list of indexes, color is [R, G, B]
+      description: "Array of entries with position and color; position is an index (row * width + column: 0-99 on the 20x5 matrix) or a list of indexes, color is [R, G, B]"
       example: '[{"position": 0, "color": [255, 0, 0]}, {"position": [5, 6, 7], "color": [0, 255, 0]}]'
       required: true
       selector:
         object:
+    width:
+      description: "The drawing's width in columns: its positions are row * width + column (default 20; a Cube Matrix of more than 4 modules can take 5 columns a module, up to 40)."
+      example: 30
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 40
+          mode: box
     name:
       description: Name for the saved pixel art (defaults to "Pixel Art N")
       example: "My Drawing"
@@ -949,7 +967,7 @@ update_pixel_arts:
   description: Append or replace the pixel art collection. Default is non-destructive (appends to existing).
   fields:
     pixel_arts:
-      description: Array of pixel art objects with name, pixels (entries with position and color, as accepted by save_pixel_art) and optional orientation ("horizontal" or "vertical")
+      description: Array of pixel art objects with name, pixels (entries with position and color, as accepted by save_pixel_art), optional orientation ("horizontal" or "vertical") and optional width (columns, default 20)
       example: '[{"name": "Art1", "pixels": [{"position": 0, "color": [255, 0, 0]}, {"position": [1, 2], "color": [0, 255, 0]}]}]'
       required: true
       selector:
@@ -1477,7 +1495,7 @@ set_rotation_interval:
 
 set_matrix_modules:
   name: Set Cube Matrix modules
-  description: Tell a Cube Matrix which modules it has, from the base, as the Yeelight app's module splicing does (over Matter). The lamp cannot detect them; it keeps the list and lays its own effects and clock out for it.
+  description: Tell a Cube Matrix which modules it has, from the base, as the Yeelight app's module splicing does (over Matter). The lamp cannot detect them; it keeps the list and lays its own effects and clock out for it. A block left off the list stays dark except for one green light in its corner; blocks and Spots taken off are left dark.
   fields:
     entity_id:
       description: The Cube Matrix's light entity.
@@ -1488,7 +1506,7 @@ set_matrix_modules:
           domain: light
           integration: yeelight_cube
     modules:
-      description: 'The modules in chain order from the base: matrix (5 x 5), spot or panel; 1 to 6.'
+      description: 'The modules in chain order from the base: matrix (5 x 5), spot or panel; 1 to 8.'
       example: '["matrix", "matrix", "spot", "matrix"]'
       required: true
       selector:

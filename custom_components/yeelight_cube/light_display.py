@@ -408,7 +408,7 @@ class DisplayMixin:
                 "text='%s' mode='%s' "
                 "idle=%.1fs fx_age=%.0fs "
                 "bright=%s/255 hw=%s%%",
-                self._ip, lit, 100 - lit,
+                self._ip, lit, len(frame) - lit,
                 # estimated draw of the frame sent (see lamp_power.py)
                 self._last_frame_power,
                 "" if lamp_frame is frame else

@@ -26,7 +26,7 @@ from .const import (
 )
 from .effect_catalog import NATIVE_CLOCK_APPLY, NATIVE_CLOCK_EFFECT_ID
 from .errors import invalid
-from .layout import TOTAL_COLUMNS, TOTAL_ROWS
+from .layout import TOTAL_ROWS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ class DisplayActionsMixin:
 
     # ── Display actions (light_services_display) ────────────────────────
     def gradient_preview(self, mode: str) -> list:
-        """The lamp's 100 colors in ``mode`` from its current text, colors,
+        """The lamp's frame (device_profile.pixels colors) in ``mode`` from its current text, colors,
         angle and background: the lamp's own text-mode frame
         (_text_mode_frame), without the orientation flip (the cards apply
         it)."""
@@ -188,7 +188,7 @@ class DisplayActionsMixin:
                 mode, text, self._text_colors, self._angle, offset, width
             )
         else:
-            frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
+            frame = [None] * (self._panel_width() * TOTAL_ROWS)
         background = self._background_color
         return [background if color is None else color for color in frame]
 

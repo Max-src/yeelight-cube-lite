@@ -10,6 +10,7 @@ import { LAMP_ANIMATIONS } from "./lamp-animations.js";
 import { studioAnimationFrames, studioLook, studioPalette } from "./lamp-studio.js";
 import { adjustColor, adjustmentsKey } from "./color-adjustments.js";
 import { MATRIX_COLS, MATRIX_ROWS, MATRIX_SIZE, isUpsideDownMount } from "./matrix-view.js";
+import { frameWidthFor } from "./lamp-core.js";
 
 /** Each animation's key by its effect name (effect_catalog.py LAMP_ANIMATION_EFFECTS). */
 export const ANIMATION_EFFECTS = Object.fromEntries(
@@ -106,10 +107,44 @@ const lampFrames = new WeakMap();
 // its GIFs, the picture as it is, which the lamp shows rearranged.
 export const ANIMATION_LAYOUT_APP = "app";
 
+// lamp_animations.py REPEATED_ANIMATIONS: repeated along a wider lamp; the
+// others are stretched over it.
+export const REPEATED_ANIMATIONS = new Set(["snowfall"]);
+
+/** A 20-wide lamp-order frame on a lamp showing `columns` (null: 20): as it
+ * is up to 20, else as wide as them: animation `key` repeated every 20
+ * columns (REPEATED_ANIMATIONS), else stretched, each column blended from
+ * the two nearest of the picture (lamp_animations.py widen_frame, the same
+ * integer arithmetic). */
+export function widenFrame(frame, columns = null, key = null) {
+  const width = frameWidthFor(columns);
+  if (width === MATRIX_COLS) return frame;
+  const out = [];
+  const span = width - 1;
+  const repeated = REPEATED_ANIMATIONS.has(key);
+  for (let row = 0; row < MATRIX_ROWS; row++) {
+    const line = frame.slice(row * MATRIX_COLS, (row + 1) * MATRIX_COLS);
+    for (let column = 0; column < width; column++) {
+      if (repeated) {
+        out.push(line[column % MATRIX_COLS]);
+        continue;
+      }
+      const position = column * (MATRIX_COLS - 1);
+      const left = Math.floor(position / span);
+      const part = position % span;
+      const near = line[left];
+      const far = line[Math.min(left + 1, MATRIX_COLS - 1)];
+      out.push(near.map((a, channel) => Math.floor((a * (span - part) + far[channel] * part + Math.floor(span / 2)) / span)));
+    }
+  }
+  return out;
+}
+
 /** The frame in lamp order for a mount (lamp_animations.py animation_frame),
  * in `layout` (upright unless ANIMATION_LAYOUT_APP: file pixel n at column
  * n / 5, row n % 5 from the top, whatever the mount), at the effect `speed`
- * with the color `adjustments`. */
+ * with the color `adjustments`, on a lamp showing `columns` (null: 20; more:
+ * widenFrame). */
 export function animationFrame(
   key,
   seconds,
@@ -118,28 +153,32 @@ export function animationFrame(
   speed = null,
   adjustments = null,
   palette = null,
+  columns = null,
 ) {
   const shown = animationFrameAt(key, seconds, speed, adjustments, palette);
   let byMount = lampFrames.get(shown);
   if (!byMount) lampFrames.set(shown, (byMount = new Map()));
-  if (layout === ANIMATION_LAYOUT_APP) {
-    if (!byMount.has(layout)) {
+  const width = frameWidthFor(columns);
+  const app = layout === ANIMATION_LAYOUT_APP;
+  const turned = !app && isUpsideDownMount(orientation);
+  const base = app ? layout : turned;
+  const held = width === MATRIX_COLS ? base : `${base}|${width}`;
+  if (!byMount.has(held)) {
+    if (!byMount.has(base)) {
       const frame = [];
-      for (let row = 0; row < MATRIX_ROWS; row++)
-        for (let column = 0; column < MATRIX_COLS; column++)
-          frame.push(shown[column * MATRIX_ROWS + (MATRIX_ROWS - 1 - row)]);
-      byMount.set(layout, frame);
+      if (app) {
+        for (let row = 0; row < MATRIX_ROWS; row++)
+          for (let column = 0; column < MATRIX_COLS; column++)
+            frame.push(shown[column * MATRIX_ROWS + (MATRIX_ROWS - 1 - row)]);
+      } else {
+        const topFirst = turned ? shown.slice().reverse() : shown;
+        for (let row = 0; row < MATRIX_ROWS; row++)
+          for (let column = 0; column < MATRIX_COLS; column++)
+            frame.push(topFirst[(MATRIX_ROWS - 1 - row) * MATRIX_COLS + column]);
+      }
+      byMount.set(base, frame);
     }
-    return byMount.get(layout);
+    if (held !== base) byMount.set(held, widenFrame(byMount.get(base), columns, key));
   }
-  const turned = isUpsideDownMount(orientation);
-  if (!byMount.has(turned)) {
-    const topFirst = turned ? shown.slice().reverse() : shown;
-    const frame = [];
-    for (let row = 0; row < MATRIX_ROWS; row++)
-      for (let column = 0; column < MATRIX_COLS; column++)
-        frame.push(topFirst[(MATRIX_ROWS - 1 - row) * MATRIX_COLS + column]);
-    byMount.set(turned, frame);
-  }
-  return byMount.get(turned);
+  return byMount.get(held);
 }

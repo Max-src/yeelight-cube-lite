@@ -17,6 +17,12 @@ The lamp plays a GIF at the pace of its frame delays (the effect's rate does
 not change it), so the effect speed is in the GIF: animation_delays. So are
 the Lamp Preview card's color adjustments (color_adjustments), as for the
 pixels the integration sends.
+
+A Cube Matrix of more than 4 modules is wider than an animation: its frames
+are as wide as its columns and the animation covers them all (widen_frame):
+repeated along the lamp when its picture is scattered dots (Snowfall: its last
+column runs on into its first as smoothly as any two neighbours), stretched
+otherwise (the glows and waves would show a hard edge every 20 columns).
 """
 from __future__ import annotations
 
@@ -36,6 +42,7 @@ try:
         ANIMATION_LAYOUT_APP,
         DEFAULT_NATIVE_EFFECT_SPEED,
     )
+    from .lamp_core import frame_width_for
     from .lamp_studio import studio_animation_frames, studio_look, studio_palette
 except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
     import os
@@ -51,6 +58,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         ANIMATION_LAYOUT_APP,
         DEFAULT_NATIVE_EFFECT_SPEED,
     )
+    from lamp_core import frame_width_for
     from lamp_studio import studio_animation_frames, studio_look, studio_palette
 
 COLS, ROWS = 20, 5
@@ -176,17 +184,48 @@ def app_layout_order(frame) -> list:
     ]
 
 
+# The animations repeated along a wider lamp (widen_frame); the others are
+# stretched over it.
+REPEATED_ANIMATIONS = frozenset({"snowfall"})
+
+
+def widen_frame(frame, columns, key: str | None = None) -> list:
+    """A 20-wide lamp-order frame on a lamp showing ``columns`` (None: 20):
+    as it is up to 20, else as wide as them: animation ``key`` repeated
+    every 20 columns (REPEATED_ANIMATIONS), else stretched over them, each
+    column blended from the two nearest of the picture (integer arithmetic:
+    the previews, lamp-animation-frames.js, draw the same)."""
+    width = frame_width_for(columns)
+    if width == COLS:
+        return list(frame)
+    out = []
+    span = width - 1
+    for row in range(ROWS):
+        line = [tuple(frame[row * COLS + column]) for column in range(COLS)]
+        for column in range(width):
+            if key in REPEATED_ANIMATIONS:
+                out.append(line[column % COLS])
+                continue
+            position = column * (COLS - 1)
+            left, part = divmod(position, span)
+            near, far = line[left], line[min(left + 1, COLS - 1)]
+            out.append(tuple((a * (span - part) + b * part + span // 2) // span for a, b in zip(near, far)))
+    return out
+
+
 def animation_frame(
     key: str, seconds: float, orientation: str | None = None, layout: str | None = None,
     speed: int | None = None, adjustments: dict | None = None, palette=None,
+    columns: int | None = None,
 ) -> list:
     """The frame in lamp order, as the previews draw it, in ``layout``
     (ANIMATION_LAYOUTS; the upright one when None), at the effect ``speed``,
-    in the Studio ``palette``, with the color ``adjustments``."""
+    in the Studio ``palette``, with the color ``adjustments``, on a lamp
+    showing ``columns`` (None: 20; more: widen_frame)."""
     shown = animation_frame_at(key, seconds, speed, adjustments, palette)
     if layout == ANIMATION_LAYOUT_APP:
-        return app_layout_order(shown)
-    return lamp_order(shown, orientation)
+        return widen_frame(app_layout_order(shown), columns, key)
+    return widen_frame(lamp_order(shown, orientation), columns, key)
 
 
 def gif_order(frame) -> list:

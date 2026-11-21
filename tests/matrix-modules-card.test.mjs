@@ -46,11 +46,13 @@ test("the power supply side is the opposite of the Device Orientation", () => {
   assert.equal(supplyForOrientation(undefined), "left");
 });
 
-test("modules are added at the end, up to six, and removed anywhere", () => {
+test("modules are added at the end, up to eight, and removed anywhere", () => {
   let layout = savedLayout(LAMP);
   layout = withModuleAdded(layout, "panel");
   assert.deepEqual(layout.modules.at(-1), "panel");
   layout = withModuleAdded(withModuleAdded(layout, "matrix"), "matrix");
+  layout = withModuleAdded(withModuleAdded(layout, "spot"), "panel");
+  assert.equal(MAX_MODULES, 8);
   assert.equal(layout.modules.length, MAX_MODULES);
   assert.equal(withModuleAdded(layout, "spot"), layout);
   assert.equal(withModuleAdded(savedLayout(LAMP), "lamp").modules.length, 4);

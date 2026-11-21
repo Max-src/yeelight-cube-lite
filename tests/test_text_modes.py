@@ -59,7 +59,7 @@ NAMESPACE = {
             "PANEL_FULL_CHAR", "TEXT_RENDER_MODES",
         )
     },
-    **{name: LAYOUT[name] for name in ("FONT_MAPS", "Module", "TOTAL_COLUMNS", "TOTAL_ROWS", "char_advance")},
+    **{name: LAYOUT[name] for name in ("FONT_MAPS", "Module", "TOTAL_COLUMNS", "TOTAL_ROWS", "char_advance", "glyph_cells")},
     "rgb_to_hex": COLOR_UTILS["rgb_to_hex"],
     "math": math,
     "random": random,
@@ -74,7 +74,7 @@ METHODS = {
     "_apply_display_mode_internal", "_text_mode_frame", "_place_frame",
     "_panel_sequence_frame", "place_pixels", "letter_size", "_char_advance", "get_positions_for_letter",
     "calculate_multi_gradient_color", "calculate_text_offset",
-    "_flip_position", "_flip_positions", "_shown_columns", "gradient_preview",
+    "_flip_position", "_flip_positions", "_shown_columns", "_panel_width", "_glyph_cells", "gradient_preview",
     # light_state's transitions, which the renderer goes through.
     "_enter_mode", "_set_scrolling", "_set_display_frozen",
 }

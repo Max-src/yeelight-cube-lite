@@ -161,7 +161,7 @@ def migrate_pixel_arts(raw_pixel_arts: list) -> tuple[list, bool]:
             else:
                 # Flat or legacy "positions" form: drop black pixels and
                 # duplicate positions, group the rest by color.
-                art = stored_pixel_art(safe_name, art["pixels"], art.get("orientation"))
+                art = stored_pixel_art(safe_name, art["pixels"], art.get("orientation"), art.get("width"))
                 changed = True
         migrated.append(art)
     return migrated, changed

@@ -13,6 +13,13 @@ A lit pixel costs about the same whatever its color (50 red = 50 blue), each
 extra channel adds less, and the draw levels off near 6 W: a full-white panel
 reads 6.1 W. See "Power Supply" in the README.
 
+The readings are of a panel of MODEL_PIXELS (100) pixels. A longer frame (a
+Cube Matrix of more than 4 modules: 5 columns a module, up to 200 pixels)
+levels off proportionally higher: SPAN_W scales with its pixels, so each
+module's pixels cost what the Cube Lite's do (an estimate: that lamp was not
+measured). The power limit's top value, NO_LIMIT_W, means "no limit" on
+every lamp, so the limit slider still reaches it on a longer one.
+
 The frames given here are never a display's. For an effect or an animated clock
 they are the lamp's LED drive, on the demo beat for a music slot, so rougher;
 for Music Flow, the stored GIF or a solid clock, an illustration or approximation
@@ -27,7 +34,19 @@ BASE_W = 0.4  # electronics, panel dark
 PIXEL_W = 0.042  # per lit pixel at full value (its brightest channel)
 CHANNEL_W = 0.028  # per channel (R, G or B) at full value
 SPAN_W = 7.2  # the draw levels off towards BASE_W + SPAN_W
-NO_LIMIT_W = 7.0  # power limit meaning "no limit": above any real frame
+NO_LIMIT_W = 7.0  # power limit meaning "no limit": above any real Cube Lite frame
+# The pixels the model was fitted on (a Cube Lite's 20 x 5).
+MODEL_PIXELS = 100
+
+
+def span_watts(frame) -> float:
+    """SPAN_W for ``frame``'s pixels: as measured up to MODEL_PIXELS, in
+    proportion beyond (a longer Cube Matrix)."""
+    try:
+        pixels = len(frame)
+    except TypeError:
+        return SPAN_W
+    return SPAN_W * max(1.0, pixels / MODEL_PIXELS)
 
 
 def panel_drive(frame, hardware_brightness: float = 100) -> float:
@@ -41,13 +60,15 @@ def panel_drive(frame, hardware_brightness: float = 100) -> float:
 def estimated_power(frame, hardware_brightness: float = 100) -> float:
     """Estimated draw of a lamp showing ``frame``, in W."""
     drive = panel_drive(frame, hardware_brightness)
-    return BASE_W + SPAN_W * (1 - math.exp(-drive / SPAN_W))
+    span = span_watts(frame)
+    return BASE_W + span * (1 - math.exp(-drive / span))
 
 
 def limit_frame_power(frame, max_watts: float, hardware_brightness: float = 100):
     """``frame`` scaled down uniformly so the lamp draws at most ``max_watts``.
 
-    Returned unchanged when the limit is off (NO_LIMIT_W or more) or the
+    Returned unchanged when the limit is off (NO_LIMIT_W or more, whatever
+    the frame's length) or the
     frame is already within it. Scaling keeps every color's hue and the
     picture's shading; it only makes the frame darker.
     """
@@ -62,8 +83,9 @@ def limited_frame(frame, max_watts: float, hardware_brightness: float = 100):
     power = estimated_power(frame, hardware_brightness)
     if max_watts >= NO_LIMIT_W or power <= max_watts:
         return frame, power
-    panel_watts = min(max(max_watts - BASE_W, 0.0), SPAN_W * 0.999)
-    target_drive = -SPAN_W * math.log(1 - panel_watts / SPAN_W)
+    span = span_watts(frame)
+    panel_watts = min(max(max_watts - BASE_W, 0.0), span * 0.999)
+    target_drive = -span * math.log(1 - panel_watts / span)
     factor = target_drive / panel_drive(frame, hardware_brightness)
     # Both terms of the drive scale with the pixel values, and rounding down
     # keeps the result within the limit.

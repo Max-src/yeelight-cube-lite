@@ -11,7 +11,8 @@ from .const import (
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
 )
-from .device_profile import TOPOLOGY_NAMES, TOPOLOGY_SLOTS, profile_for
+from .pixel_art_storage import pixels_at_width
+from .device_profile import TOPOLOGY_MATRIX, TOPOLOGY_NAMES, TOPOLOGY_PANEL, TOPOLOGY_SLOTS, TOPOLOGY_SPOT, profile_for
 from .input_error import InputError
 from .matter_commands import CUBE_CONTROL_CLUSTER
 from .matter_link import START_UP_ON_OFF
@@ -25,6 +26,21 @@ from .light_matrix import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# The wait after switching a Cube Matrix off, before a shorter module list is
+# written: the lamp writes its listed blocks black (async_set_matrix_modules).
+MODULES_BLANK_SETTLE = 1.5
+
+
+def _drives_fewer(new, old) -> bool:
+    """Whether the list ``new`` leaves modules of ``old`` without data: fewer
+    5 x 5 blocks (Matrix and Panel, the LED line) or fewer Spots (an output
+    of their own, dropped by the lamp when no Spot is listed)."""
+    def count(module_types, kinds):
+        return sum(1 for kind in module_types if kind in kinds)
+    blocks = (TOPOLOGY_PANEL, TOPOLOGY_MATRIX)
+    spots = (TOPOLOGY_SPOT,)
+    return count(new, blocks) < count(old, blocks) or count(new, spots) < count(old, spots)
 
 
 class MatrixSettingsMixin:
@@ -61,13 +77,23 @@ class MatrixSettingsMixin:
         _LOGGER.info(
             "[MATRIX] [%s] Modules changed: %s -> %s", self._ip, profile.module_types, rebuilt.module_types,
         )
+        old_width = profile.width
         self._lamp_client.profile = rebuilt
+        # The Matter link's copy too (the rotation check reads it).
+        if (link := getattr(self, "_matter", None)) is not None and isinstance(getattr(link, "values", None), dict):
+            link.values["topology"] = (list(rebuilt.module_types) + [0] * TOPOLOGY_SLOTS)[:TOPOLOGY_SLOTS]
+        # A drawing shown keeps its place when the frame's width changes
+        # (positions are row * width + column).
+        if getattr(self, "_custom_pixels", None) and rebuilt.width != old_width:
+            self._custom_pixels = pixels_at_width(self._custom_pixels, old_width, rebuilt.width)
         self._matrix_shown = None
         self._matrix_rotated(rebuilt.rotation, start=True)
         if self._is_on and self.hass is not None:
             self._async_check_problems()
+            # A deliberate redraw (as restore_state's): a text_change is
+            # dropped while the lamp is in a built-in mode.
             self._create_tracked_task(
-                self.async_apply_display_mode(update_type="text_change"),
+                self.async_apply_display_mode(update_type="color_change"),
                 name=f"yeelight_cube_matrix_modules_{self._ip}",
             )
 
@@ -90,9 +116,19 @@ class MatrixSettingsMixin:
         # (the rotation, 2026-11-12): closed first.
         if self._lamp_client.close_music_session():
             await asyncio.sleep(MUSIC_CLOSE_SETTLE)
+        # Blocks and Spots taken off the list are no longer written by the
+        # lamp: they would keep their last picture (filmed 2026-11-20; a
+        # Spot left lit, 2026-11-21). Switched off first, the lamp writes them
+        # black while they are still listed.
+        blank = _drives_fewer(topology, self._lamp_client.profile.module_types)
+        if blank:
+            await self.matrix_send_power(False)
+            await asyncio.sleep(MODULES_BLANK_SETTLE)
         self._matrix_command_at = time.monotonic()
         await self._matter_commands.async_command(CUBE_CONTROL_CLUSTER, "updateTopology", {"topology": topology})
         _LOGGER.info("[MATRIX] [%s] Modules set: %s", self._ip, modules)
+        if blank and self._is_on:
+            await self.matrix_send_power(True)
         self._matrix_modules_changed(topology)
         if self.hass is not None:
             self.async_write_ha_state()

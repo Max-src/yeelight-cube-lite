@@ -319,6 +319,13 @@ class MatterLink:
                     attr_path_filter=path,
                 )
             )
+        # The node read anew (node_updated): after the lamp was away a while
+        # the server interviews it again and reports no attribute changes,
+        # so its restart went unseen (2026-11-20: 31 min unplugged, reboot
+        # count 60 kept while the lamp reported 61).
+        self._unsubscribe.append(
+            client.subscribe_events(self._node_callback(), node_filter=node.node_id)
+        )
         _LOGGER.info("Linked to Matter node %s", node.node_id)
         for name in self._reported:
             self._on_report(name, self.values[name], True)
@@ -375,6 +382,43 @@ class MatterLink:
             self._on_report(name, value, False)
 
         return report
+
+    def _node_callback(self):
+        def updated(event, node) -> None:
+            if getattr(event, "value", event) != "node_updated":
+                return
+            attributes = _attributes(node)
+            # The restart first: what the lamp then shows is its start-up
+            # content, not someone else's (light_matrix_follow).
+            names = sorted(self._reported, key=lambda name: name != "reboot_count")
+            for name in names:
+                path = self._reported[name]
+                if path not in attributes or self.values.get(name) == attributes[path]:
+                    continue
+                self.values[name] = attributes[path]
+                self._on_report(name, attributes[path], False)
+
+        return updated
+
+    async def async_read_live(self, name: str) -> Any:
+        """``name``'s value (a REPORTED name) read from the lamp now, not the
+        server's copy: that copy keeps the value last reported to it, and a
+        value written over Matter is not reported back (2026-11-21: after a
+        restart the copy held a module list of the night before). The read
+        does not update the copy. None: not linked, or no answer."""
+        path = self._reported.get(name)
+        client, node_id = self._client, self.node_id
+        if path is None or client is None or node_id is None:
+            return None
+        try:
+            answer = await client.read_attribute(node_id, path)
+        except Exception as error:  # noqa: BLE001 -- no answer, an older server
+            _LOGGER.debug("Matter read of %s failed: %s", name, error)
+            return None
+        value = answer.get(path) if isinstance(answer, dict) else answer
+        if value is not None:
+            self.values[name] = value
+        return value
 
     def release(self) -> None:
         for unsubscribe in self._unsubscribe:

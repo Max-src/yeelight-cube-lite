@@ -11,7 +11,7 @@ import math
 import threading
 import time as _time
 
-from PIL import Image, ImageDraw, ImageFilter  # type: ignore
+from PIL import Image, ImageChops, ImageDraw, ImageFilter  # type: ignore
 
 from homeassistant.components.camera import Camera  # type: ignore
 from homeassistant.config_entries import ConfigEntry  # type: ignore
@@ -43,9 +43,18 @@ from .lamp_renderers import (
     lamp_effect_frame,
     led_appearance,
 )
-from .clock_face import clock_digit_pixels, clock_text
+from .clock_face import clock_digit_pixels, clock_geometry, clock_text
+from .device_profile import _spot_colour
 from .lamp_studio import clock_studio_runs, studio_clock_background_at, studio_drive, studio_render
-from .matrix_view import display_cell, is_vertical_mount, view_size, viewer_frame
+from .matrix_view import (
+    display_cell,
+    fit_frame,
+    frame_width,
+    is_upside_down_mount,
+    is_vertical_mount,
+    view_size,
+    viewer_frame,
+)
 from .native_effect_preview import (
     render_music_flow_effect,
     render_native_effect,
@@ -58,8 +67,11 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 # ── Matrix dimensions ──────────────────────────────────────────────────
+# A frame is COLS x ROWS, or a Cube Matrix of more than 4 modules' width
+# (5 columns a module: device_profile.width) x ROWS; the image shows them all.
 COLS = 20
 ROWS = 5
+MODULE_SIZE = 5
 
 # ── Image rendering parameters ────────────────────────────────────────
 # The lamp drawn like the Lamp Preview card: a black frame with rounded
@@ -67,7 +79,8 @@ ROWS = 5
 # picture card shows its own background around it, whatever the fit). The
 # design is a 16 px pixel, 3 px gap, 10 px padding, 14 px corners and a 6 px
 # margin for the shadow, rendered RENDER_SCALE times larger so it stays sharp
-# full width: 1227 x 372 px (372 x 1227 vertical). The frame, its shadow and
+# full width: 1227 x 372 px (372 x 1227 vertical) for 20 columns, 57 px more
+# a column for a longer Cube Matrix (2367 x 372 for 8 modules). The frame, its shadow and
 # the round dots' edges are anti-aliased once at import (_VIEWS, _DOT_MASK);
 # a frame copies its view's base and stamps the dots: about 9 ms and 30 KB
 # (round), 4 ms and 6 KB (square), encoded in an executor thread.
@@ -103,10 +116,10 @@ def _frame_size(cols: int, rows: int) -> tuple[int, int]:
     )
 
 
-def _view_base(vertical: bool) -> Image.Image:
+def _view_base(vertical: bool, width: int = COLS) -> Image.Image:
     """A view's empty image: the rounded black frame and its shadow (2 px
     down, 8 px blur, half opaque, as the Lamp Preview's) on transparency."""
-    frame = _frame_size(*view_size(vertical))
+    frame = _frame_size(*view_size(vertical, width))
     size = (frame[0] + 2 * MARGIN, frame[1] + 2 * MARGIN)
     radius = FRAME_RADIUS * _SUPERSAMPLE
     mask = _smooth_mask(
@@ -122,13 +135,13 @@ def _view_base(vertical: bool) -> Image.Image:
     return base
 
 
-def _view_rects(vertical: bool) -> list[tuple[int, int, int, int]]:
+def _view_rects(vertical: bool, width: int = COLS) -> list[tuple[int, int, int, int]]:
     """Each top-first pixel's rectangle in a landscape or vertical image
-    (matrix_view.display_cell), built once at import time so _render_matrix
-    does no arithmetic."""
+    (matrix_view.display_cell), built once (at import time for 20 columns) so
+    _render_matrix does no arithmetic."""
     rects = []
-    for index in range(COLS * ROWS):
-        row, col = display_cell(index, vertical)
+    for index in range(width * ROWS):
+        row, col = display_cell(index, vertical, width)
         x = MARGIN + PADDING + col * CELL_SIZE
         y = MARGIN + PADDING + row * CELL_SIZE
         rects.append((x, y, x + PIXEL_SIZE, y + PIXEL_SIZE))
@@ -152,6 +165,190 @@ _LIVE_VIEWS = {
     for vertical, (base, rects) in _VIEWS.items()
 }
 _LIVE_DOT_MASK = _DOT_MASK.reduce(RENDER_SCALE)
+
+# The same for a longer Cube Matrix, by (live, vertical, width): built the
+# first time one is drawn.
+_WIDE_VIEWS: dict[tuple[bool, bool, int], tuple[Image.Image, list]] = {}
+_WIDE_VIEWS_LOCK = threading.Lock()
+
+
+def _views_for(vertical: bool, width: int, live: bool) -> tuple[Image.Image, list]:
+    """The empty image and the pixels' rectangles of a view of a frame
+    ``width`` columns wide (_VIEWS, _LIVE_VIEWS for 20)."""
+    if width == COLS:
+        return (_LIVE_VIEWS if live else _VIEWS)[bool(vertical)]
+    key = (bool(live), bool(vertical), width)
+    with _WIDE_VIEWS_LOCK:
+        view = _WIDE_VIEWS.get(key)
+        if view is None:
+            base, rects = _view_base(bool(vertical), width), _view_rects(bool(vertical), width)
+            if live:
+                base = base.reduce(RENDER_SCALE)
+                rects = [tuple(edge // RENDER_SCALE for edge in rect) for rect in rects]
+            view = _WIDE_VIEWS[key] = (base, rects)
+    return view
+
+
+# ── A spot's and a panel's face ───────────────────────────────────────
+# As the cards draw them (www/matrix-modules.js moduleLook), as filmed on the
+# owner's lamp (2026-11-21): a spot is a square face with a recessed round
+# bezel (about 87% of its width) and in it a round lens (60%) glowing in its
+# colour, nearly white at the centre when bright, its colour at the rim, a
+# soft halo on the bezel; unlit, a dark disc in the ring. A panel is one
+# diffusing face, its 25 colours melted into each other edge to edge over a
+# haze of their average; unlit, one dark face. Each covers its 5 x 5 area,
+# square-cornered on the square camera, rounded on the round one.
+_FACE = (30, 30, 33)
+_PANEL_FACE = (17, 17, 19)
+_RECESS = (17, 17, 19)
+_LIT = 8
+# Each module's masks by (size, rounded), built the first time one is drawn.
+_FACE_MASKS: dict[tuple[int, bool], dict] = {}
+
+
+def _ramp(points):
+    """A piecewise linear profile of the distance from the centre (in half
+    widths): ``points`` [(distance, value 0-1)], flat beyond the ends."""
+    def profile(distance):
+        if distance <= points[0][0]:
+            return points[0][1]
+        for (start, low), (end, high) in zip(points, points[1:]):
+            if distance <= end:
+                return low + (high - low) * (distance - start) / (end - start)
+        return points[-1][1]
+    return profile
+
+
+def _radial_mask(size: int, profile) -> Image.Image:
+    """A square coverage mask of ``size`` whose value follows ``profile`` of
+    the distance from the centre in half widths (PIL's radial gradient: its
+    value is that distance x 255 / sqrt 2), drawn twice as large and
+    reduced (smooth edges)."""
+    table = [round(255 * profile(value * math.sqrt(2) / 255)) for value in range(256)]
+    distance = Image.radial_gradient("L").resize((size * 2, size * 2), Image.BILINEAR)
+    return distance.point(table).resize((size, size), Image.LANCZOS)
+
+
+def _face_masks(size: int, rounded: bool) -> dict:
+    """The masks a spot and a panel of ``size`` are drawn with."""
+    key = (size, rounded)
+    with _WIDE_VIEWS_LOCK:
+        masks = _FACE_MASKS.get(key)
+    if masks is not None:
+        return masks
+    radius = round(size * 0.12 * _SUPERSAMPLE) if rounded else 0
+    face = _smooth_mask(
+        (size, size), lambda draw, box: draw.rounded_rectangle(box, radius=radius, fill=255)
+    )
+    line = max(1, size // 90)
+    inner = _smooth_mask(
+        (size, size),
+        lambda draw, box: draw.rounded_rectangle(
+            (box[0] + line * _SUPERSAMPLE, box[1] + line * _SUPERSAMPLE,
+             box[2] - line * _SUPERSAMPLE, box[3] - line * _SUPERSAMPLE),
+            radius=max(0, radius - line * _SUPERSAMPLE), fill=255,
+        ),
+    )
+    masks = {
+        "face": face,
+        # The thin frame lining the face.
+        "frame": ImageChops.subtract(face, inner),
+        "recess": _radial_mask(size, _ramp([(0.795, 1), (0.81, 0)])),
+        "ring_dark": _radial_mask(size, _ramp([(0.80, 0), (0.815, 1), (0.88, 1), (0.895, 0)])),
+        "ring_light": _radial_mask(size, _ramp([(0.815, 0), (0.85, 1), (0.88, 0)])),
+        "halo": _radial_mask(size, _ramp([(0.58, 0.75), (0.68, 0.3), (0.84, 0)])),
+        "lens": _radial_mask(size, _ramp([(0.59, 1), (0.615, 0)])),
+        # How much whiter than its colour the lens is: most at the centre.
+        "hot": _radial_mask(size, _ramp([(0, 1), (0.30, 0.47), (0.52, 0)])),
+        "dark_lens": _radial_mask(size, _ramp([(0.57, 1), (0.62, 0)])),
+        "dark_rim": _radial_mask(size, _ramp([(0.57, 0), (0.60, 1), (0.62, 0)])),
+    }
+    with _WIDE_VIEWS_LOCK:
+        _FACE_MASKS[key] = masks
+    return masks
+
+
+def _scaled(masks: dict, name: str, amount: float) -> Image.Image:
+    """The mask ``name`` of ``masks`` at ``amount`` (0-1) of its coverage,
+    in steps of 1/32, each made once (a frame is drawn in a few ms)."""
+    step = max(0, min(32, round(amount * 32)))
+    key = (name, step)
+    scaled = masks.get(key)
+    if scaled is None:
+        scaled = masks[key] = masks[name].point(lambda value: round(value * step / 32))
+    return scaled
+
+
+def _mix(start: tuple, end: tuple, amount: float) -> tuple:
+    return tuple(round(a + (b - a) * amount) for a, b in zip(start, end))
+
+
+def _draw_spot(img: Image.Image, left: int, top: int, size: int, rgb: tuple, rounded: bool) -> None:
+    """A spot's face at (left, top), ``size`` wide, lit in ``rgb``."""
+    masks = _face_masks(size, rounded)
+    at = (left, top)
+    peak = max(rgb) / 255
+    lit = max(rgb) > _LIT
+    img.paste((*(_mix(_FACE, rgb, 0.12 * peak) if lit else _FACE), 255), at, masks["face"])
+    img.paste((*(_mix(_RECESS, rgb, 0.18 * peak) if lit else _RECESS), 255), at, masks["recess"])
+    img.paste((13, 13, 15, 255), at, masks["ring_dark"])
+    img.paste((74, 74, 80, 255), at, masks["ring_light"])
+    if not lit:
+        img.paste((9, 9, 10, 255), at, masks["dark_lens"])
+        img.paste((46, 46, 51, 255), at, masks["dark_rim"])
+    else:
+        img.paste((*rgb, 255), at, _scaled(masks, "halo", peak))
+        img.paste((*rgb, 255), at, masks["lens"])
+        img.paste((255, 255, 255, 255), at, _scaled(masks, "hot", 0.85 * peak * peak))
+    img.paste((255, 255, 255, 255), at, _scaled(masks, "frame", 0.08))
+
+
+# A panel is drawn on a small square, then scaled up smoothly: each lit
+# pixel a soft blotch at its place (1.5 pixels in radius, full for its first
+# quarter), lightened over the others and over the haze, as the cards draw
+# it (www/matrix-modules.js panelBackground). The blotches' masks, once.
+_PANEL_SIZE = 60
+_BLOTCHES: list[Image.Image] = []
+
+
+def _blotch(at: int) -> Image.Image:
+    """The mask of pixel ``at``'s blotch (row by row) on the small square."""
+    with _WIDE_VIEWS_LOCK:
+        if not _BLOTCHES:
+            profile = _ramp([(0.25, 1), (1, 0)])
+            # A blotch of 30% of the panel's width in radius, on its cell.
+            blotch = _radial_mask(_PANEL_SIZE * 3 // 5, profile)
+            reach = blotch.width // 2
+            for index in range(MODULE_SIZE * MODULE_SIZE):
+                x = round((index % MODULE_SIZE + 0.5) * _PANEL_SIZE / MODULE_SIZE)
+                y = round((index // MODULE_SIZE + 0.5) * _PANEL_SIZE / MODULE_SIZE)
+                mask = Image.new("L", (_PANEL_SIZE, _PANEL_SIZE), 0)
+                mask.paste(blotch, (x - reach, y - reach))
+                _BLOTCHES.append(mask)
+        return _BLOTCHES[at]
+
+
+def _draw_panel(img: Image.Image, left: int, top: int, size: int, colours: list, rounded: bool) -> None:
+    """A panel's face at (left, top), ``size`` wide: its 25 colours (row by
+    row as shown) melted together over a haze of their average."""
+    masks = _face_masks(size, rounded)
+    at = (left, top)
+    lit = [rgb for rgb in colours if max(rgb) > _LIT]
+    if not lit:
+        img.paste((*_PANEL_FACE, 255), at, masks["face"])
+    else:
+        # Their average at 3/4 (www/matrix-modules.js HAZE).
+        haze = tuple(round(sum(rgb[channel] for rgb in colours) / len(colours) * 0.75) for channel in range(3))
+        if max(haze) < max(_PANEL_FACE):
+            haze = _PANEL_FACE
+        small = Image.new("RGB", (_PANEL_SIZE, _PANEL_SIZE), haze)
+        for index, rgb in enumerate(colours):
+            if max(rgb) <= _LIT:
+                continue
+            colour = Image.new("RGB", small.size, tuple(rgb))
+            small = Image.composite(ImageChops.lighter(small, colour), small, _blotch(index))
+        img.paste(small.resize((size, size), Image.BILINEAR), at, masks["face"])
+    img.paste((255, 255, 255, 255), at, _scaled(masks, "frame", 0.14))
 
 
 # An animation is followed at the lamp's own rate (RENDER_SECONDS) and only the
@@ -357,6 +554,29 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         draws them (device_profile.columns; None: all 20)."""
         return self._state(state).columns
 
+    def _width(self, state=None) -> int:
+        """The columns of the lamp's frames (device_profile.width): 20, or
+        a Cube Matrix of more than 4 modules' (5 a module)."""
+        try:
+            columns = int(self._columns(state) or COLS)
+        except (TypeError, ValueError):
+            columns = COLS
+        return max(COLS, columns)
+
+    def _face_columns(self) -> list[tuple[str, int]]:
+        """Each spot and panel the lamp shows (device_profile.layout), as
+        (type, its first lamp column): one face each over its 5 columns (a
+        spot one light), none for a Cube Lite."""
+        profile = getattr(self._light_entity, "device_profile", None)
+        layout = getattr(profile, "layout", None)
+        if not isinstance(layout, list):
+            return []
+        return [
+            (module["type"], module["column"]) for module in layout
+            if isinstance(module, dict) and module.get("type") in ("spot", "panel")
+            and isinstance(module.get("column"), int)
+        ]
+
     def _is_native_preview_mode(self) -> bool:
         """Return whether the preview changes without an HA state update."""
         return self._light_entity.mode in LAMP_MODES
@@ -389,8 +609,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             pixel     = min(255, round(v × effective))
         """
         state = self._state()
+        width = self._width(state)
+        pixels = width * ROWS
         if not state.is_on:
-            return [(0, 0, 0)] * 100
+            return [(0, 0, 0)] * pixels
 
         mode = state.mode
         # A streamed effect or clock: the very frame the lamp was last sent
@@ -398,7 +620,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         # not this camera's own drawing of it (its own start and seeds).
         streamed = getattr(self._light_entity, "streamed_preview_frame", None)
         streamed = streamed() if callable(streamed) else None
-        if streamed is not None and len(streamed) == 100:
+        if streamed is not None and len(streamed) == pixels:
             base = streamed
         elif state.music_flow_enabled:
             base = self._get_music_flow_preview(state)
@@ -410,8 +632,12 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             base = self._get_native_effect_preview(state)
         else:
             base = state.base_matrix_colors
-        if not base or len(base) != 100:
-            return [(0, 0, 0)] * 100
+        if base and len(base) != pixels and frame_width(len(base)) * ROWS == len(base):
+            # Drawn for another width (20-column content on a longer Cube
+            # Matrix): from column 0, the rest dark.
+            base = fit_frame(list(base), width)
+        if not base or len(base) != pixels:
+            return [(0, 0, 0)] * pixels
         # The lamp renderer's frame is LED drive: shown as those LEDs look.
         # Display only (simulated_lamp_frame keeps the lamp's values).
         if streamed is None and self._shows_lamp_renderer(state):
@@ -524,9 +750,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         return render_music_flow_effect(self._state(state).music_flow_effect)
 
     def _get_clock_preview(self, state=None) -> list[tuple[int, int, int]]:
-        """Render the active built-in clock face into a 20x5 matrix: its
-        digits (clock_face, as the lamp lays them out) showing the style's
-        color, or its background effect through them."""
+        """Render the active built-in clock face into the lamp's frame (20 x
+        5, or a longer Cube Matrix's width x 5): its digits (clock_face, as
+        the lamp lays them out: on its 5 x 5 blocks, never a spot) showing the
+        style's color, or its background effect through them."""
         state = self._state(state)
         text, colon_visible = clock_text(
             dt_util.now(), state.clock_content,
@@ -534,7 +761,8 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             bool(state.clock_colon_blink),
         )
         style_id = int(state.clock_style)
-        matrix = [(0, 0, 0)] * 100
+        width = self._width(state)
+        matrix = [(0, 0, 0)] * (width * ROWS)
 
         # Styles whose mixer is a native effect show that effect through the lit
         # glyph pixels; render it once and mask it below. Others use the
@@ -603,20 +831,32 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         digit_flags = clock_digit_flags(style.get("mixer", 0), clock_style_direct(style))
         turned = bool(state.lamp_turns_clock)
         # Within the columns the lamp shows (a Cube Matrix with fewer than 4
-        # blocks streams this frame: device_profile.columns).
-        columns = self._columns(state) or 20
-        for index, char_index, col in clock_digit_pixels(text, colon_visible, digit_flags, turned, columns):
+        # blocks streams this frame: device_profile.columns), on its blocks
+        # (a spot's columns left to the background: clock_geometry).
+        geometry = self._clock_geometry(state)
+        for index, char_index, col in clock_digit_pixels(text, colon_visible, digit_flags, turned, **geometry):
+            if not 0 <= index < len(matrix):
+                continue
             if effect_frame is not None:
-                matrix[index] = effect_frame[index]
+                matrix[index] = effect_frame[index] if index < len(effect_frame) else (0, 0, 0)
             elif solo_bw_fallback:
                 matrix[index] = (255, 255, 255)
             elif flat_override is not None:
                 matrix[index] = flat_override
             else:
-                matrix[index] = self._clock_pixel_color(style_id, char_index, col)
+                matrix[index] = self._clock_pixel_color(style_id, char_index, col, width)
 
         # Lamp order, like every frame (_view_frame turns it for the viewer).
         return matrix
+
+    def _clock_geometry(self, state=None) -> dict:
+        """Where the lamp shows the clock (clock_face.clock_geometry: its
+        columns, its frame's width, its blocks' columns)."""
+        profile = getattr(self._light_entity, "device_profile", None)
+        columns = self._columns(state) or COLS
+        if profile is not None and getattr(profile, "columns", None) == columns:
+            return clock_geometry(profile)
+        return {"columns": columns, "width": max(COLS, columns), "blocks": None}
 
     def _clock_background_seconds(self, state=None) -> float:
         """Seconds into the clock's background animation. While frozen it holds
@@ -667,8 +907,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         style_id: int,
         char_index: int,
         col: int,
+        width: int = COLS,
     ) -> tuple[int, int, int]:
-        """Approximate the official clock preview palette for one LED."""
+        """Approximate the official clock preview palette for one LED (its
+        frame column ``col`` of ``width``: the palette runs along the frame)."""
         fixed = {
             2: (0, 221, 255),
             4: (255, 255, 255),
@@ -702,8 +944,25 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         }
         return self._gradient_color(
             palettes.get(style_id, [(255, 238, 0)]),
-            col / (COLS - 1),
+            col / (max(COLS, width) - 1),
         )
+
+    def _face_view_columns(self, width: int) -> list[tuple[str, int]]:
+        """Each spot's and panel's type and first column in the viewer's
+        frame (_view_frame: turned a half turn for an upside-down mount),
+        those within the frame."""
+        faces = self._face_columns()
+        if not faces:
+            return []
+        upside_down = is_upside_down_mount(self._state().orientation)
+        starts = [
+            (kind, width - MODULE_SIZE - column if upside_down else column) for kind, column in faces
+        ]
+        return [(kind, start) for kind, start in starts if 0 <= start and start + MODULE_SIZE <= width]
+
+    # Square corners for a spot's and a panel's face (the round camera's
+    # are rounded).
+    _ROUNDED_FACES = False
 
     # Subclass must implement
     def _draw_pixel(self, img: Image.Image, draw: ImageDraw.Draw, rect: tuple, fill: tuple) -> None:
@@ -714,12 +973,45 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     ) -> bytes:
         """Render a top-first frame (_view_frame) landscape or vertical,
         full size or small for a live stream, and return lossless PNG bytes
-        (RGBA: transparent around the frame)."""
-        base, rects = (_LIVE_VIEWS if live else _VIEWS)[bool(vertical)]
+        (RGBA: transparent around the frame). As wide as the frame (20
+        columns, or a longer Cube Matrix's); each spot and panel one face
+        over its 5 x 5 area (_draw_spot in its colour, device_profile.
+        _spot_colour; _draw_panel), as the cards draw them."""
+        width = frame_width(len(colors))
+        base, rects = _views_for(bool(vertical), width, live)
         img = base.copy()
         draw = ImageDraw.Draw(img)
 
+        face_cells: set[int] = set()
+        faces = self._face_view_columns(width)
+        pixels = [
+            tuple(int(channel) for channel in pixel[:3])
+            if isinstance(pixel, (tuple, list)) and len(pixel) >= 3 else (0, 0, 0)
+            for pixel in colors
+        ] if faces else []
+        for kind, start in faces:
+            area = [row * width + start + step for row in range(ROWS) for step in range(MODULE_SIZE)]
+            if area[-1] >= len(rects):
+                continue
+            face_cells.update(area)
+            boxes = [rects[index] for index in area]
+            left, top = min(box[0] for box in boxes), min(box[1] for box in boxes)
+            right, bottom = max(box[2] for box in boxes), max(box[3] for box in boxes)
+            size = min(right - left, bottom - top)
+            if kind == "spot":
+                _draw_spot(img, left, top, size, _spot_colour(pixels, start, width), self._ROUNDED_FACES)
+                continue
+            # The panel's colours row by row as the view shows them (a
+            # vertical one turned): its pixels by their place in the image.
+            cells = sorted(area, key=lambda index: (rects[index][1], rects[index][0]))
+            _draw_panel(
+                img, left, top, size, [pixels[index] if index < len(pixels) else (0, 0, 0) for index in cells],
+                self._ROUNDED_FACES,
+            )
+
         for i, rgb in enumerate(colors):
+            if i >= len(rects) or i in face_cells:
+                continue
             if isinstance(rgb, (tuple, list)) and len(rgb) >= 3:
                 r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
                 if r == 0 and g == 0 and b == 0:
@@ -753,6 +1045,7 @@ class YeelightCubeMatrixCameraRound(_YeelightCubeMatrixCameraBase):
 
     _TRANSLATION_KEY = "matrix_preview_round"
     _UID_SUFFIX = "_matrix_preview_round"
+    _ROUNDED_FACES = True
 
     def _draw_pixel(self, img, draw, rect, fill):
         if rect[2] - rect[0] < PIXEL_SIZE:

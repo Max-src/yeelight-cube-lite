@@ -82,7 +82,10 @@ class ConnectionHealthMixin:
         """The lamp answers again: drop the persistent socket, reset the
         failure count, backoff and unreachable flag, and try UDP again."""
         self.close_fast_socket()
-        self._udp_retry_at = 0.0
+        # UDP (a Cube Matrix's music connection) is tried afresh: a failure
+        # while the lamp was away does not count towards udp_blocked or
+        # music_blocked (issues.py).
+        self._forget_udp_failure()
         self._running_effect = None
         self._reset_backoff()
         self._connection_healthy = True

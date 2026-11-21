@@ -1,8 +1,15 @@
-# Yeelight Cube Lite for Home Assistant
+# Yeelight Cube for Home Assistant (Cube Lite and Cube Matrix)
 
 <img src="images/yeelight-cube-light.png" alt="Yeelight Cube Smart Lamp Lite" width="320">
 
-A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a lamp with a **20×5 RGB LED matrix** (100 individually addressable pixels). Get full pixel-level control from your HA dashboard: draw pixel art, display scrolling text, apply gradients, color effects, and more.
+A Home Assistant custom integration for two Yeelight Cube lamps:
+
+- the **Yeelight Cube Smart Lamp Lite**, a lamp with a **20×5 RGB LED matrix** (100 individually addressable pixels);
+- the **Yeelight Cube Matrix** (the original Yeelight Cube), a base and a chain of **1 to 8 modules** in any order:
+  **Matrix** (5×5 pixels), **Panel** (5×5, diffused) and **Spot** (one light).
+
+Get full pixel-level control from your HA dashboard on either lamp: draw pixel art, display scrolling text, show the
+clock, play effects, apply gradients, palettes and color effects, and more. Every card works with both.
 
 [![Home Assistant][ha_badge]][ha_link] [![HACS][hacs_badge]][hacs_link] [![GitHub Release][release_badge]][release] [![Buy Me a Coffee][bmac_badge]][bmac]
 
@@ -43,13 +50,18 @@ These overviews use generated screenshots of the actual cards with example data.
 | Show scrolling text, palettes and gradients | [Colors](#colors-card) / [Palettes](#palettes-card) / [Gradient](#gradient-card) |
 | Preview the lamp live and adjust its brightness and colors | [Preview Card](#preview-card) |
 | Use the lamp's buttons in automations and restore the display after a press | [Matter and buttons (optional)](docs/MATTER.md) |
+| Drive a Cube Matrix of 1 to 8 modules (Matrix, Panel, Spot) and set its modules from the Preview card | [Cube Matrix](#cube-matrix) / [Modules section](#matrix-modules) |
 | Keep control local, with automatic network discovery and no cloud dependency | [Setup](#setup) |
 
 All seven cards have visual editors, light/dark themes and configurable layouts.
 Normal display controls use **LAN Control**; **Matter is an optional extra**.
 
-> **Yeelight Cube Matrix** (the original Yeelight Cube, a base and 5×5 modules, LAN model `CubeMatrix`) is supported
-> too: text, drawings, colours, every native effect, animation and clock style. It is a very different lamp: it has
+<a id="cube-matrix"></a>
+
+> **Yeelight Cube Matrix** (the original Yeelight Cube, a base and a chain of 1 to 8 modules, LAN model `CubeMatrix`)
+> is supported too: text, drawings, colours, gradients, every native effect, animation and clock style, on every
+> module of the chain. Its modules (Matrix, Panel, Spot, in the order they are fitted) are set from the Preview
+> card's [Modules section](#matrix-modules); the previews and cameras draw each module as it looks. It is a very different lamp: it has
 > **no LAN command for its effects, clock or drawings** — only Matter starts them. So for a Cube Matrix, **Matter is
 > not optional if you want smooth effects**: shared to Home Assistant's Matter integration, it runs its own 50 effects (Fireworks included),
 > its clock and drawings itself; everything else (and everything without Matter, or while its demo mode runs) is drawn
@@ -449,6 +461,9 @@ available where supported.
     <td valign="top"><img src="images/Cards/generated/native-effects-offline.png" alt="Native Effects - Local previews while the lamp is unavailable" width="280"><br>Local previews while the lamp is unavailable</td>
     <td valign="top"><img src="images/Cards/generated/native-effects-frame.png" alt="Native Effects - Card title, lamp status and no card background" width="280"><br>Card title, lamp status and no card background</td>
   </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-matrix.png" alt="Native Effects - On a Cube Matrix of six modules: previews as wide as its modules" width="280"><br>On a Cube Matrix of six modules: previews as wide as its modules</td>
+  </tr>
 </table>
 <!-- card-docs:native-effects:variations:end -->
 
@@ -549,6 +564,9 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
     <td valign="top"><img src="images/Cards/generated/lamp-preview-dark.png" alt="Preview - Dark theme with round pixels" width="280"><br>Dark theme with round pixels</td>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-frame.png" alt="Preview - Card title, lamp status and no card background" width="280"><br>Card title, lamp status and no card background</td>
   </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-matrix.png" alt="Preview - Cube Matrix of six modules (Matrix, Panel, Spot) with its Modules section open" width="280"><br>Cube Matrix of six modules (Matrix, Panel, Spot) with its Modules section open</td>
+  </tr>
 </table>
 <!-- card-docs:lamp-preview:variations:end -->
 
@@ -577,8 +595,24 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 | **Lamp preview** | Reflects what's displayed on the lamp. Configurable pixel style, spacing, background, shadow, and size |
 | **Refresh & power** | Quick buttons to force-refresh or toggle power |
 | **Device orientation** | Right / Down / Left / Up control with configurable button layout; the preview rotates to match the physical mount |
+| **Cube Matrix modules** | A Cube Matrix only: the **Modules** button in the Actions row opens the section that sets which modules the lamp has (see below) |
 | **Brightness slider** | Configurable slider styles |
 | **Color adjustments** | Adjustment sliders with multiple layout modes, change indicators, and reset buttons |
+
+<a id="matrix-modules"></a>
+
+**Cube Matrix modules.** On a **Cube Matrix**, the Actions row has a **Modules** button (an action like Refresh and
+Power: the editor's **Actions & Order** list adds, removes or moves it; a Cube Lite shows none). It opens a section
+just below the Actions row that sets which modules the lamp has,
+as on the Yeelight app's module page: the modules drawn as the preview draws them (a Matrix's dots, a Spot's lens,
+a Panel's face), in the order they are fitted from the base, laid out as the lamp is mounted. Add a Matrix, Spot
+or Panel module at the end of the chain (up to 8) and remove any with its ✕. The power supply's side is the
+**Device Orientation** row (the base is on the left when the lamp is mounted Right, below when mounted Up); when the
+card hides that row, the section shows it. Edits stay a draft (**Edited**, the module count out of 8) until
+**Save**, which sends [`set_matrix_modules`](SERVICES.md#set_matrix_modules) (over Matter); **Reset** shows the
+lamp's modules again. What the lamp shows is drawn again for the new modules at once (an effect, the clock, text
+or a drawing: nothing to apply again). The lamp cannot detect its modules: a module missing from the list stays dark, except for one
+green light in its corner.
 
 <details>
 <summary>View editor sections</summary>
@@ -959,6 +993,9 @@ grid_options:
     <td valign="top"><img src="images/Cards/generated/camera-vertical-fill.png" alt="Matrix Preview cameras - Standing up: fit_mode: fill (stretches)" width="280"><br>Standing up: fit_mode: fill (stretches)</td>
     <td valign="top"><img src="images/Cards/generated/camera-square.png" alt="Matrix Preview cameras - The Square camera (square pixels)" width="280"><br>The Square camera (square pixels)</td>
   </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/camera-cube-matrix.png" alt="Matrix Preview cameras - Cube Matrix of six modules: its Matrix, Panel and Spot faces" width="280"><br>Cube Matrix of six modules: its Matrix, Panel and Spot faces</td>
+  </tr>
 </table>
 <!-- card-docs:camera:variations:end -->
 
@@ -970,23 +1007,9 @@ grid_options:
 
 ### 🧩 Cube Matrix Modules Card (`custom:yeelight-cube-matrix-modules-card`)
 
-Set which modules a **Cube Matrix** has and the side its power supply is on, as on the Yeelight app's module
-page. The card shows the modules as they are fitted, from the power supply: add a Matrix, Spot or Panel module at
-the end of the chain (up to 6), remove any with its ✕, and pick the power supply's side (Left, Right, Down or Up;
-the chain is drawn that way). Edits stay a draft until **Save**, which sends
-[`set_matrix_modules`](SERVICES.md#set_matrix_modules) (over Matter) and the matching Device Orientation;
-**Reset** shows the lamp's modules again.
-
-```yaml
-type: custom:yeelight-cube-matrix-modules-card
-target_entities:
-  - light.cubematrix_6a80
-```
-
-| Option | Description |
-| :-- | :-- |
-| `target_entities` | The Cube Matrix lamps, each set up in its own block (a Cube Lite has no modules) |
-| `buttons_style`, `buttons_content_mode` | The shared button look |
+Kept for the dashboards that already have it; it is no longer in the card picker. A Cube Matrix's modules are set
+from the [Preview card's Modules section](#matrix-modules), which this card shows for each of its
+`target_entities` (with its own power supply arrows, saved with the modules).
 
 ---
 
@@ -1078,7 +1101,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
 | **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
-| **Stream frame rate limit** | Number | Cube Lite only. The most new pictures a second for what the integration streams to it (effects it can't run itself, clocks, scrolling text), 1–25, default 5. Above 5 is smoother but a Cube Lite is more likely to stop answering; below 5 the last picture is still sent every 0.2 s. See [How streamed effects reach the lamps](docs/STREAMING.md) |
+| **Stream frame rate limit** | Number | Cube Lite only. The new pictures a second for what the integration streams to it (effects it can't run itself, clocks, scrolling text), 1–25, default 5: exactly that many over time (frames leave on the lamp's 40 ms renders, so at 12 they go 80 or 120 ms apart). Above 5 is smoother but a Cube Lite is much more likely to stop answering; at 5 and below the lamp gets one frame every 0.2 s, the last picture again until the next one is due. See [How streamed effects reach the lamps](docs/STREAMING.md) |
 | **Buttons: Right as Remote** | Switch | Off by default. Replaces the lamp's right-button playlist with tagged black entries (the original is written back when turned off): a press fires `right_button` and the integration's content comes back. Needs Matter settings; its `remote_status` attribute shows the actual state. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 | **Buttons: Left as Remote** | Switch | Off by default. Undoes microphone music started or changed by the left button (or an app): the integration's content comes back. Needs the Matter link. See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
 | **Buttons: Wake Lamp When Off** | Switch | On by default. With Right or Left as Remote, a press on a lamp that is off turns it on with its content. Off: presses only fire their events and the lamp stays dark ("off" then keeps it powered, black). See [Matter and buttons](docs/MATTER.md#buttons-as-remote) |
@@ -1354,7 +1377,7 @@ lamp's previous power state. Its modes, previews and an automation example:
 | Requirement | Details |
 | :-- | :-- |
 | **Home Assistant** | 2024.12.0 or newer |
-| **Hardware** | Yeelight Cube Smart Lamp Lite (or compatible matrix device) on the same LAN |
+| **Hardware** | Yeelight Cube Smart Lamp Lite or Yeelight Cube Matrix, with **LAN Control** on, on the same LAN (a Cube Matrix also shared to Home Assistant's Matter integration for smooth effects: see [Cube Matrix](#cube-matrix)) |
 | **Network** | Home Assistant reaches the lamp on **UDP 55444** (its fast connection) and **TCP 55443** (setup, and the fallback). If UDP is blocked, commands go over TCP on their own; the light's `connection` attribute shows which one is in use (`udp` or `tcp`) |
 | **Python packages** | `yeelight` (installed automatically by HA); `Pillow` is provided by Home Assistant core |
 
@@ -1366,7 +1389,11 @@ lamp's previous power state. Its modes, previews and an automation example:
   with **LAN Control** on in the Yeelight app. Several lamps can be set up,
   each as its own device; the cards can drive several at once.
 - **Yeelight Cube Matrix** (the original Yeelight Cube, model `CubeMatrix`):
-  see [docs/CUBE_MATRIX.md](docs/CUBE_MATRIX.md).
+  a base and 1 to 8 modules in any order of Matrix, Panel and Spot (the
+  Yeelight app offers 6), set from the Preview card's
+  [Modules section](#matrix-modules). Every card, service and preview covers
+  the whole chain. Matter is needed for its own effects, clock and smooth
+  streaming: see [docs/CUBE_MATRIX.md](docs/CUBE_MATRIX.md).
 - Other Yeelight lamps are left to Home Assistant's own **Yeelight**
   integration (this one keeps its discovery away from its own lamps only).
 
@@ -1432,8 +1459,9 @@ lamp's previous power state. Its modes, previews and an automation example:
 
 ## Power Supply
 
-A lamp draws about **0.4 W** with a dark panel and up to about **6 W** with a
-bright, busy picture. Brightness and how many pixels are lit matter most; the
+A Cube Lite draws about **0.4 W** with a dark panel and up to about **6 W** with a
+bright, busy picture (the figures below were measured on Cube Lites; a Cube
+Matrix draws more with each module it has). Brightness and how many pixels are lit matter most; the
 color matters little.
 
 **Estimated power.** Each lamp has an **Estimated power** sensor that

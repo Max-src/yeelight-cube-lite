@@ -1,10 +1,11 @@
 import { hexToRgb as parseHex } from "./color-utils.js";
 import { rgbToHsv as hsvOfChannels } from "./color-adjustments.js";
-import { BLACK_THRESHOLD, OFF_COLOR, MATRIX_SIZE } from "./draw_card_const.js";
+import { BLACK_THRESHOLD, OFF_COLOR, GRID_COLS, GRID_ROWS } from "./draw_card_const.js";
 
 // --- Create empty (all-black) matrix ---
-export function createEmptyMatrix() {
-  return Array(MATRIX_SIZE).fill(OFF_COLOR);
+// `width` columns (20, or a Cube Matrix of 5 modules or more: 5 a module).
+export function createEmptyMatrix(width = GRID_COLS) {
+  return Array(width * GRID_ROWS).fill(OFF_COLOR);
 }
 
 // --- Black pixel detection ---

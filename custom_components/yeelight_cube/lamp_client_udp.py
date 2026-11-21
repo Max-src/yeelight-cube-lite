@@ -133,33 +133,54 @@ class UdpChannelMixin:
         mode again before the next frame, as after any new session), UDP no
         longer counts as failing (issues.py, the diagnostics), even on a lamp
         that gets no command, the TCP connection used meanwhile is closed,
-        and the light publishes its connection (on_transport_change)."""
+        and the light publishes its connection (on_transport_change).
+        A Cube Matrix's LAN check goes on while its music connection keeps
+        failing, past the time it is tried again: a lamp shown over Matter
+        may get no command that tries it, and without the check its stuck
+        LAN passed for a blocked network (music_blocked, 2026-11-20)."""
         last_check = 0.0
+        music = isinstance(self._udp, MusicChannel)
         # A Cube Matrix's music connection keeps its own pace (opening it
         # makes the lamp connect back, which stalls its LAN when blocked).
-        wait = UDP_RECOVERY_PING if isinstance(self._udp, MusicChannel) else UDP_RECOVERY_FIRST_PING
-        while self._udp_retry_at > time.monotonic():
+        wait = UDP_RECOVERY_PING if music else UDP_RECOVERY_FIRST_PING
+        while self._udp_retry_at > time.monotonic() or (music and self._udp_failing_since):
             await asyncio.sleep(wait)
             wait = UDP_RECOVERY_PING
-            if self._udp_retry_at <= time.monotonic():
+            retry_due = self._udp_retry_at <= time.monotonic()
+            if retry_due and not (music and self._udp_failing_since):
                 return  # tried again meanwhile (the lamp came back online)
             try:
-                if isinstance(self._udp, MusicChannel) and time.monotonic() - last_check >= MUSIC_LAN_CHECK:
+                if music and time.monotonic() - last_check >= MUSIC_LAN_CHECK:
                     # A Cube Matrix that does not connect back may be blocked by
                     # the network, or its LAN may be stuck: it accepts every
                     # connection and closes it at once (seen 2026-11-11 and 12,
                     # Matter still working; only a power cycle fixed it). A
                     # command over TCP tells them apart (silent_for: issues.py).
                     last_check = time.monotonic()
-                    if not await self.probe(answering=True) and self.silent_for and not self._lan_stuck_logged:
+                    answers = await self.probe(answering=True)
+                    if not answers and not self.silent_for:
+                        # No connection at all: the lamp is away (switched
+                        # off at the wall), not blocked. Published
+                        # unavailable (the health check takes over and
+                        # redraws it once back), and the music connection is
+                        # tried afresh then: its failure while the lamp was
+                        # away raised music_blocked (2026-11-20, 31 min
+                        # unplugged).
+                        self.mark_unreachable()
+                        self._forget_udp_failure()
+                        self._transport_changed()
+                        return
+                    if not answers and not self._lan_stuck_logged:
                         self._lan_stuck_logged = True
                         _LOGGER.warning(
                             "[HEALTH] [%s] The Cube Matrix accepts connections but answers no "
                             "command over the LAN (its effects over Matter still work): its "
                             "network part is stuck and needs a power cycle", self._ip,
                         )
-                    elif not self.silent_for:
+                    elif answers:
                         self._lan_stuck_logged = False
+                if retry_due:
+                    continue  # the next command tries the music connection itself
                 answered = await self._udp.ping()
             except Exception as err:  # noqa: BLE001 -- the recovery goes on at the next ping
                 _LOGGER.debug("[UDP] [%s] UDP recovery check failed: %s", self._ip, err)
@@ -175,6 +196,14 @@ class UdpChannelMixin:
                 self._last_reconnect_attempt = 0
                 self._transport_changed()
                 return
+
+    def _forget_udp_failure(self) -> None:
+        """UDP (a Cube Matrix's music connection) no longer counts as
+        failing, and is tried at the next command: the failure said nothing
+        about the network (the lamp was away)."""
+        self._udp_retry_at = 0.0
+        self._udp_failing_since = 0.0
+        self._music_failures = 0
 
     def _transport_changed(self) -> None:
         if self.on_transport_change is not None:

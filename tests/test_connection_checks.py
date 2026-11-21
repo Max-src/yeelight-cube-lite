@@ -63,6 +63,39 @@ class HealthCheckTests(unittest.TestCase):
 
         self.assertEqual([], run(scenario()))
 
+    def test_a_stream_paused_for_a_silent_lamp_is_pinged_and_goes_unavailable(self):
+        # 2026-11-19: a streaming Cube Lite switched off at the wall stayed
+        # "on" for minutes: its stream had paused (no answer) and nothing
+        # else asked it. Once paused, the health check probes it again.
+        async def scenario():
+            light = light_in_effect()
+            light.studio_streaming = lambda: True
+            light._studio_task = asyncio.ensure_future(asyncio.sleep(10))
+            light._lamp_client.stream_silent = True
+            light.async_write_ha_state = Mock()
+            probes = []
+
+            async def probe(timeout=None, *, answering=False):
+                probes.append(answering)
+                return False  # no power: nothing accepts the connection
+
+            light._lamp_client.probe = probe
+            light._async_maybe_rediscover = AsyncMock()
+            try:
+                with instant_sleeps("light_connection") as fast:
+                    task = asyncio.ensure_future(light._periodic_health_check())
+                    while len(fast.slept) < 3:
+                        await asyncio.sleep(0)
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            finally:
+                light._studio_task.cancel()
+            return probes, light.available
+
+        probes, available = run(scenario())
+        self.assertTrue(probes)
+        self.assertFalse(available)
+
 
 class CircuitBreakerTests(unittest.TestCase):
     def test_hard_timeouts_are_counted_on_the_monotonic_clock(self):
@@ -106,6 +139,21 @@ class UnsolicitedErrorTests(unittest.TestCase):
             session._received(refused)
         levels = [record.levelno for record in logs.records if "Unsolicited" in record.getMessage()]
         self.assertEqual([logging.WARNING, logging.DEBUG, logging.DEBUG, logging.WARNING], levels)
+
+    def test_the_warning_lists_the_last_datagrams(self):
+        session = UDP_SESSION.UdpSession("192.0.2.1")
+        session._transport = Mock()
+        for message_id in range(1, 40):
+            run(session._send({"id": message_id, "method": "update_leds", "params": []}))
+        refused = json.dumps({"id": 39, "error": {"code": -1, "message": "refused"}}).encode()
+        with self.assertLogs(UDP_SESSION._LOGGER, level=logging.WARNING) as logs:
+            session._received(refused)
+        message = logs.records[0].getMessage()
+        trail = message.split("last datagrams: ")[1].split()
+        self.assertEqual(UDP_SESSION.TRAIL_LENGTH * 2 + 1, len(trail))  # "-Nms" and what, each; "err-1"
+        self.assertEqual(">update_leds#17", trail[1])  # the oldest kept
+        self.assertEqual("<#39", trail[-2])  # the refusal itself, last
+        self.assertEqual("err-1", trail[-1])
 
 
 class BackgroundCheckTests(unittest.TestCase):

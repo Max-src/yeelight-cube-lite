@@ -1,8 +1,18 @@
 # Yeelight Cube Matrix support
 
 > **Not the Cube Lite.** This page is about the original **Yeelight Cube** ("Cube Smart Lamp": a base and a chain of
-> 5×5 modules), which answers on the LAN as `model: CubeMatrix`. Everything else in this repository's docs is about the
-> Cube Lite unless it says otherwise.
+> 1 to 8 modules: Matrix, Panel and Spot), which answers on the LAN as `model: CubeMatrix`. The cards, services and
+> entities in the [README](../README.md) work on both lamps; this page covers what differs on a Cube Matrix.
+
+<table>
+  <tr>
+    <td valign="top"><img src="../images/Cards/generated/lamp-preview-matrix.png" alt="Preview card on a Cube Matrix of six modules, its Modules section open" width="280"><br>The Preview card on a Cube Matrix of six modules, its Modules section open</td>
+    <td valign="top"><img src="../images/Cards/generated/native-effects-matrix.png" alt="Native Effects card on a Cube Matrix of six modules" width="280"><br>Native Effects on the same lamp: previews as wide as its modules</td>
+  </tr>
+</table>
+
+<img src="../images/Cards/generated/camera-cube-matrix.png" alt="Matrix Preview camera of a Cube Matrix: Matrix, Panel and Spot faces" width="580"><br>
+Its Matrix Preview camera: each Matrix, Panel and Spot module drawn as it looks.
 
 ## The lamp in short
 
@@ -25,7 +35,7 @@ own effects** — without it, Home Assistant can only stream them.
 | | Cube Lite | Cube Matrix |
 |---|---|---|
 | LAN model / Matter product id | `CubeLite` / 4 | `CubeMatrix` / 16787457 |
-| Panel | fixed 20×5 | a base and a chain of 5×5 modules (4 in a row: 20×5) |
+| Panel | fixed 20×5 | a base and a chain of up to 8 modules of 5×5 (5 columns each: 4 in a row are 20×5, 8 are 40×5) |
 | LAN commands | about 38, including `set_fx_effect` and `set_ps` | the 30 its SSDP `support:` lists; any other answers "method not supported" |
 | `get_prop` (read the lamp's state) | never answered | answered (modules, rotation, demo mode…) |
 | Its effects, clock, animations over the LAN | yes, one command (`set_fx_effect`) | **no command at all** |
@@ -282,12 +292,24 @@ orientation); the light's `mount_profile.clock_turned` tells the cards' previews
 
 ## Pixel order and modules
 
-`cube_topology` lists the modules in chain order from the base (up to 6 slots): **25 LEDs** for a type 1 (Panel) or 2
+`cube_topology` lists the modules in chain order from the base (up to 8 slots; the Yeelight app offers 6, the
+lamp keeps and reads back 8, tested 2026-11-21): **25 LEDs** for a type 1 (Panel) or 2
 (Matrix) slot, **5** for a type 3 (Spot) slot; `strip_lenth` is their sum. A lamp nobody configured reports
 `1,1,1,1,3,3` / 110 (4 blocks + two 5-LED slots that are not fitted): a **Repair** asks to set its modules in the
 Yeelight app (its own clock needs 4 Matrix modules), and its rotation, the factory's, is not taken as its mounting.
 A module list changed in the app is followed over Matter (the layout is built again), and it can be set from Home
-Assistant too: `yeelight_cube.set_matrix_modules` sends the app's own command (FC02 `updateTopology`).
+Assistant too: `yeelight_cube.set_matrix_modules` sends the app's own command (FC02 `updateTopology`). On a
+dashboard, the Preview card's **Modules** section sets them (README, Preview Card); the older Cube Matrix Modules
+card is kept for the dashboards that have it.
+
+**Modules left off the list** (filmed 2026-11-20 on Matrix, Matrix, Spot, Matrix listed as Matrix, Panel, Spot): the
+lamp writes only the listed blocks and never blanks the others, which keep their last picture. After the last listed
+LED it always sends one more fixed value, which lights the **first LED of the next block green** (about 40 %, the
+same at any brightness, on every refresh). No LAN or Matter command reaches it; only listing that block removes it.
+A Spot has an output of its own: with no Spot listed the lamp stops driving it and it keeps its last colour (seen
+2026-11-21). `set_matrix_modules` with fewer blocks or fewer Spots switches the lamp off over Matter first (the listed
+modules go black), writes the list, then switches it on again if it was on: the modules taken off stay dark, except
+for that light.
 
 Frames are drawn in "lamp order" (`row * 20 + column`, row 0 at the bottom) as for the Cube Lite, then
 `DeviceProfile.to_wire` follows the slots: each block takes the next 5 columns, **column by column from the base side,
@@ -305,9 +327,20 @@ modules) and the preview card hides the missing columns.
 
 ## Limits and open points
 
-- Tested: **4 blocks in a row** (20×5) and **3 blocks with a Spot third**. More than 4 blocks follow the slot rule
-  above, but the picture is still drawn on a 20×5 panel (a 5th or 6th block stays dark when Home Assistant draws).
-  Effects Home Assistant streams are drawn on the columns the modules cover (15 on 3 modules).
+- **Any chain of 1 to 8 modules, in any order of Matrix, Panel and Spot.** Up to 4 modules, Home Assistant draws
+  on a 20×5 panel as before (the columns past the modules are not shown). With 5 to 8 modules it draws on a panel
+  5 columns a module wide (25 to 40 columns): streamed effects, the streamed clock, text, gradients, colours,
+  drawings and the previews cover every module (filmed 2026-11-21 on Matrix, Matrix, Matrix, Spot, Panel: before,
+  the Panel stayed dark whenever Home Assistant drew). The animations cover every module too: Snowfall repeats
+  along the lamp, Daydream, Halloween glow and Moonlit clouds are stretched over it (repeated, they would show a hard
+  edge every 20 columns). Pixel arts made 20 columns wide (the app's, those saved on a 20-column lamp) start at the
+  base and leave the further modules dark; a drawing made on the lamp's own width covers it all. The streamed clock puts its digits on the 5×5 modules only,
+  centred across them; a Spot shows the background. A Panel diffuses its light: it shows its part of the picture
+  as a soft glow, not as dots. The previews (cards and cameras) draw them so (filmed 2026-11-21): a Spot as a
+  round lens about 60% of the module wide in a bezel ring, glowing in its colour, nearly white at the centre when
+  bright; a Panel as one face where its 25 colours melt into each other, a few lit pixels soft blotches.
+- Filmed with Spot and Panel modules: Matrix, Matrix, Spot, Matrix and Matrix, Matrix, Matrix, Spot, Panel. 6 to 8
+  modules are written to and read back from the lamp, not filmed (no such chain at hand).
 - The streamed look-alikes differ a little from the lamp's own effects (Fire burns from the other end, Rainbow and
   Aurora differ in small details); the lamp's own are used whenever Matter allows. All built-in effects were filmed
   on the lamp; the directions were filmed at rotation 0, then standing at all four rotations.

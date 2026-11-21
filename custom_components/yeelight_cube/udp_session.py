@@ -75,6 +75,9 @@ FRAME_QUIET = 0.2
 # this are counted, over the last STATS_WINDOW seconds.
 GAP_COUNTED = 0.1
 STATS_WINDOW = 60.0
+# The last datagrams sent and received, logged with the warning when the lamp
+# refuses or errors outside a command (what came just before a lamp hung).
+TRAIL_LENGTH = 24
 
 
 class UdpUnavailable(Exception):
@@ -141,6 +144,13 @@ class UdpSession:
         # An unsolicited error was logged as a WARNING since the lamp last
         # answered without one (the rest of the episode goes at DEBUG).
         self._unsolicited_logged = False
+        # (when, ">" sent / "<" received, what): the last TRAIL_LENGTH.
+        self._trail: collections.deque = collections.deque(maxlen=TRAIL_LENGTH)
+
+    def trail(self) -> str:
+        """The last datagrams, oldest first, as "-1234ms >update_leds#81"."""
+        now = time.monotonic()
+        return " ".join(f"-{(now - at) * 1000:.0f}ms {way}{what}" for at, way, what in self._trail)
 
     @property
     def is_open(self) -> bool:
@@ -159,13 +169,18 @@ class UdpSession:
                 continue
             future = self._waiting.get(message.get("id"))
             error = message.get("error")
+            self._trail.append((
+                time.monotonic(), "<",
+                f"{message.get('method') or ''}#{message.get('id')}"
+                + (f" err{error.get('code')}" if isinstance(error, dict) else ""),
+            ))
             if future is None and isinstance(error, dict):
                 # Refused frames come one per frame: the first of an episode
                 # is a WARNING, the rest DEBUG until the lamp answers again.
                 _LOGGER.log(
                     logging.DEBUG if self._unsolicited_logged else logging.WARNING,
-                    "[UDP] [%s] Unsolicited error id=%s method=%s error=%s; stats=%s",
-                    self._ip, message.get("id"), message.get("method"), error, self.stream_stats(),
+                    "[UDP] [%s] Unsolicited error id=%s method=%s error=%s; stats=%s; last datagrams: %s",
+                    self._ip, message.get("id"), message.get("method"), error, self.stream_stats(), self.trail(),
                 )
                 self._unsolicited_logged = True
             elif error is None:
@@ -224,6 +239,7 @@ class UdpSession:
             raise UdpUnavailable("session closed")
         self._transport.sendto(data)
         self._last_send = time.monotonic()
+        self._trail.append((self._last_send, ">", f"{message.get('method')}#{message.get('id')}"))
 
     async def _answer(
         self, message: dict, timeout: float = REPLY_TIMEOUT, attempts: int = ATTEMPTS,

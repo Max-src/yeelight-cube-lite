@@ -88,8 +88,25 @@ class SettingsMixin:
         wrong place on the cards and the camera."""
         if flip == self._orientation or self.lamp_draws_matrix:
             return
-        if self._base_matrix_colors:
-            self._base_matrix_colors = self._base_matrix_colors[::-1]
+        frame = self._base_matrix_colors
+        if not frame:
+            return
+        # Turned within the columns the lamp shows, at the frame's stride
+        # (device_profile: a Cube Matrix of 3 blocks shows 15 of 20, one of 6
+        # modules is 30 wide), as _flip_position does: a column it does not
+        # show keeps its place, its rows turned.
+        profile = getattr(self, "device_profile", None)
+        width = getattr(profile, "width", 20) or 20
+        rows = len(frame) // width
+        if rows * width != len(frame):
+            self._base_matrix_colors = frame[::-1]
+            return
+        shown = min(width, getattr(profile, "columns", width) or width)
+        turned = list(frame)
+        for index, color in enumerate(frame):
+            row, col = divmod(index, width)
+            turned[(rows - 1 - row) * width + (shown - 1 - col if col < shown else col)] = color
+        self._base_matrix_colors = turned
 
     @property
     def device_orientation(self):

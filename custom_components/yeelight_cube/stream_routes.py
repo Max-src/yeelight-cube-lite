@@ -22,43 +22,76 @@ import logging
 
 
 class LanPacer:
-    """When a Cube Lite gets its next LAN frame: a new picture no sooner
-    than ``gap`` after the last one sent, and the last picture again once
-    ``resend`` passed without a new one (unless unchanged frames are
-    skipped), so the lamp is never left without frames."""
+    """When a Cube Lite gets its next LAN frame. New pictures follow a
+    schedule ``gap`` apart (the Stream frame rate limit), so over time the
+    lamp gets exactly that many a second although frames only leave on a
+    render (``step``): at 12 a second they go 80 or 120 ms apart, never
+    rounded down to every third render (8.3 a second). A frame later than
+    a render (a hold, the lock, unchanged pictures) moves the schedule, so
+    there is no burst to catch up: two frames are never more than one render
+    closer than the gap.
+    At a limit of ``resend`` or slower (5 a second and under), every frame
+    goes one gap after the one before, the new picture, else the last one
+    again (unless unchanged frames are skipped): the lamp gets one steady
+    rhythm of exactly the limit, never two frames closer together, so a
+    limit of 1 is one frame a second, skipped or not. (The last picture
+    again every 0.2 s between new ones made any limit 5 frames a second on
+    the lamp: a Cube Lite at "1 a second" hung three times on 2026-11-20,
+    none in 19 lamp-hours at a true 1 a second.) A new picture right after
+    a repeat (120 ms apart at 3 a second) hung a Cube Lite within minutes,
+    four times in a row (2026-11-19)."""
+
+    # Render timing jitter: a frame due ``resend`` after the last one still
+    # goes at the render that comes a few milliseconds early.
+    SLACK = 0.01
 
     SEND = "send"
     REPEAT = "repeat"
     WAIT = "wait"
 
-    def __init__(self, resend: float) -> None:
+    def __init__(self, resend: float, step: float = 0.0) -> None:
         self.resend = resend
-        # The last LAN frame (a repeat too), and the last one sent as a
-        # frame of its own (the stream's clock: the event loop's).
-        self.sent_at = 0.0
-        self.picture_at = 0.0
+        self.step = step  # the time between renders
+        # The last LAN frame (a repeat too), and when the next new picture
+        # may go (the stream's clock: the event loop's).
+        self.sent_at = float("-inf")  # nothing sent yet
+        self.next_at = 0.0
+        self.gap = 0.0
 
     def decide(self, now: float, changed: bool, gap: float, changes_only: bool, can_repeat: bool) -> str:
         """SEND the frame now, REPEAT the last one (sent over the LAN:
         ``can_repeat``), or WAIT for a later render. ``changed``: the frame
         differs from the last one sent; ``changes_only``: Skip Unchanged
         Stream Frames, no repeat."""
+        self.gap = gap
         since = now - self.sent_at
+        if self._steady(gap):
+            # One frame per beat (``next_at``): the new picture, else the
+            # same one again (none when unchanged frames are skipped: the
+            # route stops those first). Never closer than ``resend``.
+            if since < self.resend - self.SLACK or now < self.next_at - self.SLACK:
+                return self.WAIT
+            return self.SEND
         if changed:
-            early = since < min(gap, self.resend) or now - self.picture_at < gap
+            early = now < self.next_at
         else:
             early = since < self.resend
         if not early:
             return self.SEND
-        if changed and not changes_only and since >= self.resend and can_repeat:
-            # A limit under 5 a second: the last picture again, so the lamp
-            # is never left quiet.
-            return self.REPEAT
         # The newest picture goes at the next render it may.
         return self.WAIT
 
+    def _steady(self, gap: float) -> bool:
+        """Frames on a steady rhythm, one gap apart (a limit of 5 a second
+        or under)."""
+        return self.resend > 0 and gap >= self.resend - self.SLACK
+
     def sent(self, now: float) -> None:
-        self.sent_at = self.picture_at = now
+        # The next one a gap after the time this one was due, so the rate is
+        # exact over time; a picture later than a render (a hold, the lock)
+        # counts from one render before now, so nothing bursts to catch up.
+        self.next_at = max(self.next_at, now - self.step) + self.gap
+        self.sent_at = now
 
     def repeated(self, now: float) -> None:
         self.sent_at = now
@@ -73,7 +106,7 @@ class StreamDiag:
     REPORT_SECONDS = 30.0
 
     def __init__(self, ip: str, logger, report) -> None:
-        self.counts = dict(rendered=0, submitted=0, unchanged=0, locked=0, unavailable=0, errors=0)
+        self.counts = dict(rendered=0, submitted=0, unchanged=0, paced=0, locked=0, unavailable=0, errors=0)
         self.max_render_ms = 0.0
         self.max_send_ms = 0.0
         self._ip = ip
@@ -202,8 +235,8 @@ class LanStreamRoute:
     async def pace(self, candidate, last_sent, held: bool, changes_only: bool) -> str | None:
         """None: ``candidate`` goes now. Else what happened instead, as
         StreamDiag counts it: "unchanged" (the same as the last frame sent,
-        with Skip Unchanged Stream Frames; or too soon for the pacer), or
-        "repeated" (the last frame sent again). Only while the lamp is known
+        with Skip Unchanged Stream Frames), "paced" (not due yet under the
+        Stream frame rate limit) or "repeated" (the last frame sent again). Only while the lamp is known
         to be in direct mode (a frame after a hold always goes)."""
         light = self.light
         if held or not light._direct_mode_trusted():
@@ -221,7 +254,7 @@ class LanStreamRoute:
             self.pacer.repeated(self._clock())
             return "repeated"
         if decision == LanPacer.WAIT:
-            return "unchanged"
+            return "paced"
         return None
 
     async def send(self, payload, held: bool) -> None:

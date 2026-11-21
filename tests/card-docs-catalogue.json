@@ -130,6 +130,28 @@
                     "show_lamp_status": true,
                     "show_card_background": false
                 }
+            },
+            "matrix": {
+                "title": "On a Cube Matrix of six modules: previews as wide as its modules",
+                "matrix": [
+                    "matrix",
+                    "matrix",
+                    "panel",
+                    "spot",
+                    "matrix",
+                    "matrix"
+                ],
+                "contentMode": "Native Effect",
+                "config": {
+                    "slider_style": "capsule",
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "circle",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
             }
         },
         "editors": {
@@ -180,6 +202,29 @@
                     "title": "Living room",
                     "show_lamp_status": true,
                     "show_card_background": false
+                }
+            },
+            "matrix": {
+                "title": "Cube Matrix of six modules (Matrix, Panel, Spot) with its Modules section open",
+                "matrix": [
+                    "matrix",
+                    "matrix",
+                    "panel",
+                    "spot",
+                    "matrix",
+                    "matrix"
+                ],
+                "openModules": true,
+                "config": {
+                    "brightness_slider_style": "capsule",
+                    "show_device_orientation": true,
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "circle",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
                 }
             }
         },
@@ -422,6 +467,12 @@
                 "title": "The Square camera (square pixels)",
                 "config": {
                     "entity": "camera.documentation_square_landscape"
+                }
+            },
+            "cube-matrix": {
+                "title": "Cube Matrix of six modules: its Matrix, Panel and Spot faces",
+                "config": {
+                    "entity": "camera.documentation_cube_matrix"
                 }
             }
         },

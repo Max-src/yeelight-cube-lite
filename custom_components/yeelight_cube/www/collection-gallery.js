@@ -54,7 +54,8 @@
  * matches the label and the built-in name),
  * `title` captions the previews, `label` is an optional shorter button text
  * (filled, chips), `swatch` a CSS background shown by chips, `colorData` the
- * 100-pixel preview frame (top row first), drawn as a lamp standing on its
+ * preview frame (top row first: 20 x 5, or a longer Cube Matrix's width x 5,
+ * matrix-view.js frameWidth), drawn as a lamp standing on its
  * end with `vertical` (matrix-view.js). Items that are not matrices bring their own
  * preview markup instead (`previewHtml`, trusted: the card escapes it; see
  * itemPreviewTemplate), and `meta` is a short plain-text line under the
@@ -101,7 +102,8 @@
  * It renders in the card's light DOM, so the card includes
  * collectionGalleryStyles in its static styles. Cards that animate their
  * previews paint them on gallery-updated: every item preview is a
- * `[data-mode]` element holding a `.gallery-matrix-preview` grid of 100 cells.
+ * `[data-mode]` element holding a `.gallery-matrix-preview` grid of its
+ * frame's cells (100, or width x 5 for a longer Cube Matrix).
  */
 import { LitElement, html, nothing } from "./lib/lit-all.js";
 import { renderActionButton } from "./action-button-ui.js";

@@ -1,7 +1,9 @@
 """Matrix rendering for the Yeelight Cube Lite light entity.
 
-Extracted from light.py as a mixin.  Turns the current mode/text/colors into a
-100-pixel matrix: the mode router (:meth:`_apply_display_mode_internal`), letter
+Extracted from light.py as a mixin.  Turns the current mode/text/colors into
+the lamp's frame (device_profile.pixels: 100 pixels, 20 columns, for a Cube
+Lite and a Cube Matrix of up to 4 modules; 5 columns a module for a longer
+Cube Matrix): the mode router (:meth:`_apply_display_mode_internal`), letter
 and pixel placement, gradient/offset maths and orientation flips.  Reads/writes
 state via ``self``; used only as a mixin.
 """
@@ -22,7 +24,7 @@ from .const import (
     PANEL_FULL_CHAR,
     TEXT_RENDER_MODES,
 )
-from .layout import FONT_MAPS, Layout, Module, TOTAL_COLUMNS, TOTAL_ROWS, char_advance
+from .layout import FONT_MAPS, Layout, Module, TOTAL_COLUMNS, TOTAL_ROWS, char_advance, glyph_cells
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,13 +32,63 @@ _LOGGER = logging.getLogger(__name__)
 _MISSING_GLYPHS: set = set()
 
 
+def resized_layout(layout, width: int):
+    """``layout`` (one module per pixel) for a panel ``width`` columns wide:
+    each pixel kept at its row and column, the new ones black (the lamp's
+    module list changed, light_matrix_settings)."""
+    modules = layout.device_layout
+    old_width = max(1, len(modules) // TOTAL_ROWS)
+    resized = []
+    for row in range(TOTAL_ROWS):
+        for col in range(width):
+            index = row * old_width + col
+            resized.append(
+                modules[index] if col < old_width and index < len(modules)
+                else Module("1x1", ["#000000"])
+            )
+    return Layout(resized)
+
+
+def fit_frame(frame, width: int) -> list:
+    """A lamp-order frame on a panel ``width`` columns wide: as it is when
+    it already is; else (one drawn 20 columns wide, or wider) each row
+    placed from column 0, the columns past it black, cropped to ``width``."""
+    frame = list(frame)
+    pixels = width * TOTAL_ROWS
+    if len(frame) == pixels or len(frame) % TOTAL_ROWS:
+        return frame
+    source = len(frame) // TOTAL_ROWS
+    black = (0, 0, 0)
+    return [
+        frame[row * source + col] if col < source else black
+        for row in range(TOTAL_ROWS) for col in range(width)
+    ]
+
+
 class MatrixRenderMixin:
-    """Render text / gradients / pixel-art into the 5x20 matrix."""
+    """Render text / gradients / pixel-art into the lamp's frame (5 rows,
+    device_profile.width columns)."""
+
+    @property
+    def _layout(self):
+        """The frame's modules, one per pixel: as many as the lamp's frame
+        has (device_profile.pixels), so they follow its module list."""
+        layout = self._frame_layout
+        width = self._panel_width()
+        if len(layout.device_layout) != width * TOTAL_ROWS:
+            layout = self._frame_layout = resized_layout(layout, width)
+        return layout
+
+    @_layout.setter
+    def _layout(self, layout) -> None:
+        self._frame_layout = layout
 
     def _init_render_state(self) -> None:
         """What the text and drawing modes render, and how the lamp is
         mounted. Called by YeelightCubeLight.__init__."""
-        self._layout = Layout([Module("1x1") for _ in range(100)])
+        # 20 x 5 to start with; resized to the lamp's frame when it is wider
+        # (the _layout property).
+        self._layout = Layout([Module("1x1") for _ in range(TOTAL_COLUMNS * TOTAL_ROWS)])
         self._custom_text = "HELLO"
         self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
         # Custom Draw mode: the drawing's pixels (_custom_draw_active, in
@@ -76,12 +128,15 @@ class MatrixRenderMixin:
                 offset = 0
             return offset
 
-    def _flip_position(self, pos, total_columns=TOTAL_COLUMNS, total_rows=TOTAL_ROWS):
+    def _flip_position(self, pos, total_columns=None, total_rows=TOTAL_ROWS):
         """
         Flip a linear position index for the matrix if orientation is flipped.
+        ``total_columns``: the frame's stride (device_profile.width).
         """
         if self._orientation == ORIENTATION_NORMAL:
             return pos
+        if total_columns is None:
+            total_columns = self._panel_width()
         # Flip both row and column (180 deg rotation), within the columns the
         # lamp shows (a Cube Matrix with fewer than 4 blocks: device_profile
         # columns); a column it does not show stays where it is.
@@ -97,7 +152,14 @@ class MatrixRenderMixin:
         profile = getattr(self, "device_profile", None)
         return getattr(profile, "columns", TOTAL_COLUMNS) or TOTAL_COLUMNS
 
-    def _flip_positions(self, positions, total_columns=TOTAL_COLUMNS, total_rows=TOTAL_ROWS):
+    def _panel_width(self) -> int:
+        """The columns of the panel frames are drawn on, their stride
+        (device_profile.width: 20, or a Cube Matrix's of more than 4
+        modules)."""
+        profile = getattr(self, "device_profile", None)
+        return getattr(profile, "width", TOTAL_COLUMNS) or TOTAL_COLUMNS
+
+    def _flip_positions(self, positions, total_columns=None, total_rows=TOTAL_ROWS):
         return [self._flip_position(pos, total_columns, total_rows) for pos in positions]
 
     async def _apply_display_mode_internal(self):
@@ -124,17 +186,19 @@ class MatrixRenderMixin:
                 # Pixel art always uses a black background — missing positions = black
                 for module in self._layout.device_layout:
                     module.set_colors(["#000000"])
-                # Normalize to exactly 100 positions:
-                #   - positions >= 100 are ignored
+                # Normalize to the frame's positions (show_pixel_art placed
+                # them at its stride, device_profile.width):
+                #   - positions past the frame are ignored
                 #   - last definition of a position wins (later entries override earlier)
                 #   - missing positions default to black
                 pixel_map = {}
+                frame_pixels = len(self._layout.device_layout)
                 for px in self._custom_pixels:
                     if not isinstance(px, dict):
                         continue
                     pos = px.get("position")
                     color = px.get("color")
-                    if not isinstance(pos, int) or pos < 0 or pos >= 100:
+                    if not isinstance(pos, int) or pos < 0 or pos >= frame_pixels:
                         continue
                     # Validate and normalize color — must be list/tuple of 3 ints
                     if not isinstance(color, (list, tuple)) or len(color) < 3:
@@ -191,7 +255,7 @@ class MatrixRenderMixin:
                 # "giant letter" filling the whole panel and work through the
                 # normal text rendering path -- no special branches needed.
                 if self._full_panel:
-                    effective_text = PANEL_FULL_CHAR  # single char whose positions = all 100 pixels
+                    effective_text = PANEL_FULL_CHAR  # single char covering every pixel of the frame
                     # The columns the lamp shows (a Cube Matrix with fewer
                     # blocks: its gradients span those, not 20).
                     total_columns = self._shown_columns()
@@ -281,8 +345,8 @@ class MatrixRenderMixin:
     )
 
     def _place_frame(self, frame):
-        """Light a frame's pixels (100 colors in panel order, None: the
-        background), turned round on a flipped lamp."""
+        """Light a frame's pixels (device_profile.pixels colors in panel
+        order, None: the background), turned round on a flipped lamp."""
         by_color = {}
         for pos, color in enumerate(frame):
             if color is not None:
@@ -290,8 +354,7 @@ class MatrixRenderMixin:
         for color_hex, positions in by_color.items():
             self.place_pixels(color_hex, self._flip_positions(positions))
 
-    @staticmethod
-    def _panel_sequence_frame(colors):
+    def _panel_sequence_frame(self, colors):
         """Panel Color Sequence: the colors one module after another over the
         whole panel (red when none is set; an invalid color: red)."""
         sequence = [
@@ -302,21 +365,24 @@ class MatrixRenderMixin:
         ]
         return [
             sequence[pos % len(sequence)]
-            for pos in range(TOTAL_COLUMNS * TOTAL_ROWS)
+            for pos in range(self._panel_width() * TOTAL_ROWS)
         ]
 
     def _text_mode_frame(self, mode, text, colors, angle, offset, text_width):
-        """The 100 pixels of ``text`` in a text mode, before the orientation
-        flip: an RGB tuple where the text lights, else None (the background).
-        ``offset`` is the text's first column (alignment or scroll) and
-        ``text_width`` its width in columns. The lamp
+        """The frame's pixels (device_profile.pixels) of ``text`` in a text
+        mode, before the orientation flip: an RGB tuple where the text
+        lights, else None (the background). ``offset`` is the text's first
+        column (alignment or scroll) and ``text_width`` its width in columns.
+        The glyphs are placed cell by cell (layout.glyph_cells) at the
+        frame's stride (device_profile.width). The lamp
         (_apply_display_mode_internal) and the gallery previews
         (preview_gradient_modes) both draw from it."""
-        frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
+        width = self._panel_width()
+        frame = [None] * (width * TOTAL_ROWS)
         # The columns the lamp shows (device_profile.columns: 15 on a Cube
-        # Matrix with 3 blocks): the gradients span them, and nothing is
-        # drawn past them.
-        columns = min(TOTAL_COLUMNS, self._shown_columns())
+        # Matrix with 3 blocks, 30 with 6): the gradients span them, and
+        # nothing is drawn past them.
+        columns = min(width, self._shown_columns())
         if not colors:
             colors = (
                 [(255, 0, 0), (0, 0, 255)]
@@ -328,17 +394,14 @@ class MatrixRenderMixin:
         def clamp(color):
             return tuple(min(255, max(0, value)) for value in color)
 
-        def shown(pos, letter_offset):
+        def shown(row, col):
             # On the panel, and inside the columns the lamp shows.
-            return (
-                0 <= pos + letter_offset < len(frame)
-                and 0 <= pos % TOTAL_COLUMNS + letter_offset < columns
-            )
+            return 0 <= row < TOTAL_ROWS and 0 <= col < columns
 
-        # Each letter: its glyph and the column it starts at.
+        # Each letter: its glyph's cells and the column it starts at.
         letters = []
         for letter in text:
-            letters.append((self.get_positions_for_letter(letter), offset))
+            letters.append((self._glyph_cells(letter), offset))
             offset += self._char_advance(letter)
 
         if mode == "Text Color Sequence":
@@ -347,11 +410,11 @@ class MatrixRenderMixin:
             random.shuffle(shuffled)
             index = 0
             for glyph, letter_offset in letters:
-                positions = glyph[:]
-                random.shuffle(positions)
-                for pos in positions:
-                    if shown(pos, letter_offset):
-                        frame[pos + letter_offset] = shuffled[index % len(shuffled)]
+                cells = glyph[:]
+                random.shuffle(cells)
+                for row, col in cells:
+                    if shown(row, col + letter_offset):
+                        frame[row * width + col + letter_offset] = shuffled[index % len(shuffled)]
                     index += 1
             return frame
 
@@ -379,10 +442,10 @@ class MatrixRenderMixin:
                     return distance / farthest if farthest > 0 else 0
 
             for glyph, letter_offset in letters:
-                for pos in glyph:
-                    if shown(pos, letter_offset):
-                        row, col = divmod(pos + letter_offset, TOTAL_COLUMNS)
-                        frame[pos + letter_offset] = clamp(
+                for row, glyph_col in glyph:
+                    col = glyph_col + letter_offset
+                    if shown(row, col):
+                        frame[row * width + col] = clamp(
                             gradient(colors, place(row, col) * (len(colors) - 1), len(colors))
                         )
             return frame
@@ -393,7 +456,9 @@ class MatrixRenderMixin:
                     continue
                 dx = math.cos(math.radians(angle))
                 dy = math.sin(math.radians(angle))
-                cells = [divmod(pos + letter_offset, TOTAL_COLUMNS) for pos in glyph]
+                # Its box: as the frame's positions read (a letter past an
+                # edge wraps, as it always did).
+                cells = [divmod(row * width + col + letter_offset, width) for row, col in glyph]
                 rows = [row for row, _ in cells]
                 cols = [col for _, col in cells]
                 if len(set(cols)) == 1:
@@ -413,41 +478,49 @@ class MatrixRenderMixin:
                 ]
                 low = min(projections)
                 span = (max(projections) - low) or 1
-                for pos in glyph:
-                    if shown(pos, letter_offset):
-                        row, col = divmod(pos + letter_offset, TOTAL_COLUMNS)
+                for row, glyph_col in glyph:
+                    col = glyph_col + letter_offset
+                    if shown(row, col):
                         position = ((col - center_col) * dx + (row - center_row) * dy - low) / span
-                        frame[pos + letter_offset] = clamp(
+                        frame[row * width + col] = clamp(
                             gradient(colors, position * (len(colors) - 1), len(colors))
                         )
                 continue
 
-            width = self.letter_size(glyph)
-            for pos in glyph:
-                if not shown(pos, letter_offset):
+            letter_width = len({col for _, col in glyph})
+            for row, column in glyph:
+                if not shown(row, column + letter_offset):
                     continue
-                column = pos % TOTAL_COLUMNS
                 if mode == "Letter Gradient":
                     color = gradient(colors, index, len(text))
                 elif mode == "Column Gradient":
                     color = gradient(colors, column + letter_offset, text_width)
                 elif mode == "Row Gradient":
-                    color = gradient(colors, pos // TOTAL_COLUMNS, TOTAL_ROWS)
+                    color = gradient(colors, row, TOTAL_ROWS)
                 elif mode == "Letter Vertical Gradient":
                     # Across the letter's columns (a one-column letter: the
                     # middle of the gradient).
                     color = clamp(
                         gradient(colors, (len(colors) - 1) / 2, len(colors))
-                        if width == 1
-                        else gradient(colors, column, width)
+                        if letter_width == 1
+                        else gradient(colors, column, letter_width)
                     )
                 elif mode == "Solid Color":
                     color = colors[0]
                 else:
                     # Not a text mode (Panel Color Sequence): nothing drawn.
                     return frame
-                frame[pos + letter_offset] = color
+                frame[row * width + column + letter_offset] = color
         return frame
+
+    def _glyph_cells(self, letter: str) -> list:
+        """``letter``'s (row, column) cells in the current font (its glyph
+        is kept 20 columns wide, layout.glyph_cells); the full-panel
+        character: every cell of the panel (device_profile.width columns)."""
+        if letter == PANEL_FULL_CHAR:
+            width = self._panel_width()
+            return [(row, col) for row in range(TOTAL_ROWS) for col in range(width)]
+        return glyph_cells(self.get_positions_for_letter(letter))
 
     def place_pixels(self, color: str, positions):
         

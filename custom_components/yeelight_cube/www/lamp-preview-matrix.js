@@ -15,7 +15,13 @@ import {
 } from "./clock-preview-utils.js";
 import { nativeEffectLampFrame } from "./native-effect-card-utils.js";
 import { matrixFrame } from "./matrix-frame.js";
-import { withSpotColours } from "./matrix-modules.js";
+import {
+  fitLampFrame,
+  moduleCells,
+  modulePreviewRadius,
+  paintModuleCells,
+  withSpotColours,
+} from "./matrix-modules.js";
 import { contextGrid, previewContext } from "./preview-context.js";
 import { nativeEffectCatalog } from "./native-effect-catalog.js";
 import {
@@ -26,20 +32,23 @@ import {
 } from "./matrix-view.js";
 import { html, repeat } from "./lib/lit-all.js";
 
-// One layout per orientation, made once (painted every animation frame).
+// One layout per orientation and frame width (20, or a longer Cube
+// Matrix's), made once (painted every animation frame).
 const orientedLayouts = new Map();
-function orientedLayout(orientation) {
-  let layout = orientedLayouts.get(orientation);
+function orientedLayout(orientation, width = 20) {
+  const key = `${orientation}:${width}`;
+  let layout = orientedLayouts.get(key);
   if (!layout) {
-    const view = matrixView(isVerticalMount(orientation));
+    const view = matrixView(isVerticalMount(orientation), width);
     layout = Object.freeze({
       cols: view.cols,
       rows: view.rows,
       tall: view.vertical,
+      width: view.width,
       display: (frame) =>
         toDisplayOrder(viewerFrame(frame, orientation), view.vertical),
     });
-    orientedLayouts.set(orientation, layout);
+    orientedLayouts.set(key, layout);
   }
   return layout;
 }
@@ -55,9 +64,11 @@ function lampEffectItem(hass, entityId, name) {
 }
 
 export const MatrixPreviewMixin = (Base) => class extends Base {
-  // Convert a 100-entry matrix_colors array (RGB tuples) to CSS colors using
+  // Convert a matrix_colors array (RGB tuples, lamp order) to CSS colors using
   // the same brightness-boost pipeline as the static preview. Extracted so the
   // native-effect animation loop renders identically to the normal path.
+  // On the lamp's frame width (100 pixels, or a longer Cube Matrix's width x
+  // 5): a frame of another width is placed from the base side, or cropped.
   // A brightness slider being dragged (or not yet confirmed by the lamp)
   // wins over the lamp's reported value, so the preview follows the slider.
   _matrixColorsToGridColors(
@@ -65,7 +76,8 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     stateObj,
     previewBoost = this._lampSliders.previewScale(stateObj?.attributes),
   ) {
-    return matrixColors.map((c) => {
+    const fitted = fitLampFrame(matrixColors, previewContext(stateObj?.attributes).lamp, "lamp", null);
+    return fitted.map((c) => {
       let px = c;
       if (!Array.isArray(px) || px.length !== 3) px = [0, 0, 0];
       if (px[0] === 0 && px[1] === 0 && px[2] === 0) return rgbToCss([0, 0, 0]);
@@ -169,7 +181,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       return;
     }
     const dots = this._getLampDots();
-    if (!dots || dots.length !== 100) return; // matrix not rendered yet
+    if (!dots || dots.length !== this._framePixels(st)) return; // matrix not rendered yet
     const streamed = this._streamedFrame();
     if (streamed) {
       this._showingStream = true;
@@ -252,7 +264,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       return;
     }
     const dots = this._getLampDots();
-    if (!dots || dots.length !== 100) return; // matrix not rendered yet
+    if (!dots || dots.length !== this._framePixels(st)) return; // matrix not rendered yet
     // A streamed clock: the frame the lamp was sent.
     const streamed = this._streamedFrame();
     if (streamed) {
@@ -307,7 +319,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       return;
     }
     const dots = this._getLampDots();
-    if (!dots || dots.length !== 100) return; // matrix not rendered yet
+    if (!dots || dots.length !== this._framePixels(st)) return; // matrix not rendered yet
 
     // A streamed effect: the frame the lamp was sent.
     const streamed = this._streamedFrame();
@@ -368,11 +380,15 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // Lit never rewrites what the static preview or the animation loops paint.
   _paintDots(gridColors, orientation, dots = this._getLampDots()) {
     // A Cube Matrix's spots in the colour the lamp lights them.
-    const colors = this._orientedLayout(orientation).display(
-      withSpotColours(gridColors, previewContext(this._lampAttributes()).lamp, "lamp"),
-    );
+    const { lamp, width } = previewContext(this._lampAttributes());
+    const viewer = viewerFrame(withSpotColours(gridColors, lamp, "lamp"), orientation);
+    const colors = toDisplayOrder(viewer, this._orientedLayout(orientation, width).tall);
+    // Its modules placed first: a spot's or a panel's dot shows one face
+    // (matrix-modules.js), whatever hide_black_dots says.
+    const faces = this._paintModules(orientation, dots);
 
     dots.forEach((dot, idx) => {
+      if (dot._module) return;
       const color = colors[idx] || "#000000";
 
       // Change-only: the raw color fully determines the black/empty/display
@@ -390,18 +406,21 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
         dot.classList.remove("lamp-dot-empty");
       }
     });
-    this._paintModules(gridColors, orientation, dots);
+    paintModuleCells(faces, viewer, { shadow: this._moduleShadow || "" });
   }
 
   // A Cube Matrix's modules (matrix-modules.js moduleGrid): each dot
-  // placed on the grid of its modules, those it has not left out, a spot one
-  // round light over its area (its colour: _paintDots, withSpotColours).
-  _paintModules(gridColors, orientation, dots) {
+  // placed on the grid of its modules, those it has not left out, a spot or
+  // a panel one face over its area (_paintDots paints it from the frame's
+  // pixels it names). Returns those faces' dots (moduleCells).
+  _paintModules(orientation, dots) {
     const context = previewContext(this._lampAttributes());
-    const layout = this._orientedLayout(orientation);
+    const layout = this._orientedLayout(orientation, context.width);
     const key = `${orientation}:${context.moduleKey}:${dots.length}`;
-    if (!dots.length || this._modulesKey === key) return;
+    if (!dots.length || (this._modulesKey === key && this._moduleDots === dots))
+      return this._faceDots || [];
     this._modulesKey = key;
+    this._moduleDots = dots;
     const grid = contextGrid(context, layout.tall);
     const places = grid ? toDisplayOrder(grid.place, layout.tall) : [];
     dots.forEach((dot, index) => {
@@ -409,8 +428,21 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       dot.style.display = place === null ? "none" : "";
       dot.style.gridColumn = place ? `${place.column}${place.span > 1 ? ` / span ${place.span}` : ""}` : "";
       dot.style.gridRow = place ? `${place.row}${place.span > 1 ? ` / span ${place.span}` : ""}` : "";
-      dot.classList.toggle("lamp-dot-spot", !!place?.spot);
+      dot.classList.toggle("lamp-dot-module", !!place?.module);
+      if (place?.module) {
+        dot.dataset.module = place.module;
+        dot.dataset.pixels = place.pixels.join(",");
+        dot.classList.remove("lamp-dot-empty");
+        dot._rawColor = undefined;
+      } else if (dot.dataset.module) {
+        delete dot.dataset.module;
+        delete dot.dataset.pixels;
+        dot.style.boxShadow = "";
+        dot._bg = dot._sh = dot._rawColor = undefined;
+      }
     });
+    this._faceDots = moduleCells([...dots]);
+    return this._faceDots;
   }
 
   // The card's lamp's attributes (its modules, its orientation).
@@ -454,9 +486,16 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // vertical when it stands on one end (Down / Up), and `display`, which turns
   // a lamp-order frame (matrix_colors, the clock and effect frames) the way
   // the viewer sees it, in the dots' order (matrix-view.js: the rule of every
-  // preview and the cameras).
-  _orientedLayout(orientation) {
-    return orientedLayout(orientation);
+  // preview and the cameras). `width`: the frame's columns (20, or a longer
+  // Cube Matrix's).
+  _orientedLayout(orientation, width) {
+    return orientedLayout(orientation, width);
+  }
+
+  // The pixels of the lamp's frames (100, or a longer Cube Matrix's width x
+  // 5): the dots the preview has.
+  _framePixels(stateObj) {
+    return previewContext(stateObj?.attributes).width * 5;
   }
 
   // Container geometry of the matrix preview (shared by the Lit template and
@@ -472,14 +511,19 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     // Preview geometry follows the physical device orientation; the frame
     // is every preview's (matrix-frame.js), vertical at the same pixel size.
     const context = previewContext(stateObj?.attributes);
-    const layout = this._orientedLayout(context.orientation);
-    // A Cube Matrix's modules (matrix-modules.js): their columns at the same
-    // dot size, a narrower frame.
+    const layout = this._orientedLayout(context.orientation, context.width);
+    // A Cube Matrix's modules (matrix-modules.js): fewer than 4, their
+    // columns at the same dot size, a narrower frame; more than 4, the frame
+    // as wide as the card's, its dots smaller.
     const modules = contextGrid(context, layout.tall);
     const size = this.config.size_pct || 100;
     const frame = matrixFrame({
-      width: modules && !layout.tall ? `${(size * modules.columns) / 20}%` : `${size}%`,
+      width:
+        modules && !layout.tall && modules.columns < 20
+          ? `${(size * modules.columns) / 20}%`
+          : `${size}%`,
       cols: modules?.cols,
+      panel: context.width,
       vertical: layout.tall,
       gap: pixelGap,
       padding: 8,
@@ -489,13 +533,18 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     });
     const margin =
       this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto";
+    // A spot's or a panel's face: the dots' shadow (_paintDots).
+    const dotShadow =
+      spacingMode === "subtle" || spacingMode === "normal" ? `0 0 ${frame.length(2)} #0008` : "";
+    this._moduleShadow = dotShadow;
     return {
       layout,
       outerStyle: `${frame.wrapperStyle}margin-inline:${margin};`,
       gridStyle:
         // Pixel shape and dot shadow, read by .lamp-dot (lamp-preview-styles.js).
         `--lamp-dot-radius:${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};` +
-        `--lamp-dot-shadow:${spacingMode === "subtle" || spacingMode === "normal" ? `0 0 ${frame.length(2)} #0008` : "none"};` +
+        `--lamp-dot-shadow:${dotShadow || "none"};` +
+        `--yc-module-radius:${modulePreviewRadius(pixelStyle)};` +
         `aspect-ratio:auto;${frame.gridStyle}grid-template-rows: repeat(${modules ? modules.rows : layout.rows}, 1fr);`,
     };
   }

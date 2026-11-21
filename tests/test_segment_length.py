@@ -7,8 +7,13 @@ finished its way out of sight (Falling Blocks landing past the last block,
 (lamp_settings' ``columns``: 5 pixels a column), as the lamp's own
 renderers do on a shorter segment; lamp_settings records it in the settings.
 
-Every renderer is checked on 5, 10 and 15 columns: nothing lit past them,
-and the same frames in Python and JS (tests/segment_length_check.mjs).
+A Cube Matrix of 5 to 8 modules shows 25 to 40 columns: its segment is
+longer, and its frames as wide as it (lamp_core.frame_width: the stride of
+lamp order, as device_profile.DeviceProfile.width).
+
+Every renderer is checked on 5, 10, 15, 25, 30, 35 and 40 columns: the
+frame's size, nothing lit past them, and the same frames in Python and JS
+(tests/segment_length_check.mjs).
 """
 import json
 import os
@@ -30,7 +35,9 @@ CONST = runpy.run_path(str(ROOT / "effect_catalog.py"))
 CORE = vars(sys.modules[LAMP["segment_length_for"].__module__])
 
 RENDERS = 80
-COLUMNS = (5, 10, 15)
+COLUMNS = (5, 10, 15, 25, 30, 35, 40)
+# Checked in every direction an effect offers: a short and a long segment.
+TURNED = (15, 40)
 EXEMPT = {"Fireworks"}  # its own timeline (checked below)
 
 
@@ -55,14 +62,15 @@ def settings_for(name, columns, direction=None):
 
 
 def cases():
-    """(key, settings): each effect on 5, 10 and 15 columns in its first
-    direction, and on 15 in every other it offers."""
+    """(key, settings): each effect on every COLUMNS in its first
+    direction, and on TURNED in every other it offers."""
     out = []
     for name, spec in effects():
         for columns in COLUMNS:
             out.append((f"{name}|{columns}", settings_for(name, columns)))
         for direction in (spec.get("directions") or [])[1:]:
-            out.append((f"{name}|15|{direction}", settings_for(name, 15, direction)))
+            for columns in TURNED:
+                out.append((f"{name}|{columns}|{direction}", settings_for(name, columns, direction)))
     return out
 
 
@@ -70,9 +78,14 @@ def python_crcs(settings, renders=RENDERS):
     return [zlib.crc32(frame) for frame in LAMP["exact_frames"](settings, 0, renders)]
 
 
-def lit_columns(frame) -> set:
-    """The columns a lamp-order frame (300 bytes, row-major) lights."""
-    return {pixel % 20 for pixel in range(100) if any(frame[3 * pixel:3 * pixel + 3])}
+def frame_width(columns) -> int:
+    """The frame's width (its stride) for a lamp showing ``columns``."""
+    return max(20, columns or 20)
+
+
+def lit_columns(frame, width=20) -> set:
+    """The columns a lamp-order frame (row-major, ``width`` wide) lights."""
+    return {pixel % width for pixel in range(len(frame) // 3) if any(frame[3 * pixel:3 * pixel + 3])}
 
 
 class SegmentLengthTests(unittest.TestCase):
@@ -85,9 +98,11 @@ class SegmentLengthTests(unittest.TestCase):
     def test_nothing_is_lit_past_the_columns_shown(self):
         for key, settings in cases():
             columns = int(key.split("|")[1])
+            width = frame_width(columns)
             with self.subTest(key):
                 for render, frame in enumerate(LAMP["exact_frames"](settings, 0, RENDERS)):
-                    shown = lit_columns(frame)
+                    self.assertEqual(3 * 5 * width, len(frame), f"render {render}")
+                    shown = lit_columns(frame, width)
                     self.assertTrue(shown <= set(range(columns)), f"render {render}: {sorted(shown)}")
 
     def test_python_and_js_draw_the_same(self):

@@ -567,7 +567,7 @@ STREAM_NAMES = {
     "_streams_changed", "_stream_watchdog", "stream_report", "_probe_streamed_lamp",
     "_publish_stream_frame", "_preview_shows_drive", "streamed_preview_frame", "_lite_lan_gap",
     "_skips_unchanged_frames", "_drawn_payload", "_studio_routes", "_studio_resume_origin",
-    "_studio_stream_ended", "_restart_studio_loop",
+    "_studio_stream_ended", "_restart_studio_loop", "_stream_led_stuck", "_stream_recover_now",
 }
 CLOCK_FACE = import_pure_module("clock_face")
 LAMP_ERRORS = import_pure_module("lamp_protocol").LAMP_ERRORS
@@ -601,7 +601,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 "drawn_in_full": LAMP_CORE_FULL,
                 "_get_device_lock": lambda ip: self.lock,
                 "ACTIVATION_TIMING": activation_timing(),
-                "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05, "STUDIO_HOLD_SECONDS": 0.01, "LITE_LAN_GAP": 0.0, "LITE_LAN_RESEND": 0.0, "LITE_STREAM_FPS_DEFAULT": 5, "LITE_STREAM_FPS_MIN": 1, "LITE_STREAM_FPS_MAX": 25,
+                "STUDIO_FRAME_SECONDS": 0.005, "STUDIO_RETRY_SECONDS": 0.05, "STUDIO_HOLD_SECONDS": 0.01, "LITE_LAN_GAP": 0.0, "LITE_LAN_RESEND": 0.0, "LITE_LAN_GAP_FPS": 5, "LITE_STREAM_FPS_DEFAULT": 5, "LITE_STREAM_FPS_MIN": 1, "LITE_STREAM_FPS_MAX": 25,
                 "CONF_SKIP_UNCHANGED_FRAMES": "skip_unchanged_frames",
                 # The previews' frames (test_stream_preview.py).
                 "STREAM_PREVIEW_FRESH": 1.0, "led_appearance": lambda rgb: tuple(rgb),
@@ -612,6 +612,8 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 )},
                 "STUDIO_PROBE_SECONDS": 0.05, "STUDIO_SILENT_PROBE_SECONDS": 0.05, "STUDIO_RESTART_MOST": 0.2,
                 "STUDIO_SILENT_AFTER": 3,
+                "STREAM_LED_CHECK_SECONDS": 0.05, "STREAM_LED_CONFIRM_SECONDS": 0.01,
+                "STREAM_RECOVERY_QUIET": 0.01,
                 # A Cube Lite: every render is sent (device_profile.max_fps None).
                 "studio_stride": lambda max_fps: 1,
                 # The clock.
@@ -822,6 +824,89 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         await self.run_for(0.08)
         self.assertIn(("probe", True), self.sent)
         self.stream_running("scroll", False)
+
+    async def test_a_silent_lamp_is_asked_again_soon_after_being_brought_back(self):
+        # 2026-11-19: with checks 5 minutes apart, a lamp power-cycled while
+        # the LAN recovery ran stayed without frames for minutes: the check
+        # skipped during the recovery went back to the long wait.
+        timing = self.light._stream_watchdog.__func__.__globals__
+        saved = timing["STUDIO_PROBE_SECONDS"], timing["STUDIO_SILENT_AFTER"]
+        timing["STUDIO_SILENT_AFTER"] = 1
+        client = self.light._lamp_client
+        try:
+            client.answers = False
+            self.stream_running("scroll", True)
+            await self.run_for(0.08)
+            self.assertTrue(client.stream_silent)  # a check went unanswered
+            timing["STUDIO_PROBE_SECONDS"] = 10.0  # the long wait from now on
+            self.light._link_recovery_running = True
+            await self.run_for(0.12)
+            # Power cycled: the recovery ends, the lamp answers.
+            self.light._link_recovery_running = False
+            client.answers = True
+            asked = self.sent.count(("probe", True))
+            await self.run_for(0.15)
+            self.assertGreater(self.sent.count(("probe", True)), asked)
+            self.assertFalse(client.stream_silent)  # frames go on again
+        finally:
+            timing["STUDIO_PROBE_SECONDS"], timing["STUDIO_SILENT_AFTER"] = saved
+            self.light._link_recovery_running = False
+            self.stream_running("scroll", False)
+
+    async def test_a_lamp_whose_led_part_stops_is_brought_back_at_once(self):
+        # 2026-11-20: the picture froze while the lamp's network part kept
+        # answering on the LAN for 1.5 to 2.5 minutes. Over Matter its LED
+        # part is found stuck within seconds: frames stop and the LAN
+        # recovery starts at once, without waiting for the LAN check.
+        timing = self.light._stream_watchdog.__func__.__globals__
+        saved = timing["STUDIO_PROBE_SECONDS"]
+        timing["STUDIO_PROBE_SECONDS"] = 10.0  # no LAN check meanwhile
+        verdicts, recoveries = [], []
+        client = self.light._lamp_client
+
+        async def matter_check():
+            verdicts.append(1)
+            return "stuck" if len(verdicts) >= 2 and not recoveries else "answers"
+
+        def recover_now():
+            recoveries.append(client.stream_silent)
+            client.answers = False  # stuck: the LAN check is not answered either
+            return True
+
+        self.light.matter_controller_check = matter_check
+        self.light._link_recovery_now = recover_now
+        try:
+            await self.light._start_studio_stream()
+            await self.run_for(0.2)
+            self.assertEqual([True], recoveries)  # once, frames already stopped
+            self.assertTrue(client.stream_silent)
+            stopped = len(self.frames())
+            await self.run_for(0.1)
+            self.assertEqual(stopped, len(self.frames()))
+            client.answers = True  # brought back: the LAN check resumes the frames
+            await self.run_for(0.15)
+            self.assertGreater(len(self.frames()), stopped)
+            self.assertFalse(client.stream_silent)
+        finally:
+            timing["STUDIO_PROBE_SECONDS"] = saved
+            self.light.stop_studio_stream()
+
+    async def test_one_stuck_answer_alone_changes_nothing(self):
+        # Twice in a row, STREAM_LED_CONFIRM_SECONDS apart: one odd answer
+        # does not end a stream (a stream's end is a risk of its own).
+        answers = iter(["stuck", "answers"] * 20)
+        recoveries = []
+
+        async def matter_check():
+            return next(answers)
+
+        self.light.matter_controller_check = matter_check
+        self.light._link_recovery_now = lambda: recoveries.append(1)
+        await self.light._start_studio_stream()
+        await self.run_for(0.2)
+        self.assertEqual([], recoveries)
+        self.assertFalse(self.light._lamp_client.stream_silent)
+        self.light.stop_studio_stream()
 
     async def test_a_cube_matrix_has_its_own_lan_check(self):
         self.light.is_cube_matrix = True

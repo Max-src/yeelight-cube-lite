@@ -734,7 +734,9 @@ def drift_step(state, settings, clock_ms, render) -> bytes:
 # Pixels 0..36 run towards 0, 37..56 away from it, each step; what is past them
 # takes one tail colour, fed by the bright pixels reaching pixel 0. The working
 # buffer goes out by panel index, unmapped: the direction is not read. Those
-# pixels are fixed: a shorter segment shows the first N of the same 100.
+# pixels are fixed: a shorter segment shows the first N of the same 100. A
+# longer one (a Cube Matrix of more than 4 modules) keeps them and the tail
+# colour runs on to its last pixel: the same picture, the tail longer.
 _BURST_ROUTE = bytes((value * 255) >> 8 for value in range(256))  # brightness 255
 
 
@@ -744,7 +746,7 @@ def burst_init(settings) -> dict:
         "period": int(settings["rate"] * -3.0 / 255.0 + 4.0),
         "colour": bytes(effect_colours(settings)["primary"]),
         "length": settings_length(settings),
-        "work": bytearray(3 * LENGTH),
+        "work": bytearray(3 * max(LENGTH, settings_length(settings))),
         "panel": bytes(3 * settings_length(settings)),
     }
 
@@ -767,7 +769,7 @@ def burst_step(state, settings, clock_ms, render) -> bytes:
         tail = bytes((work[291 + channel] * 250 + work[channel] * 5) >> 8 for channel in range(3))
     else:
         tail = bytes((work[291 + channel] * 235) >> 8 for channel in range(3))
-    work[171:] = tail * (LENGTH - 57)
+    work[171:] = tail * (len(work) // 3 - 57)
     state["panel"] = work[:3 * state["length"]].translate(_BURST_ROUTE)
     return state["panel"]
 

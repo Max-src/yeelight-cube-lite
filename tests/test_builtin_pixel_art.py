@@ -48,11 +48,12 @@ class ShowPixelArtTests(unittest.TestCase):
     @staticmethod
     def _lamp(**attrs):
         show = _load_standalone_functions(
-            LIGHT_SOURCE, {"show_pixel_art"}, {"expand_pixels": STORAGE["expand_pixels"]}
+            LIGHT_SOURCE, {"show_pixel_art"},
+            {"expand_pixels": STORAGE["expand_pixels"], "pixels_at_width": STORAGE["pixels_at_width"]},
         )["show_pixel_art"]
         selects = [Mock(), Mock(), Mock()]
         lamp = light_state(**{
-            "hass": None, "_custom_text": "", "stop_scroll_timer": Mock(),
+            "hass": None, "_custom_text": "", "stop_scroll_timer": Mock(), "_panel_width": lambda: 20,
             "async_apply_display_mode": AsyncMock(), "async_schedule_update_ha_state": Mock(),
             **attrs,
         })
@@ -90,12 +91,13 @@ class ShowPixelArtTests(unittest.TestCase):
     def test_the_action_and_the_select_use_it(self):
         services = (ROOT / "light_services_pixel_art.py").read_text(encoding="utf-8")
         select = (ROOT / "select.py").read_text(encoding="utf-8")
-        self.assertIn("await target_entity.show_pixel_art(name, pixels)", services)
-        # apply_custom_pixels too, with the optional name the Draw card sends.
-        self.assertIn("await target_entity.show_pixel_art(name, pixels, bypass_lock=bypass_lock)", services)
+        # With the art's width (20 when it names none, pixel_art_width).
+        self.assertIn("await target_entity.show_pixel_art(name, pixels, width=width)", services)
+        # apply_custom_pixels too, with the optional name and width the Draw card sends.
+        self.assertIn("await target_entity.show_pixel_art(name, pixels, bypass_lock=bypass_lock, width=width)", services)
         self.assertIn('vol.Optional("name"): vol.Any(None, cv.string)', services)
         self.assertIn("find_pixel_art(saved, name)", services)
-        self.assertIn("await self._light_entity.show_pixel_art(option, art[\"pixels\"])", select)
+        self.assertIn("await self._light_entity.show_pixel_art(option, art[\"pixels\"], width=pixel_art_width(art))", select)
         self.assertIn('"type": "yeelight_cube/builtin_pixel_arts"', services)
 
 

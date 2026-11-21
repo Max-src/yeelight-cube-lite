@@ -437,7 +437,7 @@ module.exports = async (t) => {
     editor._lampControlOpen = true;
     await editor.updateComplete;
     check(
-      editor.getConfig().action_buttons.join() === "refresh",
+      editor.getConfig().action_buttons.join() === "refresh,modules",
       "Lamp editor migrates visibility",
     );
     const actionSection = [

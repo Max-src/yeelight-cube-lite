@@ -6,12 +6,14 @@
  */
 
 // --- Grid / Matrix ---
-// The drawing is always the landscape 20x5 matrix, top row first; a vertical
-// drawing area only shows it turned (matrix-view.js).
+// The drawing is always the landscape matrix, top row first: 20 x 5, or as
+// wide as a Cube Matrix of 5 modules or more (5 columns a module, the card's
+// _drawWidth); a vertical drawing area only shows it turned (matrix-view.js).
 export {
   MATRIX_COLS as GRID_COLS,
   MATRIX_ROWS as GRID_ROWS,
   MATRIX_SIZE,
+  MAX_MATRIX_COLS as GRID_MAX_COLS,
 } from "./matrix-view.js";
 export const OFF_COLOR = "#000000";
 

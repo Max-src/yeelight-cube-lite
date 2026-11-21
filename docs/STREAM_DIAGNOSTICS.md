@@ -26,11 +26,14 @@ Counters are cumulative for that stream loop:
 - `submitted`: completed frame-send calls; this excludes activation frames
   and transport-generated repeats. UDP frames have no acknowledgement, so
   this is not proof that the lamp displayed them.
-- `unchanged`: renders not sent: too soon for a Cube Lite's pace, or the
-  same as the last frame with Skip Unchanged Stream Frames (never over
-  Matter, where a steady cadence keeps the picture from pulsing).
-- `repeated`: a Cube Lite's last frame sent again between new pictures (a
-  Stream frame rate limit under 5).
+- `unchanged`: renders not sent because they are the same as the last frame,
+  with Skip Unchanged Stream Frames (never over Matter, where a steady
+  cadence keeps the picture from pulsing).
+- `paced`: a Cube Lite's renders not sent because the next new picture is
+  not due yet under its Stream frame rate limit.
+- `repeated`: a Cube Lite's last frame sent again on a beat with no new
+  picture (Stream frame rate limit of 5 and under, Skip Unchanged Stream
+  Frames off).
 - `locked`: frame slots skipped because another command held the lamp lock.
 - `unavailable`: slots held for a lost connection, TCP fallback, or silent lamp.
 - `errors`: render or frame-send failures.

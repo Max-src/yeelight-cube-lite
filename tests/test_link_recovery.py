@@ -73,7 +73,7 @@ class SweepTests(unittest.TestCase):
                     text = line.decode("latin-1").rstrip("\r\n")
                     self.received.append(LINK.link_size(text))
                     command = json.loads(text)
-                    if count > 25:
+                    if count >= 30:  # measured: refused from about the 30th
                         writer.write(b'{"id":1, "error":{"code":-1, "message":"client quota exceeded"}}\r\n')
                     elif LINK.link_size(text) == self.offset:
                         writer.write(json.dumps({"id": command["id"], "result": ["ok"]}).encode() + b"\r\n")
@@ -110,7 +110,7 @@ class SweepTests(unittest.TestCase):
                     await writer.drain()
 
         async def scenario():
-            target = LINK.candidate_sizes()[30]
+            target = LINK.candidate_sizes()[20]
             lamp = DroppingLamp(target)
             port = await lamp.start()
             try:
@@ -118,6 +118,44 @@ class SweepTests(unittest.TestCase):
             finally:
                 lamp.stop()
             self.assertTrue(DroppingLamp.dropped)
+
+        run(scenario())
+
+    def test_the_sweep_s_sizes(self):
+        # 28 sizes on one connection, nearest the 115.2-byte steps first;
+        # every offset measured on 2026-11-16 is among them.
+        sizes = LINK.candidate_sizes()
+        self.assertEqual(28, len(sizes))
+        self.assertEqual([115, 116, 114, 117, 113, 118, 112], sizes[:7])
+        self.assertEqual(461, sizes[21])
+        self.assertTrue({117, 229, 345, 346, 462} <= set(sizes))
+        self.assertLessEqual(len(sizes), LINK.COMMANDS_PER_CONNECTION)
+
+    def test_a_late_answer_names_the_command_it_answers(self):
+        # A command read late (through the lamp's re-sends) is answered after
+        # later ones were sent: the hit is the size its id was sent with.
+        class LateLamp(StuckLamp):
+            async def handle(self, reader, writer):
+                held = None
+                while line := await reader.readline():
+                    text = line.decode("latin-1").rstrip("\r\n")
+                    self.received.append(LINK.link_size(text))
+                    command = json.loads(text)
+                    if held is not None:
+                        writer.write(json.dumps({"id": held, "result": ["ok"]}).encode() + b"\r\n")
+                        await writer.drain()
+                        held = None
+                    if LINK.link_size(text) == self.offset:
+                        held = command["id"]
+
+        async def scenario():
+            lamp = LateLamp(230)
+            port = await lamp.start()
+            try:
+                self.assertEqual(230, await LINK.realign("127.0.0.1", port, answer_wait=0.05))
+            finally:
+                lamp.stop()
+            self.assertNotEqual(230, lamp.received[-1])  # answered one command later
 
         run(scenario())
 
@@ -185,6 +223,34 @@ class DecisionTests(unittest.TestCase):
 
         run(scenario())
 
+    def test_the_streams_matter_check_starts_a_sweep_at_once(self):
+        # 2026-11-20: the picture froze 1.5 to 2.5 minutes before the network
+        # part restarted; a sweep works only before that, so it starts
+        # without the problem check's minute of silence, once per
+        # LINK_RECOVERY_NOW_SPACING, never beside a running one.
+        async def scenario():
+            light = stuck_light()
+            started = []
+
+            async def recover():
+                started.append(1)
+                await asyncio.sleep(0.01)
+                return False
+
+            light._async_recover_link = recover
+            self.assertTrue(light._link_recovery_now())
+            self.assertFalse(light._link_recovery_now())  # one runs
+            await asyncio.sleep(0.02)
+            self.assertFalse(light._link_recovery_now())  # too soon after it
+            light._link_recovery_at -= RECOVERY.LINK_RECOVERY_NOW_SPACING
+            self.assertTrue(light._link_recovery_now())
+            await asyncio.sleep(0.02)
+            self.assertEqual(2, len(started))
+            matrix = stuck_light(PROFILE.profile_for("CubeMatrix"))
+            self.assertFalse(matrix._link_recovery_now())
+
+        run(scenario())
+
     def test_an_answered_sweep_draws_the_content_again(self):
         async def scenario():
             light = stuck_light()
@@ -216,6 +282,28 @@ class DecisionTests(unittest.TestCase):
             self.assertAlmostEqual(
                 RECOVERY.LINK_RECOVERY_RETRY - RECOVERY.LINK_RECOVERY_UNREACHABLE_RETRY, waited, delta=1,
             )
+
+        run(scenario())
+
+    def test_a_lamp_that_stays_off_the_network_is_not_swept_every_minute(self):
+        # 2026-11-20 13:19-13:26: the bottom lamp stayed unreachable; it was
+        # swept every ~68 s ("try 1 of 3" each time) until its power cycle.
+        async def scenario():
+            light = stuck_light()
+            light._link_recovery_tries = 0
+            with patch.object(RECOVERY, "realign", AsyncMock(side_effect=TimeoutError())):
+                for _ in range(RECOVERY.LINK_RECOVERY_UNREACHABLE_FREE):
+                    light._link_recovery_tries += 1
+                    await light._async_recover_link()
+                    self.assertEqual(0, light._link_recovery_tries)
+                light._link_recovery_tries += 1
+                light._link_recovery_at = RECOVERY.time.monotonic()
+                await light._async_recover_link()
+            # Spent: the next one LINK_RECOVERY_RETRY later.
+            self.assertEqual(1, light._link_recovery_tries)
+            self.assertAlmostEqual(0, RECOVERY.time.monotonic() - light._link_recovery_at, delta=1)
+            light._link_recovery_due(set())  # back: a new episode has its own
+            self.assertEqual(0, light._link_recovery_misses)
 
         run(scenario())
 

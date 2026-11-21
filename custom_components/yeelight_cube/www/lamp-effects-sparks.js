@@ -763,13 +763,14 @@ function driftStep(state, settings) {
 }
 
 // ── Slot 63: Centre bursts ────────────────────────────────────────────
-// lamp_effects_sparks.py tells how it runs: on 100 pixels, the first N shown.
+// lamp_effects_sparks.py tells how it runs: on 100 pixels, the first N shown
+// (a longer segment: the tail colour runs on to its last pixel).
 function burstInit(settings) {
   return {
     reads: 0,
     period: Math.trunc((settings.rate * -3.0) / 255.0 + 4.0),
     colour: effectColours(settings).primary,
-    work: new Uint8Array(3 * LENGTH),
+    work: new Uint8Array(3 * Math.max(LENGTH, settingsLength(settings))),
     panel: new Uint8Array(3 * settingsLength(settings)),
   };
 }
@@ -795,7 +796,7 @@ function burstStep(state, settings, clockMs, render) {
   const tail = [0, 1, 2].map((channel) =>
     same ? (work[291 + channel] * 250 + work[channel] * 5) >> 8 : (work[291 + channel] * 235) >> 8,
   );
-  for (let at = 171; at < 3 * LENGTH; at += 3) {
+  for (let at = 171; at < work.length; at += 3) {
     work[at] = tail[0];
     work[at + 1] = tail[1];
     work[at + 2] = tail[2];

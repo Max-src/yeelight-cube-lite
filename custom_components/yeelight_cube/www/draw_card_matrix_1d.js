@@ -6,6 +6,7 @@ import {
 import { updateRecentColors } from "./draw_card_state.js";
 // Saves the drawing and recent colors (batched, see draw_card_storage.js).
 import { StorageUtils } from "./draw_card_storage.js";
+import { frameWidth } from "./matrix-view.js";
 
 export class MatrixOperations1D {
   constructor(card) {
@@ -107,7 +108,7 @@ export class MatrixOperations1D {
   // Clear entire matrix
   clearMatrix() {
     this.pushMatrixHistory();
-    this.card.matrix = _createEmptyMatrix();
+    this.card.matrix = _createEmptyMatrix(frameWidth(this.card.matrix));
 
     StorageUtils.saveMatrix(this.card.matrix);
 
@@ -125,7 +126,7 @@ export class MatrixOperations1D {
     } else if (this.card.areaFillMode) {
       this.card.lastHoveredIdx = idx;
       const normTarget = this.card.matrix[idx];
-      const cols = 20,
+      const cols = frameWidth(this.card.matrix),
         rows = 5;
       const stack = [idx];
       const visited = new Set();
@@ -222,6 +223,6 @@ export class MatrixOperations1D {
 
   // Initialize empty matrix
   createEmptyMatrix() {
-    return _createEmptyMatrix();
+    return _createEmptyMatrix(frameWidth(this.card.matrix));
   }
 }

@@ -753,11 +753,11 @@
         },
         "apply_custom_pixels": {
             "name": "Apply Custom Pixels",
-            "description": "Display a pixel art frame on the 20x5 matrix. Positions run 0-99 left-to-right then bottom-to-top; missing positions stay black.",
+            "description": "Display a pixel art frame on the matrix. Positions run left-to-right then bottom-to-top (row * width + column: 0-99 on the 20x5 matrix); missing positions stay black.",
             "fields": {
                 "pixels": {
                     "name": "Pixels",
-                    "description": "Array of entries with position and color. position is a single index (0-99) or a list of indexes; color is [R, G, B]."
+                    "description": "Array of entries with position and color. position is a single index (row * width + column: 0-99 on the 20x5 matrix) or a list of indexes; color is [R, G, B]."
                 },
                 "name": {
                     "name": "Name",
@@ -766,6 +766,10 @@
                 "entity_id": {
                     "name": "Entity",
                     "description": "Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls."
+                },
+                "width": {
+                    "name": "Width",
+                    "description": "The drawing's width in columns: its positions are row * width + column (default 20; a Cube Matrix of more than 4 modules can take 5 columns a module, up to 40)."
                 }
             }
         },
@@ -1015,7 +1019,7 @@
             "fields": {
                 "pixels": {
                     "name": "Pixels",
-                    "description": "Array of entries with position and color; position is an index (0-99) or a list of indexes, color is [R, G, B]"
+                    "description": "Array of entries with position and color; position is an index (row * width + column: 0-99 on the 20x5 matrix) or a list of indexes, color is [R, G, B]"
                 },
                 "name": {
                     "name": "Name",
@@ -1024,6 +1028,10 @@
                 "orientation": {
                     "name": "Orientation",
                     "description": "What the drawing is made for: a lamp lying flat (horizontal, the default) or standing on its end (vertical). The cards show vertical pixel arts standing up."
+                },
+                "width": {
+                    "name": "Width",
+                    "description": "The drawing's width in columns: its positions are row * width + column (default 20; a Cube Matrix of more than 4 modules can take 5 columns a module, up to 40)."
                 }
             }
         },
@@ -1119,7 +1127,7 @@
             "fields": {
                 "pixel_arts": {
                     "name": "Pixel arts",
-                    "description": "Array of pixel art objects with name, pixels (entries with position and color, as accepted by save_pixel_art) and optional orientation (\"horizontal\" or \"vertical\")"
+                    "description": "Array of pixel art objects with name, pixels (entries with position and color, as accepted by save_pixel_art), optional orientation (\"horizontal\" or \"vertical\") and optional width (columns, default 20)"
                 },
                 "replace": {
                     "name": "Replace",
@@ -1433,7 +1441,7 @@
                 },
                 "modules": {
                     "name": "Modules",
-                    "description": "The modules in chain order from the base: matrix (5 x 5), spot or panel; 1 to 6."
+                    "description": "The modules in chain order from the base: matrix (5 x 5), spot or panel; 1 to 8."
                 }
             }
         },

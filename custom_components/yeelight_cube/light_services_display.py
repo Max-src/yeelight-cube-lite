@@ -20,7 +20,7 @@ from .const import (
     DOMAIN,
 )
 from .errors import failed, invalid, invalid_input
-from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
+from .image_utils import MAX_IMAGE_B64_LENGTH, image_pixels, image_to_matrix
 from .input_error import InputError
 from .layout import FONT_MAPS
 from .light import _entity_id_or_list
@@ -40,7 +40,8 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     run_on_lamps = make_lamp_runner(hass)
 
     async def handle_preview_gradient_modes(service_call):
-        """Generate full 5x20 preview matrices for all gradient modes using entity's current state."""
+        """Generate full preview matrices (5 rows, the lamp's frame width:
+        device_profile.width) for all gradient modes using entity's current state."""
 
         target_entity = _resolve_entity(service_call, "PREVIEW_GRADIENT_MODES")
         
@@ -54,7 +55,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 "entity_id": target_entity.entity_id,
                 "previews": previews,
                 "rows": 5,
-                "cols": 20,
+                "cols": target_entity.frame_width,
                 **target_entity.preview_details(),
             }
         )
@@ -282,36 +283,36 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     # Note: set_brightness service is registered above in the main service registration block
     
     async def handle_display_image(service_call):
-        """Accepts a base64-encoded image, resizes/crops to 20x5, and displays it on the lamp(s).
+        """Accepts a base64-encoded image, resizes/crops it to each lamp's
+        frame (20 x 5, or a Cube Matrix of more than 4 modules: 5 columns a
+        module, device_profile.width), and displays it on the lamp(s).
         Supports multi-entity parallel dispatch."""
         image_b64 = service_call.data.get("image_b64")
         # Resolved before decoding: no work for a call that targets no lamp.
         targets = _resolve_entities(service_call, "DISPLAY_IMAGE")
 
-        # Process image once (shared across all targets). PIL decode/resize is
-        # CPU-bound, so run it off the event loop.
-        try:
-            matrix = await hass.async_add_executor_job(
-                image_to_matrix, image_b64, 20, 5
-            )
-            flipped_matrix = []
-            for row in range(5):
-                start = row * 20
-                end = start + 20
-                flipped_matrix[0:0] = matrix[start:end]
-            custom_pixels = [
-                {"position": pos, "color": color}
-                for pos, color in enumerate(flipped_matrix)
-            ]
-        except InputError as err:
-            # Too large, not base64 or not an image: say so in the service call.
-            raise invalid_input(err) from err
-        except Exception as err:  # noqa: BLE001 -- unexpected decoder failure
-            _LOGGER.exception("Error processing image")
-            raise failed("image_failed", error=err) from err
+        # Process the image once per frame width (shared by the lamps of
+        # that width). PIL decode/resize is CPU-bound, so run it off the
+        # event loop.
+        pictures = {}
+        for target_entity in targets:
+            width = target_entity.frame_width
+            if width in pictures:
+                continue
+            try:
+                matrix = await hass.async_add_executor_job(
+                    image_to_matrix, image_b64, width, 5
+                )
+            except InputError as err:
+                # Too large, not base64 or not an image: say so in the service call.
+                raise invalid_input(err) from err
+            except Exception as err:  # noqa: BLE001 -- unexpected decoder failure
+                _LOGGER.exception("Error processing image")
+                raise failed("image_failed", error=err) from err
+            pictures[width] = image_pixels(matrix, width)
 
         async def _apply_one(target_entity):
-            await target_entity.async_show_drawing(custom_pixels)
+            await target_entity.async_show_drawing(pictures[target_entity.frame_width])
 
         run_on_lamps("DISPLAY_IMAGE", targets, _apply_one)
 

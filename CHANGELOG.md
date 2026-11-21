@@ -6,9 +6,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Cube Matrix chains of 5 to 8 modules.** Everything Home Assistant draws (streamed effects, the clock, text,
+  gradients, colours, drawings) and every preview (camera, cards, the pixel art editor) now covers every module, on
+  a picture 5 columns a module wide; before, a 5th or 6th module stayed dark. Up to 8 modules can be set (the
+  Yeelight app offers 6), in any order of Matrix, Panel and Spot. The streamed clock puts its digits on the 5×5
+  modules only. The animations cover the whole lamp (Snowfall repeated, the glows and waves stretched). Pixel arts
+  keep their width; a 20-column one starts at the base. Lamps of up to 4 modules and the
+  Cube Lite draw exactly as before.
+- **Spot and Panel modules look like the real ones in every preview.** The cards and the preview cameras draw a
+  Spot as its round lens in its bezel, glowing in its colour (nearly white at the centre when bright), and a Panel
+  as one smooth face where its 25 colours melt into each other, instead of 25 dots. Their corners follow the pixel
+  style (square or rounded), their shadow the preview's pixel shadow; Matrix modules keep their dots.
 - **Steady streamed effects on a Cube Lite.** An effect or clock a Cube Lite
   can't run itself is streamed over the LAN in direct mode, paced by its
-  Stream frame rate limit (default 5 new pictures a second), with only the
+  Stream frame rate limit (default 2 frames a second), with only the
   frames it needs when Skip Unchanged Stream Frames is on. A Cube Matrix is
   streamed as its drawing over Matter. See docs/STREAMING.md.
 - **Previews show exactly what a streamed lamp shows.** While an effect or
@@ -22,10 +33,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (about a minute at most); the lamp then restarts by itself and its content
   is drawn again. Up to 3 tries, 10 minutes apart; when none is answered,
   the Power cycle sensor and its Repair stay as they are.
-- **Stream frame rate limit** (a number on each Cube Lite, 1-25, default 5):
-  the most new pictures a second for what Home Assistant streams to it. Above
-  5 is smoother, with more risk of the lamp stopping to answer; below 5 the
-  last picture is still sent every 0.2 s.
+- **Stream frame rate limit** (a number on each Cube Lite, 1-25, default 2):
+  the frames a second for what Home Assistant streams to it, exactly that
+  many over time (12 was 8.3 a second, rounded down to the lamp's 40 ms
+  renders; frames now go 80 or 120 ms apart for 12). At 5 and below the
+  lamp gets exactly that many frames a second, the new picture or else the
+  last one again, never a new picture right after a repeat. Tested on two
+  Cube Lites over a night: 2 and 3 a second for 12 lamp-hours without a hang,
+  5 a second hung each lamp within 100 minutes; above 5 is smoother, with
+  much more risk of the lamp stopping to answer.
 - **Skip Unchanged Stream Frames** switch (Cube Lite, off by default): a
   streamed frame the same as the last one is not sent, not even as the 0.2 s
   repeat, so the frame rate limit becomes a maximum. The lamp is then left
@@ -35,12 +51,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   off a streamed effect or clock keeps the stream going with black frames
   until the lamp is turned on again, where the effect goes on; the lamp is
   never left silent after a busy stream, when a Cube Lite can stop answering.
-- **Cube Matrix Modules card** (`custom:yeelight-cube-matrix-modules-card`):
-  each chosen Cube Matrix's modules as fitted from its power supply, and the
-  side the power supply is on, set as on the Yeelight app's module page (add a
-  Matrix, Spot or Panel module, remove one, pick Left, Right, Down or Up), saved
-  with `set_matrix_modules` and the matching Device Orientation. The light's new
-  `matrix_module_list` attribute lists every module by name.
+- **Modules section in the Preview card** (a Cube Matrix only): its
+  **Modules** button in the Actions row (an action like Refresh and Power: the
+  editor's Actions & Order list adds, removes or moves it) opens a section just
+  below it that sets the lamp's modules as on the Yeelight app's module
+  page: the modules drawn as the preview draws them, in chain order from the
+  base and laid out as the lamp is mounted; add a Matrix, Spot or Panel module
+  (up to 8), remove one with its ✕, then Save (`set_matrix_modules`) or Reset.
+  The power supply's side is the card's Device Orientation row (shown in the
+  section when the card hides it). The light's new `matrix_module_list`
+  attribute lists every module by name. The Cube Matrix Modules card
+  (`custom:yeelight-cube-matrix-modules-card`) shows the same section and is
+  kept for the dashboards that have it, no longer in the card picker.
 - **Yeelight Cube Matrix** (the original Yeelight Cube: a base and 5×5
   modules, LAN model `CubeMatrix`): discovered and set up like a Cube Lite
   (also when found in Home Assistant's Matter integration), its model stored
@@ -175,7 +197,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   frame is warned about once per outage (and its recovery once), a frame the
   lamp refuses once per episode.
 - **The native effect list is no longer a light attribute** (about 12 KB on
-  every state): the cards fetch it once per change. The light publishes
+  every state): the cards fetch it once per change (the Native Effects card
+  draws without it until it arrives). The light publishes
   `native_effect_catalog_key` instead. The `calib_*`,
   `color_accuracy_enabled` and `last_hardware_brightness` attributes are
   gone too (the calibration services are unchanged).
@@ -197,6 +220,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `…lamp_client` instead.
 
 ### Fixed
+- **A Cube Matrix's modules after a restart.** When the lamp's LAN did not answer at start-up, its modules were
+  taken from the Matter server's copy, which keeps the list last reported to it: a list set from Home Assistant is
+  not reported back, so an older list was drawn (a module dark, the picture shifted) until the modules were saved
+  again. The list is now read from the lamp itself. Saving the modules draws what the lamp shows again at once,
+  in every content mode.
+- **A Cube Matrix is switched off over Matter.** It was switched off over the LAN only: when the lamp's LAN stopped
+  reading commands (it still answered over Matter), Home Assistant showed it off while it stayed lit. The LAN is
+  used only when Matter can't deliver the command.
+- **Cube Matrix blocks taken off the module list go black.** The lamp stops writing a block it no longer lists, so the
+  block kept its last picture (a Spot its last colour). Set Cube Matrix modules (and the Modules card) now switches the
+  lamp off first when the new list drives fewer blocks or fewer Spots, then on again. A block left off the list still shows one green light in its corner:
+  the lamp puts it there itself, and the card now says so.
+- **A streaming Cube Lite switched off at the wall shows as unavailable**
+  within seconds once its stream pauses, instead of staying "on".
 - **A lamp turned off stays off after a Home Assistant restart**, also when
   it was unreachable at the restart; its brightness is kept for when it is
   turned on.
@@ -332,8 +369,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - A Cube Lite that stopped answering while Home Assistant streamed to it (an
   effect it does not have, a palette, a clock) was not noticed: frames are never
   answered, so it stayed "on" for minutes. The stream now asks the lamp for an
-  answer every 30 s; when none comes, frames pause, the **stopped answering**
-  Repair and the **Power cycle** sensor follow within about a minute, and the
+  answer every 5 minutes (each check holds the frames a moment and has the
+  lamp answer mid-stream, which can itself hang a Cube Lite, so not more
+  often); when none comes, frames pause, the **stopped answering** Repair
+  and the **Power cycle** sensor follow within about a minute, and the
   stream goes on by itself once the lamp answers again (after a power cycle).
 - A lamp that accepts a connection and closes it without answering (a Cube
   Matrix whose local network connection is stuck) could make a command over

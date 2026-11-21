@@ -200,6 +200,76 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
             await cube._recover_udp()
             self.assertEqual(0, cube.silent_for)
 
+    async def test_a_stuck_lan_is_found_after_the_music_connection_s_retry_time(self):
+        """2026-11-20: the music connection failed once at start; the Cube
+        Matrix, shown over Matter, got no command that tried it again, so
+        the check stopped with the retry time and its stuck LAN passed for
+        a blocked network (music_blocked). The check goes on while the music
+        connection is failing, and ends once it works."""
+        async def lamp(reader, writer):
+            writer.close()  # a stuck LAN: accepts, answers nothing
+
+        server = await asyncio.start_server(lamp, "127.0.0.1", 0)
+        self.addAsyncCleanup(server.wait_closed)
+        self.addCleanup(server.close)
+        cube = lamp_client.LampClient("127.0.0.1", server.sockets[0].getsockname()[1])
+        self.addCleanup(cube.close)
+        cube._udp = lamp_client.MusicChannel("127.0.0.1", 1)
+        pings = []
+
+        async def ping():
+            pings.append(1)
+            return False
+
+        cube._udp.ping = ping
+        cube._udp_retry_at = client_udp.time.monotonic() - 1  # already due
+        cube._udp_failing_since = client_udp.time.time() - 3600
+        with patch.object(client_udp, "UDP_RECOVERY_PING", 0.01), patch.object(client_udp, "MUSIC_LAN_CHECK", 0.0):
+            task = asyncio.ensure_future(cube._recover_udp())
+            for _ in range(200):
+                await asyncio.sleep(0.01)
+                if cube.silent_for:
+                    break
+            self.assertGreater(cube.silent_for, 0)
+            self.assertFalse(task.done())
+            self.assertEqual([], pings)  # the music connection is left to the next command
+            cube._udp_failing_since = 0.0  # it works again
+            await asyncio.wait_for(task, 1)
+
+    async def test_a_cube_matrix_away_is_unavailable_not_blocked(self):
+        """2026-11-20: unplugged for 31 min mid-stream, the Cube Matrix's
+        music connection failed, the light stayed available and the
+        music_blocked repair came after 15 min. A lamp that accepts no
+        connection is away: published unavailable, the failure forgotten."""
+        import socket
+        with socket.socket() as free:
+            free.bind(("127.0.0.1", 0))
+            port = free.getsockname()[1]  # nothing listens there
+        cube = lamp_client.LampClient("127.0.0.1", port)
+        self.addCleanup(cube.close)
+        cube._udp = lamp_client.MusicChannel("127.0.0.1", 1)
+        published = []
+        cube.on_transport_change = lambda: published.append(cube.is_unreachable)
+        cube._udp_retry_at = client_udp.time.monotonic() - 1
+        cube._udp_failing_since = client_udp.time.time() - 900
+        cube._music_failures = 2
+        with patch.object(client_udp, "UDP_RECOVERY_PING", 0.01), patch.object(client_udp, "MUSIC_LAN_CHECK", 0.0):
+            await asyncio.wait_for(cube._recover_udp(), 5)
+        self.assertTrue(cube.is_unreachable)
+        self.assertEqual([True], published)
+        self.assertIsNone(cube.connection_state()["udp_failing_for"])
+        self.assertEqual(0, cube._music_failures)
+
+    async def test_a_lamp_back_tries_udp_afresh(self):
+        # A failure from before the outage does not count towards udp_blocked
+        # or music_blocked once the lamp is back.
+        self.cube._udp_retry_at = client_udp.time.monotonic() + 300
+        self.cube._udp_failing_since = client_udp.time.time() - 900
+        self.cube.mark_unreachable()
+        self.cube.mark_recovered()
+        self.assertEqual("udp", self.cube.transport)
+        self.assertIsNone(self.cube.connection_state()["udp_failing_for"])
+
     async def test_the_udp_recovery_outlives_an_unexpected_error(self):
         # A ping that fails unexpectedly is logged at debug level, and the
         # recovery pings again: UDP is used once the lamp answers.

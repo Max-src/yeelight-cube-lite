@@ -21,6 +21,7 @@ try:
         lamp_settings,
     )
     from .lamp_animations import animation_frame
+    from .lamp_core import frame_width_for
     from .lamp_studio import (
         effect_offers_color_mode,
         studio_drive,
@@ -43,6 +44,7 @@ except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
         lamp_settings,
     )
     from lamp_animations import animation_frame
+    from lamp_core import frame_width_for
     from lamp_studio import (
         effect_offers_color_mode,
         studio_drive,
@@ -231,7 +233,9 @@ def render_native_effect(
     ``adjustments``: the color adjustments an animation is sent with
     (color_adjustments.active_adjustments; none when None). ``columns``: the
     columns the lamp shows, which its effects are drawn on (a Cube Matrix's
-    device_profile.columns; None: all 20, a Cube Lite)."""
+    device_profile.columns; None: all 20, a Cube Lite). More than 20: the
+    frame is as wide as them (lamp_core.frame_width_for), an animation from
+    column 0, the rest black."""
     speed = DEFAULT_PREVIEW_SPEED if speed is None else speed
     seconds = phase / (0.25 + speed / 55.0)
     if studio_runs(effect, color_mode, palette):
@@ -254,10 +258,10 @@ def render_native_effect(
     if animation:
         # Its frames as sent: laid out, timed and colored in the GIF.
         return animation_frame(
-            animation, seconds, orientation, layout, pace, adjustments, recolored or None,
+            animation, seconds, orientation, layout, pace, adjustments, recolored or None, columns,
         )
     if effect not in LAMP_RENDERED_EFFECTS:
-        return _render_gradient(phase, direction)
+        return _render_gradient(phase, direction, columns)
     settings = lamp_settings(
         effect, direction, speed, color_override, color_mode, orientation, intensity,
         palette, columns,
@@ -265,12 +269,14 @@ def render_native_effect(
     return lamp_effect_frame(settings, seconds)
 
 
-def _render_gradient(phase: float, direction: str) -> list[tuple[int, int, int]]:
-    """A moving gradient for slot 71: its picture cannot be read from the lamp."""
+def _render_gradient(phase: float, direction: str, columns=None) -> list[tuple[int, int, int]]:
+    """A moving gradient for slot 71: its picture cannot be read from the
+    lamp. Across 20 columns, or a wider lamp's ``columns``."""
+    width = frame_width_for(columns)
     pixels = []
     for row in range(ROWS):
-        for col in range(COLS):
-            x = col / (COLS - 1)
+        for col in range(width):
+            x = col / (width - 1)
             y = row / (ROWS - 1)
             along = {"Down": 1.0 - y, "Left": 1.0 - x, "Right": x}.get(direction, y)
             wave = (math.sin((along * 2.0 - phase) * math.tau) + 1.0) / 2.0
