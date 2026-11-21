@@ -2,8 +2,8 @@
 
 <table>
   <tr>
-    <td align="center" valign="bottom"><img src="images/yeelight-cube-light.png" alt="Yeelight Cube Smart Lamp Lite" width="300"><br><b>Cube Lite</b></td>
-    <td align="center" valign="bottom"><img src="images/yeelight-cube-matrix.jpg" alt="Yeelight Cube Matrix with Matrix, Panel and Spot modules" width="380"><br><b>Cube Matrix</b> (<a href="#cube-matrix">what differs</a>)</td>
+    <td align="center"><img src="images/yeelight-cube-light.png" alt="Yeelight Cube Smart Lamp Lite" width="380" height="190"><br><b>Cube Lite</b></td>
+    <td align="center"><img src="images/yeelight-cube-matrix.jpg" alt="Yeelight Cube Matrix with Matrix, Panel and Spot modules" width="342" height="190"><br><b>Cube Matrix</b> (<a href="#cube-matrix">what differs</a>)</td>
   </tr>
 </table>
 
