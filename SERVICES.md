@@ -265,7 +265,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
   </tr>
 </table>
 
@@ -290,7 +290,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Text-Colors.png" alt="Action - set_text_colors"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Set-Text-Colors.png" alt="Action - set_text_colors"></td>
   </tr>
 </table>
 
@@ -314,7 +314,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Font.png" alt="Action - set_font"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Set-Font.png" alt="Action - set_font"></td>
   </tr>
 </table>
 
@@ -338,7 +338,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment"></td>
   </tr>
 </table>
 
@@ -365,7 +365,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Orientation.png" alt="Action - set_orientation"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Set-Orientation.png" alt="Action - set_orientation"></td>
   </tr>
 </table>
 
@@ -437,7 +437,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Apply-Custom-Pixels-2.png" alt="Action - apply_custom_pixels (grouped)"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Apply-Custom-Pixels-2.png" alt="Action - apply_custom_pixels (grouped)"></td>
   </tr>
 </table>
 
@@ -456,7 +456,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels (full)"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels (full)"></td>
   </tr>
 </table>
 
@@ -488,7 +488,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Save-Pixel-Art.png" alt="Action - save_pixel_art"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Save-Pixel-Art.png" alt="Action - save_pixel_art"></td>
   </tr>
 </table>
 
@@ -721,7 +721,7 @@ data:
 
 Switch display modes, set gradient angles, and control how colors fill the lamp.
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card" width="360">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card" width="360">
 
 ### `set_mode`
 
@@ -848,7 +848,7 @@ Save, load, and manage color palettes shared across all cards and lamps.
 > that exceed these limits or contain malformed data are rejected with an error
 > instead of being stored.
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card" width="360">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card" width="360">
 
 ### `save_palette`
 
@@ -1100,7 +1100,7 @@ the new settings and returns without waiting for the lamp, exactly like
 (e.g. the lamp is unreachable) is written to the Home Assistant log instead of
 being returned to the caller.
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/generated/native-effects-overview.png" alt="Native Effects card" width="360">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/generated/native-effects-overview.png" alt="Native Effects card" width="360">
 
 ---
 
@@ -1182,7 +1182,7 @@ whole palette, through the digits (LAN, UDP).
 
 </details>
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/generated/clock-overview.png" alt="Clock card" width="360">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/generated/clock-overview.png" alt="Clock card" width="360">
 
 ---
 
@@ -1984,7 +1984,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
   </tr>
 </table>
 
@@ -2015,7 +2015,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="Node-RED - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="Node-RED - set_custom_text"></td>
   </tr>
 </table>
 

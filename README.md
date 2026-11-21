@@ -85,26 +85,20 @@ The full guide, with a side-by-side comparison of the two lamps: **[docs/CUBE_MA
 ### HACS (Recommended)
 
 <div align="left">
-  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=Max-src&repository=yeelight-cube-lite" target="_blank" rel="noopener noreferrer">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=Max-src&repository=yeelight-cube-ha" target="_blank" rel="noopener noreferrer">
     <img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open in HACS" width="200">
   </a>
 </div>
 
-Or manually add the custom repository:
+Or search for it in HACS:
 
 <details>
 <summary>Step-by-step HACS installation</summary>
 
 1. Open **HACS** in your Home Assistant dashboard
-2. Click the **⋮** menu (top right) → **Custom repositories**
-3. Add this URL and set the category to **Integration**, then click **Add**:
-   ```
-   https://github.com/Max-src/yeelight-cube-lite
-   ```
-4. The repository now appears in the custom repositories list. Close the dialog.
-5. Back in HACS, search for **Yeelight Cube Lite** and open the result
-6. Click **Download** (or **Install**) and confirm
-7. **Restart Home Assistant**
+2. Search for **Yeelight Cube** and open the result
+3. Click **Download** (or **Install**) and confirm
+4. **Restart Home Assistant**
 
 </details>
 
@@ -113,7 +107,7 @@ Or manually add the custom repository:
 
 ### Manual Installation
 
-1. Download the [latest release](https://github.com/Max-src/yeelight-cube-lite/releases)
+1. Download the [latest release](https://github.com/Max-src/yeelight-cube-ha/releases)
 2. Copy the contents into `custom_components/yeelight_cube/` inside your HA config directory
 3. Restart Home Assistant
 
@@ -183,9 +177,9 @@ Obsid products. Yeelight Classic and Yeelight Pro do not support this lamp.
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/App_Device_Settings.jpg" width="250" alt="Device Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/App_LAN_Control.jpg" width="250" alt="LAN Control"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/App_Device_Info.jpg" width="250" alt="Device Info"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/App_Device_Settings.jpg" width="250" alt="Device Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/App_LAN_Control.jpg" width="250" alt="LAN Control"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/App_Device_Info.jpg" width="250" alt="Device Info"></td>
   </tr>
 </table>
 
@@ -204,19 +198,19 @@ Once the lamp is on your network with LAN Control enabled, Home Assistant will *
 
 1. Look for the **Yeelight Cube Lite** discovery notification on **Settings → Devices & Services**
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
 
 2. Click **Add**
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
 
 3. Confirm to set up the device
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
 
 4. Done. The integration creates all entities automatically.
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
 <blockquote><strong>ℹ️ Note:</strong> If you also use the official Yeelight integration, it may generate a discovery notification for the same lamp. That notification is <strong>automatically suppressed</strong> by this integration - you can safely ignore it.</blockquote>
 
@@ -236,15 +230,15 @@ If the lamp is not discovered automatically (e.g. different subnet or mDNS is bl
 3. Search for **Yeelight Cube Lite** and select it
 4. On this integration detail page, click **Add entry**
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
 
 5. Enter the **IP address** from the Yeelight app (e.g. `192.168.4.139`)
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
 
 6. Click **Submit**
 
-   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
 <blockquote><strong>ℹ️ Note:</strong> Each lamp needs to be added separately. If you have multiple lamps, repeat the process for each one.</blockquote>
 
@@ -327,8 +321,8 @@ Every card comes with a **visual configuration editor** - click the pencil icon 
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-4-cards-preview.png" alt="Preview, Colors, Palettes and Gradient cards"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-draw-card-preview.png" alt="Draw card"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Dashboard-4-cards-preview.png" alt="Preview, Colors, Palettes and Gradient cards"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Dashboard-draw-card-preview.png" alt="Draw card"></td>
   </tr>
 </table>
 
@@ -586,12 +580,12 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-1.png" alt="Preview card variation 1"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-2.png" alt="Preview card variation 2"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-3.png" alt="Preview card variation 3"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-4.png" alt="Preview card variation 4"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-5.png" alt="Preview card variation 5">
-    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-6.png" alt="Preview card variation 6"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Preview-Card-Variation-1.png" alt="Preview card variation 1"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Preview-Card-Variation-2.png" alt="Preview card variation 2"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Preview-Card-Variation-3.png" alt="Preview card variation 3"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Preview-Card-Variation-4.png" alt="Preview card variation 4"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Preview-Card-Variation-5.png" alt="Preview card variation 5">
+    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Cards/Preview-Card-Variation-6.png" alt="Preview card variation 6"></td>
   </tr>
 </table>
 
@@ -1039,10 +1033,10 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
   </tr>
 </table>
 
@@ -1149,7 +1143,7 @@ These sensor entities are created **once per integration install** and shared ac
 
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Ungrouped-Entities.png" alt="Ungrouped Entities"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-ha/main/images/Entities/Ungrouped-Entities.png" alt="Ungrouped Entities"></td>
   </tr>
 </table>
 
@@ -1521,7 +1515,7 @@ lower their brightness instead.
 | **A Repair says a lamp stopped answering** | The lamp accepts connections but answers no command (sometimes after a long stream of frames): only turning its power off and on fixes it. Its **Power cycle** sensor shows **Needed** meanwhile (state `on`), so a lamp on a smart plug can be recovered by an automation, for example:<br>`trigger: state, entity_id: binary_sensor.<lamp>_power_cycle, to: "on", for: "00:01:00"` → `switch.turn_off` the plug, `delay: 10 s`, `switch.turn_on`. Keep a limit (one try per hour, a `condition` on the last run) so a lamp that stays stuck is not cycled forever |
 
 **Reporting a problem:** attach the lamp's diagnostics to the
-[issue](https://github.com/Max-src/yeelight-cube-lite/issues). In
+[issue](https://github.com/Max-src/yeelight-cube-ha/issues). In
 **Settings → Devices & services → Yeelight Cube Lite**, open the lamp's ⋮ menu
 (or its device page) and choose **Download diagnostics**. The file holds the
 lamp's model and software version, its connection (UDP or TCP, failures, the last
@@ -1549,10 +1543,10 @@ If you find this integration useful, consider supporting development:
 <!-- Badge references -->
 [ha_badge]: https://img.shields.io/badge/Home%20Assistant-Compatible-green
 [ha_link]: https://www.home-assistant.io/
-[hacs_badge]: https://img.shields.io/badge/HACS-Custom-41BDF5
+[hacs_badge]: https://img.shields.io/badge/HACS-Default-41BDF5
 [hacs_link]: https://hacs.xyz/
-[release_badge]: https://img.shields.io/github/v/release/Max-src/yeelight-cube-lite
-[release]: https://github.com/Max-src/yeelight-cube-lite/releases
+[release_badge]: https://img.shields.io/github/v/release/Max-src/yeelight-cube-ha
+[release]: https://github.com/Max-src/yeelight-cube-ha/releases
 [bmac_badge]: https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white
 [bmac_badge_large]: https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white&style=for-the-badge
 [bmac]: https://buymeacoffee.com/max.src

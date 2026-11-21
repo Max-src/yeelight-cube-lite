@@ -174,7 +174,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Every entity supports Home Assistant 2026.11's in-place entity id renames
   (`async_entity_id_changed`): renaming one no longer redraws the lamp,
   restarts its rotation or restores its last state
-  ([#4](https://github.com/Max-src/yeelight-cube-lite/issues/4)).
+  ([#4](https://github.com/Max-src/yeelight-cube-ha/issues/4)).
 
 ### Removed
 - The `force_rediscovery` and `trigger_manual_discovery` services (testing
@@ -183,7 +183,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - **Renamed entity ids**
-  ([#4](https://github.com/Max-src/yeelight-cube-lite/issues/4), reported by
+  ([#4](https://github.com/Max-src/yeelight-cube-ha/issues/4), reported by
   @emontnemery): services now find a lamp by its current entity id only, so
   an old id can no longer reach a renamed lamp, and two lamps whose names
   were swapped are never mixed up. A rotation started on several lamps
@@ -203,7 +203,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   *Yeelight Station*; the older app formerly called *Yeelight* is now
   *Yeelight Classic*). The README names the right app, links it on the
   App Store and Google Play, and explains the three Yeelight apps
-  ([#5](https://github.com/Max-src/yeelight-cube-lite/issues/5), reported by
+  ([#5](https://github.com/Max-src/yeelight-cube-ha/issues/5), reported by
   @codebykat).
 - New Power Supply section in the README.
 

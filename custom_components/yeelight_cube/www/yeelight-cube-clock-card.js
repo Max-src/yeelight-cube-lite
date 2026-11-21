@@ -1380,5 +1380,5 @@ registerCustomCard({
   description:
     "Select, configure and visualise the Cube Lite's built-in clock: styles, content, format and color.",
   preview: true,
-  documentationURL: "https://github.com/Max-src/yeelight-cube-lite",
+  documentationURL: "https://github.com/Max-src/yeelight-cube-ha",
 });
